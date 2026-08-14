@@ -1,13 +1,267 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PitLAPS — LAPS passwords on your phone</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kainor LLC · Security tooling for Microsoft-first IT teams</title>
+<meta name="description" content="Kainor LLC is an independent software company in Spring Hill, Kansas building security tooling for Microsoft-first IT teams. First product: PitLAPS, an iOS app for Entra ID and Intune LAPS passwords.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131E2E'/%3E%3Ctext x='32' y='45' font-family='Arial Narrow, Arial, sans-serif' font-size='38' font-weight='700' fill='%23D9480F' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F4F7;      /* gauge white */
+    --card:#FFFFFF;
+    --ink:#131E2E;        /* pit-wall navy */
+    --ink-soft:#22314A;
+    --steel:#51617A;      /* secondary text */
+    --mist:#A9B6C6;       /* secondary on dark */
+    --signal:#D9480F;     /* safety orange */
+    --line:#C9D2DD;
+    --line-dark:#2C3C58;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size:17px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1060px;margin:0 auto;padding:0 24px}
+  a{color:inherit}
+  a:focus-visible,button:focus-visible{outline:3px solid var(--signal);outline-offset:3px;border-radius:2px}
+
+  /* type roles */
+  .display{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;line-height:1.02;letter-spacing:.2px;text-transform:uppercase}
+  .mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace}
+  .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--signal);font-weight:500}
+
+  /* ============ hero (pit wall) ============ */
+  .hero{background:var(--ink);color:#F4F7FB}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 0;border-bottom:1px solid var(--line-dark)}
+  .brand{display:flex;align-items:baseline;gap:10px;text-decoration:none}
+  .brand .k{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;letter-spacing:.06em;text-transform:uppercase}
+  .brand .llc{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:var(--mist)}
+  nav{display:flex;gap:26px;flex-wrap:wrap}
+  nav a{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.14em;text-transform:uppercase;text-decoration:none;color:var(--mist);padding:4px 0;border-bottom:2px solid transparent}
+  nav a:hover{color:#fff;border-bottom-color:var(--signal)}
+
+  .hero-main{padding:84px 0 64px}
+  .hero-main .eyebrow{display:block;margin-bottom:22px}
+  h1{font-size:clamp(44px,7.5vw,84px);max-width:15ch}
+  h1 .accent{color:var(--signal)}
+  .lede{margin-top:26px;max-width:58ch;font-size:19px;color:var(--mist)}
+  .lede strong{color:#fff;font-weight:600}
+  .hero-cta{margin-top:36px;display:flex;gap:14px;flex-wrap:wrap}
+  .btn{display:inline-block;text-decoration:none;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:.12em;text-transform:uppercase;padding:14px 22px;border-radius:4px}
+  .btn-solid{background:var(--signal);color:#fff}
+  .btn-solid:hover{background:#BF3E0C}
+  .btn-ghost{border:1px solid var(--line-dark);color:#E7EDF5}
+  .btn-ghost:hover{border-color:var(--signal);color:#fff}
+
+  /* signature: timing board strip */
+  .timing{border-top:1px solid var(--line-dark);background:#0D1626}
+  .timing-inner{display:flex;gap:34px;align-items:center;overflow-x:auto;padding:16px 24px;max-width:1060px;margin:0 auto;white-space:nowrap;scrollbar-width:none}
+  .timing-inner::-webkit-scrollbar{display:none}
+  .t-cell{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.1em;color:var(--mist)}
+  .t-cell b{color:#fff;font-weight:500}
+  .t-cell .ok{color:var(--signal)}
+  .timing-caption{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#5F7291;padding:10px 24px 18px;max-width:1060px;margin:0 auto}
+
+  /* ============ sections ============ */
+  .section{padding:88px 0}
+  .section + .section{border-top:1px solid var(--line)}
+  .sec-head{margin-bottom:44px}
+  .sec-head .eyebrow{display:block;margin-bottom:14px}
+  h2{font-size:clamp(32px,4.5vw,52px)}
+  .sub{margin-top:14px;color:var(--steel);max-width:62ch;font-size:18px}
+
+  /* product */
+  .product-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:56px;align-items:start}
+  .status{display:inline-flex;align-items:center;gap:10px;margin:22px 0 6px;font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:999px;padding:8px 16px}
+  .status .dot{width:8px;height:8px;border-radius:50%;background:var(--signal)}
+  .product-copy p{margin-top:16px;color:var(--ink-soft)}
+  .product-copy .links{margin-top:26px;display:flex;gap:22px;flex-wrap:wrap}
+  .textlink{font-weight:600;color:var(--ink);text-decoration:none;border-bottom:2px solid var(--signal);padding-bottom:1px}
+  .textlink:hover{color:var(--signal)}
+  ol.laps{list-style:none;counter-reset:lap;display:grid;gap:0;border:1px solid var(--line);border-radius:8px;background:var(--card);overflow:hidden}
+  ol.laps li{counter-increment:lap;display:flex;gap:18px;padding:20px 22px;border-top:1px solid var(--line)}
+  ol.laps li:first-child{border-top:0}
+  ol.laps li::before{content:"LAP 0" counter(lap);font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.12em;color:var(--signal);font-weight:500;min-width:64px;padding-top:4px}
+  ol.laps h3{font-size:17px;font-weight:600;margin-bottom:4px}
+  ol.laps p{font-size:15.5px;color:var(--steel)}
+
+  /* principles */
+  .prin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:20px}
+  .prin{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:26px 24px}
+  .prin .mono-label{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal);font-weight:500}
+  .prin h3{font-size:19px;margin:12px 0 8px}
+  .prin p{font-size:15.5px;color:var(--steel)}
+
+  /* about / contact */
+  .about-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:56px}
+  .about p{margin-top:16px;color:var(--ink-soft)}
+  .contact-card{background:var(--ink);color:#F4F7FB;border-radius:8px;padding:32px 30px;height:fit-content}
+  .contact-card .eyebrow{display:block;margin-bottom:16px}
+  .contact-card a{color:#fff;text-decoration:none;border-bottom:2px solid var(--signal)}
+  .contact-card a:hover{color:var(--signal)}
+  .contact-card p{margin-top:12px;font-size:16px;color:var(--mist)}
+  .contact-card .big{font-size:20px;font-weight:600;color:#fff}
+
+  /* footer */
+  footer{background:var(--ink);color:var(--mist);margin-top:88px}
+  .foot-inner{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;padding:34px 0;font-size:14px}
+  .foot-inner a{color:var(--mist);text-decoration:none}
+  .foot-inner a:hover{color:#fff}
+  .foot-links{display:flex;gap:22px;flex-wrap:wrap}
+
+  @media (max-width:840px){
+    .product-grid,.about-grid{grid-template-columns:1fr}
+    .section{padding:64px 0}
+    .hero-main{padding:64px 0 48px}
+  }
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
 </head>
 <body>
-  <h1>PitLAPS</h1>
-  <p>Secure iOS app for viewing Windows and macOS LAPS passwords from Microsoft Entra ID and Intune. Coming soon.</p>
-  <p>PitLAPS&trade; is a trademark of Kainor LLC.</p>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="#top" aria-label="Kainor LLC home">
+        <span class="k">Kainor</span><span class="llc">LLC</span>
+      </a>
+      <nav aria-label="Site">
+        <a href="#product">Product</a>
+        <a href="#principles">Security</a>
+        <a href="#about">About</a>
+        <a href="#contact">Contact</a>
+      </nav>
+    </div>
+
+    <div class="hero-main" id="top">
+      <span class="eyebrow">Independent software vendor · Spring Hill, Kansas</span>
+      <h1 class="display">Security tooling for <span class="accent">Microsoft-first</span> IT teams</h1>
+      <p class="lede">Kainor builds small, sharp tools for the people who run Entra ID and Intune. Our first product, <strong>PitLAPS</strong>, puts local administrator passwords on the device admins actually carry: their phone.</p>
+      <div class="hero-cta">
+        <a class="btn btn-solid" href="#product">See PitLAPS</a>
+        <a class="btn btn-ghost" href="https://github.com/Kainor-LLC/PitLAPS">Source on GitHub</a>
+      </div>
+    </div>
+  </div>
+  <div class="timing" aria-hidden="true">
+    <div class="timing-inner">
+      <span class="t-cell">LAP <b>001</b></span>
+      <span class="t-cell">DEVICE <b>WS-4821</b></span>
+      <span class="t-cell">ROLE <b class="ok">ACTIVATED</b></span>
+      <span class="t-cell">PASSWORD <b class="ok">RETRIEVED</b></span>
+      <span class="t-cell">TIME <b>03.2s</b></span>
+      <span class="t-cell">ROTATION <b class="ok">QUEUED</b></span>
+      <span class="t-cell">AUDIT <b class="ok">LOGGED</b></span>
+    </div>
+  </div>
+  <p class="timing-caption">The lap that matters: sign in · prove your role · retrieve · rotate. Every step in your tenant's audit log.</p>
+</header>
+
+<main>
+  <section class="section" id="product">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">First product</span>
+        <h2 class="display">PitLAPS: LAPS passwords on your phone</h2>
+        <p class="sub">An iOS app for viewing Windows and macOS local administrator passwords managed by Microsoft Entra ID and Intune. Built for helpdesk benches, server rooms, and everywhere else the admin console isn't.</p>
+      </div>
+      <div class="product-grid">
+        <div class="product-copy">
+          <span class="status"><span class="dot"></span>In development · Coming to the App Store</span>
+          <p>Search a device by name, activate your role, read the password, rotate it when you're done. That's the whole app, and that's the point. No dashboards to babysit, no agent to deploy, no new place for local admin credentials to live.</p>
+          <p>PitLAPS talks directly to Microsoft Graph using delegated sign-in. Retrieval works only for admins who already hold the right role in their own tenant, and every retrieval lands in that tenant's audit log, exactly as if it happened from the admin portal.</p>
+          <p>The client is open source, because software that handles local admin passwords shouldn't ask for blind trust.</p>
+          <div class="links">
+            <a class="textlink" href="https://github.com/Kainor-LLC/PitLAPS">Follow the build on GitHub</a>
+            <a class="textlink" href="mailto:connor@kainor.com?subject=PitLAPS%20early%20access">Ask about early access</a>
+          </div>
+        </div>
+        <ol class="laps" aria-label="How a retrieval works">
+          <li><div><h3>Sign in with your work account</h3><p>Your tenant issues the token. Your Conditional Access policies decide the terms.</p></div></li>
+          <li><div><h3>Activate your role</h3><p>Microsoft Graph enforces role checks server-side. No role, no password. PIM just-in-time activation fits right in.</p></div></li>
+          <li><div><h3>Retrieve over TLS</h3><p>The password travels from Microsoft's API to your phone. It is never stored, proxied, or logged along the way.</p></div></li>
+          <li><div><h3>Rotate after use</h3><p>One tap queues rotation, and the audit trail in your tenant shows who read what, and when.</p></div></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="principles">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="eyebrow">How we build</span>
+        <h2 class="display">Rules of the garage</h2>
+        <p class="sub">Local admin passwords are break-glass credentials. Tooling that touches them should be boring, inspectable, and structurally unable to betray you.</p>
+      </div>
+      <div class="prin-grid">
+        <div class="prin">
+          <span class="mono-label">01 · No backend</span>
+          <h3>There is no Kainor server</h3>
+          <p>Credentials travel from Microsoft Graph to your device and nowhere else. We can't leak what we never see.</p>
+        </div>
+        <div class="prin">
+          <span class="mono-label">02 · Delegated only</span>
+          <h3>The app owns no access</h3>
+          <p>Every request runs as the signed-in admin, inside their tenant's rules. No app-only permissions, no standing secrets.</p>
+        </div>
+        <div class="prin">
+          <span class="mono-label">03 · Your controls rule</span>
+          <h3>Your tenant stays in charge</h3>
+          <p>Conditional Access, role activation, and audit logging all apply on every retrieval, because retrieval happens in your tenant.</p>
+        </div>
+        <div class="prin">
+          <span class="mono-label">04 · Open source</span>
+          <h3>Read it before you trust it</h3>
+          <p>The client code is public on GitHub. The permission scopes we request are documented, each with a reason attached.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="about">
+    <div class="wrap">
+      <div class="about-grid">
+        <div class="about">
+          <span class="eyebrow">About</span>
+          <h2 class="display">Built on shift</h2>
+          <p>Kainor LLC is an independent software vendor and technology consultancy in Spring Hill, Kansas, founded in 2026 by a working systems administrator and CISSP.</p>
+          <p>We build for the Microsoft identity and endpoint stack because it's the world we operate in every day: Entra ID, Intune, Conditional Access, and the small gaps between them where real admin work gets stuck. Our products start as tools we wished we had on shift.</p>
+          <p>Security review, IT consulting, and custom tooling inquiries are welcome by email.</p>
+        </div>
+        <div class="contact-card" id="contact">
+          <span class="eyebrow">Contact</span>
+          <p class="big">Kainor LLC</p>
+          <p>Spring Hill, Kansas, United States</p>
+          <p><a href="mailto:connor@kainor.com">connor@kainor.com</a></p>
+          <p><a href="https://github.com/Kainor-LLC">github.com/Kainor-LLC</a></p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <span>© 2026 Kainor LLC. All rights reserved. PitLAPS™ is a trademark of Kainor LLC.</span>
+      <span class="foot-links">
+        <a href="#product">Product</a>
+        <a href="#principles">Security</a>
+        <a href="mailto:connor@kainor.com">Contact</a>
+        <a href="https://github.com/Kainor-LLC/PitLAPS">GitHub</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
 </body>
 </html>
