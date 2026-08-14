@@ -26,8 +26,14 @@ import PackageDescription
 let package = Package(
     name: "PitLAPSKit",
     platforms: [
-        .iOS(.v16),      // the shipping target
-        .macOS(.v11)     // test-host only; must be >= 10.15 for MSAL
+        // iOS 17 floor. Chosen deliberately: iOS 17 shipped September 2023 and runs on
+        // iPhone XS and later, so in 2026 it covers essentially every phone an IT
+        // administrator carries for work. It buys ContentUnavailableView (proper empty
+        // and error states) and the two-parameter onChange, and avoids maintaining
+        // availability shims in the screens that matter most. Revisit only if a
+        // customer reports a fleet on iPhone 8-era hardware.
+        .iOS(.v17),
+        .macOS(.v14)     // test-host only
     ],
     products: [
         .library(name: "AuthKit", targets: ["AuthKit"]),
