@@ -66,6 +66,7 @@ let package = Package(
 
         // Runs with no MSAL and no network. Works on My Mac or a simulator.
         .testTarget(name: "CredentialKitTests", dependencies: ["CredentialKit", "AuthKit"]),
-        .testTarget(name: "InventoryKitTests", dependencies: ["InventoryKit", "CredentialKit", "AuthKit"])
+        .testTarget(name: "InventoryKitTests", dependencies: ["InventoryKit", "CredentialKit", "AuthKit"]),
+        .testTarget(name: "PlatformSecurityTests", dependencies: ["PlatformSecurity"])
     ]
 )
