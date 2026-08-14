@@ -38,12 +38,27 @@ public struct AuthConfiguration: Sendable {
         self.authorityTenant = authorityTenant
     }
 
-    /// Vendor multi-tenant default (§9). Replace clientId with the real registration's
-    /// value once the Entra app registration exists in the Kainor tenant.
+    /// Vendor multi-tenant default (§9).
+    ///
+    /// This client ID points at the "PitLAPS" app registration in the Kainor LLC tenant.
+    /// It is NOT a secret — it appears in every authorization request and is public by
+    /// design for a PKCE public client. What it is, however, is load-bearing: every
+    /// shipped build references it, and every customer tenant's consent creates a service
+    /// principal pointing at this object. Changing or deleting it breaks every install.
+    ///
+    /// Registration facts (created 2026-08-14):
+    ///   * Audience: AzureADMultipleOrgs (any work/school tenant, no personal accounts)
+    ///   * Public client, allow public client flows = Yes, no client secret
+    ///   * Delegated Graph scopes only: DeviceManagementManagedDevices.Read.All,
+    ///     Device.Read.All, DeviceLocalCredential.ReadBasic.All,
+    ///     DeviceLocalCredential.Read.All
+    ///
+    /// The bundle identifier of the app target MUST be com.kainor.pitlaps, because the
+    /// redirect URI below is derived from it. A mismatch produces an MSAL redirect error.
     public static let vendorDefault = AuthConfiguration(
-        clientId: "REPLACE_WITH_VENDOR_CLIENT_ID",
+        clientId: "50c9aa83-4f5c-4203-a3c0-adab54a2ba3a",
         redirectUri: "msauth.com.kainor.pitlaps://auth",
-        authorityTenant: nil
+        authorityTenant: nil    // multi-tenant: /common for selection, then pin per account
     )
 }
 
@@ -178,6 +193,11 @@ public actor MSALAuthManager: AuthManaging {
 
     /// Browse/metadata scopes granted at sign-in (§4).
     /// The reveal scope (DeviceLocalCredential.Read.All) is requested later, on demand.
+    ///
+    /// NOTE: these mirror CredentialKit's `LapsCredentialScopes.signInBaseline`. They are
+    /// duplicated rather than imported on purpose — AuthKitMSAL must not depend on
+    /// CredentialKit, or the credential module would end up in MSAL's link graph and
+    /// break the §3.1 isolation boundary. If you change one, change both.
     private static let baseScopes = [
         "DeviceManagementManagedDevices.Read.All",
         "Device.Read.All",

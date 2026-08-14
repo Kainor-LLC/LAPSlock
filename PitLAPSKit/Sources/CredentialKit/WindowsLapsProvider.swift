@@ -23,8 +23,8 @@ public struct WindowsLapsProvider: LocalAdminCredentialProviding {
         unavailabilityReason: nil
     )
 
-    public let metadataScopes = ["DeviceLocalCredential.ReadBasic.All"]
-    public let revealScopes   = ["DeviceLocalCredential.Read.All"]
+    public let metadataScopes = [LapsCredentialScopes.metadataBasic]
+    public let revealScopes   = [LapsCredentialScopes.reveal]
 
     private let auth: AuthManaging
     private let session: URLSession
