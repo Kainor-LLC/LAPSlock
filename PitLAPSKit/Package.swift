@@ -54,7 +54,10 @@ let package = Package(
             ]
         ),
 
-        .target(name: "InventoryKit", dependencies: ["AuthKit"]),
+        // Depends on CredentialKit for DevicePlatform / DeviceCredentialTarget so the
+        // inventory layer can hand a ready-made target to the credential layer. This does
+        // NOT violate §3.1: the rule is that CredentialKit must not depend on others.
+        .target(name: "InventoryKit", dependencies: ["AuthKit", "CredentialKit"]),
 
         // ⚠ ISOLATION BOUNDARY (§3.1). Do NOT add dependencies to this target.
         .target(name: "CredentialKit", dependencies: ["AuthKit"]),
@@ -62,6 +65,7 @@ let package = Package(
         .target(name: "PlatformSecurity"),
 
         // Runs with no MSAL and no network. Works on My Mac or a simulator.
-        .testTarget(name: "CredentialKitTests", dependencies: ["CredentialKit", "AuthKit"])
+        .testTarget(name: "CredentialKitTests", dependencies: ["CredentialKit", "AuthKit"]),
+        .testTarget(name: "InventoryKitTests", dependencies: ["InventoryKit", "CredentialKit", "AuthKit"])
     ]
 )
