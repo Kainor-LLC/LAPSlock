@@ -36,7 +36,6 @@ public enum BiometricAvailability: Sendable, Equatable {
 public enum BiometricKind: String, Sendable, Equatable {
     case faceID = "Face ID"
     case touchID = "Touch ID"
-    case opticID = "Optic ID"
     case unknown = "biometric authentication"
 }
 
@@ -161,15 +160,14 @@ public struct BiometricGate: Sendable {
         }
     }
 
+    /// Only the two kinds an iPhone can have. Optic ID (Vision Pro) is deliberately not
+    /// detected: this is an iPhone app, and the availability dance it required added
+    /// complexity for a platform we don't ship to.
     private static func kind(from context: LAContext) -> BiometricKind {
         switch context.biometryType {
         case .faceID: return .faceID
         case .touchID: return .touchID
-        default:
-            #if compiler(>=5.9)
-            if #available(iOS 17.0, *), context.biometryType == .opticID { return .opticID }
-            #endif
-            return .unknown
+        default: return .unknown
         }
     }
 }
