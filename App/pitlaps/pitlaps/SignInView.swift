@@ -121,9 +121,9 @@ public struct SignInView: View {
             Text("How it stays safe")
                 .font(.headline)
             InfoRow(
-                icon: "network.slash",
-                title: "No Kainor server in the path",
-                detail: "Passwords travel from Microsoft Graph straight to this device. We can't see, store, or log them."
+                icon: "arrow.left.arrow.right",
+                title: "Straight from Microsoft to your phone",
+                detail: "There's no middleman server. Passwords go from Microsoft Graph to this device and nowhere else, so there's nothing in between that could see, store, or log them."
             )
             InfoRow(
                 icon: "person.badge.key.fill",

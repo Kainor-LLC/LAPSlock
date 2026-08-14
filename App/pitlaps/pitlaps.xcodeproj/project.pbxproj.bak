@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		87177D8C302FCD330009BB78 /* InventoryKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87177D8B302FCD330009BB78 /* InventoryKit */; };
-		87177D8E302FCD330009BB78 /* PlatformSecurity in Frameworks */ = {isa = PBXBuildFile; productRef = 87177D8D302FCD330009BB78 /* PlatformSecurity */; };
 		8734CC64302FBA9E0056D699 /* AuthKitMSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 8734CC63302FBA9E0056D699 /* AuthKitMSAL */; };
 		8734CC69302FBB7D0056D699 /* CredentialKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8734CC68302FBB7D0056D699 /* CredentialKit */; };
 /* End PBXBuildFile section */
@@ -43,8 +41,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				87177D8C302FCD330009BB78 /* InventoryKit in Frameworks */,
-				87177D8E302FCD330009BB78 /* PlatformSecurity in Frameworks */,
 				8734CC69302FBB7D0056D699 /* CredentialKit in Frameworks */,
 				8734CC64302FBA9E0056D699 /* AuthKitMSAL in Frameworks */,
 			);
@@ -99,8 +95,6 @@
 			packageProductDependencies = (
 				8734CC63302FBA9E0056D699 /* AuthKitMSAL */,
 				8734CC68302FBB7D0056D699 /* CredentialKit */,
-				87177D8B302FCD330009BB78 /* InventoryKit */,
-				87177D8D302FCD330009BB78 /* PlatformSecurity */,
 			);
 			productName = pitlaps;
 			productReference = 8734CC50302FB6650056D699 /* pitlaps.app */;
@@ -217,7 +211,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -274,7 +268,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -386,16 +380,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		87177D8B302FCD330009BB78 /* InventoryKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../PitLAPSKit" */;
-			productName = InventoryKit;
-		};
-		87177D8D302FCD330009BB78 /* PlatformSecurity */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../PitLAPSKit" */;
-			productName = PlatformSecurity;
-		};
 		8734CC63302FBA9E0056D699 /* AuthKitMSAL */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../PitLAPSKit" */;
