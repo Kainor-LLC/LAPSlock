@@ -53,7 +53,7 @@ public struct MacOSLapsProvider: LocalAdminCredentialProviding {
         + "Intune keeps them encrypted on its own service, and only the admin center can display them. "
         + "You can see the rotation schedule here and open this device in Intune to view the password."
 
-    public let metadataScopes = ["DeviceManagementManagedDevices.Read.All"]
+    public let metadataScopes = [LapsCredentialScopes.intuneDevices]
     /// Empty until a documented reveal endpoint exists.
     public let revealScopes: [String] = []
 

@@ -1,11 +1,30 @@
+# ─────────────────────────────────────────────────────────────────────────────
 # Xcode / Swift
-## Build generated
+# ─────────────────────────────────────────────────────────────────────────────
+
+## Build output
 build/
 DerivedData/
+*.o
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+## Per-user Xcode state (window layout, breakpoints, selected scheme).
+## Never commit these — they churn on every open and conflict constantly.
+xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
 
-## Various settings
+## Xcode workspace checks / settings noise
+*.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+*.xcodeproj/project.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+*.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+
+## Legacy Xcode cruft
 *.pbxuser
 !default.pbxuser
 *.mode1v3
@@ -14,26 +33,46 @@ DerivedData/
 !default.mode2v3
 *.perspectivev3
 !default.perspectivev3
-xcuserdata/
 *.moved-aside
 *.xccheckout
 *.xcscmblueprint
 
-## Swift Package Manager
+## Swift Package Manager working dirs
 .build/
 .swiftpm/
-Package.resolved
 
-## macOS Finder junk (NOT covered by GitHub's Swift template)
+## NOTE ON Package.resolved — deliberately NOT ignored.
+## For an application (as opposed to a library) the resolved file pins the exact
+## dependency versions that were built and shipped. For a security product this is
+## supply-chain evidence: it records precisely which MSAL version is in a given
+## release, and lets a build be reproduced months later. Keep it tracked.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# macOS Finder junk (not covered by GitHub's Swift template)
+# ─────────────────────────────────────────────────────────────────────────────
 .DS_Store
 .AppleDouble
 .LSOverride
 Icon
 ._*
 
-## Secrets — never commit real registration values
+# ─────────────────────────────────────────────────────────────────────────────
+# Secrets — this repo is PUBLIC. Nothing credential-shaped may land here.
+# The app is a public client (PKCE, no client secret), so there should never be a
+# secret to commit; these patterns exist to catch mistakes, not to enable them.
+# ─────────────────────────────────────────────────────────────────────────────
 *.local.xcconfig
 Secrets.xcconfig
+*.p12
+*.mobileprovision
+*.cer
+*.certSigningRequest
+AuthKey_*.p8
+.env
+.env.*
 
-## MSAL / auth artifacts
-*.entitlements.bak
+## Ad-hoc scratch files that tend to accumulate real tenant data
+scratch/
+*-scratch.*
+*.tenant.json
+graph-response*.json

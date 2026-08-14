@@ -19,6 +19,23 @@ import Foundation
 //             LAPS-managed device tested. Reveal is therefore UNAVAILABLE, and the
 //             product degrades to a portal handoff.
 
+/// Graph delegated scope names, in one place so they can't drift between the providers,
+/// the app registration, and the sign-in code. These MUST match the delegated
+/// permissions granted on the Entra app registration.
+public enum LapsCredentialScopes {
+    /// Device inventory from Intune.
+    public static let intuneDevices = "DeviceManagementManagedDevices.Read.All"
+    /// Entra device objects, needed for the two-identifier join (§2.5).
+    public static let entraDevices = "Device.Read.All"
+    /// LAPS metadata only — no password value.
+    public static let metadataBasic = "DeviceLocalCredential.ReadBasic.All"
+    /// LAPS password reveal. Requested incrementally at first reveal, never at sign-in (§4).
+    public static let reveal = "DeviceLocalCredential.Read.All"
+
+    /// Granted at sign-in. Deliberately EXCLUDES `reveal`.
+    public static let signInBaseline = [intuneDevices, entraDevices, metadataBasic]
+}
+
 public enum DevicePlatform: String, Sendable, CaseIterable {
     case windows
     case macOS
