@@ -113,7 +113,28 @@ struct DemoBanner: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(Brand.signal.opacity(0.16))
+        // Opaque backing, layered: a solid system background first so scrolled content
+        // can't show through, then the orange wash on top for the warning colour.
+        .background {
+            ZStack {
+                Rectangle().fill(.background)
+                Rectangle().fill(Brand.signal.opacity(0.16))
+            }
+        }
         .foregroundStyle(Brand.signal)
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+    }
+}
+
+// MARK: - dark mode support
+
+extension Brand {
+    /// The credential card sits on the app background. In light mode the navy provides
+    /// its own separation; in dark mode it can read as a muddy smudge against near-black,
+    /// so a hairline border restores the edge.
+    static func cardBorder(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Brand.mist.opacity(0.22) : .clear
     }
 }

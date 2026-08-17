@@ -61,15 +61,21 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
         try await Task.sleep(for: latency)
         switch platform {
         case .windows:
+            // accountName is deliberately nil here, matching production: Windows LAPS
+            // only returns the account name inside the `credentials` payload, which
+            // requires the high-privilege reveal scope. It appears after the first
+            // reveal, not before. Demo fidelity beats a fuller-looking demo.
             return CredentialMetadata(
-                accountName: "Administrator",
+                accountName: nil,
                 lastBackupDateTime: Date().addingTimeInterval(-6 * 3600),
                 nextRefreshDateTime: Date().addingTimeInterval(24 * 3600),
                 lastRotationDateTime: Date().addingTimeInterval(-6 * 3600)
             )
         case .macOS:
+            // Also nil: the documented beta resource carries only
+            // passwordLastRotationDateTime.
             return CredentialMetadata(
-                accountName: "localadmin",
+                accountName: nil,
                 lastRotationDateTime: Date().addingTimeInterval(-11 * 86_400)
             )
         case .other:
@@ -103,7 +109,9 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
             throw CredentialError.decodeFailure
         }
         return RevealedCredential(
-            accountName: "Administrator",
+            // Deliberately not "Administrator": LAPS account names vary by policy, and
+            // the UI must not train anyone to expect a particular one.
+            accountName: "LapsAdmin",
             backupDateTime: Date().addingTimeInterval(-6 * 3600),
             secret: secret
         )

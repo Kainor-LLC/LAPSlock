@@ -58,11 +58,21 @@ public struct SignInView: View {
             .padding(24)
         }
         .safeAreaInset(edge: .bottom) {
+            // A bottom action bar has to stay legible when content scrolls under it, but
+            // `.bar` reads as a grey slab pasted over the page. A fade into the page
+            // background keeps the button readable without drawing a box around it.
             signInButton
                 .padding(.horizontal, 24)
-                .padding(.top, 12)
+                .padding(.top, 20)
                 .padding(.bottom, 24)
-                .background(.bar)
+                .background {
+                    LinearGradient(
+                        colors: [Color(.systemBackground).opacity(0), Color(.systemBackground)],
+                        startPoint: .top,
+                        endPoint: .center
+                    )
+                    .ignoresSafeArea()
+                }
         }
         .sheet(isPresented: $showingApprovalSheet) {
             AdminApprovalSheet(consentURL: consentURL)
@@ -256,6 +266,7 @@ struct AdminApprovalSheet: View {
                 }
                 .padding(24)
             }
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

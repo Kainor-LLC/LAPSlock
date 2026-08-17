@@ -20,6 +20,7 @@ struct PitLAPSApp: App {
         WindowGroup {
             AppRootView()
                 .tint(Brand.signal)
+                .preferredColorScheme(AppSettings.shared.appearance.colorScheme)
         }
     }
 }
@@ -43,6 +44,12 @@ final class AppRootModel: ObservableObject {
 
     /// Live inventory, created after sign-in so it shares the authenticated session.
     private(set) var liveInventory: DeviceInventoryService?
+
+    /// Tenant of the signed-in account, offered as an opt-in field in diagnostics.
+    var signedInTenantId: String? {
+        if case .live(let account) = mode { return account.tenantId }
+        return nil
+    }
 
     var consentURL: URL? {
         let tenant: String? = {
@@ -107,6 +114,33 @@ final class AppRootModel: ObservableObject {
         mode = .demo
     }
 
+    /// Requests incremental consent for the device-write scope, used when the user turns
+    /// on BitLocker rotation. Returns nil on success or a user-facing message on failure.
+    ///
+    /// Asking here — at the moment the toggle flips — means an admin discovers a blocked
+    /// permission while sitting at their desk, not while standing at a broken machine.
+    func requestRotationConsent() async -> String? {
+        guard let auth else { return "Sign in first." }
+        do {
+            _ = try await auth.token(scopes: [LapsCredentialScopes.deviceWrite], allowInteractive: true)
+            return nil
+        } catch let error as AuthError {
+            if ConsentDiagnostics.state(from: error) != nil {
+                return "Your organization hasn't approved permission for PitLAPS to modify devices. An Entra administrator needs to grant it."
+            }
+            if case .userCancelled = error { return "Permission wasn't granted." }
+            return "Couldn't request permission. Check your connection and try again."
+        } catch {
+            return "Couldn't request permission. Check your connection and try again."
+        }
+    }
+
+    /// Live BitLocker service, sharing the authenticated session.
+    func liveBitLocker() -> (any BitLockerKeyProviding)? {
+        guard let auth else { return nil }
+        return BitLockerService(auth: auth)
+    }
+
     /// Live credential provider for one platform, sharing the authenticated session.
     /// Returns nil before sign-in, which the view treats as "recover to signed out"
     /// rather than silently substituting demo data.
@@ -143,12 +177,22 @@ struct AppRootView: View {
             DeviceListView(
                 model: DeviceListModel(inventory: DemoInventoryProvider()),
                 isDemo: true,
+                settingsBuilder: {
+                    SettingsView(
+                        settings: AppSettings.shared,
+                        requestRotationConsent: { nil },   // no tenant in demo mode
+                        isDemo: true,
+                        tenantId: nil
+                    )
+                },
                 detailBuilder: { device in
                     DeviceDetailView(
                         model: DeviceDetailModel(
                             device: device,
                             provider: DemoLapsProvider(platform: device.platform),
-                            isDemo: true
+                            bitLocker: DemoBitLockerService(),
+                            isDemo: true,
+                            rotationEnabled: AppSettings.shared.bitLockerRotationEnabled
                         )
                     )
                 }
@@ -159,6 +203,14 @@ struct AppRootView: View {
                 DeviceListView(
                     model: DeviceListModel(inventory: inventory),
                     isDemo: false,
+                    settingsBuilder: {
+                        SettingsView(
+                            settings: AppSettings.shared,
+                            requestRotationConsent: { await root.requestRotationConsent() },
+                            isDemo: false,
+                            tenantId: root.signedInTenantId
+                        )
+                    },
                     detailBuilder: { device in
                         DeviceDetailView(
                             model: DeviceDetailModel(
@@ -167,7 +219,9 @@ struct AppRootView: View {
                                 // reporting if the session vanished mid-navigation.
                                 provider: root.liveProvider(for: device.platform)
                                     ?? DemoLapsProvider(platform: device.platform),
-                                isDemo: false
+                                bitLocker: root.liveBitLocker() ?? DemoBitLockerService(),
+                                isDemo: false,
+                                rotationEnabled: AppSettings.shared.bitLockerRotationEnabled
                             )
                         )
                     }
@@ -215,12 +269,17 @@ struct AppRootView: View {
     DeviceListView(
         model: DeviceListModel(inventory: DemoInventoryProvider(latency: .milliseconds(1))),
         isDemo: true,
+        settingsBuilder: {
+            SettingsView(settings: AppSettings.shared, requestRotationConsent: { nil }, isDemo: true, tenantId: nil)
+        },
         detailBuilder: { device in
             DeviceDetailView(
                 model: DeviceDetailModel(
                     device: device,
                     provider: DemoLapsProvider(platform: device.platform),
-                    isDemo: true
+                    bitLocker: DemoBitLockerService(),
+                    isDemo: true,
+                    rotationEnabled: AppSettings.shared.bitLockerRotationEnabled
                 )
             )
         }
@@ -233,7 +292,9 @@ struct AppRootView: View {
             model: DeviceDetailModel(
                 device: DemoInventoryProvider.fleet[0],
                 provider: DemoLapsProvider(platform: .windows, latency: .milliseconds(1)),
-                isDemo: true
+                bitLocker: DemoBitLockerService(latency: .milliseconds(1)),
+                isDemo: true,
+                rotationEnabled: true
             )
         )
     }
@@ -245,7 +306,9 @@ struct AppRootView: View {
             model: DeviceDetailModel(
                 device: DemoInventoryProvider.fleet[4],
                 provider: DemoLapsProvider(platform: .windows, latency: .milliseconds(1)),
-                isDemo: true
+                bitLocker: DemoBitLockerService(latency: .milliseconds(1)),
+                isDemo: true,
+                rotationEnabled: true
             )
         )
     }
@@ -257,7 +320,9 @@ struct AppRootView: View {
             model: DeviceDetailModel(
                 device: DemoInventoryProvider.fleet[5],
                 provider: DemoLapsProvider(platform: .macOS, latency: .milliseconds(1)),
-                isDemo: true
+                bitLocker: DemoBitLockerService(latency: .milliseconds(1)),
+                isDemo: true,
+                rotationEnabled: true
             )
         )
     }

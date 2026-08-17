@@ -5,6 +5,7 @@ import AuthKit
 import CredentialKit
 import InventoryKit
 import PlatformSecurity
+import DiagnosticsKit
 
 // Build Spec §6 — device detail and the credential reveal.
 //
@@ -37,28 +38,53 @@ final class DeviceDetailModel: ObservableObject {
     /// revocation, alongside the password.
     @Published var revealedAccountName: String?
 
+    /// Which single secret is currently on screen. Only ever one: two credentials
+    /// visible at once doubles exposure for no workflow benefit (at the machine you use
+    /// one or the other), needs two countdowns, and complicates the wipe path.
+    enum RevealedItem: Equatable {
+        case none
+        case lapsPassword
+        case bitLockerKey(id: String)
+    }
+    @Published var revealedItem: RevealedItem = .none
+
+    // BitLocker
+    @Published var bitLockerKeys: [BitLockerKeyInfo] = []
+    @Published var isLoadingKeys = false
+    @Published var bitLockerListError: String?
+    @Published var revealedKeyInfo: BitLockerKeyInfo?
+
     let device: ManagedDeviceSummary
     let capabilities: CredentialCapabilities
     private let provider: any LocalAdminCredentialProviding
     private let gate: BiometricGate
     private let session: RevealSession
     let isDemo: Bool
+    /// Mirrors the Settings toggle. When false, rotation is neither offered nor possible.
+    @Published var rotationEnabled: Bool
 
     /// The live credential. Held only while visible; wiped by the session's onWipe.
     private var secret: SensitiveValue?
     /// Kept solely so the clipboard can be cleared if it still holds this value.
     private var lastCopiedValue: String?
+    /// Currently revealed BitLocker key, if any.
+    private var bitLockerSecret: SensitiveValue?
+    private let bitLocker: any BitLockerKeyProviding
 
     init(
         device: ManagedDeviceSummary,
         provider: any LocalAdminCredentialProviding,
+        bitLocker: any BitLockerKeyProviding,
         isDemo: Bool,
+        rotationEnabled: Bool = false,
         visibleDuration: TimeInterval = 60
     ) {
         self.device = device
         self.provider = provider
+        self.bitLocker = bitLocker
         self.capabilities = provider.capabilities
         self.isDemo = isDemo
+        self.rotationEnabled = rotationEnabled
         self.gate = BiometricGate()
         self.session = RevealSession(visibleDuration: visibleDuration)
 
@@ -74,6 +100,10 @@ final class DeviceDetailModel: ObservableObject {
             // credential, so leaving it on screen after Hide undercuts the point of
             // hiding. Both disappear together.
             self.revealedAccountName = nil
+            self.bitLockerSecret?.wipe()
+            self.bitLockerSecret = nil
+            self.revealedKeyInfo = nil
+            self.revealedItem = .none
             if let copied = self.lastCopiedValue {
                 SecureClipboard.clearIfHolding(copied)
                 self.lastCopiedValue = nil
@@ -82,7 +112,20 @@ final class DeviceDetailModel: ObservableObject {
     }
 
     var revealedSecret: SensitiveValue? {
-        session.isVisible ? secret : nil
+        guard session.isVisible, revealedItem == .lapsPassword else { return nil }
+        return secret
+    }
+
+    var revealedBitLockerSecret: SensitiveValue? {
+        guard session.isVisible, case .bitLockerKey = revealedItem else { return nil }
+        return bitLockerSecret
+    }
+
+    /// Clears any currently visible secret before a new reveal begins, so the
+    /// one-at-a-time rule holds even if the user taps a second Reveal immediately.
+    private func clearForNewReveal() {
+        if session.isVisible { session.mask() }
+        syncSessionState()
     }
 
     // MARK: - metadata
@@ -129,13 +172,16 @@ final class DeviceDetailModel: ObservableObject {
             return
         }
 
+        clearForNewReveal()
         isWorking = true
+        let started = Date()
         defer { isWorking = false }
 
         switch await gate.authenticate(deviceName: device.deviceName) {
         case .authenticated:
             break
         case .cancelledByUser, .fallbackDismissed:
+            await Self.record(.biometricGate, .userCancelled, since: started)
             return                          // silent: the user chose not to proceed
         case .failed:
             errorMessage = "That didn't match. Try again."
@@ -146,6 +192,9 @@ final class DeviceDetailModel: ObservableObject {
         }
 
         // STEP 2: fetch, only now that identity is confirmed.
+        // Time the NETWORK call, not the human. Measuring from before the Face ID prompt
+        // folded think-time into the duration and made Graph look slow.
+        let fetchStarted = Date()
         do {
             let credential = try await provider.reveal(for: device.credentialTarget)
             secret = credential.secret
@@ -159,10 +208,129 @@ final class DeviceDetailModel: ObservableObject {
                     lastRotationDateTime: credential.backupDateTime
                 )
             }
+            revealedItem = .lapsPassword
             session.reveal()
             syncSessionState()
+            await Self.record(.credentialReveal, .success,
+                              endpoint: DiagnosticEndpoint.deviceLocalCredentials,
+                              platform: device.platform, since: fetchStarted)
         } catch {
             errorMessage = Self.describe(error)
+            await Self.record(.credentialReveal, Self.outcome(for: error),
+                              endpoint: DiagnosticEndpoint.deviceLocalCredentials,
+                              platform: device.platform, since: fetchStarted)
+        }
+    }
+
+    // MARK: - BitLocker
+
+    /// Loads key METADATA only — no key values, low-privilege scope. Safe before any gate.
+    func loadBitLockerKeys() async {
+        guard let entraDeviceId = device.entraDeviceId else { return }
+        guard device.platform == .windows else { return }
+        isLoadingKeys = true
+        bitLockerListError = nil
+        defer { isLoadingKeys = false }
+        do {
+            bitLockerKeys = try await bitLocker.keys(forEntraDeviceId: entraDeviceId)
+        } catch {
+            bitLockerListError = Self.describeBitLockerList(error)
+        }
+    }
+
+    /// Reveals one recovery key. Same order as the password path: gate, then fetch.
+    func revealBitLockerKey(_ info: BitLockerKeyInfo) async {
+        errorMessage = nil
+        statusNote = nil
+
+        if isCaptured {
+            errorMessage = RevealRevocation.screenRecording.message
+            return
+        }
+        let availability = gate.availability()
+        guard availability.canAuthenticate else {
+            errorMessage = BiometricPolicy.noAuthConfiguredMessage
+            return
+        }
+
+        clearForNewReveal()
+        isWorking = true
+        defer { isWorking = false }
+
+        switch await gate.authenticate(deviceName: device.deviceName) {
+        case .authenticated: break
+        case .cancelledByUser, .fallbackDismissed: return
+        case .failed:
+            errorMessage = "That didn't match. Try again."
+            return
+        case .unavailable(let reason):
+            errorMessage = reason
+            return
+        }
+
+        let started = Date()
+        do {
+            let revealed = try await bitLocker.reveal(keyId: info.id, info: info)
+            bitLockerSecret = revealed.secret
+            revealedKeyInfo = info
+            revealedItem = .bitLockerKey(id: info.id)
+            session.reveal()
+            syncSessionState()
+            await Self.record(.credentialReveal, .success,
+                              endpoint: "/v1.0/informationProtection/bitlocker/recoveryKeys/{id}",
+                              platform: device.platform, since: started)
+        } catch {
+            errorMessage = Self.describe(error)
+            await Self.record(.credentialReveal, Self.outcome(for: error),
+                              endpoint: "/v1.0/informationProtection/bitlocker/recoveryKeys/{id}",
+                              platform: device.platform, since: started)
+        }
+    }
+
+    /// Queues a BitLocker key rotation. Only reachable when Settings has rotation on.
+    func rotateBitLockerKeys() async {
+        guard rotationEnabled else { return }
+        errorMessage = nil
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await bitLocker.rotateKeys(managedDeviceId: device.id)
+            // "Requested", never "rotated": Intune queues the action and the device
+            // applies it on its next check-in, which may be a while if it is offline.
+            statusNote = "Rotation requested. The device generates a new key the next time it checks in with Intune, then you'll see the new key here."
+            hideNow()
+            await loadBitLockerKeys()
+        } catch {
+            errorMessage = Self.describe(error)
+        }
+    }
+
+    func copyBitLockerKey() {
+        guard let bitLockerSecret, session.isVisible else { return }
+        bitLockerSecret.withValue { value in
+            SecureClipboard.copyCredential(value)
+            lastCopiedValue = value
+        }
+        statusNote = SecureClipboard.copyConfirmation()
+    }
+
+    /// Error copy for the key LIST, which is a softer failure than a failed reveal —
+    /// the rest of the screen still works.
+    static func describeBitLockerList(_ error: Error) -> String? {
+        guard let e = error as? CredentialError else { return "Couldn't load BitLocker recovery keys." }
+        switch e {
+        case .notAuthorized:
+            return "Your account can't read BitLocker recovery keys. Cloud Device Administrator, Helpdesk Administrator, Security Reader, or Global Reader can."
+        case .missingIdentifier(let detail):
+            return detail
+        case .consentRequired:
+            return "Your session expired. Sign in again to continue."
+        case .throttled:
+            return "Microsoft Graph is rate limiting this tenant. Try again shortly."
+        case .serviceUnavailable:
+            return "Microsoft isn't responding right now. Try again shortly."
+        default:
+            return "Couldn't load BitLocker recovery keys."
         }
     }
 
@@ -230,6 +398,45 @@ final class DeviceDetailModel: ObservableObject {
 
     var portalURL: URL? { provider.portalURL(for: device.credentialTarget) }
 
+    // MARK: - diagnostics
+
+    /// Records an operation outcome. Typed fields only; the event type cannot carry a
+    /// credential, a device name, or a response body.
+    ///
+    /// TODO before launch: capture Graph's `request-id` header. It is the most useful
+    /// field for a Microsoft support case and the services don't surface it on their
+    /// typed errors yet.
+    static func record(
+        _ op: DiagnosticOperation,
+        _ outcome: DiagnosticOutcome,
+        endpoint: String? = nil,
+        platform: DevicePlatform? = nil,
+        since started: Date
+    ) async {
+        await DiagnosticsRecorder.shared.record(
+            op, outcome,
+            endpointTemplate: endpoint,
+            devicePlatform: platform?.rawValue,
+            durationMs: Int(Date().timeIntervalSince(started) * 1000)
+        )
+    }
+
+    static func outcome(for error: Error) -> DiagnosticOutcome {
+        guard let e = error as? CredentialError else { return .unknown }
+        switch e {
+        case .consentRequired:        return .consentRequired
+        case .notAuthorized:          return .notAuthorized
+        case .notLapsEnabled:         return .notFound
+        case .throttled:              return .throttled
+        case .serviceUnavailable:     return .serviceUnavailable
+        case .transport:              return .transportError
+        case .emptyCredentialSet:     return .notFound
+        case .decodeFailure:          return .decodeFailure
+        case .missingIdentifier:      return .missingIdentifier
+        case .unsupportedOnPlatform:  return .unsupportedOnPlatform
+        }
+    }
+
     // MARK: - error copy (§8)
 
     static func describe(_ error: Error) -> String {
@@ -289,6 +496,7 @@ struct DeviceDetailView: View {
     var body: some View {
         List {
             credentialSection
+            bitLockerSection
             detailsSection
             if let note = model.statusNote {
                 Section { Text(note).font(.footnote).foregroundStyle(.secondary) }
@@ -296,8 +504,11 @@ struct DeviceDetailView: View {
         }
         .navigationTitle(model.device.deviceName)
         .navigationBarTitleDisplayMode(.inline)
+        // Without this the nav bar is transparent and scrolled content reads through it,
+        // which looked like overlapping text at the top of the screen.
+        .toolbarBackground(.visible, for: .navigationBar)
         // Hide the whole screen from the app-switcher snapshot while a password is up.
-        .privacyCover(isProtected: model.revealedSecret != nil)
+        .privacyCover(isProtected: model.revealedSecret != nil || model.revealedBitLockerSecret != nil)
         .onReceive(ticker) { _ in model.tick() }
         .onChange(of: scenePhase) { _, phase in
             // Revoke on anything other than active. The snapshot is taken during the
@@ -309,6 +520,7 @@ struct DeviceDetailView: View {
             privacy.start()
             model.isCaptured = privacy.isCaptured
             await model.loadMetadata()
+            await model.loadBitLockerKeys()
         }
         .onChange(of: privacy.isCaptured) { _, captured in
             model.isCaptured = captured
@@ -427,6 +639,134 @@ struct DeviceDetailView: View {
         }
     }
 
+    // MARK: - BitLocker
+
+    @ViewBuilder
+    private var bitLockerSection: some View {
+        // Only Windows devices have BitLocker. Showing an empty section on a Mac would
+        // just raise a question with no answer.
+        if model.device.platform == .windows {
+            Section {
+                if !model.device.hasEntraDeviceIdentity {
+                    explanation(
+                        "This device isn't joined to Microsoft Entra ID, so no recovery keys are backed up to it.",
+                        icon: "info.circle"
+                    )
+                } else if model.isLoadingKeys {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Loading recovery keys…").font(.footnote).foregroundStyle(.secondary)
+                    }
+                } else if let error = model.bitLockerListError {
+                    explanation(error, icon: "exclamationmark.triangle")
+                } else if model.bitLockerKeys.isEmpty {
+                    explanation(
+                        "No BitLocker recovery keys are backed up for this device. If the disk is encrypted, check that your policy escrows keys to Microsoft Entra ID.",
+                        icon: "info.circle"
+                    )
+                } else {
+                    ForEach(model.bitLockerKeys) { key in
+                        bitLockerRow(key)
+                    }
+                    if model.rotationEnabled {
+                        Button {
+                            Task { await model.rotateBitLockerKeys() }
+                        } label: {
+                            Label("Rotate recovery keys", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(model.isWorking)
+                    }
+                    // A tappable link belongs in the section body, not the footer, where
+                    // it looked orphaned between two sections.
+                    if let portal = model.portalURL {
+                        Link(destination: portal) {
+                            Label("Open this device in Intune", systemImage: "arrow.up.right.square")
+                        }
+                    }
+                }
+            } header: {
+                Text("BitLocker recovery keys")
+            } footer: {
+                bitLockerFooter
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func bitLockerRow(_ key: BitLockerKeyInfo) -> some View {
+        if case .bitLockerKey(let revealedId) = model.revealedItem,
+           revealedId == key.id,
+           let secret = model.revealedBitLockerSecret {
+            RevealedRecoveryKeyCard(
+                secret: secret,
+                info: key,
+                secondsRemaining: model.secondsRemaining,
+                progress: model.progress,
+                onCopy: { model.copyBitLockerKey() },
+                onHide: { model.hideNow() }
+            )
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+        } else {
+            Button {
+                Task { await model.revealBitLockerKey(key) }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: key.volumeType == .operatingSystemVolume
+                          ? "internaldrive.fill" : "externaldrive.fill")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        // Accent, deliberately: a tinted title is how iOS signals an
+                        // action row. The metadata beneath stays secondary so the row
+                        // doesn't become a single block of orange.
+                        Text(key.volumeType.displayName)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Brand.signal)
+                        HStack(spacing: 6) {
+                            // The prefix matches the key identifier BitLocker shows on
+                            // the recovery screen, which is how you tell several keys apart.
+                            Text("ID \(key.shortIdentifier)")
+                                .font(Brand.data(11))
+                            if let created = key.createdDateTime {
+                                Text("· backed up \(relative(created) ?? "")")
+                                    .font(.caption2)
+                            }
+                        }
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "faceid").foregroundStyle(Brand.signal)
+                }
+            }
+            .buttonStyle(.plain)   // stops the tint bleeding onto the metadata line
+            .disabled(model.isWorking || model.isCaptured)
+        }
+    }
+
+    /// The upfront disclosure about what PitLAPS deliberately cannot do.
+    @ViewBuilder
+    private var bitLockerFooter: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if model.device.platform == .windows && model.device.hasEntraDeviceIdentity {
+                Text("Face ID confirms it's you before a key is retrieved. Each retrieval is recorded in your tenant's audit log.")
+            }
+            // Stated plainly and always, not buried. PitLAPS asking for LESS than it
+            // could is a feature worth naming, and an admin should learn the tradeoff
+            // here rather than discovering it at a broken machine.
+            Label {
+                if model.rotationEnabled {
+                    Text("Rotation is **on**. PitLAPS has permission to modify devices in this tenant. Rotation is queued and applies at the device's next Intune check-in.")
+                } else {
+                    Text("PitLAPS can read recovery keys but **can't rotate them**, because rotation needs permission to modify devices in your tenant and this app doesn't ask for that by default. Turn on **Allow BitLocker key rotation** in Settings to grant it, or rotate from the Intune admin center instead.")
+                }
+            } icon: {
+                Image(systemName: model.rotationEnabled ? "lock.open" : "lock.shield")
+            }
+            .font(.footnote)
+        }
+    }
+
     // MARK: - details
 
     private var detailsSection: some View {
@@ -507,6 +847,7 @@ struct DeviceDetailView: View {
 /// property. Text selection is deliberately off: selection would allow a copy that
 /// bypasses the expiring, local-only clipboard path.
 struct RevealedCredentialCard: View {
+    @Environment(\.colorScheme) private var colorScheme
     let secret: SensitiveValue
     let accountName: String?
     let secondsRemaining: Int
@@ -527,8 +868,9 @@ struct RevealedCredentialCard: View {
 
             HStack(spacing: 10) {
                 Button(action: onCopyPassword) {
-                    Label("Copy password", systemImage: "doc.on.doc")
+                    Label("Copy", systemImage: "doc.on.doc")
                         .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                 }
@@ -538,6 +880,7 @@ struct RevealedCredentialCard: View {
                 Button(action: onHide) {
                     Label("Hide", systemImage: "eye.slash")
                         .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                 }
@@ -612,9 +955,114 @@ struct RevealedCredentialCard: View {
     /// The signature element: a pit-timer countdown. Functional first — an admin needs
     /// to know how long they have before it disappears mid-transcription.
     private var countdown: some View {
+        CountdownRing(secondsRemaining: secondsRemaining, progress: progress)
+    }
+}
+
+// MARK: - revealed recovery key card
+
+/// A BitLocker recovery key is 48 digits in eight hyphenated groups — far too long to
+/// read as one line on a phone. It is chunked into two rows of four groups, which is how
+/// people actually read them off a screen while typing into a recovery prompt.
+///
+/// Same guarantees as the password card: rendered inside `withValue` so the plaintext is
+/// never a stored property, and selection disabled so a copy can't bypass the expiring,
+/// local-only clipboard.
+struct RevealedRecoveryKeyCard: View {
+    @Environment(\.colorScheme) private var colorScheme
+    let secret: SensitiveValue
+    let info: BitLockerKeyInfo
+    let secondsRemaining: Int
+    let progress: Double
+    let onCopy: () -> Void
+    let onHide: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("RECOVERY KEY")
+                        .font(Brand.fieldLabel)
+                        .foregroundStyle(Brand.mist)
+                    Text("\(info.volumeType.displayName) · ID \(info.shortIdentifier)")
+                        .font(.caption)
+                        .foregroundStyle(Brand.mist)
+                }
+                Spacer(minLength: 12)
+                CountdownRing(secondsRemaining: secondsRemaining, progress: progress)
+            }
+
+            secret.withValue { value in
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Self.rows(from: value), id: \.self) { row in
+                        Text(row)
+                            .font(Brand.data(17, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .textSelection(.disabled)
+                            .minimumScaleFactor(0.7)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel("BitLocker recovery key")
+            }
+
+            HStack(spacing: 10) {
+                Button(action: onCopy) {
+                    Label("Copy", systemImage: "doc.on.doc")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Brand.signal)
+
+                Button(action: onHide) {
+                    Label("Hide", systemImage: "eye.slash")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                }
+                .buttonStyle(.bordered)
+                .tint(Brand.mist)
+            }
+        }
+        .padding(18)
+        .background(Brand.pitWall)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(Brand.cardBorder(for: colorScheme), lineWidth: 1)
+        }
+        .padding(.vertical, 6)
+    }
+
+    /// Splits a hyphenated key into rows of four groups. Falls back to one row for any
+    /// format that doesn't match, rather than mangling it.
+    static func rows(from key: String, groupsPerRow: Int = 4) -> [String] {
+        let groups = key.split(separator: "-").map(String.init)
+        guard groups.count > groupsPerRow else { return [key] }
+        return stride(from: 0, to: groups.count, by: groupsPerRow).map { start in
+            groups[start..<min(start + groupsPerRow, groups.count)].joined(separator: "-")
+        }
+    }
+}
+
+// MARK: - shared countdown
+
+/// The signature element, shared by both credential cards: a pit-timer countdown.
+///
+/// Functional before decorative — an admin mid-transcription needs to know how long is
+/// left before the value disappears.
+struct CountdownRing: View {
+    let secondsRemaining: Int
+    let progress: Double
+
+    var body: some View {
         ZStack {
-            Circle()
-                .stroke(Brand.mist.opacity(0.25), lineWidth: 3)
+            Circle().stroke(Brand.mist.opacity(0.25), lineWidth: 3)
             Circle()
                 .trim(from: 0, to: max(0.001, 1 - progress))
                 .stroke(Brand.signal, style: StrokeStyle(lineWidth: 3, lineCap: .round))
@@ -626,6 +1074,6 @@ struct RevealedCredentialCard: View {
         }
         .frame(width: 44, height: 44)
         .animation(.linear(duration: 0.5), value: progress)
-        .accessibilityLabel("\(secondsRemaining) seconds until the password hides")
+        .accessibilityLabel("\(secondsRemaining) seconds until this hides")
     }
 }

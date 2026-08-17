@@ -33,6 +33,12 @@ public enum LapsCredentialScopes {
     public static let reveal = "DeviceLocalCredential.Read.All"
     /// BitLocker recovery key metadata (no key values).
     public static let bitLockerKeysBasic = "BitLockerKey.ReadBasic.All"
+    /// Permission to MODIFY devices. Required to rotate a BitLocker recovery key.
+    /// Never requested at sign-in and never requested unless the user explicitly enables
+    /// rotation in Settings — a consent screen that says "modify your devices" is a much
+    /// harder ask than one that says "read device inventory", and most customers don't
+    /// need it. This is the same scope family that permits wipe and retire.
+    public static let deviceWrite = "DeviceManagementManagedDevices.ReadWrite.All"
     /// BitLocker recovery key values. Delegated only — Microsoft does not support
     /// application permissions for retrieving a key, which suits this app exactly.
     /// Requested incrementally at first reveal, never at sign-in.
