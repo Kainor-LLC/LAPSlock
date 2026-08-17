@@ -91,6 +91,32 @@ public struct BitLockerService: BitLockerKeyProviding {
         let secret = SensitiveValue(bytes: [UInt8](keyString.utf8), encoding: .utf8)
         return RevealedRecoveryKey(info: info, secret: secret)
     }
+
+    // MARK: - rotate (write scope, opt-in)
+
+    public let rotateScopes = [LapsCredentialScopes.deviceWrite]
+
+    /// POST /beta/deviceManagement/managedDevices/{id}/rotateBitLockerKeys
+    ///
+    /// Beta API, and it needs a WRITE scope, so it is only reachable when the user has
+    /// explicitly enabled rotation in Settings. Asynchronous by nature: Intune queues the
+    /// action and the device performs it on its next check-in, which may be a while if the
+    /// machine is offline. Callers must report "requested", not "rotated".
+    public func rotateKeys(managedDeviceId: String) async throws {
+        guard !managedDeviceId.isEmpty else {
+            throw CredentialError.missingIdentifier("Missing Intune device identifier.")
+        }
+        let token = try await auth.token(scopes: rotateScopes, allowInteractive: true)
+        var req = URLRequest(url: GraphHTTP.url(
+            version: "beta",
+            path: "/deviceManagement/managedDevices/\(managedDeviceId)/rotateBitLockerKeys"))
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let (_, response) = try await session.data(for: req)
+        try GraphHTTP.validate(response)
+    }
 }
 
 // MARK: - demo
@@ -138,6 +164,14 @@ public struct DemoBitLockerService: BitLockerKeyProviding {
                 deviceId: entraDeviceId
             )
         ]
+    }
+
+    public let rotateScopes: [String] = []
+
+    public func rotateKeys(managedDeviceId: String) async throws {
+        try await Task.sleep(for: latency)
+        // Succeeds silently. Nothing to rotate in demo mode, and faking a state change
+        // would misrepresent what the real action does.
     }
 
     public func reveal(keyId: String, info: BitLockerKeyInfo) async throws -> RevealedRecoveryKey {

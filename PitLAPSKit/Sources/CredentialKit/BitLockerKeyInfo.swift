@@ -126,4 +126,13 @@ public protocol BitLockerKeyProviding: Sendable {
 
     /// Retrieves one key value. Caller MUST have passed the biometric gate first.
     func reveal(keyId: String, info: BitLockerKeyInfo) async throws -> RevealedRecoveryKey
+
+    /// Scope required to rotate. Separate from the read scopes because it grants WRITE
+    /// access to devices, which most customers will not want to consent to.
+    var rotateScopes: [String] { get }
+
+    /// Queues a BitLocker key rotation for a device. Beta API.
+    /// The device applies it on its next Intune check-in, so this returns "requested",
+    /// never "rotated".
+    func rotateKeys(managedDeviceId: String) async throws
 }

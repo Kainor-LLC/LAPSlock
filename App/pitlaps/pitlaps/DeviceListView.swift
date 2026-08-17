@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import CredentialKit
 import InventoryKit
+import DiagnosticsKit
 
 // Build Spec §5 — the device list. First screen after sign-in.
 //
@@ -37,13 +38,16 @@ final class DeviceListModel: ObservableObject {
     func load() async {
         isLoading = true
         errorMessage = nil
+        let started = Date()
         defer { isLoading = false }
         do {
             _ = try await inventory.loadFirstPage()
             devices = try await inventory.cachedDevices()
             hasMore = try await inventory.hasMore()
+            await Self.record(.deviceListFirstPage, .success, since: started)
         } catch {
             errorMessage = Self.describe(error)
+            await Self.record(.deviceListFirstPage, Self.outcome(for: error), since: started)
         }
     }
 
@@ -51,12 +55,49 @@ final class DeviceListModel: ObservableObject {
         guard hasMore, !isLoadingMore else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
+        let started = Date()
         do {
             _ = try await inventory.loadNextPage()
             devices = try await inventory.cachedDevices()
             hasMore = try await inventory.hasMore()
+            await Self.record(.deviceListNextPage, .success, since: started)
         } catch {
             errorMessage = Self.describe(error)
+            await Self.record(.deviceListNextPage, Self.outcome(for: error), since: started)
+        }
+    }
+
+    // MARK: - diagnostics
+
+    /// Records an operation outcome. Typed fields only — no device names, no URLs, no
+    /// response bodies, because DiagnosticEvent cannot carry them.
+    ///
+    /// TODO: Graph's `request-id` header is the single most useful field for a Microsoft
+    /// support case, and it is NOT captured yet — the services don't surface it on their
+    /// typed errors. Threading it through is a small refactor worth doing before launch.
+    static func record(
+        _ op: DiagnosticOperation,
+        _ outcome: DiagnosticOutcome,
+        since started: Date
+    ) async {
+        let ms = Int(Date().timeIntervalSince(started) * 1000)
+        await DiagnosticsRecorder.shared.record(
+            op, outcome,
+            endpointTemplate: DiagnosticEndpoint.managedDevicesList,
+            durationMs: ms
+        )
+    }
+
+    static func outcome(for error: Error) -> DiagnosticOutcome {
+        guard let e = error as? InventoryError else { return .unknown }
+        switch e {
+        case .notAuthorized:      return .notAuthorized
+        case .consentRequired:    return .consentRequired
+        case .throttled:          return .throttled
+        case .serviceUnavailable: return .serviceUnavailable
+        case .transport:          return .transportError
+        case .decodeFailure:      return .decodeFailure
+        case .cancelled:          return .userCancelled
         }
     }
 
@@ -91,9 +132,13 @@ final class DeviceListModel: ObservableObject {
 struct DeviceListView: View {
     @StateObject var model: DeviceListModel
     let isDemo: Bool
+    /// Opens Settings. Injected so the list doesn't need to know how consent is requested.
+    let settingsBuilder: () -> SettingsView
     /// Builds the detail screen for a device. Injected so the list doesn't need to know
     /// how credentials are provided.
     let detailBuilder: (ManagedDeviceSummary) -> DeviceDetailView
+
+    @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
@@ -109,8 +154,23 @@ struct DeviceListView: View {
                 }
             }
             .navigationTitle("Devices")
+            // Opaque nav bar: otherwise list rows scroll visibly behind the title.
+            .toolbarBackground(.visible, for: .navigationBar)
             .searchable(text: $model.query, prompt: "Device, user, or serial")
             .refreshable { await model.load() }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
+            .sheet(isPresented: $showingSettings) {
+                settingsBuilder()
+            }
             .safeAreaInset(edge: .top) {
                 if isDemo { DemoBanner() }
             }

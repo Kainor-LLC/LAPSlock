@@ -205,9 +205,7 @@ public actor DiagnosticsRecorder {
             lines.append("Tenant: not included")
         }
         lines.append("")
-        lines.append("This report contains no passwords, usernames, device names, or")
-        lines.append("response data. It lists operation outcomes and Microsoft Graph")
-        lines.append("request identifiers only.")
+        lines.append("This report contains no passwords, recovery keys, usernames, device names, or response data. It lists operation outcomes and Microsoft Graph request identifiers only.")
         lines.append("")
         lines.append("Recent events (newest last, \(events.count) of max \(capacity)):")
         if events.isEmpty {
