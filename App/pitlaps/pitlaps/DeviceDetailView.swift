@@ -33,6 +33,9 @@ final class DeviceDetailModel: ObservableObject {
     @Published var statusNote: String?
     @Published var isWorking = false
     @Published var isCaptured = false
+    /// Account name for the CURRENT reveal only. Cleared on hide, expiry, and
+    /// revocation, alongside the password.
+    @Published var revealedAccountName: String?
 
     let device: ManagedDeviceSummary
     let capabilities: CredentialCapabilities
@@ -65,6 +68,12 @@ final class DeviceDetailModel: ObservableObject {
             guard let self else { return }
             self.secret?.wipe()
             self.secret = nil
+            // The account name hides with the password. It is not secret in the way a
+            // password is, but it IS reconnaissance: knowing the LAPS account name tells
+            // an onlooker exactly which account to attack. It is also half the
+            // credential, so leaving it on screen after Hide undercuts the point of
+            // hiding. Both disappear together.
+            self.revealedAccountName = nil
             if let copied = self.lastCopiedValue {
                 SecureClipboard.clearIfHolding(copied)
                 self.lastCopiedValue = nil
@@ -140,9 +149,12 @@ final class DeviceDetailModel: ObservableObject {
         do {
             let credential = try await provider.reveal(for: device.credentialTarget)
             secret = credential.secret
+            revealedAccountName = credential.accountName
             if metadata == nil {
+                // Note: accountName is deliberately NOT stored in metadata, which
+                // persists past the reveal window. It lives only in revealedAccountName.
                 metadata = CredentialMetadata(
-                    accountName: credential.accountName,
+                    accountName: nil,
                     lastBackupDateTime: credential.backupDateTime,
                     lastRotationDateTime: credential.backupDateTime
                 )
@@ -318,7 +330,7 @@ struct DeviceDetailView: View {
             if let secret = model.revealedSecret {
                 RevealedCredentialCard(
                     secret: secret,
-                    accountName: model.metadata?.accountName,
+                    accountName: model.revealedAccountName,
                     secondsRemaining: model.secondsRemaining,
                     progress: model.progress,
                     onCopyPassword: { model.copyPassword() },
@@ -425,7 +437,6 @@ struct DeviceDetailView: View {
             DataRow(label: "Primary user", value: model.device.userPrincipalName)
             DataRow(label: "Model", value: model.device.model, monospaced: false)
             DataRow(label: "Serial", value: model.device.serialNumber)
-            DataRow(label: "LAPS account", value: model.metadata?.accountName)
             DataRow(label: "Compliance", value: model.device.complianceState?.capitalized, monospaced: false)
             DataRow(label: "Last check-in", value: relative(model.device.lastSyncDateTime), monospaced: false)
             DataRow(label: "Last rotated", value: relative(model.metadata?.lastRotationDateTime), monospaced: false)
