@@ -23,6 +23,7 @@ fi
 FORBIDDEN=(
   "LicensingKit"       # backend/licensing — could carry a secret to a server
   "AuthKitMSAL"        # MSAL must not enter the credential link graph
+  "DiagnosticsKit"     # diagnostics are recorded by the app layer, never from inside
   "MSAL"               # ditto, direct
   "os.log"             # logging
   "OSLog"

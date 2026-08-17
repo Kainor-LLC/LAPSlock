@@ -40,7 +40,8 @@ let package = Package(
         .library(name: "AuthKitMSAL", targets: ["AuthKitMSAL"]),
         .library(name: "InventoryKit", targets: ["InventoryKit"]),
         .library(name: "CredentialKit", targets: ["CredentialKit"]),
-        .library(name: "PlatformSecurity", targets: ["PlatformSecurity"])
+        .library(name: "PlatformSecurity", targets: ["PlatformSecurity"]),
+        .library(name: "DiagnosticsKit", targets: ["DiagnosticsKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -70,10 +71,16 @@ let package = Package(
 
         .target(name: "PlatformSecurity"),
 
+        // Support diagnostics. Foundation only, and CredentialKit must never import it:
+        // diagnostics are recorded by the app layer from typed errors, never from inside
+        // the credential path. The isolation guard enforces this.
+        .target(name: "DiagnosticsKit"),
+
         // Runs with no MSAL and no network. Works on My Mac or a simulator.
         .testTarget(name: "CredentialKitTests", dependencies: ["CredentialKit", "AuthKit"]),
         .testTarget(name: "InventoryKitTests", dependencies: ["InventoryKit", "CredentialKit", "AuthKit"]),
         .testTarget(name: "PlatformSecurityTests", dependencies: ["PlatformSecurity"]),
-        .testTarget(name: "AuthKitTests", dependencies: ["AuthKit"])
+        .testTarget(name: "AuthKitTests", dependencies: ["AuthKit"]),
+        .testTarget(name: "DiagnosticsKitTests", dependencies: ["DiagnosticsKit"])
     ]
 )

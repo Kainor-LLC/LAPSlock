@@ -66,7 +66,8 @@ hr
 
 # --- Employer / customer tenant identifiers -------------------------------------
 # Publishing a customer's (or employer's) internal identifiers under the LLC's name
-# is both a trust problem and, with ALFP as a prospective customer, a business one.
+# is both a trust problem and, when that org is also a prospective customer, a
+# business one.
 scan "Employer domain / names" \
   'american[-_ ]?life' \
   '\bALFP\b'

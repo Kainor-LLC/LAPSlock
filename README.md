@@ -4,7 +4,13 @@ Native iOS client for viewing Windows and macOS LAPS local administrator passwor
 managed by Microsoft Entra ID and Intune. Delegated auth only. No backend in the
 credential path — passwords go Microsoft Graph → TLS → device and nowhere else.
 
-**PitLAPS™ is a trademark of Kainor LLC.** Licensed under Apache-2.0 (see LICENSE).
+**PitLAPS™ is a trademark of Kainor LLC.**
+
+**Source-available, not open source.** The code is published so that security-conscious
+administrators can read and verify what an app handling local administrator passwords
+actually does. It is licensed under PolyForm Strict 1.0.0 plus an additional permission
+that expressly allows commercial organizations to copy and read it for security review.
+Redistribution, modification, and publishing builds are not permitted. See `LICENSE`.
 
 > ⚠️ This is the security core (foundation) of the app, built first and on purpose.
 > There is no runnable UI yet. What's here is the tested, isolated engine everything
