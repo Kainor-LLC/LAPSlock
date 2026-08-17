@@ -71,6 +71,12 @@ AuthKey_*.p8
 .env
 .env.*
 
+## Editor and tooling backups. These get created by hand during fixes and are never
+## meant to be committed.
+*.bak
+*.orig
+*.rej
+
 ## Ad-hoc scratch files that tend to accumulate real tenant data
 scratch/
 *-scratch.*
