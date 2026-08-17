@@ -31,9 +31,17 @@ public enum LapsCredentialScopes {
     public static let metadataBasic = "DeviceLocalCredential.ReadBasic.All"
     /// LAPS password reveal. Requested incrementally at first reveal, never at sign-in (§4).
     public static let reveal = "DeviceLocalCredential.Read.All"
+    /// BitLocker recovery key metadata (no key values).
+    public static let bitLockerKeysBasic = "BitLockerKey.ReadBasic.All"
+    /// BitLocker recovery key values. Delegated only — Microsoft does not support
+    /// application permissions for retrieving a key, which suits this app exactly.
+    /// Requested incrementally at first reveal, never at sign-in.
+    public static let bitLockerKeys = "BitLockerKey.Read.All"
 
-    /// Granted at sign-in. Deliberately EXCLUDES `reveal`.
-    public static let signInBaseline = [intuneDevices, entraDevices, metadataBasic]
+    /// Granted at sign-in. Deliberately EXCLUDES both reveal scopes — a first consent
+    /// screen should read "reads device inventory", not "reads every password and disk
+    /// encryption key in your tenant".
+    public static let signInBaseline = [intuneDevices, entraDevices, metadataBasic, bitLockerKeysBasic]
 }
 
 public enum DevicePlatform: String, Sendable, CaseIterable {
