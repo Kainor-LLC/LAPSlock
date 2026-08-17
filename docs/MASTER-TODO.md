@@ -108,6 +108,35 @@ macOS password retrieval.
 - ⬜ Entitlement check: call `/entitlement`, cache signed JWT, 14–30 day offline grace
 - ⬜ **App Attest gating** on `/entitlement` — the real anti-sideload teeth
 
+## App icon
+
+- ✅ **Shipping icon** — top-down single-seater with a keyhole cockpit, navy field.
+  Source geometry is checked in at `design/icons/render-icon.py` rather than kept in a
+  design tool, so the icon is reproducible and both colour variants share one geometry
+  function and cannot drift apart.
+- ⬜ **Alternate icon picker (orange field)** — the orange asset is rendered and committed,
+  but not wired up. Implementation is native and small:
+  1. Add a second icon set `AppIconOrange` to `Assets.xcassets`
+  2. Build settings: `ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = AppIconOrange` and
+     `ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES`
+  3. Settings row calling `UIApplication.shared.setAlternateIconName("AppIconOrange")`
+
+  Roughly 30-45 minutes including the Xcode settings. **Two things to know before
+  building it:** iOS shows an unsuppressable system alert on every icon change ("You have
+  changed the icon for PitLAPS"), so it is two taps for a preference set once; and icon
+  variants cannot appear in App Store screenshots, so nobody discovers the feature until
+  they open Settings.
+
+  **Priority: after the entitlement backend.** It is a delight feature for an audience
+  that will open Settings once to enable BitLocker rotation and rarely again.
+
+  Observed in testing and worth recording: the orange field is measurably more legible on
+  BOTH light and dark wallpapers. Navy ships as a deliberate preference, not because it
+  tested better.
+
+- ⬜ iOS 18 dark and tinted icon variants. Currently derived automatically by iOS, which
+  is acceptable. Hand-authored versions would give more control.
+
 ## Loose ends from the build spec
 
 - 🟡 **Dark mode audit** — semantic colors adapt, but the reveal card's hardcoded navy
