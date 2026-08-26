@@ -18,5 +18,7 @@
 		<string>msauthv2</string>
 		<string>msauthv3</string>
 	</array>
+	<key>NSFaceIDUsageDescription</key>
+	<string>PitLAPS uses Face ID to confirm your identity before showing a local administrator password or BitLocker recovery key.</string>
 </dict>
 </plist>
