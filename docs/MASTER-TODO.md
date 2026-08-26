@@ -43,7 +43,14 @@ didn't happen. README and site copy now say "source-available," not "open source
 Remaining: 🔵 attorney review of the additional-permission wording before it appears in an
 enterprise agreement or an enforcement action.
 
-## 2. Don't move the website to Cloudflare Pages right now
+## 2. Website hosting: GitHub Pages now, Cloudflare when commerce lands
+
+GitHub's Pages terms prohibit using it to run an online business or a site **primarily
+directed at facilitating commercial transactions**. A marketing-and-docs site for a paid
+app is ordinary Pages usage; putting Stripe checkout on it is what crosses the line.
+
+**So the move is a dependency of the Stripe work, not a standalone task.** It is listed
+under Payments below. Do not move it before then, and specifically not now:
 
 The plan recommends Cloudflare Pages for the marketing site. Reasonable in the abstract —
 but kainor.com is currently on GitHub Pages, working, with HTTPS, **and Apple is actively
@@ -85,7 +92,7 @@ macOS password retrieval.
 
 ## Next up — code
 
-- ⬜ **BitLocker recovery key read** ← the big win from competitor research
+- ✅ **BitLocker recovery key read** — built and tested (service + UI)
   - `GET /v1.0/informationProtection/bitlocker/recoveryKeys?$filter=deviceId eq '{entraDeviceId}'`
   - `GET /v1.0/informationProtection/bitlocker/recoveryKeys/{id}?$select=key`
   - Scope: `BitLockerKey.Read.All` (delegated; **application not supported** — matches our model)
@@ -95,9 +102,50 @@ macOS password retrieval.
   - Uses the Entra device ID we already carry. Same screen, same gate, same reveal window.
   - Competitors' users are explicitly asking for this; neither competitor covers Entra/Intune.
 
-- ⬜ **Settings screen** (see design note below)
-- ⬜ **BitLocker rotate** — behind the settings toggle, requests
-  `DeviceManagementManagedDevices.ReadWrite.All` on demand
+- ✅ **Settings screen** — appearance, BitLocker rotation, macOS status, diagnostics, about
+- ✅ **BitLocker rotate** — behind the settings toggle, requests
+  `DeviceManagementManagedDevices.ReadWrite.All` at toggle time
+- ⬜ **PIM role activation from the app** ← closes the most annoying gap in the workflow
+
+  The scenario: an admin needs a LAPS password, but their Cloud Device Administrator role
+  is PIM-*eligible*, not active. Today that means leaving the phone, opening the portal on
+  a desktop, activating, and coming back. Doing it in-app closes the loop, and it pairs
+  naturally with the `notAuthorized` error we already surface — "your role is not active,
+  activate it here" instead of "you lack permission".
+
+  **API (verified, v1.0 GA):**
+  - List what the user is eligible for:
+    `GET /v1.0/roleManagement/directory/roleEligibilitySchedules?$filter=principalId eq '{id}'`
+    Scope: `RoleEligibilitySchedule.Read.Directory`
+  - Activate:
+    `POST /v1.0/roleManagement/directory/roleAssignmentScheduleRequests`
+    with `action: selfActivate`, `principalId`, `roleDefinitionId`, `directoryScopeId`,
+    `justification`, `scheduleInfo` (e.g. `expiration.duration: PT5H`), optional `ticketInfo`.
+    Scope: `RoleAssignmentSchedule.ReadWrite.Directory` (least privileged of the options)
+
+  **Three things to design around, in order of how much they will hurt:**
+
+  1. **MFA must be satisfied in-session.** Microsoft requires the caller to have been
+     challenged for MFA in the current session for self-service operations. In practice
+     Graph may return a claims challenge that MSAL has to handle and re-authenticate
+     against. That is real work and it is the main reason this is not a quick feature.
+     It is also correct behaviour: it means the app cannot quietly escalate privilege.
+  2. **Approval workflows.** If the tenant requires approval for that role, `selfActivate`
+     creates a *pending* request rather than granting. The UI must show "requested, waiting
+     for approval" and never imply the role is active.
+  3. **Consent optics.** `RoleAssignmentSchedule.ReadWrite.Directory` lets the app request
+     role activation. That is a heavier ask than reading passwords and belongs behind an
+     opt-in Settings toggle with incremental consent, exactly like BitLocker rotation.
+     Customers who leave it off never see it on their consent screen.
+
+  Mild uncertainty worth checking during implementation: the docs list Privileged Role
+  Administrator for *write* operations on this endpoint, but that applies to managing other
+  people's assignments. Self-activating your own existing eligibility should not require
+  it, or PIM would be self-defeating. Verify against a real tenant before promising it.
+
+  **Priority: after real-tenant verification and the entitlement backend.** High value, but
+  the MFA claims-challenge work makes it a genuine project rather than an afternoon.
+
 - ⬜ Windows LAPS password history (`credentials` returns multiple; we take newest.
   History matters when a device hasn't checked in and still has an older password)
 - ⬜ Recents / favorites
@@ -213,15 +261,15 @@ built and ungated.
 - ⬜ MSP Pro IAP (per tech): $49.99/yr
 - ⬜ Enterprise direct (tenant-keyed): $299/yr ≤500 devices · $599/yr unlimited
 - ⬜ MSP org direct: $999/yr
-- 🔵 Enroll in Apple Small Business Program (15% instead of 30%)
+- ✅ Apple Small Business Program — submitted (15% commission)
 
 ---
 
 # Backend (Azure)
 
-- ⬜ New Azure tenant + subscription owned by the LLC — **note:** you already have an Azure
-  subscription attached to the Kainor tenant from last night's signup. Verify whether that
-  one suffices before creating another; a second tenant means a second identity to manage.
+- ⬜ Azure subscription for the backend. You already have one attached to the Kainor
+  tenant; verify it suffices before creating another, since a second tenant means a
+  second identity to manage.
 - ⬜ Resource group, storage, licenses table
 - ⬜ Function app (Consumption): `/entitlement` — tid in → signed JWT out
 - ⬜ App Attest verification on `/entitlement`
@@ -234,7 +282,11 @@ built and ungated.
 
 # Payments
 
-- 🔵 Business bank account (in progress)
+- ✅ Business bank account (LLC, linked to Apple)
+- ⬜ **Move the marketing site to Cloudflare Pages** — required before adding checkout,
+  because GitHub Pages prohibits sites primarily facilitating commercial transactions.
+  Small lift: connect the repo, point DNS, done. Blocked until Apple finishes reviewing
+  kainor.com, since a DNS change mid-review risks another rejection.
 - ⬜ Stripe account on the LLC + EIN + bank
 - ⬜ Payment Link with a domain/tenant-ID custom field
 - ⬜ Stripe Invoicing (ACH, PO numbers, net-30) for enterprise/MSP
@@ -248,16 +300,17 @@ built and ungated.
 
 - ✅ LLC (Kansas, Business ID 10077333)
 - ✅ EIN
-- 🔵 Business bank account (in progress)
-- 🔵 **Apple Developer enrollment** — pending; identity docs submitted
-- 🔵 **Partner Center verification** — pending; Kansas formation doc submitted
+- ✅ Business bank account (LLC, linked to Apple)
+- ✅ **Apple Developer Program** — enrolled as Kainor LLC, $99 paid. Team ID 72C7PQBP52.
+- ✅ **Partner Center verification** — Authorized
 - 🔵 **Employer/design-partner IP agreement in writing** ← still the highest-value item
   on this list. A prospective customer who is also an employer needs the ownership
   question documented before money moves.
-- ⬜ Publisher verification (needs the MPN ID) → `docs/.well-known/microsoft-identity-association.json`
-- ⬜ **Privacy + terms pages at kainor.com** — the app registration already points at
-  `/privacy` and `/terms`, and both are currently 404s. Apple requires them.
-- ⬜ "Not affiliated with Microsoft" disclaimer everywhere
+- ✅ **Publisher verification** — MPN 7147713 associated, "Kainor LLC" shows with the verified badge
+- ✅ **Privacy + terms pages** — live at kainor.com/privacy/ and /terms/, linked from the
+  app registration, the site nav, and the in-app Settings screen
+- 🟡 "Not affiliated with Microsoft" disclaimer — in Settings and both legal pages;
+  still needed on the marketing site
 - ⬜ One-page security/data-handling doc
 - ⬜ Enterprise license agreement draft (attorney pass before the first real deal)
 - ⬜ W-9 PDF ready
@@ -272,12 +325,12 @@ built and ungated.
 # App Store & launch
 
 - ⬜ Free app + IAP subscription products in App Store Connect
-- ⬜ Paid Apps agreement (bank + EIN/W-9)
+- ✅ Paid Apps agreement — accepted, bank and tax details in place
 - ⬜ Org purchasing on the website only, never linked in-app (verify current 3.1.3 text)
 - ⬜ 3.1.3(c) Enterprise Services documentation
 - ⬜ Listing copy leads with security posture
 - ⬜ Privacy manifest + "Data Not Collected" nutrition label
-- ⬜ SECURITY.md with a disclosure policy
+- ✅ SECURITY.md with a disclosure policy and the five testable design claims
 - ⬜ Tag a source release per App Store version
 - ⬜ **Network transparency doc** — the app talks to exactly three hosts
   (login.microsoftonline.com, graph.microsoft.com, your entitlement domain). Any admin can
@@ -306,11 +359,75 @@ precedent, and BitLocker read is the most-requested adjacent feature in the cate
 
 ---
 
-# Suggested order of work
+# What to work on next
 
-1. ✅ ~~License decision~~ — done
-2. **BitLocker read** — biggest feature-per-hour in the project
-3. **Settings screen** with your three toggles + dark mode audit
-4. Privacy/terms pages (Apple needs them, and they're 404s today)
-5. Whatever verification clears first (Apple → TestFlight; Microsoft → publisher badge)
-6. Entitlement backend + App Attest + IAP
+Reprioritized with Apple pending, no dev tenant available, and the Microsoft side finished.
+
+## Tier 1 — ✅ DONE
+
+These are hours, not days, and two of them are things I said mattered and then did not do.
+
+1. ✅ **State-restoration disable on credential screens.** Was a real §6 requirement. Without it, iOS can serialize a view containing a revealed credential to
+   disk during state preservation. This is the only open item that is an actual security
+   hole rather than a polish issue, so it goes first.
+2. ✅ **Graph `request-id` in diagnostics.** I called it the single most useful
+   field for a Microsoft support case and then shipped a report without it, because the
+   services do not surface it on their typed errors. Small refactor, and it is the
+   difference between a useful support report and a vague one.
+3. ✅ **Network-offline detection.** Currently folds into a generic transport error, so
+   "you are on a captive portal" reads as "something went wrong". §8 asks for it
+   specifically and admins hit it constantly in server rooms.
+4. ✅ **Copy tenant ID button.** Ten minutes, and it is the first step of the enterprise
+   purchase flow. Cheap to do before the flow exists.
+
+## Tier 2 — the biggest unknown risk in the project
+
+5. **Verify against a real tenant.** Every reveal you have ever seen was demo data. The
+   Windows LAPS decode path (base64, UTF-16LE detection, BOM stripping) has never touched
+   a real password from Graph, and that is exactly the kind of code that works on
+   handwritten test vectors and fails on real input. Now that the IP question is settled,
+   consenting in the design-partner tenant and revealing one real password is the single
+   most informative thing left to do. If something is broken, everything above is built on
+   sand — better to know now.
+
+## Tier 3 — genuine product value, no tenant required
+
+6. **Windows LAPS password history.** `credentials` returns multiple entries and we take
+   the newest. History matters when a device has not checked in and is still running an
+   older password — a real support scenario where the current app gives the wrong answer.
+7. **Recents / favourites.** The daily-use improvement with the highest ratio of value to
+   effort. An admin looking after the same twenty machines should not search every time.
+8. **Biometric app lock**, distinct from the per-reveal gate.
+
+## Tier 4 — the revenue path (largest remaining chunk)
+
+Partially unblocked: the backend does not need Apple, but IAP and App Attest do.
+
+9. Azure Function `/entitlement`, licences table, private repo for the signing keys
+10. Stripe (waiting on the business bank account)
+11. App Attest gating — needs a real device and the Apple account, so blocked
+12. IAP products and free-tier gating — needs App Store Connect, so blocked
+
+## Tier 5 — cheap trust and legal work, do while waiting
+
+13. **Network transparency doc.** Three hosts, verifiable with a proxy in ten minutes.
+    Already identified as the strongest trust artifact and it costs an afternoon.
+14. **Trademark filing.** USPTO Class 9, intent-to-use, ~$350. Actionable today, and the
+    icon can be cleared at the same time (a design-mark search, separate from the wordmark
+    search already done).
+15. Attorney pass on the licence additional-permission wording and the liability cap.
+16. "Not affiliated with Microsoft" on the marketing site.
+
+## Nothing is blocked any more
+
+The Apple and Microsoft queues are both cleared. Every remaining item is work, not waiting.
+
+Deliberately deferred, not blocked:
+- Alternate icon picker, iOS 18 icon variants — behind the entitlement work
+- PIM activation — behind real-tenant verification and the entitlement backend
+
+## Recommended next session
+
+Tier 1 in one pass, then Tier 2. Tier 1 closes a genuine security gap and two things I
+flagged and left undone; Tier 2 tells you whether the core actually works. Doing Tier 3
+or 4 before Tier 2 means building more on unverified foundations.
