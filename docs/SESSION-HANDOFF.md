@@ -31,8 +31,35 @@ Also verified on device: Face ID gate fires before the Graph call (so an abandon
 generates no audit event in the customer's tenant), and app-switcher redaction genuinely
 hides a revealed credential in the switcher card.
 
-**Next action:** attach build 3 to the internal TestFlight group if not already done, then
-pick up the backlog. See "What is next" below.
+**Next action:** the entitlement backend. Azure infrastructure is provisioned (see below);
+the next piece is the API contract and the Function code.
+
+## Entitlement backend — provisioned 2026-08-27
+
+Subscription **Kainor-PitLAPS** `024f01b2-f4b2-459f-84b6-cf7ced419758`, pay-as-you-go,
+spending limit OFF, Kainor tenant, `centralus`. Holds promotional credit; when it runs out
+billing simply starts rather than resources being deprovisioned.
+
+Two other empty subscriptions exist on the same tenant (`19dd2b0e` free trial, `797ffeb5`
+named "PitLAPS"). Neither is used. The one named "PitLAPS" is a trap — the live one is
+**Kainor-PitLAPS**.
+
+| Resource | Name |
+|---|---|
+| Resource group | `kainor-pitlaps-prod-rg` |
+| Storage | `kainorpitlapsprodst` (no hyphens allowed in storage names) |
+| Key Vault | `kainor-pitlaps-prod-kv` (RBAC, purge protection ON, 90-day retention) |
+| Function app | `kainor-pitlaps-prod-func` (Flex Consumption, .NET 10 isolated) |
+| Managed identity | `90406c76-87bd-4e22-8a5a-636292cd98d4`, Key Vault Crypto User on the vault only |
+
+Still to do: ES256 key in the vault, licences table, API contract, Function code. Full
+detail and the reasoning behind each decision is in `MASTER-TODO.md` under "Backend
+(Azure)", including why App Attest is deliberately phase 2.
+
+**The load-bearing design decision:** the entitlement request carries a tenant ID and
+nothing else. No Graph token, no user identity, no device data. The product's positioning
+is that no vendor server sits in the credential path, and an admin with a proxy must be able
+to confirm that in ten minutes.
 
 ## Build numbers
 
@@ -191,9 +218,9 @@ Others:
 
 ## What is next
 
-1. **Entitlement backend** — Azure Function `/entitlement`, licences table, App Attest.
-   The whole revenue path, and the largest remaining chunk. Was deliberately queued behind
-   real-tenant verification; that gate is now passed and nothing blocks it.
+1. **Entitlement backend — in progress.** Azure infrastructure is provisioned. Next is the
+   API contract (published publicly, implementation private), then the ES256 key, the
+   licences table, and the Function code. This is the whole revenue path.
 2. **Auth diagnostics in the support report** — MSAL/AAD error code, correlation ID, broker
    path flag, allowlisted so no authorization code can ride along in an error description.
    Promoted from nice-to-have to necessary by the broker bug: a customer hitting the same
