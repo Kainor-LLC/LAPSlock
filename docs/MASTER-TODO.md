@@ -79,6 +79,14 @@ macOS password retrieval.
   `DeviceLocalCredential.ReadBasic.All`, `DeviceLocalCredential.Read.All`
   (the plan listed only two; four are registered and consented)
 - ✅ Device search (name, user, serial, model) with prefix/exact ranking
+- ✅ **Search widened 2026-08-27** — added `userDisplayName`, `emailAddress`, and
+  `managedDeviceName` to both `$select` and the matcher. Admins working a ticket have a
+  person's name far more often than a device name. `rank()` is now field-aware: match
+  strength (exact / prefix / substring) is evaluated across all fields, with device name
+  winning ties, so an exact hit on a user's name no longer sorts below an incidental
+  substring in a model string. Also normalised empty strings to nil at the parse boundary,
+  because Graph returns `""` for user fields on shared devices and an empty string is a
+  substring of every query.
 - ✅ Windows password reveal, expiry/rotation date display
 - ✅ Copy to clipboard with auto-clear — **built, currently free**, see pricing conflict below
 - ✅ Face ID gate before every reveal
@@ -89,6 +97,53 @@ macOS password retrieval.
 - ✅ Consent-onboarding explainer + shareable admin approval link
 - ✅ Windows release names ("Windows 11 24H2" + build)
 - ✅ Support diagnostics that structurally cannot capture credentials
+- ✅ **TestFlight** — first build uploaded 2026-08-26. Build 1 (1.0) archived, validated,
+  uploaded. **Build 3 uploaded 2026-08-27 and is the first build where sign-in actually
+  works on a device with Microsoft Authenticator installed** — builds 1 and 2 are both
+  broken in the broker path. Internal testing only; no Beta App Review needed. Export
+  compliance pre-answered via `ITSAppUsesNonExemptEncryption`.
+- ✅ **Search latency fixed 2026-08-27.** The widened search shipped a performance
+  regression, found in use on device. Three compounding causes: `range(of:options:)` with
+  `.diacriticInsensitive` performs full Unicode folding on every call; `rank()` was called
+  from inside the sort comparator, so it evaluated O(n log n) times rather than once per
+  device; and `visibleDevices` was a computed property that `deviceList` read twice per
+  body evaluation, so every keystroke ran the whole filter and sort at least twice. Fixed
+  by folding each field once and comparing with plain string ops, scoring in a single pass,
+  and storing `visibleDevices` behind a 180ms debounce. Note for future work: Release
+  configuration made no perceptible difference, which is what pointed at redundant passes
+  rather than at raw compute.
+- ✅ **Four device-only bugs found and fixed 2026-08-26/27**, none reachable in the
+  simulator. The first two are described below; the third (privacy cover flash) is still
+  open and has its own entry; the fourth was the search latency regression above.
+  1. **Demo fallback in the live path.** `AppRootView`'s `.live` branch coalesced nil
+     providers into `DemoLapsProvider`/`DemoBitLockerService` while still passing
+     `isDemo: false`, so a fake credential could have rendered with no banner. Root cause
+     was `detailBuilder: (ManagedDeviceSummary) -> DeviceDetailView` not being a
+     `@ViewBuilder`, so the closure could not branch on nil and the author reached for the
+     nearest conforming type. Fixed by hoisting the check into a `LiveSession` value whose
+     accessors are non-optional, so there is no optional left to coalesce. Nil now routes
+     to the existing recover-to-signed-out path.
+  2. **Broker redirect never handled.** With Microsoft Authenticator installed, MSAL
+     delegates auth to it and the result returns as a URL open on
+     `msauth.com.kainor.pitlaps://auth`. Nothing was listening, so the interactive request
+     never completed and MSAL reported "application did not receive response from broker"
+     (MSALErrorDomain -50000), which surfaced as the generic sign-in error. Fixed with
+     `MSALRedirect.handle` in AuthKitMSAL plus `.onOpenURL` on the root view. NOT the app
+     delegate: this app is scene-based, SwiftUI installs its own scene delegate, and iOS
+     therefore routes URL opens to `scene(_:openURLContexts:)` and never calls
+     `application(_:open:options:)`. `sourceApplication` is nil on the SwiftUI path, which
+     is fine because MSAL validates broker responses with a nonce (V2-broker-nonce).
+     The URL scheme, `msauthv2`/`msauthv3` query schemes, keychain access group, and the
+     Entra iOS/macOS redirect registration were all already correct.
+  3. **MSAL interactive calls ran off the main thread.** `MSALAuthManager` is an actor, so
+     `application.acquireToken` was invoked from the cooperative thread pool. MSAL
+     dereferences the presenting view controller INSIDE `acquireToken`, not only while
+     building `MSALWebviewParameters`, so it read `UIViewController.view` and
+     `UIView.window` off-main. Main Thread Checker flagged it. Building the parameters on
+     the main actor, which the code already did, is necessary but not sufficient. Fixed by
+     dispatching `acquireToken` and `signout` to the main thread. Note this was a real
+     defect but was NOT the cause of the sign-in failure; the two were conflated during
+     diagnosis.
 
 ## Next up — code
 
@@ -148,6 +203,109 @@ macOS password retrieval.
 
 - ⬜ Windows LAPS password history (`credentials` returns multiple; we take newest.
   History matters when a device hasn't checked in and still has an older password)
+- ⬜ **Auth diagnostics in the support report** ← proven necessary on 2026-08-26
+
+  `signIn()` collapses every failure that isn't consent, cancellation, or tenant mismatch
+  into one message: "Sign-in didn't complete. Check your connection and try again." Correct
+  for users, who should never see MSAL internals. Useless for support, and it cost real
+  time on the first device build: a missing broker redirect handler presented as a
+  connection problem, and the only way to identify it was a cabled Mac and Console.app.
+  A customer cannot do that, so without this the support path for the single most likely
+  failure category is "reinstall and hope."
+
+  Broker failures will be the most common support category this app has. Every customer
+  with Microsoft Authenticator installed takes that path, and it depends on four things
+  being correct on a device you cannot inspect.
+
+  **Fields to capture** (all non-secret, all from `AuthError`/`NSError` userInfo):
+  - MSAL error domain and code, plus the internal error code where present
+  - The AAD/STS error code (`AADSTS…`). The single most useful field for a support case
+    or a web search, and the one that names the actual cause.
+  - OAuth error and error description (`invalid_grant`, `interaction_required`, etc.)
+  - Correlation ID — what Microsoft support asks for first
+  - HTTP status where the failure came from a token endpoint
+  - **Whether the broker path was taken**, and whether a redirect was ever received.
+    A single boolean would have identified the 2026-08-26 bug immediately.
+  - Broker app version if MSAL exposes it
+  - The redirect URI the app actually used, so a mismatch is visible without the portal
+
+  **Design constraint, and this one matters:** allowlist specific userInfo keys. Do not
+  serialise the whole dictionary. MSAL error descriptions can contain a full redirect URL,
+  and a redirect URL can carry an authorization code — credential-shaped, and exactly the
+  thing DiagnosticsKit's types exist to make unrepresentable. An allowlist keeps that
+  guarantee structural rather than a matter of care. `pre-push-scan.sh` catches
+  credential-shaped strings in the tree, not at runtime, so it will not save us here.
+
+  Pairs with the Graph `request-id` work already done: that covers Graph call failures,
+  this covers the auth failures that happen before any Graph call. Same report, same
+  Settings screen, same no-credentials guarantee.
+
+- ⬜ **Reveal shows a privacy placeholder first** ← observed on device 2026-08-27
+
+  Tapping reveal on either a LAPS password or a BitLocker key shows the "item is hidden"
+  privacy screen for roughly two seconds, then replaces it with the credential. Both
+  credential types, so it is in the shared reveal path rather than either provider.
+
+  Cause is confirmed, not guessed. `PrivacyCoverModifier.shouldCover` is
+  `isProtected && scenePhase != .active`, and the reveal order (§6, deliberate) is:
+  clear existing secret → biometric gate (Face ID takes the scene to `.inactive`) →
+  Graph call → publish secret (`isProtected` flips true while the scene is STILL
+  `.inactive`) → scene returns to `.active` and the cover finally clears. The cover is
+  correct about its own condition; the condition is asking the wrong question.
+
+  Not a security hole (it errs toward hiding), but it works against what the reveal window
+  is for. An admin standing at a machine reads a hidden-state screen as failure and taps
+  again, and every extra tap is another audit event in the customer's tenant.
+
+  **Two fixes were tried on device and BOTH FAILED, in the dangerous direction** (the
+  credential appeared in the app-switcher card). Details are in the design note now sitting
+  above `PrivacyCoverModifier`. In short: qualifying the `.inactive` case on "was a
+  credential on screen while active" is right in principle, but every way of recording that
+  inside the modifier was either one render stale (`@State` written from
+  `.onChange(of: scenePhase)`, since change handlers run after the render iOS photographs)
+  or otherwise failed the switcher test. Reverted to the original condition.
+
+  **Do not attempt a third fix inside ScreenPrivacy.** The right change is in
+  `DeviceDetailModel`: hold the fetched secret and publish it only once `scenePhase` is
+  `.active`. Then `isProtected` is simply false during the inactive tail, the cover
+  condition needs no qualification at all, and there is no render-timing hazard to get
+  wrong. It also stops the 60-second reveal window from starting while the credential is
+  still behind a cover, which is a second small bug in the same area.
+
+  Verify ON DEVICE, in this order, and treat the second as blocking:
+  (1) reveal shows no flash, (2) credential up, swipe to the app switcher, the card shows
+  "Hidden".
+
+- ✅ **App-switcher redaction verified on device 2026-08-27.** Reveal a credential, swipe to
+  the switcher, the card shows "Hidden". Previously only assumed, since it had likely only
+  ever been checked in the simulator where scenePhase timing differs. It holds, which
+  matters because the sign-in screen makes this claim to users directly.
+
+- ⬜ **Search only covers loaded pages** ← correctness bug, not a feature gap
+
+  `DeviceSearch.filter` runs over `cachedDevices()`, which is the pages fetched so far.
+  On a tenant large enough that the admin has not scrolled to the end, searching for a
+  device that exists returns nothing. That does not read as "still loading", it reads as
+  "this app cannot find my machine", and it gets worse the bigger the customer is.
+
+  Graph will not solve this: `managedDevices` supports `$filter` with `eq` and some
+  `startswith`, but not substring `contains`, and `$search` is not supported on the
+  resource at all. So the answer is client-side over a complete set, not a server query.
+
+  `loadAll(maxPages:)` already exists and nothing calls it. Suggested shape: filter
+  locally for instant feedback, and when the query is non-empty and `hasMore()` is true,
+  page to completion in the background and re-filter as results arrive. Show that it is
+  still loading rather than showing an empty state, since an empty state during a partial
+  load is exactly the lie being fixed.
+
+  Worth measuring before choosing a design: 100 devices per page against a few thousand
+  devices is tens of requests, which is fine once but wasteful on every keystroke.
+
+- ⬜ Device row shows the raw UPN. Now that search matches `userDisplayName` and
+  `emailAddress`, a result can match on a field the row never displays, which looks like a
+  phantom hit. `ManagedDeviceSummary.primaryUserLabel` exists for this; swap
+  `DeviceListView` line ~301 over to it.
+
 - ⬜ Recents / favorites
 - ⬜ Biometric app lock (distinct from the per-reveal gate)
 - ⬜ Tenant switcher (MSP tiers)
@@ -380,43 +538,49 @@ These are hours, not days, and two of them are things I said mattered and then d
 4. ✅ **Copy tenant ID button.** Ten minutes, and it is the first step of the enterprise
    purchase flow. Cheap to do before the flow exists.
 
-## Tier 2 — the biggest unknown risk in the project
+## Tier 2 — ✅ DONE 2026-08-27
 
-5. **Verify against a real tenant.** Every reveal you have ever seen was demo data. The
-   Windows LAPS decode path (base64, UTF-16LE detection, BOM stripping) has never touched
-   a real password from Graph, and that is exactly the kind of code that works on
-   handwritten test vectors and fails on real input. Now that the IP question is settled,
-   consenting in the design-partner tenant and revealing one real password is the single
-   most informative thing left to do. If something is broken, everything above is built on
-   sand — better to know now.
+5. ✅ **Verified against a real tenant.** On a TestFlight/device build, signed in to a live
+   tenant, listed real devices, scrolled through multiple pages, and revealed a real
+   Windows LAPS password on a Cloud PC. **The password was correct.** The decode path
+   (base64 → UTF-16LE detection → BOM stripping) has now processed real Graph output
+   rather than handwritten test vectors, which was the largest unverified assumption in
+   the project. Face ID gate fired before the Graph call as designed. Paging works against
+   real data.
+
+   Everything above this line is no longer built on sand.
 
 ## Tier 3 — genuine product value, no tenant required
 
-6. **Windows LAPS password history.** `credentials` returns multiple entries and we take
+6. **Auth diagnostics in the support report.** Moved to the top of this tier because the
+   first real device build proved it necessary rather than nice. MSAL/AAD error code,
+   correlation ID, and a broker-path flag, allowlisted so no authorization code can ride
+   along in an error description. Full detail under "Next up — code".
+7. **Windows LAPS password history.** `credentials` returns multiple entries and we take
    the newest. History matters when a device has not checked in and is still running an
    older password — a real support scenario where the current app gives the wrong answer.
-7. **Recents / favourites.** The daily-use improvement with the highest ratio of value to
+8. **Recents / favourites.** The daily-use improvement with the highest ratio of value to
    effort. An admin looking after the same twenty machines should not search every time.
-8. **Biometric app lock**, distinct from the per-reveal gate.
+9. **Biometric app lock**, distinct from the per-reveal gate.
 
 ## Tier 4 — the revenue path (largest remaining chunk)
 
 Partially unblocked: the backend does not need Apple, but IAP and App Attest do.
 
-9. Azure Function `/entitlement`, licences table, private repo for the signing keys
-10. Stripe (waiting on the business bank account)
-11. App Attest gating — needs a real device and the Apple account, so blocked
-12. IAP products and free-tier gating — needs App Store Connect, so blocked
+10. Azure Function `/entitlement`, licences table, private repo for the signing keys
+11. Stripe (waiting on the business bank account)
+12. App Attest gating — needs a real device and the Apple account, so blocked
+13. IAP products and free-tier gating — needs App Store Connect, so blocked
 
 ## Tier 5 — cheap trust and legal work, do while waiting
 
-13. **Network transparency doc.** Three hosts, verifiable with a proxy in ten minutes.
+14. **Network transparency doc.** Three hosts, verifiable with a proxy in ten minutes.
     Already identified as the strongest trust artifact and it costs an afternoon.
-14. **Trademark filing.** USPTO Class 9, intent-to-use, ~$350. Actionable today, and the
+15. **Trademark filing.** USPTO Class 9, intent-to-use, ~$350. Actionable today, and the
     icon can be cleared at the same time (a design-mark search, separate from the wordmark
     search already done).
-15. Attorney pass on the licence additional-permission wording and the liability cap.
-16. "Not affiliated with Microsoft" on the marketing site.
+16. Attorney pass on the licence additional-permission wording and the liability cap.
+17. "Not affiliated with Microsoft" on the marketing site.
 
 ## Nothing is blocked any more
 
