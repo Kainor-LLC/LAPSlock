@@ -23,16 +23,40 @@ final class DeviceListModel: ObservableObject {
     @Published var hasMore = false
     @Published var errorMessage: String?
 
+    /// Filtered view of what's loaded. Search is client-side because Graph's
+    /// managedDevices has no dependable server-side name search (§5).
+    ///
+    /// STORED, not computed, and that is the point. As a computed property this
+    /// recalculated on every access, and `deviceList` reads it twice per body evaluation
+    /// (once for the ForEach, once to decide whether to show the no-results row). So every
+    /// keystroke ran the full filter and sort at least twice over the entire device set,
+    /// on the main thread, before SwiftUI had even started diffing the list.
+    ///
+    /// Now it is recomputed only when the inputs actually change, and the query side is
+    /// debounced, so typing "connor" costs one pass instead of six.
+    @Published private(set) var visibleDevices: [ManagedDeviceSummary] = []
+
+    /// How long to wait after the last keystroke before filtering. Short enough to feel
+    /// immediate, long enough that a burst of typing collapses into one pass.
+    private static let searchDebounce = 180
+
     private let inventory: any DeviceInventoryProviding
 
     init(inventory: any DeviceInventoryProviding) {
         self.inventory = inventory
-    }
 
-    /// Filtered view of what's loaded. Search is client-side because Graph's
-    /// managedDevices has no dependable server-side name search (§5).
-    var visibleDevices: [ManagedDeviceSummary] {
-        DeviceSearch.filter(devices, query: query)
+        // Only the query is debounced. Device changes (first page, paging, refresh) flow
+        // through immediately, because those are not user-typing bursts and delaying them
+        // would make loading look slower than it is.
+        let debouncedQuery = $query
+            .removeDuplicates()
+            .debounce(for: .milliseconds(Self.searchDebounce), scheduler: DispatchQueue.main)
+
+        Publishers.CombineLatest($devices, debouncedQuery)
+            .map { devices, query in
+                DeviceSearch.filter(devices, query: query)
+            }
+            .assign(to: &$visibleDevices)
     }
 
     func load() async {

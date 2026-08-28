@@ -33,6 +33,17 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
     public let operatingSystemRaw: String?
     public let osVersion: String?
     public let userPrincipalName: String?
+    /// Primary user's display name ("Connor Johnson"). Admins search for people by name
+    /// far more often than by UPN, so this is a search field first and a display field
+    /// second.
+    public let userDisplayName: String?
+    /// Primary user's mail address. Frequently differs from the UPN (alias domains,
+    /// post-migration tenants), and an admin handed an email address from a ticket has no
+    /// way to know which one they were given.
+    public let emailAddress: String?
+    /// Intune's own name for the device, which is not always the same string as
+    /// `deviceName` — some enrolment paths generate one and let the other drift.
+    public let managedDeviceName: String?
     public let serialNumber: String?
     public let model: String?
     public let manufacturer: String?
@@ -47,6 +58,9 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
         operatingSystemRaw: String? = nil,
         osVersion: String? = nil,
         userPrincipalName: String? = nil,
+        userDisplayName: String? = nil,
+        emailAddress: String? = nil,
+        managedDeviceName: String? = nil,
         serialNumber: String? = nil,
         model: String? = nil,
         manufacturer: String? = nil,
@@ -60,6 +74,9 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
         self.operatingSystemRaw = operatingSystemRaw
         self.osVersion = osVersion
         self.userPrincipalName = userPrincipalName
+        self.userDisplayName = userDisplayName
+        self.emailAddress = emailAddress
+        self.managedDeviceName = managedDeviceName
         self.serialNumber = serialNumber
         self.model = model
         self.manufacturer = manufacturer
@@ -73,6 +90,13 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
     /// True when this device has a usable Entra device id. Windows LAPS reveal is
     /// impossible without one, so the UI gates on this rather than on an error.
     public var hasEntraDeviceIdentity: Bool { entraDeviceId != nil }
+
+    /// Best available label for the primary user: real name if Intune has one, otherwise
+    /// the UPN, otherwise the mail address. Nil when the device has no primary user at
+    /// all, which is normal for shared and kiosk devices.
+    public var primaryUserLabel: String? {
+        userDisplayName ?? userPrincipalName ?? emailAddress
+    }
 
     /// Hand-off object for CredentialKit. Carries both identifiers (§2.5).
     public var credentialTarget: DeviceCredentialTarget {
@@ -125,12 +149,25 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
         self.deviceName = (name?.isEmpty == false ? name! : "Unnamed device")
 
         self.osVersion = obj["osVersion"] as? String
-        self.userPrincipalName = obj["userPrincipalName"] as? String
+        self.userPrincipalName = Self.nonEmpty(obj["userPrincipalName"])
+        self.userDisplayName = Self.nonEmpty(obj["userDisplayName"])
+        self.emailAddress = Self.nonEmpty(obj["emailAddress"])
+        self.managedDeviceName = Self.nonEmpty(obj["managedDeviceName"])
         self.serialNumber = obj["serialNumber"] as? String
         self.model = obj["model"] as? String
         self.manufacturer = obj["manufacturer"] as? String
         self.complianceState = obj["complianceState"] as? String
         self.lastSyncDateTime = InventoryHTTP.date(obj["lastSyncDateTime"])
+    }
+
+    /// Graph returns "" rather than null for user fields on devices with no primary user.
+    /// An empty string is a substring of every query, so left as-is it would make those
+    /// devices match everything. Normalising to nil at the boundary keeps the search code
+    /// from having to know that.
+    private static func nonEmpty(_ any: Any?) -> String? {
+        guard let s = any as? String else { return nil }
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
