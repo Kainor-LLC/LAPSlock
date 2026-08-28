@@ -99,6 +99,43 @@ public final class ScreenPrivacyMonitor: ObservableObject {
 /// app-switcher snapshot never contains a credential.
 ///
 /// Applied via `.privacyCover(isProtected:)` on any view that can show a password.
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+/// KNOWN COSMETIC BUG, and two fixes that did NOT work. Read before attempting a third.
+///
+/// Symptom: after tapping reveal, the "Hidden" cover appears for roughly two seconds and
+/// is then replaced by the credential. Cause is the order a reveal happens in (§6):
+///
+///   1. clear any existing secret, so nothing is on screen
+///   2. run the biometric gate   ← the Face ID prompt takes the scene to .inactive
+///   3. call Graph
+///   4. publish the secret       ← isProtected flips true, scene is STILL .inactive
+///   5. scene returns to .active ← only now does the cover clear
+///
+/// Between 4 and 5 the condition below is satisfied even though the user never left the
+/// app. SwiftUI's scenePhase simply has not caught up with the system prompt dismissing.
+///
+/// FAILED ATTEMPT 1 — @State captured in .onChange(of: scenePhase), covering .inactive
+/// only when a credential was on screen at the transition. Change handlers run AFTER the
+/// render they describe, and that render is the one iOS photographs, so the state was one
+/// frame stale exactly when it mattered.
+///
+/// FAILED ATTEMPT 2 — same idea, recorded during body evaluation into a reference type to
+/// remove the deferral. Also failed the switcher test on device.
+///
+/// Both attempts failed in the dangerous direction: the credential appeared in the app
+/// switcher. Reverted to the condition below, which errs toward hiding.
+///
+/// The likely correct fix is not in this file at all. Hold the fetched secret in
+/// DeviceDetailModel and publish it only once scenePhase is .active. Then isProtected is
+/// simply false during the inactive tail, the condition below needs no qualification, and
+/// there is no render-timing hazard to get wrong. It also stops the 60-second reveal
+/// window from starting while the credential is still behind a cover.
+///
+/// Whatever is attempted, verify ON DEVICE, in this order, and treat the second as
+/// blocking: (1) reveal shows no flash, (2) credential up, swipe to the app switcher,
+/// the card must show "Hidden".
+/// ─────────────────────────────────────────────────────────────────────────────
 public struct PrivacyCoverModifier: ViewModifier {
     /// Only cover when there is something worth hiding — a permanent cover would make
     /// the app switcher useless for ordinary browsing.
