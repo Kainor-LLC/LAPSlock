@@ -425,16 +425,96 @@ built and ungated.
 
 # Backend (Azure)
 
-- ⬜ Azure subscription for the backend. You already have one attached to the Kainor
-  tenant; verify it suffices before creating another, since a second tenant means a
-  second identity to manage.
-- ⬜ Resource group, storage, licenses table
-- ⬜ Function app (Consumption): `/entitlement` — tid in → signed JWT out
-- ⬜ App Attest verification on `/entitlement`
+## ✅ Infrastructure provisioned 2026-08-27
+
+Subscription **Kainor-PitLAPS** `024f01b2-f4b2-459f-84b6-cf7ced419758`, pay-as-you-go,
+spending limit OFF (so credit exhaustion starts billing rather than deprovisioning
+resources), Kainor tenant, region `centralus`.
+
+| Resource | Name | Notes |
+|---|---|---|
+| Resource group | `kainor-pitlaps-prod-rg` | centralus |
+| Storage | `kainorpitlapsprodst` | Standard_LRS, TLS 1.2 min, no public blob access, HTTPS only |
+| Key Vault | `kainor-pitlaps-prod-kv` | RBAC authorization, purge protection ON, 90-day retention |
+| Function app | `kainor-pitlaps-prod-func` | Flex Consumption, .NET 10 isolated, Linux, httpsOnly true |
+| App Insights | `kainor-pitlaps-prod-func` | auto-created, name matches the function app |
+| Managed identity | `90406c76-87bd-4e22-8a5a-636292cd98d4` | system-assigned |
+| Role assignment | Key Vault Crypto User | scoped to the vault ONLY |
+
+Decisions worth not relitigating:
+
+- **Flex Consumption, not Consumption.** Consumption is now documented as a legacy plan and
+  Flex is the recommended serverless option. Flex does not support the C# in-process model,
+  which is fine since in-process reaches end of support 2026-11-10 anyway.
+- **Purge protection is ON and cannot be turned off.** Deliberate: losing the signing key
+  invalidates every entitlement JWT in the field at once, with no recovery except reissuing
+  to every customer.
+- **Crypto User, not Crypto Officer,** for the app identity. It can sign and verify with an
+  existing key but cannot create, delete, import, or export one. A compromise of the
+  Function lets an attacker mint tokens while they hold access; it does not let them
+  exfiltrate the key and mint forever.
+- **Sign through Key Vault rather than holding key material in the app.** Costs a round trip
+  per issued JWT, irrelevant at a few requests per install per month.
+- **`httpsOnly` was false on creation** and had to be set explicitly. Worth re-checking on
+  any future app created by `az functionapp create`.
+
+CLI gotcha: `az functionapp show` nests everything under `properties`, while
+`az functionapp list` flattens it. A `--query` written for one silently returns nulls
+against the other, and `--output table` hides null columns rather than showing them empty.
+Use `--output json` when verifying.
+
+## Remaining
+
+- ⬜ ES256 signing key in the vault (created in-vault, never exported)
+- ⬜ Licences table in `kainorpitlapsprodst`
+- ⬜ Function code: `/entitlement` — tid in, signed JWT out
+- ⬜ **API contract, published publicly while the implementation stays private.** This is the
+  next real design work. Decided so far: the request carries a tenant ID and NOTHING else —
+  no Graph token, no user identity, no device data. The product's whole positioning is that
+  no vendor server sits in the credential path, and an admin with a proxy must be able to
+  confirm that in ten minutes. A bare tid is spoofable, but the JWT is bound to `sub = tid`
+  and the app pins to the signed-in tenant, so a stolen entitlement is only usable by
+  someone already inside that tenant and therefore already covered. Version the request body
+  and define optional `attestation` / `assertion` fields from day one so App Attest is not a
+  breaking change later.
+- ⬜ Claims: `iss`, `aud` (bundle id), `sub` (tid), `tier`, `iat`, `nbf`, `exp`, `jti`.
+  30-day lifetime, which means revocation lags 30 days. Acceptable at these price points.
+- ⬜ App Attest verification — **phase 2, deliberately.** See the reasoning below.
 - ⬜ Later: `/stripe-webhook` to auto-insert license rows
-- ⬜ Custom domain for the API (~$10–15/yr; expect <$2/mo Azure spend)
+- ⬜ Custom domain for the API (~$10–15/yr; expect <$2/mo Azure spend). Note that App Service
+  managed certificates may not be available on Flex Consumption — verify before committing
+  to an approach.
 - ⬜ **Private repo** for the Function, JWT signing keys, Stripe webhook. Publish only the
   API contract. Clones can't stand up a working entitlement backend.
+
+## Why App Attest is phase 2, not v1
+
+The TODO previously called it "the real anti-sideload teeth." Against a source-available
+app there are no teeth, only friction, and it should not gate the revenue path shipping.
+
+It proves a request came from an unmodified build of *your* bundle ID under *your* team ID
+on genuine Apple hardware. It does not stop someone building from the public source with the
+check removed, because that is their bundle ID.
+
+Cost: CBOR decoding, X.509 chain validation to Apple's App Attest root, nonce handling,
+`rpId` hash checks, per-install public key storage, and a monotonic counter per key for
+replay protection — a few hundred lines of security-critical code where a subtle error means
+you believe you are verifying something you are not. Client side it needs key generation,
+keychain persistence, and a re-attestation path after reinstall or restore. **It does not
+exist in the simulator**, so it would be yet another device-only path, and four of those
+shipped broken in this project already.
+
+The failure mode that costs money: attestation fails at first launch on a captive portal or
+during an Apple service blip, and a paying customer sees "unlicensed". So you write a
+soft-fail path, and a soft-fail path is a bypass.
+
+Who is actually buying: enterprises at $299–999/yr with compliance obligations, and
+individuals at $1.99/mo. Neither pirates at scale. The genuinely abusable tier is MSP
+per-tech pricing, where the risk is seat undercounting — which App Attest does nothing about.
+That is an audit and contract problem.
+
+Cheaper interim measures worth doing instead: rate-limit per tenant ID, and count entitlement
+requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 
 ---
 
