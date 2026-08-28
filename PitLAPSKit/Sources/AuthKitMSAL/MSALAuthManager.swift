@@ -18,10 +18,22 @@ import AuthKit
 //   * ThisDeviceOnly, non-synced keychain for the MSAL token cache (§4)
 //   * config injection for BYO registration (§9)
 //
-// CONCURRENCY NOTE: all UIKit access is funneled through the @MainActor helpers at the
-// bottom of this file and reached with `await`. The actor itself never touches UIKit
-// directly — that was the cause of the "Main actor-isolated ... cannot be called from
-// outside of the actor" errors on first compile.
+// CONCURRENCY NOTE — read this before changing anything in here.
+//
+// It is not enough to build MSALWebviewParameters on the main actor. MSAL dereferences
+// the presenting view controller AGAIN inside acquireToken, on whatever thread you called
+// acquireToken from. This actor's methods run on the cooperative thread pool, so calling
+// acquireToken directly from actor context reads UIViewController.view and UIView.window
+// off the main thread. Main Thread Checker flags it, and on a real device with Microsoft
+// Authenticator installed the broker return path then fails: the broker screen appears,
+// the user authenticates, and the completion never delivers a usable result.
+//
+// This was invisible in the simulator. Without a broker installed MSAL keeps the whole
+// flow in-process, so the fragile part never ran.
+//
+// Therefore: every MSAL call that can present UI (acquireToken, signout) is dispatched to
+// the main thread before it is made. Silent acquisition presents nothing and stays here.
+// If you add another MSAL entry point that can show a screen, dispatch it too.
 
 /// Configuration for the app registration. `.vendorDefault` ships with the app;
 /// `.custom` is supplied by an enterprise using their own registration (§9 BYO).
@@ -69,6 +81,10 @@ public actor MSALAuthManager: AuthManaging {
 
     public init(config: AuthConfiguration) throws {
         self.config = config
+
+        #if DEBUG
+        _ = Self.debugLoggingInstalled
+        #endif
 
         let authorityURL = URL(string: "https://login.microsoftonline.com/\(config.authorityTenant ?? "common")")!
         let authority = try MSALAADAuthority(url: authorityURL)
@@ -144,11 +160,7 @@ public actor MSALAuthManager: AuthManaging {
         let webParams = try await MainActorUI.webviewParameters()
         let params = MSALSignoutParameters(webviewParameters: webParams)
 
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            application.signout(with: msalAccount, signoutParameters: params) { _, error in
-                if let error { cont.resume(throwing: Self.map(error)) } else { cont.resume(returning: ()) }
-            }
-        }
+        try await performSignout(msalAccount, params)
         if pinnedAccount?.id == account.id { pinnedAccount = nil }
     }
 
@@ -171,15 +183,37 @@ public actor MSALAuthManager: AuthManaging {
 
     // MARK: - continuation wrappers
 
+    /// Interactive acquisition. Dispatched to the main thread because MSAL touches UIKit
+    /// inside this call, not only while building the parameters. See the concurrency note
+    /// at the top of the file before changing this.
     private func acquireInteractive(_ params: MSALInteractiveTokenParameters) async throws -> MSALResult {
-        try await withCheckedThrowingContinuation { cont in
-            application.acquireToken(with: params) { result, error in
-                if let result { cont.resume(returning: result) }
-                else { cont.resume(throwing: Self.map(error)) }
+        let app = application
+        return try await withCheckedThrowingContinuation { cont in
+            DispatchQueue.main.async {
+                app.acquireToken(with: params) { result, error in
+                    if let result { cont.resume(returning: result) }
+                    else { cont.resume(throwing: Self.map(error)) }
+                }
             }
         }
     }
 
+    /// Sign-out can present a web view, so it gets the same treatment as acquireToken.
+    private func performSignout(
+        _ account: MSALAccount,
+        _ params: MSALSignoutParameters
+    ) async throws {
+        let app = application
+        return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            DispatchQueue.main.async {
+                app.signout(with: account, signoutParameters: params) { _, error in
+                    if let error { cont.resume(throwing: Self.map(error)) } else { cont.resume(returning: ()) }
+                }
+            }
+        }
+    }
+
+    /// Silent acquisition presents nothing, so it does not need the main thread.
     private func acquireSilent(_ params: MSALSilentTokenParameters) async throws -> MSALResult {
         try await withCheckedThrowingContinuation { cont in
             application.acquireTokenSilent(with: params) { result, error in
@@ -188,6 +222,30 @@ public actor MSALAuthManager: AuthManaging {
             }
         }
     }
+
+    // MARK: - debug logging
+
+    #if DEBUG
+    /// MSAL's own log stream, development builds only.
+    ///
+    /// Two guarantees, both deliberate. `piiEnabled` stays false, and any message MSAL
+    /// flags as containing PII is dropped rather than printed, so tokens, account
+    /// identifiers, and authorization codes never reach the console. And the whole block
+    /// is compiled out of Release, so a shipping build has no MSAL log sink at all.
+    ///
+    /// This exists because a broker failure on a real device is otherwise diagnosable only
+    /// by reading Main Thread Checker stack traces, which is how the off-main bug above
+    /// was eventually found. A static let makes the callback install exactly once; MSAL
+    /// raises if it is set twice.
+    private static let debugLoggingInstalled: Void = {
+        MSALGlobalConfig.loggerConfig.logLevel = .verbose
+        MSALGlobalConfig.loggerConfig.piiEnabled = false
+        MSALGlobalConfig.loggerConfig.setLogCallback { _, message, containsPII in
+            guard !containsPII, let message else { return }
+            print("[MSAL] \(message)")
+        }
+    }()
+    #endif
 
     // MARK: - helpers
 
@@ -256,6 +314,9 @@ public actor MSALAuthManager: AuthManaging {
 
 /// All UIKit touching happens here, on the main actor. The MSALAuthManager actor
 /// reaches these with `await`, which is what keeps the concurrency checker happy.
+///
+/// Note that this is necessary but not sufficient: MSAL also dereferences the presenting
+/// controller inside acquireToken. See the concurrency note at the top of the file.
 @MainActor
 private enum MainActorUI {
 
