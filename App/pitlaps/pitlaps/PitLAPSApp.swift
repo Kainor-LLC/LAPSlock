@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Combine
 import AuthKit
 import AuthKitMSAL
@@ -13,15 +14,63 @@ import InventoryKit
 //   2. UI can be developed and demonstrated without touching a real tenant.
 //   3. Sales conversations can show the product without borrowing someone's devices.
 // It is never silent: DemoBanner is pinned to every screen while it's on.
+//
+// The demo types are reachable from exactly one place: the `.demo` branch of
+// AppRootView.content. The `.live` branch cannot construct one, because every service
+// it needs comes off a LiveSession and none of those accessors is optional. There is
+// no optional left to coalesce a demo double into, which is the point.
 
 @main
 struct PitLAPSApp: App {
+    // Present only to receive broker redirects. See AppDelegate below.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             AppRootView()
                 .tint(Brand.signal)
                 .preferredColorScheme(AppSettings.shared.appearance.colorScheme)
+                // THIS is the handler that actually runs. See the note on AppDelegate.
+                .onOpenURL { url in
+                    MSALRedirect.handle(url, sourceApplication: nil)
+                }
         }
+    }
+}
+
+/// Catches the redirect Microsoft Authenticator sends back after a broker sign-in.
+///
+/// Read this before deleting either handler.
+///
+/// This app is scene-based (UIApplicationSceneManifest is in the Info.plist), and SwiftUI
+/// installs its own scene delegate. When a scene delegate exists, iOS routes incoming URLs
+/// to `scene(_:openURLContexts:)` and never calls `application(_:open:options:)`. So on
+/// this app as currently configured, the delegate method below does not fire, and the
+/// `.onOpenURL` above is what handles the redirect.
+///
+/// The symptom when nothing handles it: MSAL invokes the broker, the user authenticates in
+/// Authenticator, control returns, and MSAL reports
+/// "application did not receive response from broker" (MSALErrorDomain -50000), which the
+/// app surfaces as a generic sign-in failure. Invisible in the simulator, which has no
+/// broker installed and keeps the whole flow in-process.
+///
+/// The delegate is kept because it is the correct path if this app ever stops being
+/// scene-based or gains a custom scene delegate, and because a duplicate delivery is
+/// harmless: MSAL returns false for a URL it has already consumed.
+///
+/// On `sourceApplication: nil` in the `.onOpenURL` path: SwiftUI does not expose it. MSAL
+/// validates broker responses with a nonce instead (the logs show V2-broker-nonce), which
+/// is what makes nil acceptable here rather than merely tolerated.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ app: UIApplication,
+        open url: URL,
+        options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+    ) -> Bool {
+        MSALRedirect.handle(
+            url,
+            sourceApplication: options[.sourceApplication] as? String
+        )
     }
 }
 
@@ -33,6 +82,40 @@ final class AppRootModel: ObservableObject {
         case live(AdminAccount)
     }
 
+    /// Everything the live path needs, bundled so it can only exist as a set.
+    ///
+    /// The existence of a LiveSession is the proof that authentication succeeded, so
+    /// every accessor here returns a non-optional live service. That is deliberate:
+    /// the previous shape returned optionals, and the call site — a non-@ViewBuilder
+    /// closure returning a concrete DeviceDetailView, which cannot branch — had no way
+    /// to handle nil except to coalesce in a demo provider while still reporting
+    /// isDemo: false. A revealed value with no banner and no way to tell it was fake
+    /// is the one bug this app cannot ship. Hoisting the check up to a place that can
+    /// branch removes the possibility rather than documenting it.
+    struct LiveSession {
+        let auth: MSALAuthManager
+        let inventory: DeviceInventoryService
+
+        /// Live credential provider for one platform, sharing the authenticated session.
+        func provider(for platform: DevicePlatform) -> any LocalAdminCredentialProviding {
+            switch platform {
+            case .windows:
+                return WindowsLapsProvider(auth: auth)
+            case .macOS:
+                return MacOSLapsProvider(auth: auth)
+            case .other:
+                // MacOSLapsProvider is not used for iOS devices; the platform seam reports
+                // .other as unsupported before any request is made.
+                return MacOSLapsProvider(auth: auth)
+            }
+        }
+
+        /// Live BitLocker service, sharing the authenticated session.
+        func bitLocker() -> any BitLockerKeyProviding {
+            BitLockerService(auth: auth)
+        }
+    }
+
     @Published var mode: Mode = .signedOut
     @Published var isSigningIn = false
     @Published var consentState: ConsentState?
@@ -42,8 +125,9 @@ final class AppRootModel: ObservableObject {
     /// share the same session rather than creating a second one.
     private(set) var auth: MSALAuthManager?
 
-    /// Live inventory, created after sign-in so it shares the authenticated session.
-    private(set) var liveInventory: DeviceInventoryService?
+    /// Live services, created after sign-in so they share the authenticated session.
+    /// Nil whenever the app is not signed in.
+    private(set) var liveSession: LiveSession?
 
     /// Tenant of the signed-in account, offered as an opt-in field in diagnostics.
     var signedInTenantId: String? {
@@ -80,8 +164,10 @@ final class AppRootModel: ObservableObject {
 
         do {
             let account = try await auth.signIn()
-            let inventory = DeviceInventoryService(auth: auth)
-            liveInventory = inventory
+            liveSession = LiveSession(
+                auth: auth,
+                inventory: DeviceInventoryService(auth: auth)
+            )
             mode = .live(account)
         } catch let error as AuthError {
             // Consent problems get a recovery path, not just an error (§8).
@@ -104,8 +190,8 @@ final class AppRootModel: ObservableObject {
             try? await auth.signOut(account: account)
         }
         // Tenant-scoped data must not survive an account change (§7).
-        await liveInventory?.reset()
-        liveInventory = nil
+        await liveSession?.inventory.reset()
+        liveSession = nil
         mode = .signedOut
         consentState = nil
     }
@@ -132,29 +218,6 @@ final class AppRootModel: ObservableObject {
             return "Couldn't request permission. Check your connection and try again."
         } catch {
             return "Couldn't request permission. Check your connection and try again."
-        }
-    }
-
-    /// Live BitLocker service, sharing the authenticated session.
-    func liveBitLocker() -> (any BitLockerKeyProviding)? {
-        guard let auth else { return nil }
-        return BitLockerService(auth: auth)
-    }
-
-    /// Live credential provider for one platform, sharing the authenticated session.
-    /// Returns nil before sign-in, which the view treats as "recover to signed out"
-    /// rather than silently substituting demo data.
-    func liveProvider(for platform: DevicePlatform) -> (any LocalAdminCredentialProviding)? {
-        guard let auth else { return nil }
-        switch platform {
-        case .windows:
-            return WindowsLapsProvider(auth: auth)
-        case .macOS:
-            return MacOSLapsProvider(auth: auth)
-        case .other:
-            // MacOSLapsProvider is not used for iOS devices; the platform seam reports
-            // .other as unsupported before any request is made.
-            return MacOSLapsProvider(auth: auth)
         }
     }
 }
@@ -199,9 +262,9 @@ struct AppRootView: View {
             )
 
         case .live:
-            if let inventory = root.liveInventory {
+            if let session = root.liveSession {
                 DeviceListView(
-                    model: DeviceListModel(inventory: inventory),
+                    model: DeviceListModel(inventory: session.inventory),
                     isDemo: false,
                     settingsBuilder: {
                         SettingsView(
@@ -215,11 +278,8 @@ struct AppRootView: View {
                         DeviceDetailView(
                             model: DeviceDetailModel(
                                 device: device,
-                                // Falls back to the macOS provider's "unsupported"
-                                // reporting if the session vanished mid-navigation.
-                                provider: root.liveProvider(for: device.platform)
-                                    ?? DemoLapsProvider(platform: device.platform),
-                                bitLocker: root.liveBitLocker() ?? DemoBitLockerService(),
+                                provider: session.provider(for: device.platform),
+                                bitLocker: session.bitLocker(),
                                 isDemo: false,
                                 rotationEnabled: AppSettings.shared.bitLockerRotationEnabled
                             )
@@ -227,7 +287,8 @@ struct AppRootView: View {
                     }
                 )
             } else {
-                // Shouldn't happen; recover rather than showing a blank screen.
+                // A .live mode with no session shouldn't happen. Recover to signed out
+                // rather than showing a blank screen or substituting a data source.
                 ProgressView().task { await root.signOut() }
             }
         }
