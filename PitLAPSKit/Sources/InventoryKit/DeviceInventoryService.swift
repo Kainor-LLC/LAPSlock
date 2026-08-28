@@ -20,13 +20,26 @@ enum InventoryHTTP {
     /// Fields the list UI actually needs. `azureADDeviceId` is the important one — it is
     /// the Entra device id Windows LAPS reveal keys on, and it arrives here directly
     /// rather than requiring a second lookup (see ManagedDeviceSummary header).
+    ///
+    /// The user fields below are here for SEARCH, not display. An admin working a ticket
+    /// has a person's name or an email address, rarely a device name, so a search that
+    /// only covers deviceName sends them scrolling. Every property listed is on the v1.0
+    /// managedDevice resource and covered by DeviceManagementManagedDevices.Read.All, so
+    /// none of this widens the consent ask.
+    ///
+    /// Careful when editing: Graph rejects the whole request with 400 if $select names a
+    /// property that does not exist, which takes the device list down entirely rather than
+    /// degrading. Verify any addition against the v1.0 managedDevice schema first.
     static let selectFields = [
         "id",
         "deviceName",
+        "managedDeviceName",
         "operatingSystem",
         "osVersion",
         "azureADDeviceId",
         "userPrincipalName",
+        "userDisplayName",
+        "emailAddress",
         "serialNumber",
         "model",
         "manufacturer",
@@ -182,48 +195,129 @@ public actor DeviceInventoryService {
 
 /// Client-side search. Graph's managedDevices resource has no dependable server-side
 /// substring search on deviceName, so filtering happens locally over the cached page set.
+///
+/// KNOWN LIMITATION: "the cached page set" means the pages loaded so far. On a tenant
+/// large enough that the admin has not scrolled to the end, a device that exists will not
+/// be found, which reads as a broken app rather than an incomplete load. `loadAll` exists
+/// for this but nothing calls it on the search path yet.
+///
+/// ─────────────────────────────────────────────────────────────────────────────
+/// PERFORMANCE NOTE — this runs on the main thread on every keystroke.
+///
+/// The obvious implementation is quadratically worse than it looks, and shipped once:
+///
+///   * `range(of:options:[.caseInsensitive, .diacriticInsensitive])` performs full
+///     Unicode folding on EVERY call. It is not a cheap substring check.
+///   * Calling a ranking function from inside a sort comparator evaluates it O(n log n)
+///     times, twice per comparison, rather than once per device.
+///
+/// Together, over seven searchable fields at three match strengths, that is roughly
+/// 100,000 Unicode folding operations per keystroke on a 500-device tenant. It felt
+/// exactly like what it was.
+///
+/// So: fold each field and the query ONCE, then compare with plain `==`, `hasPrefix`, and
+/// `contains`, which operate on already-normalised strings. And score every device in a
+/// single pass, sorting on the precomputed rank. Same results, same ordering, about two
+/// orders of magnitude less work.
+///
+/// If this ever needs to get faster again, the next step is caching folded fields keyed by
+/// device id rather than folding per keystroke. That trades memory and cache-invalidation
+/// complexity for speed, so it is not worth doing until measurement says so.
+/// ─────────────────────────────────────────────────────────────────────────────
 public enum DeviceSearch {
 
-    /// Case- and diacritic-insensitive substring match across the fields an admin would
-    /// actually type: device name, primary user, serial number, and model.
-    public static func matches(_ device: ManagedDeviceSummary, query: String) -> Bool {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return true }
+    private static let foldOptions: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
 
-        let haystacks = [
-            device.deviceName,
+    /// Normalises case and diacritics once, so later comparisons are ordinary string ops.
+    private static func fold(_ s: String) -> String {
+        s.folding(options: foldOptions, locale: nil)
+    }
+
+    /// Searchable fields other than the device name, ordered roughly by how often an admin
+    /// has that value to hand when working a ticket.
+    private static func secondaryFields(_ device: ManagedDeviceSummary) -> [String] {
+        [
+            device.userDisplayName,
             device.userPrincipalName,
+            device.emailAddress,
             device.serialNumber,
-            device.model
+            device.model,
+            device.managedDeviceName
         ].compactMap { $0 }
+    }
 
-        return haystacks.contains { field in
-            field.range(of: q, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-        }
+    /// Case- and diacritic-insensitive substring match across the fields an admin would
+    /// actually type: device name, the primary user by real name, UPN or mail address,
+    /// serial number, model, and Intune's own device name.
+    public static func matches(_ device: ManagedDeviceSummary, query: String) -> Bool {
+        let raw = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return true }
+        return score(device, foldedQuery: fold(raw)) != nil
     }
 
     /// Filters and orders results. Exact and prefix name matches sort above the rest,
     /// because an admin typing a device name usually wants that device first.
     public static func filter(_ devices: [ManagedDeviceSummary], query: String) -> [ManagedDeviceSummary] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else {
+        let raw = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else {
             return devices.sorted { $0.deviceName.localizedCaseInsensitiveCompare($1.deviceName) == .orderedAscending }
         }
 
-        let hits = devices.filter { matches($0, query: q) }
-        return hits.sorted { a, b in
-            let ra = rank(a, query: q)
-            let rb = rank(b, query: q)
-            if ra != rb { return ra < rb }
-            return a.deviceName.localizedCaseInsensitiveCompare(b.deviceName) == .orderedAscending
+        let q = fold(raw)
+
+        // One pass: match and score together, so no device is examined twice and no score
+        // is recomputed inside the comparator.
+        var scored: [(device: ManagedDeviceSummary, rank: Int)] = []
+        scored.reserveCapacity(devices.count)
+        for device in devices {
+            if let rank = score(device, foldedQuery: q) {
+                scored.append((device, rank))
+            }
         }
+
+        scored.sort { a, b in
+            if a.rank != b.rank { return a.rank < b.rank }
+            return a.device.deviceName.localizedCaseInsensitiveCompare(b.device.deviceName) == .orderedAscending
+        }
+        return scored.map(\.device)
     }
 
-    private static func rank(_ device: ManagedDeviceSummary, query: String) -> Int {
-        let name = device.deviceName
-        if name.compare(query, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame { return 0 }
-        if name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive, .anchored]) != nil { return 1 }
-        if name.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil { return 2 }
-        return 3
+    /// Ranks a hit by HOW it matched, not just whether it did. Nil means no match.
+    ///
+    /// Device name outranks everything at equal match strength, but strength counts across
+    /// all fields, so an exact match on a user's name beats an incidental substring buried
+    /// in a model string:
+    ///
+    ///   0 exact on device name        1 exact on any other field
+    ///   2 prefix on device name       3 prefix on any other field
+    ///   4 substring on device name    5 substring on any other field
+    private static func score(_ device: ManagedDeviceSummary, foldedQuery q: String) -> Int? {
+        var best: Int?
+
+        if let s = strength(fold(device.deviceName), q) {
+            // Exact on the device name is the best possible outcome; stop looking.
+            if s == 0 { return 0 }
+            best = s * 2
+        }
+
+        for field in secondaryFields(device) {
+            guard let s = strength(fold(field), q) else { continue }
+            let rank = s * 2 + 1
+            if best == nil || rank < best! { best = rank }
+            // Rank 1 is the best a secondary field can achieve, and rank 0 already
+            // returned above, so there is nothing better left to find.
+            if best == 1 { break }
+        }
+
+        return best
+    }
+
+    /// 0 exact, 1 prefix, 2 substring, nil no match. Both arguments must already be
+    /// folded — these are plain comparisons, not locale-aware ones.
+    private static func strength(_ foldedField: String, _ foldedQuery: String) -> Int? {
+        if foldedField == foldedQuery { return 0 }
+        if foldedField.hasPrefix(foldedQuery) { return 1 }
+        if foldedField.contains(foldedQuery) { return 2 }
+        return nil
     }
 }
