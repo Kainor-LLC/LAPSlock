@@ -1,11 +1,11 @@
 # Security Policy
 
-PitLAPS handles local administrator passwords. If you find a way to make it leak one,
+LAPSlock handles local administrator passwords. If you find a way to make it leak one,
 we want to hear about it.
 
 ## Reporting a vulnerability
 
-Email **connor@kainor.com** with "PitLAPS security" in the subject.
+Email **connor@kainor.com** with "LAPSlock security" in the subject.
 
 Please include what you did, what happened, and the app version. If you have a proof of
 concept, describe it in words rather than attaching a real credential — we don't want a
@@ -39,7 +39,7 @@ Out of scope:
   `CredentialKit/MacOSLapsProvider.swift`.
 - Findings that require an already-compromised device (jailbreak, malicious profile, or a
   device the attacker physically controls and has unlocked).
-- Screenshots. iOS does not allow apps to block them. PitLAPS detects them, hides the
+- Screenshots. iOS does not allow apps to block them. LAPSlock detects them, hides the
   credential, and recommends rotation — that is the best available behavior, not an
   oversight.
 

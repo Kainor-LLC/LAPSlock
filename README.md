@@ -1,10 +1,10 @@
-# PitLAPS — iOS LAPS administrator client
+# LAPSlock — iOS LAPS administrator client
 
 Native iOS client for viewing Windows and macOS LAPS local administrator passwords
 managed by Microsoft Entra ID and Intune. Delegated auth only. No backend in the
 credential path — passwords go Microsoft Graph → TLS → device and nowhere else.
 
-**PitLAPS™ is a trademark of Kainor LLC.**
+**LAPSlock™ is a trademark of Kainor LLC.**
 
 **Source-available, not open source.** The code is published so that security-conscious
 administrators can read and verify what an app handling local administrator passwords
@@ -20,7 +20,7 @@ Redistribution, modification, and publishing builds are not permitted. See `LICE
 
 ```
 AppTarget (SwiftUI — not yet built)
-└── PitLAPSKit (SwiftPM)
+└── LAPSlockKit (SwiftPM)
     ├── AuthKit          AuthManaging protocol + models. NO third-party deps.
     ├── AuthKitMSAL      the ONLY target linking MSAL; tenant pinning (§3.3), BYO (§9)
     ├── InventoryKit     device list/detail; NON-sensitive; may cache   (not yet built)
@@ -86,10 +86,10 @@ that one file plus a test update. No UI or other module changes.
 ./scripts/isolation-check.sh
 ```
 
-**Unit tests** — open `PitLAPSKit` in Xcode and run the CredentialKitTests target
+**Unit tests** — open `LAPSlockKit` in Xcode and run the CredentialKitTests target
 (these need no Microsoft dependency by design), or on a Mac with the Swift toolchain:
 ```bash
-cd PitLAPSKit && swift test
+cd LAPSlockKit && swift test
 ```
 > Note: the full package won't `swift build` on Linux because MSAL is an Apple-platform
 > binary. The tests target pure CredentialKit logic and run fine in Xcode.

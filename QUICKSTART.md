@@ -15,10 +15,10 @@ Expected time: 10 minutes. Nothing here touches a tenant or the network.
 
 ## Step 1 — open the package
 
-1. Unzip the project somewhere permanent, e.g. `~/Developer/PitLAPS`.
+1. Unzip the project somewhere permanent, e.g. `~/Developer/LAPSlock`.
 2. In Terminal:
    ```bash
-   cd ~/Developer/PitLAPS/PitLAPSKit
+   cd ~/Developer/LAPSlock/LAPSlockKit
    open Package.swift
    ```
    That opens the Swift package in Xcode. (Opening `Package.swift` directly is the
@@ -52,7 +52,7 @@ credential boundary type behaves, and the macOS decision is locked in by test.
 In Terminal, from the project root:
 
 ```bash
-cd ~/Developer/PitLAPS
+cd ~/Developer/LAPSlock
 ./scripts/isolation-check.sh
 ```
 
@@ -60,7 +60,7 @@ Expect: `✅ isolation-check passed: CredentialKit imports only Foundation + Aut
 
 This is the check that keeps a password from ever reaching a log or a server. Run it
 before every commit. To see it work, temporarily add `import OSLog` to any file in
-`PitLAPSKit/Sources/CredentialKit/` and run it again — it should fail. Remove the import.
+`LAPSlockKit/Sources/CredentialKit/` and run it again — it should fail. Remove the import.
 
 ---
 
