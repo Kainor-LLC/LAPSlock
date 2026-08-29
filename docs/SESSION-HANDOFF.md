@@ -156,16 +156,21 @@ Swift package `LAPSlockKit`, six modules:
 - **PlatformSecurity** — biometric gate, reveal window state machine, screen privacy,
   state-restoration suppression, network reachability
 - **DiagnosticsKit** — support diagnostics whose types structurally cannot hold a credential
+- **LicensingKit** — free-tier reveal meter. Foundation + CryptoKit only. **Isolation
+  boundary, both directions:** it must not import CredentialKit and CredentialKit must not
+  import it. The meter counts EVENTS; no type in it has anywhere to put a credential.
 
-`scripts/isolation-check.sh` enforces the CredentialKit boundary AND that no
-credential-shaped value lives in `@AppStorage`/`@SceneStorage`. It has caught real
-violations twice, including one the assistant introduced.
+`scripts/isolation-check.sh` enforces TWO boundaries in both directions: CredentialKit
+imports Foundation + AuthKit only, and LicensingKit cannot reach CredentialKit. It also
+checks that no credential-shaped value lives in `@AppStorage`/`@SceneStorage`. It has
+caught real violations twice, including one the assistant introduced. It has been verified
+to FAIL on an injected violation, not merely to pass.
 
 `scripts/pre-push-scan.sh` scans the working tree and git history for employer data, PII,
 and credential-shaped strings before every push. It has caught leaks the assistant
 introduced twice.
 
-120 tests across five suites, all green. Run them with `swift test` from `LAPSlockKit/`,
+135 tests across six suites, all green. Run them with `swift test` from `LAPSlockKit/`,
 which is faster than the Xcode window dance and catches macOS-only build breaks that a
 device build will not.
 
@@ -177,16 +182,32 @@ device build will not.
 - **Licence is PolyForm Strict 1.0.0 plus an additional permission** allowing commercial
   organisations to copy and read the source for security review. Source-available, NOT open
   source.
+- **Free tier is METERED, not feature-crippled.** Five reveals per rolling 30 days, LAPS
+  and BitLocker sharing one allowance, re-revealing the same device inside an hour free.
+  Reveal itself must stay free because reveal is the thing a sceptical admin needs to
+  verify; convenience is what gets gated.
+- **The count lives in the Keychain and NEVER on a server.** A server counter would mean
+  learning how often each tenant retrieves passwords, which is usage telemetry, and the
+  privacy policy says none is collected. Keychain rather than UserDefaults so a reinstall
+  does not reset it — **verified on device 2026-08-29: the count does survive deleting and
+  reinstalling the app.** This is a nudge, not DRM, and the code says so out loud.
+- **Meter is checked BEFORE the biometric gate and charged AFTER the Graph response.**
+  Two separate calls, deliberately. Checking after the gate would make somebody complete
+  Face ID and only then learn they are out. Charging before the fetch would burn a credit
+  on a cancelled prompt or a network failure. Verified on device across six cases.
 - **One secret visible at a time.** Revealing a BitLocker key hides the LAPS password.
   `clearForNewReveal()` runs before the gate, so no secret is ever on screen while a
   biometric prompt is in flight.
 - **Biometric gate runs BEFORE the Graph call**, not after, so an abandoned reveal does not
   generate an audit event in the customer's tenant. Verified on device.
 - **Copy-to-clipboard is a Pro feature.**
-- **Icon** is a keycap with a keyhole, navy field. The name reads as a keyboard key, so
-  the icon is the artifact the buyer touches all day; a bare padlock was built, compared
-  at real device sizes, and rejected. Source geometry is `design/icons/render-icon.py`,
-  not a design file. See `design/icons/README.md` for the reasoning and the palette.
+- **Icon** is a keyhole inside a photoreal tire tread ring, navy field. Decided
+  2026-08-29, replacing a keycap that read as one more lock-family security icon. The
+  shipping asset comes from `design/icons/texturize-icon.py` (`SHIP_BASE` there is
+  authoritative), which imports geometry from `render-icon.py` and adds the print
+  treatment. `render-icon.py` no longer emits shipping assets — it used to, and running it
+  silently overwrote the icon with the keycap. See `design/icons/README.md`, which also
+  records the tread patterns that failed (poker chip, camera shutter, recycle glyph).
 - **GitHub Pages is fine until commerce.** The Cloudflare move is a dependency of the
   Stripe work.
 - **Do not attempt another privacy-cover fix inside `ScreenPrivacy.swift`.** Two attempts
@@ -228,6 +249,15 @@ device build will not.
 
 ## Environment notes learned the hard way
 
+- **After renaming the repo folder, clear `.build` AND `.swiftpm` in the package.** Both
+  cache absolute paths; `swift test` fails with a confusing "XCFramework Info.plist not
+  found" pointing at the old directory.
+- **Adding a library to `Package.swift` does not link it to the app target.** The package
+  tests pass while the app fails with "Unable to resolve module dependency". Fix in Xcode:
+  target → General → Frameworks, Libraries, and Embedded Content → +.
+- **A default argument expression is evaluated in a nonisolated context.** Defaulting a
+  parameter to a `@MainActor` initializer fails to compile even inside a `@MainActor`
+  class. Default to nil and construct in the initializer body instead.
 - **Xcode 26 has no Build field on the General tab.** Use Build Settings →
   `CURRENT_PROJECT_VERSION`, or `xcrun agvtool new-version -all N` with Xcode closed.
   agvtool prints a spurious `Cannot find ".../YES"` error; harmless.
@@ -276,6 +306,12 @@ Others:
 - Timed a network call from before the biometric prompt, inflating 617ms to 4132ms.
 
 ## What is next
+
+0. **The free-tier meter is DONE and verified on device.** `LicensingKit` counts reveals
+   in the Keychain, checked before the biometric gate and charged after a successful
+   fetch, with the count shown on both the list and the detail screen. Keychain survival
+   across app deletion is confirmed. What is left of the revenue path is the server half
+   and the StoreKit products.
 
 1. **Entitlement backend — in progress.** Azure infrastructure is provisioned. Next is the
    API contract (published publicly, implementation private), then the ES256 key, the

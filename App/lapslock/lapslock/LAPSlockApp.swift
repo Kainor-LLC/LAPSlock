@@ -257,14 +257,18 @@ struct AppRootView: View {
 
         case .demo:
             DeviceListView(
-                model: DeviceListModel(inventory: DemoInventoryProvider()),
+                model: DeviceListModel(
+                    inventory: DemoInventoryProvider(),
+                    meter: RevealMeters.demo
+                ),
                 isDemo: true,
                 settingsBuilder: {
                     SettingsView(
                         settings: AppSettings.shared,
                         requestRotationConsent: { nil },   // no tenant in demo mode
                         isDemo: true,
-                        tenantId: nil
+                        tenantId: nil,
+                        meter: RevealMeters.demo
                     )
                 },
                 detailBuilder: { device in
@@ -284,14 +288,20 @@ struct AppRootView: View {
         case .live:
             if let session = root.liveSession {
                 DeviceListView(
-                    model: DeviceListModel(inventory: session.inventory),
+                    model: DeviceListModel(
+                        inventory: session.inventory,
+                        meter: RevealMeters.live,
+                        isPro: false          // TODO: wire to /entitlement
+                    ),
                     isDemo: false,
                     settingsBuilder: {
                         SettingsView(
                             settings: AppSettings.shared,
                             requestRotationConsent: { await root.requestRotationConsent() },
                             isDemo: false,
-                            tenantId: root.signedInTenantId
+                            tenantId: root.signedInTenantId,
+                            meter: RevealMeters.live,
+                            isPro: false          // TODO: wire to /entitlement
                         )
                     },
                     detailBuilder: { device in
