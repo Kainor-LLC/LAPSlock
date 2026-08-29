@@ -1,4 +1,4 @@
-# PitLAPS — Feature Checklist
+# LAPSlock — Feature Checklist
 
 Tracks the build spec (`docs/BUILD-SPEC.md`) against what's actually built.
 Status as of the device-list/detail/reveal milestone.

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    PitLAPS macOS LAPS verification harness v2 — resolves Build Spec §2.4.
+    LAPSlock macOS LAPS verification harness v2 — resolves Build Spec §2.4.
 
 .DESCRIPTION
     v2 FIXES (v1 was wrong in two ways):

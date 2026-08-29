@@ -1,4 +1,4 @@
-# PitLAPS — session handoff
+# LAPSlock — session handoff
 
 Paste or attach this at the start of a new chat. Attach `docs/MASTER-TODO.md` alongside it
 for the full backlog; this file is just enough to resume without re-explaining.
@@ -7,9 +7,23 @@ Last updated: 2026-08-27.
 
 ---
 
+## Renamed from PitLAPS on 2026-08-27
+
+The product was called PitLAPS until the rename. Family feedback: "PitLAPS" reads as
+armpit once someone says it, and the old icon read as phallic. **LAPSlock** lands on Caps
+Lock, keeps LAPS as a literal App Store keyword, and carries the security meaning in the
+name itself.
+
+Done at the cheapest possible moment: nothing published, no customers, no trademark filed,
+no backend code written. USPTO and App Store searches were clear. Name clearance is folded
+into the attorney pass already on the list, alongside the "LAPS is Microsoft's product
+name" question, which is the larger of the two and predates the rename.
+
+Everything below reflects the new name. Anything still saying PitLAPS is stale.
+
 ## What this is
 
-**PitLAPS** — a multi-tenant iOS app for IT administrators to retrieve Windows LAPS local
+**LAPSlock** — a multi-tenant iOS app for IT administrators to retrieve Windows LAPS local
 administrator passwords and BitLocker recovery keys from Microsoft Entra ID and Intune.
 Delegated auth only, no backend in the credential path, passwords never touch any server
 the vendor operates.
@@ -36,20 +50,20 @@ the next piece is the API contract and the Function code.
 
 ## Entitlement backend — provisioned 2026-08-27
 
-Subscription **Kainor-PitLAPS** `024f01b2-f4b2-459f-84b6-cf7ced419758`, pay-as-you-go,
+Subscription **Kainor-LAPSlock** `024f01b2-f4b2-459f-84b6-cf7ced419758`, pay-as-you-go,
 spending limit OFF, Kainor tenant, `centralus`. Holds promotional credit; when it runs out
 billing simply starts rather than resources being deprovisioned.
 
 Two other empty subscriptions exist on the same tenant (`19dd2b0e` free trial, `797ffeb5`
-named "PitLAPS"). Neither is used. The one named "PitLAPS" is a trap — the live one is
-**Kainor-PitLAPS**.
+named "LAPSlock"). Neither is used. The one named "LAPSlock" is a trap — the live one is
+**Kainor-LAPSlock**.
 
 | Resource | Name |
 |---|---|
-| Resource group | `kainor-pitlaps-prod-rg` |
-| Storage | `kainorpitlapsprodst` (no hyphens allowed in storage names) |
-| Key Vault | `kainor-pitlaps-prod-kv` (RBAC, purge protection ON, 90-day retention) |
-| Function app | `kainor-pitlaps-prod-func` (Flex Consumption, .NET 10 isolated) |
+| Resource group | `kainor-lapslock-prod-rg` |
+| Storage | `kainorlapslockprodst` (no hyphens allowed in storage names) |
+| Key Vault | `kainor-lapslock-prod-kv` (RBAC, purge protection ON, 90-day retention) |
+| Function app | `kainor-lapslock-prod-func` (Flex Consumption, .NET 10 isolated) |
 | Managed identity | `90406c76-87bd-4e22-8a5a-636292cd98d4`, Key Vault Crypto User on the vault only |
 
 Still to do: ES256 key in the vault, licences table, API contract, Function code. Full
@@ -63,12 +77,15 @@ to confirm that in ten minutes.
 
 ## Build numbers
 
-Builds 1 and 2 are in App Store Connect and **both have broken sign-in** on any device with
-Microsoft Authenticator installed. Build 3 is the first working one. Consider removing 1
-and 2 from the testing group to avoid confusion later.
+Builds 1 to 3 belong to the **old PitLAPS App Store Connect record** and are dead. The
+LAPSlock record is new, so build numbers start again at 1.
 
-Build numbers are permanently consumed on upload even if the build is deleted. Next upload
-is build 4.
+The old PitLAPS App ID and app record still exist and have deliberately not been deleted:
+they are the fallback if anything about the new identity turns out to be wrong. Delete
+them only once a LAPSlock build has been uploaded and installed from TestFlight. That is
+the one irreversible step in the whole migration.
+
+Build numbers are permanently consumed on upload even if the build is deleted.
 
 ## Identifiers (all non-secret)
 
@@ -76,11 +93,12 @@ is build 4.
 |---|---|
 | Entra app client ID | `50c9aa83-4f5c-4203-a3c0-adab54a2ba3a` |
 | Kainor tenant ID | `4470dc21-a4b7-4729-a232-56d4c0eedf73` |
-| Bundle ID | `com.kainor.pitlaps` |
-| Redirect URI | `msauth.com.kainor.pitlaps://auth` (registered as iOS/macOS platform) |
+| Bundle ID | `com.kainor.lapslock` |
+| App Store Connect record | LAPSlock, name reserved 2026-08-27 |
+| Redirect URI | `msauth.com.kainor.lapslock://auth` (registered as iOS/macOS platform) |
 | Apple Team ID | `72C7PQBP52` |
 | Microsoft MPN (global) | `7147713` |
-| Repo | `github.com/Kainor-LLC/PitLAPS` (public, source-available) |
+| Repo | `github.com/Kainor-LLC/LAPSlock` (public, source-available) |
 | Site | `kainor.com` (GitHub Pages, `docs/` folder) |
 | MSAL version | 1.9.0, pinned |
 
@@ -100,7 +118,7 @@ Requested only if the user enables rotation in Settings:
 
 ## Architecture, in one screen
 
-Swift package `PitLAPSKit`, six modules:
+Swift package `LAPSlockKit`, six modules:
 
 - **AuthKit** — protocols only, no MSAL dependency
 - **AuthKitMSAL** — the only module importing MSAL. `MSALAuthManager` (tenant pinning) and
@@ -120,7 +138,9 @@ violations twice, including one the assistant introduced.
 and credential-shaped strings before every push. It has caught leaks the assistant
 introduced twice.
 
-~135 tests across five suites, all green.
+120 tests across five suites, all green. Run them with `swift test` from `LAPSlockKit/`,
+which is faster than the Xcode window dance and catches macOS-only build breaks that a
+device build will not.
 
 ## Settled decisions worth not relitigating
 
@@ -136,8 +156,10 @@ introduced twice.
 - **Biometric gate runs BEFORE the Graph call**, not after, so an abandoned reveal does not
   generate an audit event in the customer's tenant. Verified on device.
 - **Copy-to-clipboard is a Pro feature.**
-- **Icon** is a top-down single-seater with a keyhole cockpit, navy field. Source geometry
-  is `design/icons/render-icon.py`, not a design file.
+- **Icon** is a keycap with a keyhole, navy field. The name reads as a keyboard key, so
+  the icon is the artifact the buyer touches all day; a bare padlock was built, compared
+  at real device sizes, and rejected. Source geometry is `design/icons/render-icon.py`,
+  not a design file. See `design/icons/README.md` for the reasoning and the palette.
 - **GitHub Pages is fine until commerce.** The Cloudflare move is a dependency of the
   Stripe work.
 - **Do not attempt another privacy-cover fix inside `ScreenPrivacy.swift`.** Two attempts
@@ -151,23 +173,23 @@ introduced twice.
   for the missing ranges rather than guessing at the tail.
 - The sync block on the user's machine:
   ```
-  cd ~/Downloads/_pitlaps-incoming
+  cd ~/Downloads/_lapslock-incoming
   rm -rf extracted && mkdir extracted
-  unzip -q PitLAPS-foundation.zip -d extracted
-  S=~/Downloads/_pitlaps-incoming/extracted/PitLAPS
-  R=~/Developer/PitLAPS-repo
-  cp "$S/App/"*.swift              "$R/App/pitlaps/pitlaps/"
-  cp -R "$S/PitLAPSKit/Sources/."  "$R/PitLAPSKit/Sources/"
-  cp -R "$S/PitLAPSKit/Tests/."    "$R/PitLAPSKit/Tests/"
-  cp "$S/PitLAPSKit/Package.swift" "$R/PitLAPSKit/"
+  unzip -q LAPSlock-foundation.zip -d extracted
+  S=~/Downloads/_lapslock-incoming/extracted/LAPSlock
+  R=~/Developer/LAPSlock-repo
+  cp "$S/App/"*.swift              "$R/App/lapslock/lapslock/"
+  cp -R "$S/LAPSlockKit/Sources/."  "$R/LAPSlockKit/Sources/"
+  cp -R "$S/LAPSlockKit/Tests/."    "$R/LAPSlockKit/Tests/"
+  cp "$S/LAPSlockKit/Package.swift" "$R/LAPSlockKit/"
   cp "$S/scripts/"*.sh             "$R/scripts/" && chmod +x "$R/scripts/"*.sh
   ```
 - **No comments in shell blocks.** Apostrophes in them ("shouldn't") broke the user's paste
   twice by opening an unterminated quote in zsh. Also avoid em dashes in shell strings.
 - **Only one Xcode window at a time** on this project. App project for ⌘R and Archive,
-  `Package.swift` for ⌘U. `swift test` from `PitLAPSKit/` works and avoids the window
+  `Package.swift` for ⌘U. `swift test` from `LAPSlockKit/` works and avoids the window
   dance entirely.
-- When `Package.swift` changes, `rm -rf PitLAPSKit/.swiftpm` before reopening.
+- When `Package.swift` changes, `rm -rf LAPSlockKit/.swiftpm` before reopening.
 - The user is a CISSP, very proficient in PowerShell and Entra, and on a Mac. Do not
   over-explain identity concepts. Do explain Swift and Xcode.
 - Give the plan before commands for anything touching production identity, and stop for
@@ -190,6 +212,13 @@ introduced twice.
   entitlements is normal.
 
 ## Mistakes the assistant made, worth not repeating
+
+**From 2026-08-27:** added `MSALRedirectHandler.swift` to AuthKitMSAL without the
+`#if os(iOS)` guard that `MSALAuthManager.swift` carries and documents. MSAL builds for
+macOS but `handleMSALResponse` does not exist there, so the macOS test build broke the
+moment that file was added while the iOS app kept working perfectly. It went unnoticed for
+a day because the next steps were all device builds. **Run `swift test` after any change to
+AuthKitMSAL**, not just after changes that look test-related.
 
 **The big one, from 2026-08-26:** given a device-only failure with a generic error message,
 the assistant wrote code twice before reading a log. Both fixes were wrong. The MSAL log,

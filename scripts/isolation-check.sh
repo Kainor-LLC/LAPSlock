@@ -12,7 +12,7 @@ set -euo pipefail
 
 # Resolve repo-relative path to the credential module.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CRED_DIR="${SCRIPT_DIR}/../PitLAPSKit/Sources/CredentialKit"
+CRED_DIR="${SCRIPT_DIR}/../LAPSlockKit/Sources/CredentialKit"
 
 if [[ ! -d "$CRED_DIR" ]]; then
   echo "❌ isolation-check: CredentialKit not found at $CRED_DIR"

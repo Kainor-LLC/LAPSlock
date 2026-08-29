@@ -1,4 +1,4 @@
-PitLAPS source code license
+LAPSlock source code license
 ===========================
 
 Copyright 2026 Kainor LLC
@@ -14,7 +14,7 @@ permission matters: PolyForm Strict alone limits permitted purposes to
 noncommercial ones, which would not cover a for-profit company's security team
 auditing this repository -- the very audience this code is published for.
 
-PitLAPS is a trademark of Kainor LLC. No license to the trademark, trade name,
+LAPSlock is a trademark of Kainor LLC. No license to the trademark, trade name,
 product name, or icon is granted by these terms.
 
 --------------------------------------------------------------------------------
@@ -123,7 +123,7 @@ ORGANIZATIONS, permission to:
   2. read, study, analyze, compile, and run it,
 
 for the purpose of security review, verification, vulnerability research, or
-evaluation of PitLAPS prior to or during use of the official PitLAPS application.
+evaluation of LAPSlock prior to or during use of the official LAPSlock application.
 
 This additional permission does NOT grant permission to:
 
@@ -133,7 +133,7 @@ This additional permission does NOT grant permission to:
     product or service;
   - make changes or new works based on the software for any purpose other than
     the security review described above;
-  - use the PitLAPS name, trademark, or icon.
+  - use the LAPSlock name, trademark, or icon.
 
 Responsible disclosure of vulnerabilities found under this permission is
 requested, not required. See SECURITY.md.
