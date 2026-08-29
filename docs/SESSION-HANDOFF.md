@@ -7,6 +7,22 @@ Last updated: 2026-08-27.
 
 ---
 
+## Rename status, as of 2026-08-28
+
+Complete except one deliberate hold. Done: Apple App ID `com.kainor.lapslock` and the
+LAPSlock App Store Connect record; Entra redirect URI, registration rename, and logo; the
+full code sweep verified on device with a real broker sign in; GitHub repo and local folder;
+Azure rebuilt under LAPSlock names with the old group deleted.
+
+**Not done, on purpose:** the PitLAPS App ID and App Store Connect record still exist, and
+the old `msauth.com.kainor.pitlaps://auth` redirect URI is still registered in Entra. They
+are the rollback. Delete them only after a LAPSlock build has been uploaded to TestFlight
+and installed from there. That is the one irreversible step left.
+
+Also still to do: upload TestFlight build 1 under the LAPSlock record (builds 1 to 3 belong
+to the dead PitLAPS record), delete the old PitLAPS app from the phone, and register
+`lapslock.com` / `.app` before someone else does.
+
 ## Renamed from PitLAPS on 2026-08-27
 
 The product was called PitLAPS until the rename. Family feedback: "PitLAPS" reads as
@@ -64,7 +80,18 @@ named "LAPSlock"). Neither is used. The one named "LAPSlock" is a trap — the l
 | Storage | `kainorlapslockprodst` (no hyphens allowed in storage names) |
 | Key Vault | `kainor-lapslock-prod-kv` (RBAC, purge protection ON, 90-day retention) |
 | Function app | `kainor-lapslock-prod-func` (Flex Consumption, .NET 10 isolated) |
-| Managed identity | `90406c76-87bd-4e22-8a5a-636292cd98d4`, Key Vault Crypto User on the vault only |
+| Default host | `kainor-lapslock-prod-func.azurewebsites.net` |
+| Managed identity | `e4c41c72-583a-4941-b822-73628fbba6df`, Key Vault Crypto User on the vault only |
+
+Rebuilt from scratch on 2026-08-28 during the rename. Nothing had been deployed to the
+PitLAPS-named group, so it was a clean recreate rather than a migration; the old group was
+deleted afterwards. Its vault survives as a soft-deleted entry holding the name
+`kainor-pitlaps-prod-kv` for 90 days, because purge protection cannot be waived. Inert, and
+the name will never be reused.
+
+**`httpsOnly` is FALSE on creation** for a Flex Consumption function app and has to be set
+explicitly. Confirmed twice now, so it is the default rather than a one-off. Check it on
+anything created later.
 
 Still to do: ES256 key in the vault, licences table, API contract, Function code. Full
 detail and the reasoning behind each decision is in `MASTER-TODO.md` under "Backend
@@ -184,6 +211,9 @@ device build will not.
   cp "$S/LAPSlockKit/Package.swift" "$R/LAPSlockKit/"
   cp "$S/scripts/"*.sh             "$R/scripts/" && chmod +x "$R/scripts/"*.sh
   ```
+- **The user runs PowerShell on a Mac, not bash.** The sync block above is bash and its
+  `S=` / `R=` variable assignments fail in pwsh. Either give PowerShell-native commands or
+  spell out full paths with no variables. This tripped up a paste already.
 - **No comments in shell blocks.** Apostrophes in them ("shouldn't") broke the user's paste
   twice by opening an unterminated quote in zsh. Also avoid em dashes in shell strings.
 - **Only one Xcode window at a time** on this project. App project for ⌘R and Archive,

@@ -524,7 +524,7 @@ resources), Kainor tenant, region `centralus`.
 | Key Vault | `kainor-lapslock-prod-kv` | RBAC authorization, purge protection ON, 90-day retention |
 | Function app | `kainor-lapslock-prod-func` | Flex Consumption, .NET 10 isolated, Linux, httpsOnly true |
 | App Insights | `kainor-lapslock-prod-func` | auto-created, name matches the function app |
-| Managed identity | `90406c76-87bd-4e22-8a5a-636292cd98d4` | system-assigned |
+| Managed identity | `e4c41c72-583a-4941-b822-73628fbba6df` | system-assigned |
 | Role assignment | Key Vault Crypto User | scoped to the vault ONLY |
 
 Decisions worth not relitigating:
@@ -541,8 +541,13 @@ Decisions worth not relitigating:
   exfiltrate the key and mint forever.
 - **Sign through Key Vault rather than holding key material in the app.** Costs a round trip
   per issued JWT, irrelevant at a few requests per install per month.
-- **`httpsOnly` was false on creation** and had to be set explicitly. Worth re-checking on
-  any future app created by `az functionapp create`.
+- **`httpsOnly` is false on creation** for Flex Consumption and must be set explicitly.
+  Seen on both the PitLAPS and LAPSlock function apps, so it is the default, not a fluke.
+  Always verify it after `az functionapp create`.
+- **Rebuilt under LAPSlock names on 2026-08-28.** Nothing had been deployed, so recreating
+  was cheaper than renaming, and the old group was deleted. Its vault lingers as a
+  soft-deleted entry for 90 days: purge protection cannot be waived, which is the whole
+  point of enabling it.
 
 CLI gotcha: `az functionapp show` nests everything under `properties`, while
 `az functionapp list` flattens it. A `--query` written for one silently returns nulls
