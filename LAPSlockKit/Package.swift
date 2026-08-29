@@ -41,7 +41,8 @@ let package = Package(
         .library(name: "InventoryKit", targets: ["InventoryKit"]),
         .library(name: "CredentialKit", targets: ["CredentialKit"]),
         .library(name: "PlatformSecurity", targets: ["PlatformSecurity"]),
-        .library(name: "DiagnosticsKit", targets: ["DiagnosticsKit"])
+        .library(name: "DiagnosticsKit", targets: ["DiagnosticsKit"]),
+        .library(name: "LicensingKit", targets: ["LicensingKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -76,11 +77,20 @@ let package = Package(
         // the credential path. The isolation guard enforces this.
         .target(name: "DiagnosticsKit"),
 
+        // Free-tier reveal metering. Foundation + CryptoKit only.
+        //
+        // ⚠ ISOLATION: this target must NOT depend on CredentialKit, and CredentialKit
+        // must never import it. The meter counts EVENTS — no type in it has anywhere to
+        // put a credential. Wiring happens in the app layer (DeviceDetailModel), which
+        // already coordinates the gate, the provider and the reveal session.
+        .target(name: "LicensingKit"),
+
         // Runs with no MSAL and no network. Works on My Mac or a simulator.
         .testTarget(name: "CredentialKitTests", dependencies: ["CredentialKit", "AuthKit"]),
         .testTarget(name: "InventoryKitTests", dependencies: ["InventoryKit", "CredentialKit", "AuthKit"]),
         .testTarget(name: "PlatformSecurityTests", dependencies: ["PlatformSecurity"]),
         .testTarget(name: "AuthKitTests", dependencies: ["AuthKit"]),
-        .testTarget(name: "DiagnosticsKitTests", dependencies: ["DiagnosticsKit"])
+        .testTarget(name: "DiagnosticsKitTests", dependencies: ["DiagnosticsKit"]),
+        .testTarget(name: "LicensingKitTests", dependencies: ["LicensingKit"])
     ]
 )

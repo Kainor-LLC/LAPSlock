@@ -5,6 +5,7 @@ import AuthKit
 import AuthKitMSAL
 import CredentialKit
 import InventoryKit
+import LicensingKit
 
 // App root. Owns the one decision the rest of the app depends on: which data source
 // is in play — a live tenant, or demo mode.
@@ -72,6 +73,24 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             sourceApplication: options[.sourceApplication] as? String
         )
     }
+}
+
+/// One meter for the whole app, per mode.
+///
+/// LIVE uses the Keychain store, so the count survives a delete-and-reinstall. That is
+/// the entire reason for choosing the Keychain over UserDefaults, and it is the one
+/// assumption in the design that has to be verified on real hardware rather than trusted.
+///
+/// DEMO uses an in-memory store. A reviewer or a prospect exploring fake data must not
+/// burn the five reveals they will want for evaluating against their own tenant. It is
+/// still metered rather than unlimited, deliberately: App Store review then exercises the
+/// countdown and the blocked state, so a reviewer meeting the wall has already seen the
+/// count going down and understands what happened. A reviewer surprised by a block they
+/// were never warned about is a rejection risk.
+@MainActor
+enum RevealMeters {
+    static let live = RevealMeter(store: KeychainRevealLedgerStore())
+    static let demo = RevealMeter(store: InMemoryRevealLedgerStore())
 }
 
 @MainActor
@@ -255,7 +274,8 @@ struct AppRootView: View {
                             provider: DemoLapsProvider(platform: device.platform),
                             bitLocker: DemoBitLockerService(),
                             isDemo: true,
-                            rotationEnabled: AppSettings.shared.bitLockerRotationEnabled
+                            rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
+                            meter: RevealMeters.demo
                         )
                     )
                 }
@@ -281,7 +301,13 @@ struct AppRootView: View {
                                 provider: session.provider(for: device.platform),
                                 bitLocker: session.bitLocker(),
                                 isDemo: false,
-                                rotationEnabled: AppSettings.shared.bitLockerRotationEnabled
+                                rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
+                                meter: RevealMeters.live,
+                                // TODO: wire to the entitlement check once /entitlement
+                                // exists. Hardcoded false means everyone is metered,
+                                // which is the safe default while there is nothing to
+                                // sell — nobody is wrongly given Pro for free.
+                                isPro: false
                             )
                         )
                     }

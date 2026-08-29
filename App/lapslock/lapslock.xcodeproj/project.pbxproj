@@ -12,6 +12,8 @@
 		87177D8E302FCD330009BB78 /* PlatformSecurity in Frameworks */ = {isa = PBXBuildFile; productRef = 87177D8D302FCD330009BB78 /* PlatformSecurity */; };
 		8734CC64302FBA9E0056D699 /* AuthKitMSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 8734CC63302FBA9E0056D699 /* AuthKitMSAL */; };
 		8734CC69302FBB7D0056D699 /* CredentialKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8734CC68302FBB7D0056D699 /* CredentialKit */; };
+		87C94BB73042981F009D768F /* LicensingKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87C94BB63042981F009D768F /* LicensingKit */; };
+		87C94BB930429849009D768F /* AuthKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87C94BB830429849009D768F /* AuthKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,8 +46,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				87C94BB73042981F009D768F /* LicensingKit in Frameworks */,
 				87177D8C302FCD330009BB78 /* InventoryKit in Frameworks */,
 				87177D8E302FCD330009BB78 /* PlatformSecurity in Frameworks */,
+				87C94BB930429849009D768F /* AuthKit in Frameworks */,
 				8734CC69302FBB7D0056D699 /* CredentialKit in Frameworks */,
 				8734CC64302FBA9E0056D699 /* AuthKitMSAL in Frameworks */,
 				870E605B30337FDC009F4244 /* DiagnosticsKit in Frameworks */,
@@ -104,6 +108,8 @@
 				87177D8B302FCD330009BB78 /* InventoryKit */,
 				87177D8D302FCD330009BB78 /* PlatformSecurity */,
 				870E605A30337FDC009F4244 /* DiagnosticsKit */,
+				87C94BB63042981F009D768F /* LicensingKit */,
+				87C94BB830429849009D768F /* AuthKit */,
 			);
 			productName = lapslock;
 			productReference = 8734CC50302FB6650056D699 /* lapslock.app */;
@@ -419,6 +425,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = CredentialKit;
+		};
+		87C94BB63042981F009D768F /* LicensingKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = LicensingKit;
+		};
+		87C94BB830429849009D768F /* AuthKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = AuthKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
