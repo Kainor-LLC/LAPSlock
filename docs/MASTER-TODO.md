@@ -306,18 +306,34 @@ macOS password retrieval.
   phantom hit. `ManagedDeviceSummary.primaryUserLabel` exists for this; swap
   `DeviceListView` line ~301 over to it.
 
-- ⬜ **`LicensingKit` — Keychain-backed reveal meter.** Rolling 30-day window, 5 free
-  reveals, LAPS and BitLocker combined. **Buildable now; does not depend on the entitlement
-  backend.** See the pricing section for the three things to resolve first (check before the
-  gate not after, verify Keychain survival on device, store timestamps not a count).
+- ✅ **`LicensingKit` — Keychain-backed reveal meter. DONE 2026-08-29.** Rolling 30-day
+  window, 5 free reveals, LAPS and BitLocker sharing one allowance, re-revealing the same
+  device inside an hour free. All three open questions resolved:
 
-  Isolation note: this module must not import CredentialKit, and CredentialKit must not
-  import it, or the §3.1 boundary breaks. The meter counts *events*, never values. Wire it
-  in `DeviceDetailModel`, which already coordinates the gate, the provider, and the session.
+  1. Checked BEFORE the biometric gate, charged AFTER a successful Graph response. Two
+     separate calls so a blocked reveal costs no Face ID prompt and a cancelled or failed
+     one costs no credit. Verified on device across six cases including the cancel path.
+  2. **Keychain survival across app deletion VERIFIED on device.** The count carries over
+     a delete and reinstall. The design assumption holds.
+  3. Timestamps, not a counter, so the window genuinely rolls.
 
-- ⬜ Remaining-reveals count surfaced in the device list and detail screen, **before** the
-  tap. Free-tier copy is the most sensitive text in the app — this audience is allergic to
-  being sold to, so one clear message at zero and nothing before it.
+  Also: device identifiers are stored as salted SHA-256, because the ledger outlives
+  sign-out and tenant switches and a readable list of *which devices had their admin
+  password revealed* is reconnaissance. The meter fails open — a Keychain error loses a
+  count rather than blocking anybody. Demo mode has its own in-memory meter so a reviewer
+  exercises the countdown and the blocked state without burning real credits.
+  `isolation-check.sh` now enforces the boundary in both directions and has been verified
+  to fail on an injected violation.
+
+- ✅ **Remaining-reveals count in the device list and the detail screen, DONE 2026-08-29.**
+  Shown before the tap, as a quiet line that scrolls away with the list rather than a
+  pinned banner. Turns orange at zero. Hidden entirely for Pro.
+
+- ⬜ Blocked-state copy currently says "Pro removes the limit" with no price. Deliberate:
+  App Store pricing is per-storefront and must come from StoreKit at runtime, never a
+  hardcoded string. Add the upgrade action once IAP products exist.
+- ⬜ `isPro` is hardcoded false with a TODO pointing at `/entitlement`. Everyone is metered
+  until entitlement exists, which is the safe direction — nobody is accidentally given Pro.
 - ⬜ StoreKit subscription products and free trial (7 or 14 days) configuration
 - ⬜ Gate copy-to-clipboard, BitLocker rotation, favourites, and app lock behind Pro
 - ⬜ Recents / favorites
@@ -792,10 +808,9 @@ These are hours, not days, and two of them are things I said mattered and then d
    first real device build proved it necessary rather than nice. MSAL/AAD error code,
    correlation ID, and a broker-path flag, allowlisted so no authorization code can ride
    along in an error description. Full detail under "Next up — code".
-7. **`LicensingKit` reveal meter.** Promoted here by the 2026-08-27 pricing decision. It is
-   the revenue path's *client* half and it does not depend on the entitlement backend at
-   all, so it can be built in parallel. Resolve the three open questions in the pricing
-   section first, particularly verifying Keychain survival on device.
+7. ✅ **`LicensingKit` reveal meter — DONE 2026-08-29.** The client half of the revenue
+   path is shipped and verified on device. What remains is the server half (Tier 4) and
+   the StoreKit products.
 8. **Windows LAPS password history.** `credentials` returns multiple entries and we take
    the newest. History matters when a device has not checked in and is still running an
    older password — a real support scenario where the current app gives the wrong answer.

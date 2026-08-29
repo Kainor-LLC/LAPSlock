@@ -22,7 +22,8 @@ import CryptoKit
 @MainActor
 public final class RevealMeter {
 
-    private let policy: RevealAllowancePolicy
+    /// Public so UI can report "n of 5" without hardcoding the 5 in two places.
+    public let policy: RevealAllowancePolicy
     private let store: RevealLedgerStore
     private let clock: MeterClock
 
@@ -47,6 +48,19 @@ public final class RevealMeter {
         if isPro { return .max }
         let ledger = prunedLedger()
         return max(0, policy.freeRevealsPerWindow - ledger.entries.count)
+    }
+
+    /// When the allowance frees up again, or nil if it has not run out.
+    ///
+    /// Exists for the Settings readout, which has no particular device in hand and so
+    /// cannot go through `check(deviceIdentifier:isPro:)`. A customer asking "why can't I
+    /// reveal" needs a date, not just a zero.
+    public func nextAvailable(isPro: Bool) -> Date? {
+        guard !isPro else { return nil }
+        let ledger = prunedLedger()
+        guard ledger.entries.count >= policy.freeRevealsPerWindow,
+              let oldest = ledger.entries.map(\.at).min() else { return nil }
+        return oldest.addingTimeInterval(policy.window)
     }
 
     /// Whether a reveal may proceed. Call BEFORE the biometric gate.

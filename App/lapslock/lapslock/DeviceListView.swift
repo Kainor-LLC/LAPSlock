@@ -3,6 +3,7 @@ import Combine
 import CredentialKit
 import InventoryKit
 import DiagnosticsKit
+import LicensingKit
 
 // Build Spec §5 — the device list. First screen after sign-in.
 //
@@ -42,8 +43,27 @@ final class DeviceListModel: ObservableObject {
 
     private let inventory: any DeviceInventoryProviding
 
-    init(inventory: any DeviceInventoryProviding) {
+    /// Free-tier meter, shared with the detail screen so both read one ledger.
+    private let meter: RevealMeter
+    private let isPro: Bool
+
+    /// Reveals left in the current window. Shown on the LIST, not just on the detail
+    /// screen, because an admin scrolling twenty machines should already know they are
+    /// on their last one. Finding out only after opening a device is half a warning.
+    @Published private(set) var remainingReveals: Int = 0
+
+    init(
+        inventory: any DeviceInventoryProviding,
+        // Nil rather than a constructed default: a default argument expression is
+        // evaluated in a nonisolated context and RevealMeter.init is @MainActor.
+        meter: RevealMeter? = nil,
+        isPro: Bool = false
+    ) {
         self.inventory = inventory
+        let resolvedMeter = meter ?? RevealMeter(store: InMemoryRevealLedgerStore())
+        self.meter = resolvedMeter
+        self.isPro = isPro
+        self.remainingReveals = resolvedMeter.remaining(isPro: isPro)
 
         // Only the query is debounced. Device changes (first page, paging, refresh) flow
         // through immediately, because those are not user-typing bursts and delaying them
@@ -57,6 +77,22 @@ final class DeviceListModel: ObservableObject {
                 DeviceSearch.filter(devices, query: query)
             }
             .assign(to: &$visibleDevices)
+    }
+
+    /// Re-reads the meter. Called when the list appears, which includes popping back
+    /// from a detail screen where a reveal may have just been spent.
+    func refreshRemaining() {
+        remainingReveals = meter.remaining(isPro: isPro)
+    }
+
+    /// The line shown above the list. Nil for Pro, who have no meter to report.
+    var allowanceNote: String? {
+        guard !isPro else { return nil }
+        switch remainingReveals {
+        case 0:  return "No free reveals left this month."
+        case 1:  return "1 free reveal left this month."
+        default: return "\(remainingReveals) free reveals left this month."
+        }
     }
 
     func load() async {
@@ -202,15 +238,37 @@ struct DeviceListView: View {
         .task {
             if model.devices.isEmpty { await model.load() }
         }
+        .onAppear {
+            // Also fires on the way back from a detail screen, which is exactly when
+            // the count may have changed.
+            model.refreshRemaining()
+        }
     }
 
     // MARK: - states
 
     private var deviceList: some View {
         List {
+            // Scrolls away with the content rather than pinning to the top. Present on
+            // arrival so nobody is surprised at a broken machine, absent once you are
+            // working, because this audience is unusually allergic to being sold to.
+            if let note = model.allowanceNote {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(model.remainingReveals == 0 ? .orange : .secondary)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+
             ForEach(model.visibleDevices) { device in
                 NavigationLink {
+                    // Refresh on the way BACK, not on the list's onAppear. A
+                    // NavigationStack does not disappear when a detail is pushed onto
+                    // it, so onAppear on the stack fires once at launch and never again.
+                    // The detail view's disappearance is the actual moment a reveal may
+                    // have been spent.
                     detailBuilder(device)
+                        .onDisappear { model.refreshRemaining() }
                 } label: {
                     DeviceRow(device: device)
                 }

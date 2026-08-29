@@ -3,6 +3,7 @@ import Combine
 import AuthKit
 import CredentialKit
 import DiagnosticsKit
+import LicensingKit
 
 // Settings. Three toggles, each with a deliberate design decision behind it.
 //
@@ -73,6 +74,10 @@ struct SettingsView: View {
     let isDemo: Bool
     /// Tenant id of the signed-in account, offered as an opt-in field in the report.
     let tenantId: String?
+    /// Free-tier meter, shared with the list and detail screens so all three read one
+    /// ledger. Optional and defaulted so existing call sites and previews still compile.
+    var meter: RevealMeter? = nil
+    var isPro: Bool = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var isRequestingConsent = false
@@ -86,15 +91,24 @@ struct SettingsView: View {
     @State private var mailError: String?
     @Environment(\.openURL) private var openURL
 
+    // Free tier
+    @State private var remainingReveals = 0
+    @State private var nextAvailable: Date?
+
     var body: some View {
         NavigationStack {
             Form {
                 appearanceSection
                 rotationSection
                 macOSSection
+                freeTierSection
                 diagnosticsSection
                 aboutSection
+                #if DEBUG
+                debugSection
+                #endif
             }
+            .task { refreshMeter() }
             .navigationTitle("Settings")
             .toolbarBackground(.visible, for: .navigationBar)
             // Attached to the NavigationStack, not to the Section. A Section re-renders
@@ -212,6 +226,83 @@ struct SettingsView: View {
                 """)
         }
     }
+
+    // MARK: - free tier
+
+    /// Read-only status, always present for free-tier users.
+    ///
+    /// Deliberately NOT a sales surface. There is no upgrade button and no price here:
+    /// this is the place a confused customer looks, and the place support asks them to
+    /// read from, so it answers "how many are left and when do I get more" and stops.
+    /// Turning a status readout into a pitch is exactly what this audience resents.
+    ///
+    /// The footer does double duty. It explains the count, and while doing so it states
+    /// the strongest privacy claim the product has: the tally is local, because a server
+    /// counter would mean recording how often each tenant retrieves passwords.
+    @ViewBuilder
+    private var freeTierSection: some View {
+        if !isPro, meter != nil {
+            Section {
+                LabeledContent("Free reveals left", value: "\(remainingReveals) of \(meterTotal)")
+                if let nextAvailable {
+                    LabeledContent("Next one available", value: Self.relative(nextAvailable))
+                }
+            } header: {
+                Text("Reveals")
+            } footer: {
+                Text("""
+                    Local administrator passwords and BitLocker keys draw on the same \
+                    allowance, and revealing the same device twice within an hour only \
+                    counts once.
+
+                    This tally is kept on this device and nowhere else. LAPSlock does not \
+                    record which credentials you retrieve, or how often, on any server.
+                    """)
+            }
+        }
+    }
+
+    private var meterTotal: Int {
+        meter?.policy.freeRevealsPerWindow ?? 5
+    }
+
+    private func refreshMeter() {
+        guard let meter else { return }
+        remainingReveals = meter.remaining(isPro: isPro)
+        nextAvailable = meter.nextAvailable(isPro: isPro)
+    }
+
+    static func relative(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f.localizedString(for: date, relativeTo: Date())
+    }
+
+    // MARK: - debug
+
+    #if DEBUG
+    /// DEBUG ONLY, and structurally so: the whole section is inside `#if DEBUG`, not
+    /// hidden behind a runtime flag. A reset button that reaches a Release build makes
+    /// the meter decorative, and a runtime flag is one careless edit away from shipping.
+    ///
+    /// It exists because testing anything about metering otherwise means waiting out a
+    /// 30 day window or reinstalling, and reinstalling does not help — the ledger lives
+    /// in the Keychain and survives deletion, which is verified behaviour.
+    private var debugSection: some View {
+        Section {
+            LabeledContent("Ledger", value: "\(meterTotal - remainingReveals) of \(meterTotal) used")
+            Button("Reset reveal meter", role: .destructive) {
+                meter?.resetLedger()
+                refreshMeter()
+            }
+            .disabled(meter == nil)
+        } header: {
+            Text("Debug")
+        } footer: {
+            Text("Compiled out of Release builds entirely.")
+        }
+    }
+    #endif
 
     // MARK: - diagnostics
 

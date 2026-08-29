@@ -131,6 +131,38 @@ final class RevealMeterTests: XCTestCase {
                        accuracy: 1)
     }
 
+    // MARK: - nextAvailable, for the Settings readout
+
+    func test_nextAvailableIsNilWhileAllowanceRemains() {
+        let (meter, clock) = makeMeter()
+        XCTAssertNil(meter.nextAvailable(isPro: false))
+        meter.recordReveal(deviceIdentifier: "a", isPro: false)
+        clock.advance(2 * hour)
+        XCTAssertNil(meter.nextAvailable(isPro: false), "four reveals left is not exhausted")
+    }
+
+    func test_nextAvailableMatchesTheOldestEntryAgingOut() throws {
+        let (meter, clock) = makeMeter()
+        let start = clock.now
+        for id in ["a", "b", "c", "d", "e"] {
+            meter.recordReveal(deviceIdentifier: id, isPro: false)
+            clock.advance(2 * hour)
+        }
+        let next = try XCTUnwrap(meter.nextAvailable(isPro: false))
+        XCTAssertEqual(next.timeIntervalSince1970,
+                       start.addingTimeInterval(30 * day).timeIntervalSince1970,
+                       accuracy: 1)
+    }
+
+    func test_nextAvailableIsNilForPro() {
+        let (meter, clock) = makeMeter()
+        for id in ["a", "b", "c", "d", "e"] {
+            meter.recordReveal(deviceIdentifier: id, isPro: false)
+            clock.advance(2 * hour)
+        }
+        XCTAssertNil(meter.nextAvailable(isPro: true), "Pro has no allowance to run out")
+    }
+
     // MARK: - Pro
 
     func test_proIsNeverMetered() {
