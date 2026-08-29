@@ -6,6 +6,7 @@ import CredentialKit
 import InventoryKit
 import PlatformSecurity
 import DiagnosticsKit
+import LicensingKit
 
 // Build Spec §6 — device detail and the credential reveal.
 //
@@ -71,13 +72,28 @@ final class DeviceDetailModel: ObservableObject {
     private var bitLockerSecret: SensitiveValue?
     private let bitLocker: any BitLockerKeyProviding
 
+    /// Free-tier reveal meter. Counts events only — LicensingKit cannot hold a credential,
+    /// and `scripts/isolation-check.sh` fails the build if it ever imports CredentialKit.
+    private let meter: RevealMeter
+    /// Pro removes metering entirely. Wired to the entitlement check once that exists.
+    let isPro: Bool
+    /// Reveals left in the current window, for display BEFORE the user taps anything.
+    @Published var remainingReveals: Int = 0
+
     init(
         device: ManagedDeviceSummary,
         provider: any LocalAdminCredentialProviding,
         bitLocker: any BitLockerKeyProviding,
         isDemo: Bool,
         rotationEnabled: Bool = false,
-        visibleDuration: TimeInterval = 60
+        visibleDuration: TimeInterval = 60,
+        // Defaulted to nil rather than to a constructed meter: a default argument
+        // expression is evaluated in a nonisolated context, and RevealMeter.init is
+        // @MainActor. Building it in the body works because this class is @MainActor,
+        // so the initializer is too. Previews and tests that pass nothing get a private
+        // in-memory meter and never touch the Keychain.
+        meter: RevealMeter? = nil,
+        isPro: Bool = false
     ) {
         self.device = device
         self.provider = provider
@@ -87,6 +103,10 @@ final class DeviceDetailModel: ObservableObject {
         self.rotationEnabled = rotationEnabled
         self.gate = BiometricGate()
         self.session = RevealSession(visibleDuration: visibleDuration)
+        let resolvedMeter = meter ?? RevealMeter(store: InMemoryRevealLedgerStore())
+        self.meter = resolvedMeter
+        self.isPro = isPro
+        self.remainingReveals = resolvedMeter.remaining(isPro: isPro)
 
         // The single wiring that matters most: when the window ends for ANY reason,
         // the bytes are overwritten and the clipboard is cleared.
@@ -165,7 +185,18 @@ final class DeviceDetailModel: ObservableObject {
             return
         }
 
-        // STEP 1: the gate. Before any network call.
+        // STEP 1: the free-tier meter, BEFORE the gate.
+        //
+        // The ordering is the whole point. Checking after the gate would make somebody
+        // complete Face ID and only then learn they are out of reveals, which is exactly
+        // the surprise-at-the-machine failure the free tier is designed to avoid. A
+        // blocked reveal costs no authentication and no network call.
+        if case .exhausted(let nextAvailable) = meter.check(deviceIdentifier: device.id, isPro: isPro) {
+            errorMessage = Self.meterExhaustedMessage(nextAvailable: nextAvailable)
+            return
+        }
+
+        // STEP 2: the gate. Before any network call.
         let availability = gate.availability()
         guard availability.canAuthenticate else {
             errorMessage = BiometricPolicy.noAuthConfiguredMessage
@@ -211,6 +242,10 @@ final class DeviceDetailModel: ObservableObject {
             revealedItem = .lapsPassword
             session.reveal()
             syncSessionState()
+            // Charge only now. A cancelled prompt, a permission error or a network
+            // failure must never cost a credit — the user pays for reveals that actually
+            // produced a password, and nothing else.
+            remainingReveals = meter.recordReveal(deviceIdentifier: device.id, isPro: isPro)
             await Self.record(.credentialReveal, .success,
                               endpoint: DiagnosticEndpoint.deviceLocalCredentials,
                               platform: device.platform, since: fetchStarted)
@@ -247,6 +282,15 @@ final class DeviceDetailModel: ObservableObject {
             errorMessage = RevealRevocation.screenRecording.message
             return
         }
+
+        // Meter before the gate, same as the password path. LAPS passwords and BitLocker
+        // keys draw on one shared allowance: both are a credential leaving the tenant, and
+        // splitting them into two counters would be arbitrary from the admin's side.
+        if case .exhausted(let nextAvailable) = meter.check(deviceIdentifier: device.id, isPro: isPro) {
+            errorMessage = Self.meterExhaustedMessage(nextAvailable: nextAvailable)
+            return
+        }
+
         let availability = gate.availability()
         guard availability.canAuthenticate else {
             errorMessage = BiometricPolicy.noAuthConfiguredMessage
@@ -276,6 +320,7 @@ final class DeviceDetailModel: ObservableObject {
             revealedItem = .bitLockerKey(id: info.id)
             session.reveal()
             syncSessionState()
+            remainingReveals = meter.recordReveal(deviceIdentifier: device.id, isPro: isPro)
             await Self.record(.credentialReveal, .success,
                               endpoint: "/v1.0/informationProtection/bitlocker/recoveryKeys/{id}",
                               platform: device.platform, since: started)
@@ -470,6 +515,33 @@ final class DeviceDetailModel: ObservableObject {
         }
     }
 
+    // MARK: - free tier copy
+
+    /// Shown once, when the allowance runs out. Not a nag: this audience is unusually
+    /// allergic to being sold to, so it appears at the moment of the block and nowhere
+    /// else.
+    ///
+    /// TODO when StoreKit products exist: append the upgrade action and let StoreKit
+    /// supply the localized price. Never hardcode a price string — App Store pricing is
+    /// per-storefront and a baked-in number will be wrong somewhere.
+    static func meterExhaustedMessage(nextAvailable: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        let when = formatter.localizedString(for: nextAvailable, relativeTo: Date())
+        return "You've used all your free reveals for now. The next one frees up \(when). "
+            + "Pro removes the limit."
+    }
+
+    /// The count shown BEFORE the user taps, so nobody discovers the wall while standing
+    /// at a broken machine. Nil for Pro, and nil at zero because the block message says
+    /// it better at that point.
+    var remainingRevealsNote: String? {
+        guard !isPro, remainingReveals > 0 else { return nil }
+        return remainingReveals == 1
+            ? "1 free reveal left this month."
+            : "\(remainingReveals) free reveals left this month."
+    }
+
     static func metadataNote(for error: Error) -> String? {
         guard let e = error as? CredentialError else { return nil }
         switch e {
@@ -628,6 +700,12 @@ struct DeviceDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             if model.capabilities.supportsReveal && model.device.revealBlockedReason == nil {
                 Text("Face ID confirms it's you before the password is retrieved. It hides again after 60 seconds.")
+                // Stated up front, never as a surprise. An admin who discovers the limit
+                // while standing at a broken workstation taps reveal again, and every
+                // extra tap is another audit event in the customer's tenant.
+                if let note = model.remainingRevealsNote {
+                    Text(note)
+                }
             }
             if let portal = model.portalURL, !model.capabilities.supportsReveal {
                 Link("Open this device in Intune", destination: portal)

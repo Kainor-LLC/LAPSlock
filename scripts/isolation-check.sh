@@ -1,29 +1,79 @@
 #!/usr/bin/env bash
 # Build Spec §3.1 / §13 — the isolation guard.
 #
-# Fails (exit 1) if CredentialKit imports any module that could exfiltrate a
-# credential: the licensing layer, any analytics SDK, or any logging framework.
-# This turns "the security boundary" from a comment into an enforced invariant.
+# Fails (exit 1) if a module imports something that could carry a credential out of the
+# app. This turns "the security boundary" from a comment into an enforced invariant.
+#
+# TWO BOUNDARIES ARE CHECKED, in both directions:
+#
+#   CredentialKit  must import Foundation + AuthKit only.
+#                  It is where credentials live, so nothing that could log, transmit or
+#                  persist them may enter its link graph.
+#
+#   LicensingKit   must import Foundation + CryptoKit + Security only.
+#                  The free-tier meter counts EVENTS. If it ever imports CredentialKit it
+#                  gains the ability to hold a credential, and the guarantee that the meter
+#                  cannot see passwords stops being structural and becomes a matter of
+#                  care. The reverse direction was already covered above; this closes it.
 #
 # Runs on macOS and Linux with no dependencies. Wire into a CI step and a
 # local pre-commit hook.
 
 set -euo pipefail
 
-# Resolve repo-relative path to the credential module.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CRED_DIR="${SCRIPT_DIR}/../LAPSlockKit/Sources/CredentialKit"
+KIT_DIR="${SCRIPT_DIR}/../LAPSlockKit/Sources"
 
-if [[ ! -d "$CRED_DIR" ]]; then
-  echo "❌ isolation-check: CredentialKit not found at $CRED_DIR"
-  exit 2
-fi
+violations=0
 
-# Modules/frameworks CredentialKit must never import.
-FORBIDDEN=(
-  "LicensingKit"       # backend/licensing — could carry a secret to a server
-  "AuthKitMSAL"        # MSAL must not enter the credential link graph
-  "DiagnosticsKit"     # diagnostics are recorded by the app layer, never from inside
+# check_module <name> <allowed-regex> <forbidden tokens...>
+#
+# Scans one module's import lines twice: once against an explicit blocklist so the failure
+# message names the offender, and once against an allowlist so something nobody thought to
+# blocklist still gets caught.
+check_module () {
+  local module="$1"; shift
+  local allowed="$1"; shift
+  local forbidden=("$@")
+
+  local dir="${KIT_DIR}/${module}"
+  if [[ ! -d "$dir" ]]; then
+    echo "❌ isolation-check: ${module} not found at $dir"
+    exit 2
+  fi
+
+  echo "🔍 isolation-check: scanning ${module} imports…"
+
+  local import_lines
+  import_lines="$(grep -rEn '^\s*(import|@_implementationOnly import)\s' "$dir" || true)"
+
+  local token hits
+  for token in "${forbidden[@]}"; do
+    hits="$(printf '%s\n' "$import_lines" | grep -F "$token" || true)"
+    if [[ -n "$hits" ]]; then
+      echo "❌ Forbidden import in ${module} ('$token'):"
+      printf '   %s\n' "$hits"
+      violations=$((violations + 1))
+    fi
+  done
+
+  # Belt-and-suspenders: anything outside the allowlist gets flagged for review.
+  local unexpected
+  unexpected="$(printf '%s\n' "$import_lines" \
+    | grep -vE "(${allowed})\$" \
+    | grep -vE 'XCTest|@testable' \
+    || true)"
+  if [[ -n "$unexpected" ]]; then
+    echo "⚠️  isolation-check: unexpected import(s) in ${module} — review manually:"
+    printf '   %s\n' "$unexpected"
+    echo "   (Allowed by policy: ${allowed//|/, }. Add here only after a security review.)"
+    violations=$((violations + 1))
+  fi
+}
+
+# Things that could carry a secret to a server, a log, or a disk.
+COMMON_FORBIDDEN=(
+  "AuthKitMSAL"        # MSAL must not enter a protected link graph
   "MSAL"               # ditto, direct
   "os.log"             # logging
   "OSLog"
@@ -37,38 +87,23 @@ FORBIDDEN=(
   "AppCenter"
 )
 
-echo "🔍 isolation-check: scanning CredentialKit imports…"
-violations=0
+check_module "CredentialKit" "Foundation|AuthKit" \
+  "LicensingKit" \
+  "DiagnosticsKit" \
+  "${COMMON_FORBIDDEN[@]}"
 
-# Collect actual import lines once.
-IMPORT_LINES="$(grep -rEn '^\s*(import|@_implementationOnly import)\s' "$CRED_DIR" || true)"
-
-for token in "${FORBIDDEN[@]}"; do
-  # Match the token as an imported name on an import line.
-  hits="$(printf '%s\n' "$IMPORT_LINES" | grep -F "$token" || true)"
-  if [[ -n "$hits" ]]; then
-    echo "❌ Forbidden import in CredentialKit ('$token'):"
-    printf '   %s\n' "$hits"
-    violations=$((violations + 1))
-  fi
-done
-
-# Belt-and-suspenders: the only imports we expect are Foundation and AuthKit.
-UNEXPECTED="$(printf '%s\n' "$IMPORT_LINES" \
-  | grep -vE '(Foundation|AuthKit)$' \
-  | grep -vE 'XCTest|@testable' \
-  || true)"
-if [[ -n "$UNEXPECTED" ]]; then
-  echo "⚠️  isolation-check: unexpected import(s) in CredentialKit — review manually:"
-  printf '   %s\n' "$UNEXPECTED"
-  echo "   (Allowed by policy: Foundation, AuthKit. Add here only after a security review.)"
-  violations=$((violations + 1))
-fi
+check_module "LicensingKit" "Foundation|CryptoKit|Security" \
+  "CredentialKit" \
+  "InventoryKit" \
+  "DiagnosticsKit" \
+  "${COMMON_FORBIDDEN[@]}"
 
 if [[ "$violations" -gt 0 ]]; then
   echo ""
-  echo "❌ isolation-check FAILED: $violations issue(s). CredentialKit must stay isolated (Spec §3.1)."
+  echo "❌ isolation-check FAILED: $violations issue(s)."
+  echo "   CredentialKit must stay isolated, and LicensingKit must never reach it (Spec §3.1)."
   exit 1
 fi
 
-echo "✅ isolation-check passed: CredentialKit imports only Foundation + AuthKit."
+echo "✅ isolation-check passed: CredentialKit imports only Foundation + AuthKit,"
+echo "   and LicensingKit cannot reach CredentialKit."
