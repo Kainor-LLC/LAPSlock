@@ -327,7 +327,19 @@ macOS password retrieval.
 
 - ✅ **Remaining-reveals count in the device list and the detail screen, DONE 2026-08-29.**
   Shown before the tap, as a quiet line that scrolls away with the list rather than a
-  pinned banner. Turns orange at zero. Hidden entirely for Pro.
+  pinned banner. Turns orange at zero. Hidden entirely for Pro. The list refreshes from
+  the detail view's `onDisappear`, not the list's `onAppear` — a NavigationStack does not
+  disappear when a detail is pushed onto it, so `onAppear` there fires once at launch and
+  never again.
+- ✅ **Read-only allowance section in Settings, DONE 2026-08-29.** Reveals left, and when
+  the next one frees up. Deliberately not a sales surface: no upgrade button and no price,
+  because this is where a confused customer looks and where support asks them to read
+  from. The footer states the privacy claim while it explains the count — the tally is
+  local, and no server records what is retrieved or how often.
+- ✅ **DEBUG-only reveal meter reset, DONE 2026-08-29.** Inside `#if DEBUG`, not behind a
+  runtime flag, so it cannot reach a Release build. Needed because the ledger survives app
+  deletion by design, so there was otherwise no way to test metering short of waiting out
+  a 30 day window.
 
 - ⬜ Blocked-state copy currently says "Pro removes the limit" with no price. Deliberate:
   App Store pricing is per-storefront and must come from StoreKit at runtime, never a

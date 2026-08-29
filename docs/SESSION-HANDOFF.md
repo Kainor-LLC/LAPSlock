@@ -170,7 +170,7 @@ to FAIL on an injected violation, not merely to pass.
 and credential-shaped strings before every push. It has caught leaks the assistant
 introduced twice.
 
-135 tests across six suites, all green. Run them with `swift test` from `LAPSlockKit/`,
+138 tests across six suites, all green. Run them with `swift test` from `LAPSlockKit/`,
 which is faster than the Xcode window dance and catches macOS-only build breaks that a
 device build will not.
 
@@ -309,9 +309,44 @@ Others:
 
 0. **The free-tier meter is DONE and verified on device.** `LicensingKit` counts reveals
    in the Keychain, checked before the biometric gate and charged after a successful
-   fetch, with the count shown on both the list and the detail screen. Keychain survival
-   across app deletion is confirmed. What is left of the revenue path is the server half
-   and the StoreKit products.
+   fetch. The count appears on the device list, the detail screen, and a read-only
+   Settings section, plus a DEBUG-only reset button that is compiled out of Release.
+   Keychain survival across app deletion is confirmed on hardware. What is left of the
+   revenue path is the server half and the StoreKit products.
+
+   ### START HERE NEXT SESSION: the `/entitlement` API contract
+
+   This is a design artifact, not code, and it is the piece every later billing and gating
+   decision hangs off. Publish the contract publicly while the implementation stays in a
+   private repo.
+
+   Already decided, do not relitigate:
+
+   * **The request carries a tenant ID and NOTHING else.** No Graph token, no user
+     identity, no device data. The product's whole positioning is that no vendor server
+     sits in the credential path, and an admin with a proxy must be able to confirm that
+     in ten minutes. Sending a customer's Graph token to a Kainor server would hand over
+     delegated access to their tenant, and no amount of "we do not log it" survives an
+     admin seeing it on the wire.
+   * **A bare tenant ID is spoofable, and that is acceptable.** The JWT is bound to
+     `sub = tid` and the app pins to the signed-in tenant, so a stolen entitlement is only
+     usable by somebody already inside that tenant and therefore already covered by the
+     licence. Write this reasoning into the contract: it is the first thing a security
+     reviewer will ask about, and having the answer written down turns an objection into
+     evidence you thought about it.
+   * **Claims:** `iss`, `aud` (bundle id), `sub` (tid), `tier`, `iat`, `nbf`, `exp`, `jti`.
+     30 day lifetime, so revocation lags 30 days. Acceptable at these price points.
+   * **ES256, signed through Key Vault**, private key never leaving the vault, public key
+     embedded in the app so verification works offline during the grace period.
+   * **Version the request body and define optional `attestation` / `assertion` fields
+     from day one**, so adding App Attest later is not a breaking change. App Attest itself
+     is deliberately phase 2 — see the Backend section for why.
+
+   Infrastructure is already provisioned and waiting: resource group, storage, vault with
+   purge protection, Flex Consumption function app on .NET 10 isolated, and a managed
+   identity holding Key Vault Crypto User on the vault only.
+
+   Order after the contract: ES256 key in the vault, licences table, then the Function.
 
 1. **Entitlement backend — in progress.** Azure infrastructure is provisioned. Next is the
    API contract (published publicly, implementation private), then the ES256 key, the
