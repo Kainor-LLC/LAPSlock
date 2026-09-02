@@ -500,7 +500,28 @@ macOS password retrieval.
 - ⬜ Gate copy-to-clipboard, BitLocker rotation, favourites, and app lock behind Pro
 - ⬜ Recents / favorites
 - ⬜ Biometric app lock (distinct from the per-reveal gate)
-- ⬜ Tenant switcher (MSP tiers)
+- ⚠️ **Tenant switcher — reclassified 2026-09-02 from a convenience to a PREREQUISITE for
+  selling the MSP tier.** Verified in `MSALAuthManager`: tokens are only ever requested for
+  `account.tenantId`, the signed-in account's own home tenant. There is no code path to any
+  other tenant. That means the three ways MSPs actually reach customer tenants divide
+  sharply:
+  * **A dedicated admin account in each customer tenant** (`admin@customer.com`) — works
+    today. The account's home tenant IS the customer tenant, so signing out and back in with
+    the other account just works, and an `msp` license travels because that tier is exempt
+    from the signed-in-tenant check.
+  * **Guest / B2B**, where `tech@msp.com` is invited into the customer tenant — **does not
+    work.** The ID token's `tid` is the MSP's own tenant, so the app lists the MSP's devices
+    and there is no way to reach the customer's.
+  * **GDAP / Partner Center delegated admin** — **does not work**, same reason.
+
+  Microsoft pushed partners off legacy DAP onto GDAP, so the second and third cases are
+  probably where most MSPs live. **Selling MSP org at $999/yr before this exists would mean
+  selling a tier the app cannot serve for most buyers.** Either build the switcher before
+  offering the MSP tiers, or scope the MSP pricing explicitly to the dedicated-account model
+  and say so at the point of sale.
+
+  Note this was only reachable at all once Sign out existed (same day) — before that an MSP
+  could not change accounts without force-quitting.
 - ✅ "Copy your tenant ID" — Settings → About, live mode only, 2026-09-02. Plain pasteboard,
   deliberately not the expiring credential one: a tenant ID is public.
 - ⬜ BYO app registration UI (the config seam already exists)
