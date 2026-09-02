@@ -120,7 +120,13 @@ struct PrivilegedAccessView: View {
                 ? "Directory role — can read local administrator passwords"
                 : "Directory role"
         case .group(_, let accessId):
-            return accessId == .owner ? "Group ownership" : "Group membership"
+            // Ownership is not membership with extras. An owner of a role-assignable group
+            // can change who is in it, which means granting that group's roles to other
+            // people — a bigger thing than reading one password, and worth saying so rather
+            // than leaving the difference to one word.
+            return accessId == .owner
+                ? "Group ownership — also lets you change who else is in this group"
+                : "Group membership"
         }
     }
 

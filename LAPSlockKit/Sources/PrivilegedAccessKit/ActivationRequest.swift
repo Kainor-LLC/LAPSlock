@@ -174,12 +174,21 @@ public enum ActivationRequest {
 
     /// Both lists, ordered for the activation sheet.
     ///
-    /// Roles known to read credentials first, then everything else alphabetically. The list
-    /// exists to unblock a reveal, so the entry that unblocks it should not be third.
+    /// Three rules, in order:
+    ///   1. Roles known to read credentials come first. The list exists to unblock a reveal,
+    ///      so the entry that unblocks it should not be third.
+    ///   2. Then the LEAST-PRIVILEGED option. Group ownership can change who else is in the
+    ///      group, so where somebody is eligible for both membership and ownership,
+    ///      membership is offered first — it is what reading one password needs. Ordering
+    ///      the larger grant first invites activating it out of habit.
+    ///   3. Then alphabetically, so the list is stable between runs.
     public static func combined(roles: [EligibleAccess], groups: [EligibleAccess]) -> [EligibleAccess] {
         (roles + groups).sorted { lhs, rhs in
             if lhs.canReadLocalCredentials != rhs.canReadLocalCredentials {
                 return lhs.canReadLocalCredentials
+            }
+            if lhs.grantsManagementOfOthers != rhs.grantsManagementOfOthers {
+                return !lhs.grantsManagementOfOthers
             }
             return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
         }

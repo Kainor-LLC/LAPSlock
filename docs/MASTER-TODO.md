@@ -513,6 +513,23 @@ macOS password retrieval.
   toggle is now explicitly a preference, with the footer saying consent is granted per
   organization. A refusal after prompting is a distinct state, so it does not loop.
 
+  ✅ **Membership and ownership of the same group.** The subtitle already distinguished them
+  ("Group membership" / "Group ownership"), so no differentiator was missing. Two things were
+  added anyway because they stand on their own:
+
+  * **Ownership is marked as the larger grant** and offered second. An owner of a
+    role-assignable group can change who is in it — which is the ability to grant that
+    group's roles to other people, not "membership plus a bit". Somebody who needs one
+    password wants membership, and putting the bigger grant first invites activating it out
+    of habit. `combined` now breaks the tie on `grantsManagementOfOthers` rather than on
+    text, which also makes the order deterministic: two rows for one group share a label, so
+    `sorted` would otherwise arrange them arbitrarily between runs.
+  * **The ownership subtitle says what ownership means** rather than leaving the difference
+    to one word: "Group ownership — also lets you change who else is in this group."
+
+  A suffix in the label was tried and reverted: every screen showing a label shows the
+  subtitle beside it, so it said the same thing twice in one row.
+
   ⬜ **Still unobserved: whether a claims challenge fires.** Activation succeeded in Kainor
   without one, which means that session already satisfied the MFA requirement. The retry path
   remains built-but-unseen. A tenant with a Conditional Access policy demanding stronger auth
