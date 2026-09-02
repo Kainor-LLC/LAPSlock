@@ -3,7 +3,9 @@
 Paste or attach this at the start of a new chat. Attach `docs/MASTER-TODO.md` alongside it
 for the full backlog; this file is just enough to resume without re-explaining.
 
-Last updated: 2026-09-01.
+Last updated: 2026-09-02, end of an autonomous session. **Start at the "For Connor when
+back" block at the top of `MASTER-TODO.md`** — it lists what needs a phone, what needs a
+decision, and what was deliberately not attempted.
 
 ---
 
@@ -61,7 +63,11 @@ Also verified on device: Face ID gate fires before the Graph call (so an abandon
 generates no audit event in the customer's tenant), and app-switcher redaction genuinely
 hides a revealed credential in the switcher card.
 
-**Next action:** the entitlement backend. Azure infrastructure is provisioned (see below)
+**Next action:** device-test the entitlement client and the auth diagnostics (both built,
+neither has run on a phone), then decide the search design. Details in the TODO's top block.
+The older text below stands for the reasoning.
+
+**Previously:** the entitlement backend. Azure infrastructure is provisioned (see below)
 and **the API contract is written and frozen: `docs/ENTITLEMENT-API.md`, 2026-09-01.** Next
 is the ES256 key in the vault, the licenses table, the Function, then the client half.
 

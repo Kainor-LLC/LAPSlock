@@ -380,8 +380,11 @@ struct DeviceRow: View {
                     .font(Brand.data(15, weight: .medium))
                     .lineLimit(1)
 
-                if let upn = device.userPrincipalName {
-                    Text(upn)
+                // primaryUserLabel prefers the display name, then UPN, then email. Search matches on
+                // all three, so a row showing only the UPN could match on a field it never displayed,
+                // which read as a phantom hit.
+                if let user = device.primaryUserLabel {
+                    Text(user)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
