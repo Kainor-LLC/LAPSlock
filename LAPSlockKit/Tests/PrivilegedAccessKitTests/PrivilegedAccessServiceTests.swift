@@ -322,6 +322,18 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         XCTAssertEqual(id, "r9")
     }
 
+    func test_aProvisioningStatusDoesNotAskForAnApprover() async throws {
+        // The device report that produced this: activation worked, the tenant requires no
+        // approval, and the app showed "waiting for approval" anyway.
+        StubProtocol.replies = ["assignmentScheduleRequests": [
+            .init(status: 201, body: #"{"id":"g4","status":"PendingProvisioning"}"#)]]
+        let group = EligibleAccess(
+            id: "g", kind: .group(groupId: "gggggggg-1111-2222-3333-444455556666", accessId: .member),
+            displayName: "LAPS Readers", eligibilityEndsAt: nil)
+        let outcome = try await service.activate(group, justification: "j", ticketNumber: nil, duration: "PT1H")
+        guard case .provisioning = outcome else { return XCTFail("expected provisioning, got \(outcome)") }
+    }
+
     func test_anAlreadyActiveRoleIsItsOwnError() async {
         // Graph answers 400 for this. Detected by error code, not by matching localised prose.
         StubProtocol.replies = ["roleAssignmentScheduleRequests": [

@@ -159,29 +159,81 @@ final class ActivationRequestTests: XCTestCase {
         XCTAssertNotNil(until, "fractional-second expiry should parse")
     }
 
-    func test_pendingApprovalIsNeverReportedAsActive() {
-        // THE test in this file. Graph answers 201 either way; only status distinguishes
-        // them. An administrator told their role is live when it is merely requested walks
-        // back to a broken machine and fails again.
-        for status in ["PendingApproval", "PendingAdminDecision", "Granted ", "pending", "Failed", "Canceled", ""] {
-            let outcome = ActivationRequest.outcome(from: response(status: status))
-            guard case .pendingApproval = outcome else {
-                return XCTFail("status '\(status)' must not be reported as activated")
+    func test_nothingButAGrantIsReportedAsActive() {
+        // THE test in this file. Graph answers 201 whatever happened; only status
+        // distinguishes them. An administrator told their role is live when it is merely
+        // requested walks back to a broken machine and fails again.
+        let notActive = [
+            "PendingApproval", "PendingAdminDecision", "PendingProvisioning",
+            "ScheduleCreated", "Failed", "Canceled", "Denied", "SomethingNew",
+            // Padded. Deliberately not trimmed, because trimming toward success is the
+            // unsafe direction.
+            "Granted ", "pending", "",
+        ]
+        for status in notActive {
+            if case .activated = ActivationRequest.outcome(from: response(status: status)) {
+                XCTFail("status '\(status)' must not be reported as activated")
             }
         }
     }
 
-    func test_anUnrecognisedStatusIsTreatedAsPending() {
-        // Fail toward "not yet active", which is the safe direction: it under-promises.
-        let outcome = ActivationRequest.outcome(from: ["id": "req-2", "status": "SomethingNew"])
-        guard case .pendingApproval(let id) = outcome else { return XCTFail("expected pending") }
-        XCTAssertEqual(id, "req-2")
+    func test_onlyApproverDecisionsReportAsWaitingForApproval() {
+        // The other half of the same mistake, and the one that shipped: an ordinary
+        // provisioning delay shown as "waiting for approval" sends somebody hunting for an
+        // approver in a tenant that requires none.
+        for status in ["PendingApproval", "PendingAdminDecision", "pendingapproval"] {
+            guard case .pendingApproval = ActivationRequest.outcome(from: response(status: status)) else {
+                return XCTFail("status '\(status)' means a person must decide")
+            }
+        }
     }
 
-    func test_aResponseWithNoStatusIsPending() {
-        guard case .pendingApproval = ActivationRequest.outcome(from: [:]) else {
+    func test_provisioningIsNotWaitingForApproval() {
+        // No approver is involved in any of these: PIM has accepted the activation and is
+        // applying it. `PendingApprovalProvisioning` and `AdminApproved` included — approval
+        // has already happened by the time either appears.
+        let inProgress = [
+            "PendingProvisioning", "PendingApprovalProvisioning", "PendingScheduleCreation",
+            "PendingExternalProvisioning", "ScheduleCreated", "AdminApproved", "Approved",
+        ]
+        for status in inProgress {
+            guard case .provisioning = ActivationRequest.outcome(from: response(status: status)) else {
+                return XCTFail("status '\(status)' needs no approver and must not ask for one")
+            }
+        }
+    }
+
+    func test_provisioningCarriesTheExpiryItWasGiven() {
+        // The window has already been decided even though it is not usable yet, so showing
+        // it is honest and useful.
+        let outcome = ActivationRequest.outcome(
+            from: response(status: "PendingProvisioning", endDateTime: "2026-09-02T20:00:00Z"))
+        guard case .provisioning(let until) = outcome else { return XCTFail("expected provisioning") }
+        XCTAssertEqual(until, ISO8601DateFormatter.graphNoFraction.date(from: "2026-09-02T20:00:00Z"))
+    }
+
+    func test_aRefusalIsNotSomethingToWaitFor() {
+        for status in ["Denied", "AdminDenied", "Failed", "FailedAsResourceIsLocked", "Canceled", "Revoked"] {
+            guard case .refused(let reported) = ActivationRequest.outcome(from: response(status: status)) else {
+                return XCTFail("status '\(status)' is refused, and waiting will not fix it")
+            }
+            XCTAssertEqual(reported, status, "the status is shown to the user, so keep its casing")
+        }
+    }
+
+    func test_anUnrecognisedStatusClaimsNothingInEitherDirection() {
+        // Not active, and not blamed on an approver who may not exist. The status rides
+        // along so it can be read off the screen.
+        let outcome = ActivationRequest.outcome(from: ["id": "req-2", "status": "SomethingNew"])
+        guard case .requested(let status) = outcome else { return XCTFail("expected requested") }
+        XCTAssertEqual(status, "SomethingNew")
+    }
+
+    func test_aResponseWithNoStatusIsNotActive() {
+        guard case .requested(let status) = ActivationRequest.outcome(from: [:]) else {
             return XCTFail("a statusless response must not read as activated")
         }
+        XCTAssertEqual(status, "", "nothing to show the user when Graph sent no status")
     }
 
     // MARK: - eligibility, both surfaces

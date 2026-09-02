@@ -124,30 +124,73 @@ public enum ActivationRequest {
         )
     }
 
+    /// Active now. Nothing left to do but use it.
+    static let grantedStatuses: Set<String> = ["provisioned", "granted"]
+
+    /// **An approver has to act.** Only these two, and the list is deliberately short: every
+    /// other "pending" status below is PIM working, not a person deciding.
+    static let approvalStatuses: Set<String> = [
+        "pendingapproval",
+        "pendingadmindecision",
+    ]
+
+    /// Accepted and being applied, with nobody left to ask. `pendingapprovalprovisioning`
+    /// and `adminapproved` belong here rather than above: approval has already happened.
+    static let provisioningStatuses: Set<String> = [
+        "pendingprovisioning",
+        "pendingapprovalprovisioning",
+        "pendingschedulecreation",
+        "pendingexternalprovisioning",
+        "pendingverification",
+        "schedulecreated",
+        "adminapproved",
+        "approved",
+    ]
+
+    /// Refused after the request existed. Distinct from a rejected POST, which never gets
+    /// this far, and distinct from waiting — waiting will not help.
+    static let refusedStatuses: Set<String> = [
+        "denied",
+        "admindenied",
+        "failed",
+        "failedasresourceislocked",
+        "canceled",
+        "cancelled",
+        "revoked",
+    ]
+
     /// Reads the outcome of an activation request.
     ///
-    /// **The status field is the whole point.** Graph answers 201 whether access was granted
-    /// or merely requested, and only `status` distinguishes them. Anything not clearly
-    /// provisioned reports as pending, because over-reporting success is what sends somebody
-    /// back to a broken machine believing they have access.
+    /// **The status field is the whole point.** Graph answers 201 whether access was granted,
+    /// is being applied, or is waiting on an approver, and only `status` distinguishes them.
+    /// Two separate mistakes are possible here and both have shipped:
+    ///
+    /// * Reporting a pending approval as active — somebody walks back to a broken machine.
+    /// * Reporting an ordinary provisioning delay as a pending approval — somebody goes
+    ///   hunting for an approver in a tenant that requires none.
+    ///
+    /// So success is matched exactly, and everything else is classified rather than lumped.
+    /// A status in none of the sets reports as `requested`, which claims nothing in either
+    /// direction and carries the status through so it can be read off the screen.
     public static func outcome(from json: [String: Any]) -> ActivationOutcome {
         // Lowercased but deliberately NOT trimmed. Case varies across Graph endpoints so
         // folding it is necessary; whitespace does not, and trimming would make a padded
-        // "Granted " parse as success. That is the unsafe direction — this function's job is
-        // to under-promise, and a status that is not exactly a grant is not clearly a grant.
-        let status = (json["status"] as? String)?.lowercased() ?? ""
+        // "Granted " parse as success. That is the unsafe direction — a status that is not
+        // exactly a grant is not clearly a grant.
+        let raw = json["status"] as? String ?? ""
+        let status = raw.lowercased()
         let requestId = json["id"] as? String
-
-        guard ["provisioned", "granted"].contains(status) else {
-            return .pendingApproval(requestId: requestId)
-        }
 
         let expiry = (json["scheduleInfo"] as? [String: Any])
             .flatMap { $0["expiration"] as? [String: Any] }
             .flatMap { $0["endDateTime"] as? String }
             .flatMap { ISO8601DateFormatter.graphDate($0) }
 
-        return .activated(until: expiry)
+        if grantedStatuses.contains(status) { return .activated(until: expiry) }
+        if approvalStatuses.contains(status) { return .pendingApproval(requestId: requestId) }
+        if provisioningStatuses.contains(status) { return .provisioning(until: expiry) }
+        if refusedStatuses.contains(status) { return .refused(status: raw) }
+        return .requested(status: raw)
     }
 
     // MARK: - parsing eligibility
