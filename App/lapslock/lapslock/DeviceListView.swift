@@ -208,6 +208,9 @@ struct DeviceListView: View {
     /// enough here, because switching organizations happens through the sheet below.
 
     var onAppearRefresh: (() async -> Void)? = nil
+    /// Which organization's devices these are, and whether that is the account's own.
+    /// Nil in demo, where the demo banner already says there is no tenant.
+    var tenantBanner: (label: String, isAwayFromHome: Bool)? = nil
     /// Opens Settings. Injected so the list doesn't need to know how consent is requested.
     let settingsBuilder: () -> SettingsView
     /// Builds the detail screen for a device. Injected so the list doesn't need to know
@@ -265,7 +268,11 @@ struct DeviceListView: View {
             }
             .task { await onAppearRefresh?() }
             .safeAreaInset(edge: .top) {
-                if isDemo { DemoBanner() }
+                if isDemo {
+                    DemoBanner()
+                } else if let tenantBanner {
+                    TenantBanner(label: tenantBanner.label, isAwayFromHome: tenantBanner.isAwayFromHome)
+                }
             }
         }
         .task {
