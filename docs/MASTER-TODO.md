@@ -529,11 +529,37 @@ macOS password retrieval.
   customer's admin to click this once", not "add a tenant and go". That has to be said at
   the point of sale.
 
-  **Still to build:** the picker UI, the stored customer list (Keychain, device-only — it is
-  a list of an MSP's clients and must never leave the device, the client-side mirror of why
-  §7.1 refuses to collect it), gating behind the `msp` tier, and clearing tenant-scoped state
-  on switch (inventory reset and destroying any displayed credential, same requirement as
-  sign-out).
+  **UI BUILT 2026-09-02.** `TenantSwitcherView`, reached from a building icon on the device
+  list toolbar that appears **only for the `msp` tier** — passing nil rather than disabling a
+  visible control, so a single-organization admin never sees chrome for a feature that does
+  not apply. The customer list is `KeychainTenantStore` in AuthKit,
+  `WhenUnlockedThisDeviceOnly`, with `TenantList` handling recency ordering, de-duplication
+  by tenant ID and a 50-entry cap (7 tests). Switching resets the inventory, and because
+  `setActiveTenant` validates before committing there is nothing to clean up on failure.
+
+  **The design rule for that screen, given it cannot be tested here: every failure names what
+  happened and what to do next, on screen, with no reference to anything outside it.** The
+  first person to exercise it is a paying customer with no support channel. So
+  `SwitchFailure` translates all seven `AuthError` cases and all three
+  `TenantDirectoryError` cases into a title and an explanation in the user's terms — and the
+  consent case, which is the one an MSP cannot self-serve, gets a full explanation plus a
+  ShareLink and an open-in-Safari for the per-tenant approval URL. `tenantMismatch` says
+  explicitly that a safety check refused a wrong-organization token and nothing changed,
+  because otherwise it reads as a bug.
+
+  The saved-list footer says the list never leaves the device. That is the client-side half
+  of §7.1 and worth keeping honest.
+
+  **Still to build:** the active tenant is not shown anywhere except inside the switcher
+  sheet, so an MSP working in a customer tenant has no persistent on-screen reminder of
+  which organization they are in. For a tool that reveals administrator passwords that is
+  worth fixing — a banner or a subtitle on the device list. Deliberately left because it is
+  a visual-design call and the screen cannot be seen from here.
+
+  Also: switching does not yet destroy a credential already on screen. In practice the
+  switcher is reached from the list rather than the detail view, so the case may be
+  unreachable, but "may be unreachable" is not the standard this project holds for credential
+  lifetime — verify or handle it.
 
   **⚠️ CANNOT BE FULLY TESTED HERE.** Guest/B2B needs a second tenant that has invited the
   Kainor account; GDAP needs a real partner relationship. The auth layer is unit tested and
