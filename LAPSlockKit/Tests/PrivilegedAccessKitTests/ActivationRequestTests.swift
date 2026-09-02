@@ -336,3 +336,77 @@ final class PrivilegedEndpointTests: XCTestCase {
         }
     }
 }
+
+/// Telling membership and ownership of the same group apart.
+final class GroupAccessDistinctionTests: XCTestCase {
+
+    private func group(_ name: String?, _ accessId: GroupAccessId) -> EligibleAccess {
+        EligibleAccess(
+            id: "\(name ?? "none")-\(accessId.rawValue)",
+            kind: .group(groupId: "gggggggg-1111-2222-3333-444455556666", accessId: accessId),
+            displayName: name,
+            eligibilityEndsAt: nil)
+    }
+
+    func test_theLabelDoesNotRepeatWhatTheSubtitleSays() {
+        // Every screen showing a label shows the membership-or-ownership subtitle beside
+        // it, so a suffix in the label would say the same thing twice in one row.
+        XCTAssertEqual(group("LAPS Readers", .member).label, "LAPS Readers")
+        XCTAssertEqual(group("LAPS Readers", .owner).label, "LAPS Readers")
+    }
+
+    func test_identicalLabelsAreOrderedByGrantSizeNotByText() {
+        // Two rows for one group share a label, so `sorted` would order them arbitrarily.
+        // The tie is broken on the size of the grant instead of on the words.
+        let combined = ActivationRequest.combined(
+            roles: [],
+            groups: [group("LAPS Readers", .owner), group("LAPS Readers", .member)])
+        XCTAssertEqual(combined.map(\.grantsManagementOfOthers), [false, true])
+    }
+
+    func test_anUnnamedGroupStillDistinguishesTheAccessType() {
+        XCTAssertEqual(group(nil, .member).label, "Group membership")
+        XCTAssertEqual(group(nil, .owner).label, "Group ownership")
+        XCTAssertEqual(group("", .owner).label, "Group ownership")
+    }
+
+    func test_aDirectoryRoleLabelIsUnchanged() {
+        // The access type only applies to groups; a role must not gain a suffix.
+        let role = EligibleAccess(
+            id: "r",
+            kind: .directoryRole(roleDefinitionId: "7698a772-787b-4ac8-901f-60d6b08affd2", directoryScopeId: "/"),
+            displayName: "Cloud Device Administrator",
+            eligibilityEndsAt: nil)
+        XCTAssertEqual(role.label, "Cloud Device Administrator")
+        XCTAssertFalse(role.grantsManagementOfOthers)
+    }
+
+    func test_ownershipIsMarkedAsTheLargerGrant() {
+        // An owner of a role-assignable group can change who is in it, which is the ability
+        // to grant that group's roles to other people.
+        XCTAssertTrue(group("LAPS Readers", .owner).grantsManagementOfOthers)
+        XCTAssertFalse(group("LAPS Readers", .member).grantsManagementOfOthers)
+    }
+
+    func test_membershipIsOfferedBeforeOwnership() {
+        // Reading one password needs membership. Putting the larger grant first invites
+        // activating it out of habit.
+        let combined = ActivationRequest.combined(
+            roles: [],
+            groups: [group("Owners Group", .owner), group("Zzz Members Group", .member)])
+        XCTAssertEqual(combined.map(\.label), ["Zzz Members Group", "Owners Group"],
+                       "membership wins even when alphabetically later")
+    }
+
+    func test_aCredentialReadingRoleStillOutranksBothGroupRows() {
+        let role = EligibleAccess(
+            id: "r",
+            kind: .directoryRole(roleDefinitionId: "7698a772-787b-4ac8-901f-60d6b08affd2", directoryScopeId: "/"),
+            displayName: "Cloud Device Administrator",
+            eligibilityEndsAt: nil)
+        let combined = ActivationRequest.combined(
+            roles: [role],
+            groups: [group("AAA Earliest Alphabetically", .member)])
+        XCTAssertEqual(combined.first?.label, "Cloud Device Administrator")
+    }
+}

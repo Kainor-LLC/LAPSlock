@@ -50,12 +50,32 @@ public struct EligibleAccess: Sendable, Equatable, Identifiable, Hashable {
 
     /// What to show. Never a bare GUID: an administrator recognises "Cloud Device
     /// Administrator" or "LAPS Readers" and not `7698a772-…`.
+    ///
+    /// The access type is deliberately NOT repeated here. Every screen that shows a label
+    /// shows the membership-or-ownership subtitle beside it, so a suffix would say the same
+    /// thing twice in the same row.
+    ///
+    /// Two rows for one group can therefore share a label, which would make `sorted` order
+    /// them arbitrarily — so `combined` breaks that tie explicitly on
+    /// `grantsManagementOfOthers` rather than leaning on the text.
     public var label: String {
         if let displayName, !displayName.isEmpty { return displayName }
         switch kind {
         case .directoryRole: return "Directory role"
         case .group(_, let accessId): return accessId == .owner ? "Group ownership" : "Group membership"
         }
+    }
+
+    /// True for group ownership, which is a materially larger grant than membership.
+    ///
+    /// **An owner of a role-assignable group can change who is in it** — so activating
+    /// ownership is not just "membership plus a bit", it is the ability to grant that
+    /// group's roles to other people. Somebody who needs to read one password wants
+    /// membership. Worth marking so the UI can say so and so the least-privileged option
+    /// sorts first.
+    public var grantsManagementOfOthers: Bool {
+        if case .group(_, let accessId) = kind { return accessId == .owner }
+        return false
     }
 
     /// True for a directory role known to be able to read Windows LAPS passwords, so the
