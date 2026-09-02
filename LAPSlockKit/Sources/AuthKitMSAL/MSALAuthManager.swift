@@ -88,6 +88,30 @@ public actor MSALAuthManager: AuthManaging {
     private var lastFailure: AuthFailureDetail?
     public var lastAuthFailure: AuthFailureDetail? { lastFailure }
 
+    /// The customer tenant an MSP has switched into. Nil means "the signed-in account's own
+    /// tenant", which is the only state a single-organization administrator is ever in.
+    ///
+    /// Deliberately NOT persisted here. A switch is a decision for one session; reopening the
+    /// app puts you back in your own tenant, which is the safe default for a tool that
+    /// reveals administrator passwords. Somebody handed an unlocked phone should not find it
+    /// already pointed at a customer's directory.
+    private var activeTenant: TenantPin?
+
+    /// The tenant this manager will request tokens for, and will refuse tokens from any
+    /// other. §3.3.
+    private var operatingPin: TenantPin? {
+        activeTenant ?? pinnedAccount.flatMap { TenantPin(expected: $0.tenantId) }
+    }
+
+    /// The tenant currently being operated in, for the UI. Nil when signed out.
+    public var operatingTenantId: String? { operatingPin?.expected }
+
+    /// True when operating somewhere other than the account's home tenant.
+    public var isOperatingInAnotherTenant: Bool {
+        guard let active = activeTenant, let home = pinnedAccount?.tenantId else { return false }
+        return active.expected != home.lowercased()
+    }
+
     public init(config: AuthConfiguration) throws {
         self.config = config
 
@@ -122,6 +146,9 @@ public actor MSALAuthManager: AuthManaging {
         let result = try await recording(.signIn) { try await acquireInteractive(params) }
         let account = try Self.account(from: result)
         self.pinnedAccount = account
+        // A new account starts in its own tenant. Carrying a previous session's customer
+        // tenant across a sign-in would be both confusing and wrong.
+        self.activeTenant = nil
         return account
     }
 
@@ -140,10 +167,13 @@ public actor MSALAuthManager: AuthManaging {
 
     public func token(scopes: [String], allowInteractive: Bool) async throws -> String {
         guard let account = pinnedAccount else { throw AuthError.noAccount }
+        guard let pin = operatingPin else { throw AuthError.noAccount }
 
-        // Pin silent acquisition to the account's own tenant authority (§2.1).
-        let authorityURL = URL(string: "https://login.microsoftonline.com/\(account.tenantId)")!
-        let tenantAuthority = try MSALAADAuthority(url: authorityURL)
+        // Pin acquisition to the tenant we are deliberately operating in (§2.1, §3.3). For a
+        // single-organization admin that is their own tenant; for an MSP who has switched, it
+        // is the customer's. Either way the authority we ASK and the tenant we ACCEPT are the
+        // same value, which is the property that makes the guard below meaningful.
+        let tenantAuthority = try MSALAADAuthority(url: pin.authorityURL)
 
         // account(forIdentifier:) returns a NON-optional MSALAccount and throws if the
         // account isn't in the cache, so no conditional binding here.
@@ -154,13 +184,13 @@ public actor MSALAuthManager: AuthManaging {
 
         do {
             let result = try await recording(.tokenSilent) { try await acquireSilent(silent) }
-            try Self.assertTenant(result, matches: account)   // §3.3 guard
+            try pin.validate(returnedTenantId: Self.tenantId(of: result))   // §3.3 guard
             return result.accessToken
         } catch let error as AuthError {
             switch error {
             case .interactionRequired, .consentRequired:
                 guard allowInteractive else { throw AuthError.interactionRequired }
-                return try await interactiveToken(scopes: scopes, account: account, authority: tenantAuthority)
+                return try await interactiveToken(scopes: scopes, account: account, pin: pin)
             default:
                 throw error
             }
@@ -174,14 +204,14 @@ public actor MSALAuthManager: AuthManaging {
         do {
             msalAccount = try application.account(forIdentifier: account.id)
         } catch {
-            if pinnedAccount?.id == account.id { pinnedAccount = nil }
+            if pinnedAccount?.id == account.id { pinnedAccount = nil; activeTenant = nil }
             return
         }
         let webParams = try await MainActorUI.webviewParameters()
         let params = MSALSignoutParameters(webviewParameters: webParams)
 
         try await performSignout(msalAccount, params)
-        if pinnedAccount?.id == account.id { pinnedAccount = nil }
+        if pinnedAccount?.id == account.id { pinnedAccount = nil; activeTenant = nil }
     }
 
     // MARK: - interactive fallback (incremental consent, §4)
@@ -189,16 +219,55 @@ public actor MSALAuthManager: AuthManaging {
     private func interactiveToken(
         scopes: [String],
         account: AdminAccount,
-        authority: MSALAuthority
+        pin: TenantPin
     ) async throws -> String {
         let webParams = try await MainActorUI.webviewParameters()
         let params = MSALInteractiveTokenParameters(scopes: scopes, webviewParameters: webParams)
-        params.authority = authority
+        params.authority = try MSALAADAuthority(url: pin.authorityURL)
         params.loginHint = account.username
 
         let result = try await recording(.tokenInteractive) { try await acquireInteractive(params) }
-        try Self.assertTenant(result, matches: account)
+        try pin.validate(returnedTenantId: Self.tenantId(of: result))
         return result.accessToken
+    }
+
+    // MARK: - tenant switching (MSP tiers)
+
+    /// Switches the tenant this manager operates in, or returns to the account's own tenant
+    /// when `tenantId` is nil.
+    ///
+    /// The switch is VALIDATED before it is committed: a token is acquired for the target
+    /// tenant first, and `activeTenant` only moves if that succeeds. Committing optimistically
+    /// would leave the app pointed at a directory the user cannot read, turning one clear
+    /// failure here into a confusing failure on every subsequent screen.
+    ///
+    /// Expect `consentRequired` for a customer tenant whose administrator has not yet
+    /// approved LAPSlock. That is not a bug and not something an MSP can self-serve: app
+    /// consent is per-tenant, so the customer's admin has to grant it. `AdminConsentLink`
+    /// already builds the right URL for a given tenant.
+    public func setActiveTenant(_ tenantId: String?) async throws {
+        guard let account = pinnedAccount else { throw AuthError.noAccount }
+
+        guard let tenantId else {
+            activeTenant = nil
+            return
+        }
+
+        guard let pin = TenantPin(expected: tenantId) else {
+            throw AuthError.underlying("not a tenant id")
+        }
+
+        // Already there. Do not spend a token acquisition confirming it.
+        if pin.expected == operatingPin?.expected { return }
+
+        let previous = activeTenant
+        activeTenant = pin
+        do {
+            _ = try await token(scopes: Self.baseScopes, allowInteractive: true)
+        } catch {
+            activeTenant = previous
+            throw error
+        }
     }
 
     // MARK: - continuation wrappers
@@ -296,10 +365,11 @@ public actor MSALAuthManager: AuthManaging {
     }
 
     /// §3.3 cross-tenant guard: reject any token whose tid differs from the pinned account.
-    private static func assertTenant(_ result: MSALResult, matches account: AdminAccount) throws {
-        let tid = result.tenantProfile.tenantId
-            ?? (result.account.accountClaims?["tid"] as? String)
-        guard tid == account.tenantId else { throw AuthError.tenantMismatch }
+    /// The tenant a token actually came back for. The comparison against what we asked for
+    /// lives in `TenantPin.validate`, where it is unit tested — MSALResult cannot be
+    /// constructed on macOS, so a comparison written here could not be.
+    private static func tenantId(of result: MSALResult) -> String? {
+        result.tenantProfile.tenantId ?? (result.account.accountClaims?["tid"] as? String)
     }
 
     /// Reduces an MSAL error to the allowlisted support-report shape. Reads only fixed
