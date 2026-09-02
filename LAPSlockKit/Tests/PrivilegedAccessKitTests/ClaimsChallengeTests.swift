@@ -92,3 +92,72 @@ final class ClaimsChallengeTests: XCTestCase {
         XCTAssertEqual(ClaimsChallenge.parse(wwwAuthenticate: header)?.json, claimsJSON)
     }
 }
+
+/// The challenge that arrives in a 400 body rather than a 401 header.
+///
+/// PIM does not challenge the way the rest of Graph does: when a policy requires a
+/// Conditional Access authentication context, Graph answers 400 with
+/// `RoleAssignmentRequestAcrsValidationFailed` and puts the required claim in the message as
+/// raw JSON. A retry that only watched 401 and 403 therefore never fired, and activation
+/// failed with a bare 400 — observed on device 2026-09-02.
+final class GraphErrorClaimsChallengeTests: XCTestCase {
+
+    /// The real message shape, as Microsoft documents it.
+    private let realMessage = #"The request failed validation. RoleAssignmentRequestAcrsValidationFailed claims={"access_token":{"acrs":{"essential":true, "value":"c1"}}}"#
+
+    func test_theClaimIsExtractedFromTheErrorMessage() {
+        let challenge = ClaimsChallenge.parse(graphErrorMessage: realMessage)
+        XCTAssertNotNil(challenge)
+        XCTAssertTrue(challenge!.json.contains("\"acrs\""))
+        XCTAssertTrue(challenge!.json.contains("\"c1\""))
+        // The prose around it must not come along.
+        XCTAssertFalse(challenge!.json.contains("RoleAssignmentRequest"))
+        XCTAssertFalse(challenge!.json.contains("failed validation"))
+    }
+
+    func test_theExtractedClaimIsValidJSON() throws {
+        let challenge = try XCTUnwrap(ClaimsChallenge.parse(graphErrorMessage: realMessage))
+        let parsed = try JSONSerialization.jsonObject(with: Data(challenge.json.utf8))
+        XCTAssertTrue(parsed is [String: Any], "MSAL needs a JSON object")
+    }
+
+    func test_nestedBracesAreBalancedNotTruncated() {
+        // The claims object is nested three deep. A lazy regex stops at the first inner
+        // brace and a greedy one swallows the rest of the message; both produce something
+        // MSAL rejects.
+        let challenge = ClaimsChallenge.parse(graphErrorMessage: realMessage)
+        XCTAssertEqual(challenge?.json.filter { $0 == "{" }.count, 3)
+        XCTAssertEqual(challenge?.json.filter { $0 == "}" }.count, 3)
+    }
+
+    func test_trailingProseAfterTheClaimIsIgnored() {
+        let message = realMessage + " Please reauthenticate and try again."
+        let challenge = ClaimsChallenge.parse(graphErrorMessage: message)
+        XCTAssertFalse(challenge?.json.contains("reauthenticate") == true)
+    }
+
+    func test_aMessageWithNoClaimYieldsNothing() {
+        // Every other 400 must not be read as a challenge, or activation loops through
+        // re-authentication that cannot fix it.
+        for message in [
+            "The request failed validation.",
+            "RoleAssignmentExists",
+            "claims=",
+            "claims=not-an-object",
+            "",
+        ] {
+            XCTAssertNil(ClaimsChallenge.parse(graphErrorMessage: message), "\(message) should carry no challenge")
+        }
+    }
+
+    func test_anUnbalancedOrEnormousClaimIsRefused() {
+        XCTAssertNil(ClaimsChallenge.parse(graphErrorMessage: #"claims={"access_token":{"acrs":"#))
+        let huge = #"claims={"access_token":{"acrs":{"value":""# + String(repeating: "A", count: 5000) + #""}}}"#
+        XCTAssertNil(ClaimsChallenge.parse(graphErrorMessage: huge))
+    }
+
+    func test_nonObjectClaimsAreRejectedBeforeReachingMSAL() {
+        XCTAssertNil(ClaimsChallenge.parse(graphErrorMessage: "claims=[1,2,3]"))
+        XCTAssertNil(ClaimsChallenge.parse(graphErrorMessage: #"claims="a string""#))
+    }
+}

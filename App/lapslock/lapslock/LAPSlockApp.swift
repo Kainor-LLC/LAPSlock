@@ -441,6 +441,12 @@ final class AppRootModel: ObservableObject {
         }
     }
 
+    /// The tenant's activation rules for one piece of eligible access.
+    func privilegedPolicy(for access: EligibleAccess) async -> ActivationPolicy {
+        guard let session = liveSession else { return .unknown }
+        return await PrivilegedAccessService(auth: session.auth).policy(for: access)
+    }
+
     /// Reads what the signed-in user could activate.
     func loadEligibleAccess() async -> Result<[EligibleAccess], PrivilegedAccessError> {
         guard let session = liveSession else { return .failure(.notAuthorized) }
@@ -645,7 +651,8 @@ struct AppRootView: View {
                                             access, justification: justification,
                                             ticketNumber: ticket, duration: duration)
                                     },
-                                    requestConsent: { await root.requestPrivilegedActivationConsent() }
+                                    requestConsent: { await root.requestPrivilegedActivationConsent() },
+                                    policy: { await root.privilegedPolicy(for: $0) }
                                 )
                             }
                         )
@@ -670,7 +677,8 @@ struct AppRootView: View {
                                             access, justification: justification,
                                             ticketNumber: ticket, duration: duration)
                                     },
-                                    requestConsent: { await root.requestPrivilegedActivationConsent() }
+                                    requestConsent: { await root.requestPrivilegedActivationConsent() },
+                                    policy: { await root.privilegedPolicy(for: $0) }
                                 )
                             }
                         )

@@ -16,6 +16,8 @@ import AuthKit
 
 public protocol PrivilegedAccessProviding: Sendable {
     func eligibleAccess() async throws -> [EligibleAccess]
+    /// The tenant's activation rules for one piece of eligible access.
+    func policy(for access: EligibleAccess) async -> ActivationPolicy
     func activate(
         _ access: EligibleAccess,
         justification: String,
@@ -150,6 +152,44 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         }
     }
 
+    // MARK: - reading the policy
+
+    /// Reads the activation rules the tenant has set for this access.
+    ///
+    /// **Never throws.** A policy read that fails leaves the UI exactly as it behaved before
+    /// this existed — standard durations, justification asked for anyway. The read is here to
+    /// stop offering choices the tenant will refuse; it must not become a new way for
+    /// activation to be unavailable, particularly since the policy scopes may not be
+    /// consented in a tenant where activation itself is fine.
+    public func policy(for access: EligibleAccess) async -> ActivationPolicy {
+        let scopeId: String
+        let scopeType: String
+        let scope: String
+
+        switch access.kind {
+        case .directoryRole(_, let directoryScopeId):
+            scopeId = directoryScopeId
+            scopeType = "DirectoryRole"
+            scope = PrivilegedAccessGraph.rolePolicyReadScope
+        case .group(let groupId, _):
+            scopeId = groupId
+            scopeType = "Group"
+            scope = PrivilegedAccessGraph.groupPolicyReadScope
+        }
+
+        do {
+            let token = try await auth.token(scopes: [scope], allowInteractive: false)
+            let url = url(PrivilegedAccessGraph.policyPath, [
+                URLQueryItem(name: "$filter", value: "scopeId eq '\(scopeId)' and scopeType eq '\(scopeType)'"),
+                URLQueryItem(name: "$expand", value: "rules"),
+            ])
+            let (data, response) = try await send(.get(url, token: token))
+            return ActivationPolicy.from(policiesResponse: try decode(data, response))
+        } catch {
+            return .unknown
+        }
+    }
+
     // MARK: - activating
 
     public func activate(
@@ -171,8 +211,16 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
             duration: duration,
             ticketNumber: ticketNumber)
 
+        // If the policy already told us an authentication context is required, carry the
+        // claim on the FIRST attempt rather than waiting to be refused. Graph reports that
+        // refusal as a plain 400, so the reactive path costs a round trip and a failure the
+        // user sees momentarily; this avoids both when the policy could be read.
+        let upfrontClaims = (try? await policy(for: access))?
+            .authenticationContextClaim
+            .map(Self.claimsRequest(forAcrs:)) ?? nil
+
         do {
-            return try await post(prepared, claims: nil)
+            return try await post(prepared, claims: upfrontClaims)
         } catch PrivilegedAccessError.claimsChallenge(let challenge) {
             // Once, and only once. A second challenge means re-authentication did not
             // satisfy it, and retrying would loop behind a prompt the user cannot escape.
@@ -192,6 +240,18 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         let (data, response) = try await send(.post(url(prepared.path, []), token: token, body: body))
         let json = try decode(data, response)
         return ActivationRequest.outcome(from: json)
+    }
+
+    /// Builds the claims request for an `acrs` value, matching the shape Graph asks for when
+    /// it refuses: `{"access_token":{"acrs":{"essential":true,"value":"c1"}}}`.
+    static func claimsRequest(forAcrs value: String) -> String? {
+        // Built with JSONSerialization rather than string interpolation, so a policy value
+        // containing a quote cannot produce malformed JSON that MSAL then rejects.
+        let object: [String: Any] = [
+            "access_token": ["acrs": ["essential": true, "value": value]]
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     // MARK: - HTTP
@@ -262,10 +322,27 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         case 401, 403:
             throw PrivilegedAccessError.notAuthorized
         case 400:
+            let haystack = Self.graphErrorHaystack(data)
+
+            // A CLAIMS CHALLENGE ARRIVES HERE, not as a 401. When a PIM policy requires a
+            // Conditional Access authentication context, Graph answers 400 with
+            // `RoleAssignmentRequestAcrsValidationFailed` and puts the required claim in the
+            // message. Checked before anything else in this branch, because to every other
+            // reading it is an indistinguishable bad request — which is exactly how it
+            // presented before this existed.
+            if haystack.contains("acrsvalidationfailed") || haystack.contains("acrs") {
+                if let message = Self.graphErrorMessage(data),
+                   let challenge = ClaimsChallenge.parse(graphErrorMessage: message) {
+                    throw PrivilegedAccessError.claimsChallenge(challenge)
+                }
+                // The code said authentication context but no claim came with it. Retrying
+                // would be guessing at what to ask for.
+                throw PrivilegedAccessError.serviceError(status: 400, code: Self.graphErrorCode(data))
+            }
+
             // Graph answers 400 for "role is already active", which is not a failure worth
             // an alarming message. Detected by the error code rather than by matching prose,
             // which is localised.
-            let haystack = Self.graphErrorHaystack(data)
             if haystack.contains("roleassignmentexists") || haystack.contains("activeassignment") {
                 throw PrivilegedAccessError.alreadyActive
             }
@@ -291,6 +368,12 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     static func graphErrorCode(_ data: Data) -> String? {
         guard let code = errorObject(data)?["code"] as? String, !code.isEmpty else { return nil }
         return code
+    }
+
+    /// Graph's error message, used ONLY to extract a claims challenge from it. It is prose
+    /// and never recorded or displayed — `graphErrorCode` is what reaches the report.
+    static func graphErrorMessage(_ data: Data) -> String? {
+        errorObject(data)?["message"] as? String
     }
 
     private static func errorObject(_ data: Data) -> [String: Any]? {

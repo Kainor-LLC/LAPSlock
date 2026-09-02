@@ -565,7 +565,51 @@ macOS password retrieval.
   that copy. `PrivilegedFailure.codeSuffix` now owns the newline so no Swift escape sequence
   is ever generated through a text-processing step.
 
-  ⬜ **Still unobserved: whether a claims challenge fires.** Activation succeeded in Kainor
+  ### ✅ The 400 diagnosed, 2026-09-02 — and it was the claims challenge all along
+
+  The report answered it in one line:
+  `roleActivation badRequest http=400 endpoint=…/group/assignmentScheduleRequests
+  graph-error=RoleAssignmentRequestAcrsValidationFailed`
+
+  **ACRS is the authentication context claim, and PIM does not challenge the way the rest of
+  Graph does.** When a policy requires a Conditional Access authentication context, Graph
+  answers **400 with an error code** and puts the required claim in the message text as raw
+  JSON — not a 401 with a `WWW-Authenticate` header. The retry only watched 401 and 403, so
+  it never fired and activation died on a bare bad request. Everything built for the
+  challenge was correct; it arrived by a route nobody anticipated.
+
+  `ClaimsChallenge.parse(graphErrorMessage:)` now extracts it with a brace-counting scan
+  (a regex either stops at the first inner brace or swallows the rest of the message), under
+  the same validation as the header form. 7 tests, including that every other 400 is NOT read
+  as a challenge — mistaking one would loop through re-authentication that cannot fix it.
+
+  ### ✅ The policy is now read rather than guessed, which answers the duration question
+
+  Founder asked whether the app could read the custom maximum — their groups cap at 3 hours.
+  Yes, and the same policy answers three more questions the UI was guessing at.
+  `ActivationPolicy` reads `Expiration_EndUser_Assignment` for the maximum duration,
+  `Enablement_EndUser_Assignment` for whether justification and a ticket are required, and
+  `AuthenticationContext_EndUser_Assignment` for the acrs claim value. Rule IDs are matched,
+  never the localised display names beside them.
+
+  What that buys, beyond the duration:
+  * **The picker offers exactly what the policy permits**, including a non-standard maximum
+    like 3 hours, and the chosen duration is clamped if the policy arrives after a selection.
+  * **Required fields are enforced**, so Activate is not a button that fails: a tenant
+    requiring a ticket number disables the button until one is entered.
+  * **The claim is requested on the FIRST attempt** when the policy names one, turning the
+    reactive round trip into a sign-in that happens before the request.
+  * **The footer says what THIS tenant requires**, rather than hedging about what tenants
+    generally require.
+
+  Costs two new read-only scopes, `RoleManagementPolicy.Read.Directory` and
+  `RoleManagementPolicy.Read.AzureADGroup`, taking the opt-in bundle to six. The read
+  **never throws** — an unreadable policy returns `.unknown` and the sheet behaves exactly as
+  it did before, so a missing policy scope can never make activation unavailable.
+
+  17 tests, including that minutes round DOWN (a 90-minute policy offers one hour, because
+  rounding up offers a refusal) and that a disabled authentication-context rule is ignored
+  even though it still carries a claim value. Activation succeeded in Kainor
   without one, which means that session already satisfied the MFA requirement. The retry path
   remains built-but-unseen. A tenant with a Conditional Access policy demanding stronger auth
   for privileged operations would exercise it — the work tenant may, once groups appear.

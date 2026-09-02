@@ -48,6 +48,57 @@ public struct ClaimsChallenge: Sendable, Equatable {
         return ClaimsChallenge(json: json)
     }
 
+    /// Extracts a challenge from a Graph ERROR MESSAGE.
+    ///
+    /// PIM does not challenge the way the rest of Graph does. When a group or role policy
+    /// requires a Conditional Access authentication context and the token lacks it, Graph
+    /// answers **400** with code `RoleAssignmentRequestAcrsValidationFailed` and puts the
+    /// required claim in the message text:
+    ///
+    ///     claims={"access_token":{"acrs":{"essential":true,"value":"c1"}}}
+    ///
+    /// Raw JSON, not base64, and in a body rather than a `WWW-Authenticate` header — which
+    /// is why a retry that only watched 401 and 403 never fired, and activation failed with
+    /// a bare 400 instead.
+    ///
+    /// The blob is treated exactly as untrusted as the header form: it must parse as a JSON
+    /// object and stay under the size cap before it reaches MSAL.
+    public static func parse(graphErrorMessage message: String) -> ClaimsChallenge? {
+        guard let json = balancedObject(after: "claims=", in: message) else { return nil }
+        return ClaimsChallenge(json: json)
+    }
+
+    /// Takes the balanced `{...}` immediately following `marker`.
+    ///
+    /// Brace-counted rather than regex-matched: the claims object is nested, and a greedy or
+    /// lazy pattern either swallows the rest of the message or stops at the first inner
+    /// brace. Bails out past the size cap so a hostile message cannot make this scan forever.
+    static func balancedObject(after marker: String, in text: String) -> String? {
+        guard let markerRange = text.range(of: marker) else { return nil }
+        var depth = 0
+        var started = false
+        var collected = ""
+
+        for character in text[markerRange.upperBound...] {
+            if character == "{" {
+                depth += 1
+                started = true
+            }
+            if started {
+                collected.append(character)
+                if collected.utf8.count > maxDecodedBytes { return nil }
+            } else if !character.isWhitespace {
+                // Something other than an object follows the marker.
+                return nil
+            }
+            if character == "}" {
+                depth -= 1
+                if depth == 0 { return started ? collected : nil }
+            }
+        }
+        return nil   // unbalanced
+    }
+
     /// Pulls `key="value"` out of a comma-separated challenge header.
     ///
     /// Hand-parsed rather than split on commas: the base64 in a claims value can itself
