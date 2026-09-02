@@ -102,8 +102,8 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
 
         // Deterministic per device so the same device shows the same value across
         // reveals, and unmistakably fake either way.
-        let suffix = String(abs(target.managedDeviceId?.hashValue ?? 0) % 10_000)
-        let fake = "DEMO-Not-A-Real-Password-\(String(format: "%04d", Int(suffix) ?? 0))"
+        let suffix = Int(demoStableHash(target.managedDeviceId ?? "") % 10_000)
+        let fake = "DEMO-Not-A-Real-Password-\(String(format: "%04d", suffix))"
 
         guard let secret = SensitiveValue(base64: Data(fake.utf8).base64EncodedString(), encoding: .utf8) else {
             throw CredentialError.decodeFailure

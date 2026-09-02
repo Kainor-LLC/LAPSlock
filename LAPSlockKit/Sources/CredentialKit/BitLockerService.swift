@@ -178,9 +178,9 @@ public struct DemoBitLockerService: BitLockerKeyProviding {
         try await Task.sleep(for: latency)
         // Real keys are 48 digits in eight hyphenated groups of six. Repeated digits make
         // this unmistakably fake while preserving the exact shape and length.
-        let seed = abs(keyId.hashValue) % 9 + 1
+        let digest = demoStableHash(keyId)
         let groups = (0..<8).map { i in
-            String(repeating: String((seed + i) % 9 + 1), count: 6)
+            String(repeating: String((digest >> (UInt64(i) * 4)) % 9 + 1), count: 6)
         }
         let fake = groups.joined(separator: "-")
         let secret = SensitiveValue(bytes: [UInt8](fake.utf8), encoding: .utf8)
