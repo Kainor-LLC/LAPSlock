@@ -71,6 +71,23 @@ Check any new mark against both, with somebody else's eyes.
 | Steel | `#4A6E96` | LAPS in the wordmark |
 | Cap | `#EEF3F8` | tread and keyhole |
 | Ink | `#1A1A1A` | lock in the wordmark |
+| Steel, lifted | `#6E96C2` | the app's accent on the navy field — see below |
+
+**The app's accent is derived from Steel, not equal to it.** `Brand.accent` in `Theme.swift`
+resolves to Steel `#4A6E96` in light appearance and the lifted `#6E96C2` in dark;
+`Brand.accentOnField` is the lifted value fixed, for the credential card, which is navy in
+both appearances.
+
+The lift is not a style preference. **Steel as drawn measures 2.97:1 against the navy field,
+below WCAG's 3.0 floor for a UI component**, and the field is where the countdown ring and
+the reveal timer live. Steel measures 5.30:1 on white and the lifted value only 3.09:1, so
+neither one serves both surfaces — which is why the accent is two tokens. Anything added to
+this palette that will be used as an accent needs measuring on both grounds before it ships.
+
+Until 2026-09-02 the app's accent was safety orange `#D9480F`, a PitLAPS-era value that
+appears nowhere in this mark. That went unnoticed partly because `Theme.swift` stored colours
+as fractional component triples, which cannot be compared by eye against this table. It now
+stores hex.
 
 ## Outputs and where they go
 

@@ -54,7 +54,30 @@ from this session is committed (not pushed) with all three checks green.
   the only route to the diagnostics report is via demo mode. `rotationSection` and
   `macOSSection` are not conditional, so this is not a matter of passing nils — the sections
   need gating before a signed-out Settings can exist. Small, worth doing.
-- ⬜ **The app's accent color is not in the icon.** `Brand.signal` safety orange `#D9480F`
+- ✅ **Accent color fixed 2026-09-02, and measuring it changed the answer.** Steel `#4A6E96`
+  from the mark was the obvious replacement for the orange and **it fails**: 2.97:1 against
+  the navy credential card, below WCAG's 3.0 floor for a UI component, and that card is where
+  the countdown ring and reveal timer live. Lifting steel enough for the card takes it to
+  3.09:1 on white. No single value serves both surfaces; orange only appeared to because it
+  is unusually forgiving.
+
+  So the accent is now two tokens, both steel. `Brand.accent` is **adaptive** — steel as
+  drawn in light appearance, lifted `#6E96C2` in dark — for buttons, tints, list rows and
+  banners, which follow the system appearance. `Brand.accentOnField` is the lifted value
+  fixed, for the credential card, which is navy in both appearances. All 12 call sites
+  migrated; the compiler enforced it because the old token was removed rather than
+  deprecated.
+
+  Also: `pitWall` became `field` and took the icon's actual navy `#16233A` rather than the
+  near-miss `#131E2E`, and the palette now stores **hex** instead of fractional component
+  triples. That last one matters more than it sounds — fractional triples cannot be compared
+  by eye against `design/icons/README.md`, which is part of how the accent drifted out of the
+  identity without anyone noticing. The icon README now documents the derivation and the
+  contrast floor.
+
+  **Worth an eyeball on device in both appearances**, since it is 12 call sites of colour I
+  cannot see. The reveal card and the countdown ring are the ones to look at.
+- ~~⬜ The app's accent color is not in the icon.~~ `Brand.signal` safety orange `#D9480F`
   tints every action, the Face ID glyph and the countdown ring, but the shipping mark is
   navy `#16233A`, steel `#4A6E96` and cap `#EEF3F8` with no orange anywhere. `Brand.pitWall`
   `#131E2E` is also a near-miss against the icon navy. The palette and its names (`pitWall`,

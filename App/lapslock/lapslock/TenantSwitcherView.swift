@@ -87,7 +87,7 @@ struct TenantSwitcherView: View {
                 }
                 Spacer()
                 if isCurrent {
-                    Image(systemName: "checkmark").foregroundStyle(Brand.signal)
+                    Image(systemName: "checkmark").foregroundStyle(Brand.accent)
                 }
             }
         }

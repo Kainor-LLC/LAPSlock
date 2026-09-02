@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Visual identity, carried over from kainor.com so the product reads as one thing.
 //
@@ -14,12 +15,49 @@ import SwiftUI
 // into a guessing game and costs a failed logon attempt.
 
 public enum Brand {
-    /// Pit-wall navy. Used for dark surfaces and the credential card.
-    public static let pitWall = Color(red: 0.075, green: 0.118, blue: 0.180)
-    /// Safety orange. The accent, used sparingly: actions and live state only.
-    public static let signal = Color(red: 0.851, green: 0.282, blue: 0.059)
-    /// Secondary text on dark surfaces.
-    public static let mist = Color(red: 0.663, green: 0.714, blue: 0.776)
+
+    // Hex rather than fractional components, so these values can be compared by eye against
+    // `design/icons/README.md`, which is where the identity is defined. The previous
+    // fractional triples were impossible to check against the mark, which is part of how the
+    // accent drifted out of the palette unnoticed.
+
+    /// The icon's navy field. Dark surfaces and the credential card.
+    public static let field = fixed(0x16233A)
+
+    /// Secondary text on the navy field.
+    public static let mist = fixed(0xA9B6C6)
+
+    /// The accent, for surfaces that follow the system appearance — buttons, tints, list
+    /// rows, banners.
+    ///
+    /// ADAPTIVE, and it has to be. Both values are the icon's steel: as drawn for light
+    /// appearance, lifted for dark. A single value cannot serve both — measured against
+    /// white, the icon's steel is 5.30:1 and the lifted one only 3.09:1; against a dark
+    /// system background the ranking reverses.
+    public static let accent = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? uiFixed(0x6E96C2) : uiFixed(0x4A6E96)
+    })
+
+    /// The accent on the navy credential card, which is navy in BOTH appearances and so
+    /// takes a fixed value rather than an adaptive one.
+    ///
+    /// The lifted steel, at 5.09:1 on the field. **The icon's steel as drawn measures 2.97:1
+    /// here, below the 3.0 floor for a UI component** — which is why this token exists
+    /// separately instead of the mark's colour being used directly. The countdown ring and
+    /// the reveal timer live on this surface, so it is the one place the accent must not be
+    /// taken on faith.
+    public static let accentOnField = fixed(0x6E96C2)
+
+    private static func fixed(_ hex: UInt32) -> Color { Color(uiColor: uiFixed(hex)) }
+
+    private static func uiFixed(_ hex: UInt32) -> UIColor {
+        UIColor(
+            red:   CGFloat((hex >> 16) & 0xFF) / 255,
+            green: CGFloat((hex >> 8) & 0xFF) / 255,
+            blue:  CGFloat(hex & 0xFF) / 255,
+            alpha: 1
+        )
+    }
 
     /// Monospaced type for machine data, at a few deliberate sizes.
     public static func data(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
@@ -132,11 +170,11 @@ struct TenantBanner: View {
             ZStack {
                 Rectangle().fill(.background)
                 if isAwayFromHome {
-                    Rectangle().fill(Brand.signal.opacity(0.16))
+                    Rectangle().fill(Brand.accent.opacity(0.16))
                 }
             }
         }
-        .foregroundStyle(isAwayFromHome ? Brand.signal : .secondary)
+        .foregroundStyle(isAwayFromHome ? Brand.accent : .secondary)
         .overlay(alignment: .bottom) { Divider() }
         .accessibilityLabel(isAwayFromHome
             ? "Working in another organization, \(label)"
@@ -159,10 +197,10 @@ struct DemoBanner: View {
         .background {
             ZStack {
                 Rectangle().fill(.background)
-                Rectangle().fill(Brand.signal.opacity(0.16))
+                Rectangle().fill(Brand.accent.opacity(0.16))
             }
         }
-        .foregroundStyle(Brand.signal)
+        .foregroundStyle(Brand.accent)
         .overlay(alignment: .bottom) {
             Divider()
         }
