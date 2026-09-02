@@ -614,10 +614,52 @@ macOS password retrieval.
   remains built-but-unseen. A tenant with a Conditional Access policy demanding stronger auth
   for privileged operations would exercise it — the work tenant may, once groups appear.
 
-  **Ready for a device test.** Set the Settings toggle on, then either activate proactively
-  from Settings or fail a reveal and use the button. Founder plan: PIM **Groups** in the work
-  tenant first, then a direct **role** in Kainor — which between them exercise both surfaces. — a Settings opt-in toggle with incremental consent, and an
-  activation sheet reachable from the `notAuthorized` error on a failed reveal.
+  ### ✅ CONFIRMED ON DEVICE, 2026-09-02. Group activation works end to end.
+
+  Founder activated a PIM **group** in the work tenant successfully, after the ACRS fix and
+  the policy read. Both surfaces are now proven: a direct role in Kainor and a group in the
+  work tenant.
+
+  ### ✅ "Waiting for approval" appeared in a tenant that requires no approval
+
+  Reported immediately after that successful test, and it was a real defect rather than a
+  cosmetic one. `outcome(from:)` treated anything that was not exactly `Provisioned` or
+  `Granted` as `pendingApproval` — but PIM answers 201 with `PendingProvisioning` or
+  `ScheduleCreated` for an activation nobody has to approve. It is simply still being applied.
+
+  **There were always two mistakes available here, and only one was guarded against.**
+  Reporting a pending approval as active sends somebody back to a broken machine. Reporting
+  an ordinary provisioning delay as a pending approval sends them hunting for an approver who
+  does not exist. The original design note called out the first and produced the second.
+
+  `ActivationOutcome` now answers what the user has to DO rather than how far along PIM is:
+
+  | Case | Statuses | What the screen says |
+  |---|---|---|
+  | `activated` | `Provisioned`, `Granted` | Access activated |
+  | `provisioning` | `PendingProvisioning`, `PendingApprovalProvisioning`, `PendingScheduleCreation`, `PendingExternalProvisioning`, `PendingVerification`, `ScheduleCreated`, `AdminApproved`, `Approved` | Accepted — no approval needed, activating now |
+  | `pendingApproval` | `PendingApproval`, `PendingAdminDecision` — only these two | Waiting for approval |
+  | `requested` | anything unrecognised | Requested, not yet active, plus Microsoft's own status word |
+  | `refused` | `Denied`, `AdminDenied`, `Failed`, `FailedAsResourceIsLocked`, `Canceled`, `Revoked` | Nothing was activated, and waiting will not help |
+
+  `PendingApprovalProvisioning` and `AdminApproved` sit under `provisioning`, not approval:
+  by the time either appears the approval has already happened. `Failed` and `Canceled`
+  previously displayed as "waiting for approval", which is the same misdirection with a worse
+  ending — somebody waiting on a request that will never complete.
+
+  The unrecognised case shows Microsoft's status word on screen. It is a fixed Graph
+  enumeration, not tenant data, and for a status this app does not know it is the only thing
+  that explains the screen — readable off the phone rather than collected.
+
+  Success is still matched exactly and the status is still deliberately not trimmed, so a
+  padded `"Granted "` cannot parse as a grant. Verified by injection: deleting the
+  provisioning branch fails three tests.
+
+  ⬜ **Not done, and deliberately not:** the app does not poll to watch `provisioning` turn
+  into active. The screen tells the user to retry the reveal, which is what they were going
+  to do anyway, and polling would spend Graph calls on something that resolves in seconds. If
+  device use shows the delay is longer than "a few seconds", a single user-initiated "Check
+  again" button reading one request is the cheap next step.
 
   ⚠️ **Needs an ELIGIBLE assignment to test against.** Permanent Global Admin is an *active*
   assignment and never appears in `roleEligibilitySchedules`, so a permanently-privileged
