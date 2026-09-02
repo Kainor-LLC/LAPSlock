@@ -1,0 +1,14 @@
+{
+  "_comment": "LAPSlock entitlement signing keys. Published for auditors and for anyone verifying a token by hand. The iOS client NEVER fetches this file - it verifies against keys compiled into the app, so that a licensing decision never depends on the network. See docs/ENTITLEMENT-API.md section 6.1.",
+  "keys": [
+    {
+      "kid": "lapslock-ent-2026-09",
+      "kty": "EC",
+      "crv": "P-256",
+      "use": "sig",
+      "alg": "ES256",
+      "x": "5nHzJYGy57OQHO3mMXG-Lya804CI9b3KZsntbe2bmRI",
+      "y": "zObIiXaUo2ZIlETFvoiQ3I-6btA_Px9M-C6epF9f4VU"
+    }
+  ]
+}

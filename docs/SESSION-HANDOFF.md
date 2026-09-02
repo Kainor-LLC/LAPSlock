@@ -112,6 +112,22 @@ explicit data-plane role — **Key Vault Crypto Officer** at the vault scope. Gr
 rather than a UPN; UPN resolution is the flaky part of that command. Remove the role once
 the key exists — nothing needs standing key-creation rights, and re-granting takes seconds.
 
+**PIN THE KEY VERSION IN THE FUNCTION.** The vault's own key identifier is versioned:
+`https://kainor-lapslock-prod-kv.vault.azure.net/keys/lapslock-ent-2026-09/ec4ca7dc7a284a19865eb9ea3a3806ec`.
+Signing against the versionless URI would mean that anyone creating a new key version
+silently changes the signing key while the JWS `kid` header still says
+`lapslock-ent-2026-09` — and every client in the field would then fail signature
+verification against its compiled-in public key, with no server-side symptom at all. The
+JWS `kid` stays the logical name per contract section 5.1; the Function config carries the
+pinned version URI.
+
+**`az keyvault key show` prints `x` and `y` in STANDARD base64, not base64url.** The values
+contain `+` and `/`, which are invalid in a JWK. Copying CLI output straight into a JWKS or
+into client code produces a key that silently fails to parse or, worse, parses to the wrong
+bytes. `docs/entitlement-jwks.json` holds the correctly base64url-encoded form. The X9.63
+uncompressed form for `P256.Signing.PublicKey(x963Representation:)` is `0x04` followed by
+the 32-byte x then the 32-byte y, 65 bytes total.
+
 **The vault is `standard` SKU, so the signing key is software-protected, not HSM.**
 Deliberate. HSM needs Premium, and per contract section 9.2 the worst case for a stolen
 signing key is forged Pro features, never credential access.
@@ -368,9 +384,12 @@ Others:
 
    In that order, with the contract as the spec.
 
-   1. **ES256 key in `kainor-lapslock-prod-kv`**, created in-vault and never exported.
-      `kid` `lapslock-ent-2026-09`. The managed identity already holds Key Vault Crypto
-      User scoped to that vault only.
+   1. ~~**ES256 key in `kainor-lapslock-prod-kv`**~~ — DONE 2026-09-02. Created in-vault,
+      `exportable: false`, `keyOps` sign and verify only, `recoveryLevel` `Recoverable`
+      which confirms purge protection is live. The public key is published at
+      `docs/entitlement-jwks.json` and its point was verified to satisfy the P-256 curve
+      equation, so it is not a transcription error. **Two traps came out of this, both
+      recorded below.**
    2. **Licences table in `kainorlapslockprodst`.** Contract section 8.1 constrains the
       schema to four columns: tenant GUID, tier, term start and end, order reference. No
       purchaser name or email — those stay in Stripe, so no personal data lands in Azure. A
