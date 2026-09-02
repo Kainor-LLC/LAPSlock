@@ -379,9 +379,35 @@ macOS password retrieval.
   loosened mid-session — whitespace trimming on the status field would have made a padded
   `"Granted "` parse as success, and this function's job is to under-promise.
 
-  **Still to build:** the Graph client, threading a claims request through MSAL (needs an
-  optional method on `AuthManaging` with a default implementation so the two test doubles
-  keep compiling), and the UI — a Settings opt-in toggle with incremental consent, and an
+  ### Graph client and MSAL claims threading built 2026-09-02
+
+  `PrivilegedAccessService` reads both surfaces concurrently and combines them. **One surface
+  failing does not fail the call** — a tenant may use PIM for Groups and not roles, or have
+  only one scope consented — but both failing throws. Reads are silent-only, because a
+  consent prompt while merely listing eligibility appears before the user has asked to
+  activate anything.
+
+  The claims retry is the design: attempt → 401 with a challenge → re-authenticate carrying
+  those claims → attempt **exactly once more**. A second challenge surfaces rather than
+  looping, because retrying forever traps the user behind a biometric prompt they cannot
+  escape. An ordinary 401 with no claims header is never treated as a challenge.
+
+  **Two real bugs the tests caught, neither of which would have been visible on device
+  without a lot of confusion:**
+
+  1. **The claims method was a protocol EXTENSION rather than a requirement**, so it
+     dispatched statically. Called through `any AuthManaging` it always ran the default that
+     *discards* the claims — meaning `MSALAuthManager`'s implementation would never have been
+     reached and every privileged operation would have failed "not authorized" forever. Now
+     a requirement with a default implementation, so conformances still compile and dispatch
+     is dynamic.
+  2. **`AdminAccount` had no `objectId`.** PIM self-activation needs the directory `oid`, and
+     MSAL's account identifier is `{oid}.{utid}` — passing the latter targets a principal
+     that does not exist, failing in a way that reads as a permissions problem. Added,
+     populated from the `oid` claim rather than by splitting the identifier, since that shape
+     is an MSAL implementation detail.
+
+  **Still to build:** the UI — a Settings opt-in toggle with incremental consent, and an
   activation sheet reachable from the `notAuthorized` error on a failed reveal.
 
   ⚠️ **Needs an ELIGIBLE assignment to test against.** Permanent Global Admin is an *active*

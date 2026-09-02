@@ -39,6 +39,18 @@ open App/lapslock/lapslock.xcodeproj      # app project, for building and runnin
 API does not exist there, so a missing `#if os(iOS)` breaks the macOS test build while the
 iOS app stays perfectly healthy. That shipped once and went unnoticed for a day.
 
+**And `swift test` is NOT sufficient for AuthKitMSAL — build the iOS app too.** The whole
+implementation sits inside `#if os(iOS)`, so on macOS it compiles to nothing and the test
+suite validates none of it. A wrong MSAL API label passed 262 green tests and failed the
+iOS build immediately. The two checks cover opposite halves and neither substitutes for the
+other:
+
+```
+cd LAPSlockKit && swift test
+xcodebuild -project App/lapslock/lapslock.xcodeproj -scheme lapslock \
+  -destination 'generic/platform=iOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+```
+
 ## Working with this person
 
 - **They run PowerShell on a Mac.** Bash idioms fail: `VAR=value` assignments, `$VAR`
