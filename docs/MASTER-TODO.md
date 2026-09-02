@@ -714,7 +714,20 @@ Decided *by* the contract, because the implementation needed an answer:
 - ⬜ Rate limiting per §8.3: source IP plus a keyed hash of the tid in cache with a sub-hour
   TTL, never persisted. **No per-tenant request counters** — that history is exactly the
   file the product promises not to build.
-- ⬜ Function code: `/entitlement` — tid in, signed JWT out. Contract §2–§6 is the spec.
+- ✅ **Function written, tested and deployed 2026-09-02.** Live at
+  `https://kainor-lapslock-prod-func.azurewebsites.net/entitlement`, .NET 10 isolated, 69
+  tests verified to fail on injected defects. A live token verifies against the published
+  JWKS and a tampered payload fails, so the chain is proven rather than assumed.
+- ✅ **Pre-live hardening done 2026-09-02.** No app setting is secret-shaped: storage moved
+  to `AzureWebJobsStorage__accountName` with SystemAssignedIdentity deployment auth, so the
+  account key that granted blob AND table read/write over the whole account — quietly
+  defeating the scoped read-only table role — is gone. Logging down to Warning with
+  `Host.Results` at Error. App Insights retention 30 days. FTP disabled. TLS 1.2.
+- ⬜ **Client half** — fetch, verify per §7.4, Keychain storage, Activate/Remove licence in
+  Settings, `isPro` wired up. Still hardcoded false in `LAPSlockApp.swift`.
+- ⚠️ **Privacy policy still says two hosts** and must say three in the release that ships
+  the client half. The endpoint being live does not change that yet, because no client
+  contacts it.
 - ⬜ Client: entitlement fetch + verification in `LicensingKit`, Activate/Remove license UI
   in Settings, and `isPro` wired up (currently hardcoded false in `LAPSlockApp.swift`).
 - ⚠️ **Privacy policy says "exactly two hosts" and must say three in the same release that
