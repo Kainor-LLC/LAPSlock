@@ -54,7 +54,8 @@ finding:
    nothing else: no credential, no Microsoft token, no user or device identity. The full
    wire format, what the server logs, and how to check both are published in
    `docs/ENTITLEMENT-API.md`. Verify with a proxy — this is our strongest claim and the
-   easiest to check.
+   easiest to check, and `docs/NETWORK-TRANSPARENCY.md` walks through doing it in ten
+   minutes.
 2. **No credential is logged.** `CredentialKit` links no logging framework, analytics SDK,
    or crash reporter. This is enforced at build time by `scripts/isolation-check.sh`, not
    by convention.

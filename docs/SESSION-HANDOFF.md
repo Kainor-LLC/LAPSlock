@@ -444,7 +444,11 @@ Others:
       `~/Developer/LAPSlock-backend`). Toolchain is ready: .NET SDK 10.0.400 and Azure
       Functions Core Tools 4.14.0 are installed, and `gh` is installed and authenticated as
       `kainorllc`. Deploy with `func azure functionapp publish kainor-lapslock-prod-func`.
-   4. **The client half, in `LicensingKit` — IN PROGRESS, security core done 2026-09-02.**
+   4. **The client half, in `LicensingKit` — BUILT 2026-09-02, awaiting a device test.** See
+      the "For Connor when back" block at the top of `MASTER-TODO.md` for exactly what to
+      check on the phone. Original notes follow.
+
+   4a. **(superseded) The client half — IN PROGRESS, security core done 2026-09-02.**
 
       DONE: `EntitlementKeyring` (the compiled-in P-256 public key for
       `lapslock-ent-2026-09`, transcribed from the vault JWK and checked against the curve

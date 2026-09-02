@@ -85,7 +85,7 @@
     <div class="head-main">
       <span class="eyebrow">LAPSlock</span>
       <h1 class="display">Privacy Policy</h1>
-      <p class="updated">Effective 17 August 2026</p>
+      <p class="updated">Effective 2 September 2026</p>
     </div>
   </div>
 </header>
@@ -154,6 +154,11 @@
         <td>App memory only, never written to disk</td>
         <td>Cleared when the app closes</td>
       </tr>
+      <tr>
+        <td>Your organization's license token, if you activated one</td>
+        <td>iOS Keychain, marked device-only so it is not synced to iCloud or restored to another device</td>
+        <td>Until you remove the license in Settings; refreshed about monthly</td>
+      </tr>
     </table>
     <p>Credentials are never written to disk, never included in an iOS or iCloud backup, and never
     written to a log file.</p>
@@ -171,6 +176,17 @@
     <p>This is enforced in the code, not just promised: the module that handles credentials is compiled
     with no logging or analytics dependency available to it, and the build fails if one is added. The
     source is published so you can verify that claim yourself.</p>
+
+    <h3>If your organization buys a license</h3>
+    <p>Organization licenses are keyed to a Microsoft tenant. For each paying organization, Kainor
+    LLC keeps the tenant ID, the license tier, its term dates, and an order reference. That is the
+    whole record. It contains no person's name or email address — those stay with the payment
+    processor as a billing record — and nothing about how the app is used. A tenant ID identifies an
+    organization, not a person.</p>
+    <p>Our license server does not log tenant IDs. Its request logs are the ordinary kind every web
+    service has (a timestamp, a source address, a status code), kept briefly, and they cannot show
+    which devices were looked at, which credentials were revealed, or who did the looking, because
+    none of that is ever sent.</p>
 
     <h3>Diagnostics you choose to send</h3>
     <p>If you tap <em>Gather diagnostics</em> in Settings, the app assembles a report and shows it to
@@ -193,6 +209,17 @@
       <li><code>login.microsoftonline.com</code> — Microsoft sign-in</li>
       <li><code>graph.microsoft.com</code> — Microsoft Graph, where your data lives</li>
     </ul>
+    <p>A third host is contacted <strong>only if your organization activates a paid license</strong>
+    in Settings, and never before:</p>
+    <ul>
+      <li><code>kainor-lapslock-prod-func.azurewebsites.net</code> — Kainor's license check</li>
+    </ul>
+    <p>That request contains your Microsoft tenant ID and nothing else: no sign-in token, no user
+    name, no device information, and no count of anything you have done in the app. It is made when
+    you tap Activate, then roughly once a month, and never in response to anything you look up or
+    reveal. The full request and response format, what our server keeps, and how to check all of it
+    with a proxy are published in the
+    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/ENTITLEMENT-API.md">entitlement API contract</a>.</p>
     <p>You can verify this yourself with a network proxy in about ten minutes. We think observed
     behavior is better evidence than a privacy policy, which is why we're telling you how to check.</p>
 
