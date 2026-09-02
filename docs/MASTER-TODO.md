@@ -630,7 +630,7 @@ Decided *by* the contract, because the implementation needed an answer:
 - **7-day offline grace past `exp`**, network-failure only, taking worst-case revocation lag
   to 37 days. Buys a week in a datacenter with no signal.
 - **`msp` tokens are bound to the activating tenant, not the signed-in one.** An MSP signs
-  into customer tenants; the strict binding would revoke their licence for doing their job.
+  into customer tenants; the strict binding would revoke their license for doing their job.
   The one deliberate loosening, on the tier that is honour-system on seats anyway.
 - **Keyring of `kid` → public key compiled into the app; the client never fetches a key.**
   A JWKS document is for auditors and hand-verification only. Rotation is a three-release
@@ -651,23 +651,30 @@ Decided *by* the contract, because the implementation needed an answer:
   same and break every client in the field.
 - ⬜ **Remove Key Vault Crypto Officer from the human account** now that the key exists.
   Nothing needs standing key-creation rights; re-granting for rotation takes seconds.
-- ✅ **Licences table created 2026-09-02.** `licences` in `kainorlapslockprodst`.
+- ✅ **Licenses table created 2026-09-02.** `licenses` in `kainorlapslockprodst`. Named with
+  the American spelling to match `LICENSE`, `SECURITY.md`, the privacy policy, the terms, and
+  the entitlement contract — Kainor LLC is a US company and every public-facing document
+  already reads that way. It was first created as `licences`, then recreated while empty,
+  because Azure tables cannot be renamed and doing it after the first customer row would
+  have been a migration. The published terms page at `docs/terms/index.html` still uses
+  British `licence` in seven places; that is live legal text and belongs to the attorney
+  pass, not to a spelling sweep.
   PartitionKey is the lowercase tenant GUID, RowKey is `current` (leaving room for dated
   history rows later without changing the lookup), plus `Tier`, `TermStart`, `TermEnd`,
   `OrderRef`. **No purchaser name or email** — the order reference resolves to those in
   Stripe, which holds them as a billing record anyway, so no personal data lands in Azure.
   A row exists only for a PAYING tenant.
 - ✅ **Table roles granted 2026-09-02, scoped to the TABLE and not the storage account.**
-  The human account has Storage Table Data Contributor, for inserting licence rows by hand
+  The human account has Storage Table Data Contributor, for inserting license rows by hand
   until Stripe exists. The Function identity has **Storage Table Data Reader** — read-only,
-  because the entitlement endpoint never writes a licence row. A compromise of the Function
-  can see who holds a licence; it cannot grant one. Same reasoning as Crypto User over
+  because the entitlement endpoint never writes a license row. A compromise of the Function
+  can see who holds a license; it cannot grant one. Same reasoning as Crypto User over
   Crypto Officer. **When the Stripe webhook needs write, grant it separately and ideally to
   a separate identity**, so the read path and the write path never share a credential.
 - ⚠️ **The storage account key is in the Function app settings.** `AzureWebJobsStorage` and
   `DEPLOYMENT_STORAGE_CONNECTION_STRING` are both connection strings containing an account
   key, which grants full read/write over the whole storage account — **including the
-  licences table**, bypassing the carefully scoped Reader role above. Inconsistent with
+  licenses table**, bypassing the carefully scoped Reader role above. Inconsistent with
   giving the identity Crypto User so it can sign but not exfiltrate the signing key. Fix is
   identity-based storage (`AzureWebJobsStorage__accountName` plus blob roles; Flex
   Consumption supports identity-based deployment storage). **Do it as its own deliberate
@@ -682,6 +689,16 @@ Decided *by* the contract, because the implementation needed an answer:
   | `maximumInstanceCount` | **20**, was 100 | The endpoint is anonymous by design, so a flood is possible. Rate limiting bounds the logic; this bounds the money. 20 is still far more than this workload can consume. |
   | `alwaysReady` | **[]** — already zero | Always-ready instances stay provisioned and are billed continuously whether or not a request arrives. For a background call made monthly, paying to avoid a cold start is pure waste. |
   | Subscription budget | **$10/month**, `lapslock-monthly-guard` | Alerts to connor@kainor.com at 50% actual, 90% actual, and 100% forecast. Expected spend is under $2, so 50% fires around $5 — early, and a false alarm is the point. |
+  | Cap-reached alert | `lapslock-ingestion-cap-hit` | **The cap makes the budget alert silent.** If something floods the logs, the cap holds the bill near zero, so the $10 budget never fires and nothing tells you anything is wrong. This rule is the only signal. Queries `_LogOperation` for `OverQuota` once a day and emails the `lapslock-alerts` action group. Stateless (`autoMitigate` false), because hitting a cap is an event rather than a condition that clears — and Azure refuses a stateful rule at frequencies above 12 hours anyway. |
+
+  A log alert rule is itself billed per rule per evaluation interval. Daily is the cheapest
+  tier, which is why it is daily; the exact rate was not verifiable from the pricing page.
+  Tightening it to hourly costs more and buys little before there are customers.
+
+  **The `Ingestion Volume` workspace metric was considered and rejected.** A metric alert
+  would be cheaper and would warn on the way up rather than after the fact, but the metric
+  reports unit `Count` with only `Count` aggregation, which cannot be interpreted confidently
+  as bytes. A cost guard built on a threshold nobody can explain is worse than none.
 
   The daily cap trades telemetry for money: when it is hit, ingestion stops until the reset.
   That is the intended direction — fail to no-data rather than to a bill.
@@ -693,11 +710,11 @@ Decided *by* the contract, because the implementation needed an answer:
   TTL, never persisted. **No per-tenant request counters** — that history is exactly the
   file the product promises not to build.
 - ⬜ Function code: `/entitlement` — tid in, signed JWT out. Contract §2–§6 is the spec.
-- ⬜ Client: entitlement fetch + verification in `LicensingKit`, Activate/Remove licence UI
+- ⬜ Client: entitlement fetch + verification in `LicensingKit`, Activate/Remove license UI
   in Settings, and `isPro` wired up (currently hardcoded false in `LAPSlockApp.swift`).
 - ⚠️ **Privacy policy says "exactly two hosts" and must say three in the same release that
   ships activation.** `docs/privacy/index.html`, "Network connections". The wording should
-  keep the distinction the contract makes: two hosts always, a third only after a licence is
+  keep the distinction the contract makes: two hosts always, a third only after a license is
   activated. Shipping the endpoint without this makes a published policy false.
 - ⬜ App Attest verification — **phase 2, deliberately.** See the reasoning below.
 - ⬜ Later: `/stripe-webhook` to auto-insert license rows
@@ -940,7 +957,7 @@ These are hours, not days, and two of them are things I said mattered and then d
 Backend infrastructure is provisioned (see "Backend (Azure)"). The free-tier meter and all
 gating UI shipped 2026-08-29. IAP and App Attest need Apple; the Function does not.
 
-11. `/entitlement` Function: API contract, ES256 key, licences table, code
+11. `/entitlement` Function: API contract, ES256 key, licenses table, code
 12. Stripe
 13. IAP products and the StoreKit trial. Note the gating itself is BUILT — what is missing
     is products to sell and an entitlement check to set `isPro`, which is currently
@@ -958,7 +975,7 @@ gating UI shipped 2026-08-29. IAP and App Attest need Apple; the Function does n
 17. **Trademark filing.** USPTO Class 9, intent-to-use, ~$350. Actionable today, and the
     icon can be cleared at the same time (a design-mark search, separate from the wordmark
     search already done).
-18. Attorney pass on the licence additional-permission wording and the liability cap.
+18. Attorney pass on the license additional-permission wording and the liability cap.
 19. "Not affiliated with Microsoft" on the marketing site.
 
 ## Nothing is blocked any more
@@ -975,8 +992,8 @@ Deliberately deferred, not blocked:
 ## DECIDED ORDER, 2026-08-29. Do not re-argue this each session.
 
 1. ~~**`/entitlement` API contract**~~ — DONE 2026-09-01, `docs/ENTITLEMENT-API.md`.
-   Next: the ES256 key, the licences table, then the Function, then the client half
-   (fetch, verify, Activate licence UI, `isPro`). The privacy policy host list has to
+   Next: the ES256 key, the licenses table, then the Function, then the client half
+   (fetch, verify, Activate license UI, `isPro`). The privacy policy host list has to
    change in the same release as the client work. The infrastructure is provisioned and
    nothing blocks any of it.
 2. **Auth diagnostics in the support report.** Becomes urgent the moment there is a
