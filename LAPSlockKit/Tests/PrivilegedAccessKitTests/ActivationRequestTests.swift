@@ -285,3 +285,54 @@ final class PrivilegedScopeTests: XCTestCase {
             .isDisjoint(with: Set(PrivilegedAccessGraph.activateScopes)))
     }
 }
+
+/// The eligibility endpoints, which shipped wrong once.
+final class PrivilegedEndpointTests: XCTestCase {
+
+    /// Both must use the self-service function, and for different reasons.
+    ///
+    /// Groups: Graph documents that listing group eligibility REQUIRES a principalId or
+    /// groupId filter, so the plain collection is an invalid request. It returned nothing,
+    /// one surface failing is tolerated by design, and a tenant with PIM for Groups
+    /// configured showed no groups — a silent half-failure rather than an error.
+    ///
+    /// Roles: the plain collection returns every schedule the caller can see, which needs
+    /// directory-wide read. It works for a Global Administrator and returns nothing useful
+    /// for the ordinary admin this feature exists to help.
+    func test_bothSurfacesUseTheSelfServiceFunction() {
+        for path in [PrivilegedAccessGraph.roleEligibilityPath, PrivilegedAccessGraph.groupEligibilityPath] {
+            XCTAssertTrue(
+                path.hasSuffix("filterByCurrentUser(on='principal')"),
+                "\(path) must scope itself to the caller")
+        }
+    }
+
+    func test_activationPathsAreNotFiltered() {
+        // The activation endpoints take a body naming the principal, so a filter function
+        // there would be wrong — and would silently post to a URL Graph does not serve.
+        for path in [PrivilegedAccessGraph.roleActivationPath, PrivilegedAccessGraph.groupActivationPath] {
+            XCTAssertFalse(path.contains("filterByCurrentUser"), "\(path) must not be filtered")
+            XCTAssertTrue(path.hasSuffix("ScheduleRequests"))
+        }
+    }
+
+    func test_theTwoSurfacesUseDifferentGraphAreas() {
+        // Roles live under roleManagement, groups under identityGovernance. Confusing them
+        // is a 404 at best and the wrong object at worst.
+        XCTAssertTrue(PrivilegedAccessGraph.roleEligibilityPath.contains("/roleManagement/directory/"))
+        XCTAssertTrue(PrivilegedAccessGraph.groupEligibilityPath.contains("/identityGovernance/privilegedAccess/group/"))
+    }
+
+    func test_everyPathIsAValidURLOnceBuilt() {
+        // The self-service function puts parentheses and quotes in the path. If
+        // URLComponents ever refuses one of these, every call silently fails.
+        for path in [
+            PrivilegedAccessGraph.roleEligibilityPath, PrivilegedAccessGraph.groupEligibilityPath,
+            PrivilegedAccessGraph.roleActivationPath, PrivilegedAccessGraph.groupActivationPath,
+        ] {
+            var comps = URLComponents(string: "https://graph.microsoft.com")!
+            comps.path = path
+            XCTAssertNotNil(comps.url, "\(path) did not survive URL construction")
+        }
+    }
+}

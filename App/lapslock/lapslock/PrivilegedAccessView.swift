@@ -26,6 +26,13 @@ struct PrivilegedAccessView: View {
     let deviceName: String?
     let loadEligible: () async -> Result<[EligibleAccess], PrivilegedAccessError>
     let activate: (EligibleAccess, String, String?) async -> Result<ActivationOutcome, PrivilegedAccessError>
+    /// Requests consent for the PIM scopes, returning a message on failure.
+    ///
+    /// Here rather than only in Settings because **consent is per-organization while the
+    /// Settings toggle is per-install.** Somebody who works across tenants has the toggle
+    /// on and no consent in the tenant they just signed into, and telling them to go
+    /// toggle a switch off and on again is a puzzle, not an instruction.
+    let requestConsent: (() async -> String?)?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -36,6 +43,7 @@ struct PrivilegedAccessView: View {
     @State private var phase: Phase = .loading
     @State private var failure: PrivilegedFailure?
     @State private var outcome: ActivationOutcome?
+    @State private var isRequestingConsent = false
 
     private enum Phase: Equatable {
         case loading
@@ -194,6 +202,31 @@ struct PrivilegedAccessView: View {
         Section {
             Text(failure.title).font(.subheadline.weight(.semibold))
             Text(failure.explanation).font(.footnote).foregroundStyle(.secondary)
+
+            // Recoverable right here rather than by sending the user to Settings. Consent is
+            // granted per organization, so an admin who works across tenants will meet this
+            // every time they reach a new one — and it is a permission prompt away, not a
+            // configuration change.
+            if failure.isConsent, let requestConsent {
+                Button {
+                    Task {
+                        isRequestingConsent = true
+                        let error = await requestConsent()
+                        isRequestingConsent = false
+                        if error == nil {
+                            await load()
+                        } else {
+                            self.failure = PrivilegedFailure(consentDenied: error!)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        if isRequestingConsent { ProgressView().padding(.trailing, 6) }
+                        Text(isRequestingConsent ? "Requesting…" : "Request permission")
+                    }
+                }
+                .disabled(isRequestingConsent)
+            }
         } header: {
             Text("Couldn't activate")
         }
@@ -251,8 +284,19 @@ struct PrivilegedAccessView: View {
 struct PrivilegedFailure: Equatable {
     let title: String
     let explanation: String
+    /// True when a permission prompt is the fix, so the sheet can offer one inline.
+    let isConsent: Bool
+
+    /// Consent was requested and refused. Distinct from "not requested yet": the user has
+    /// just been through a prompt, so repeating "request permission" would be a loop.
+    init(consentDenied message: String) {
+        title = "Permission wasn't granted"
+        explanation = message
+        isConsent = false
+    }
 
     init(_ error: PrivilegedAccessError) {
+        isConsent = (error == .consentRequired)
         switch error {
         case .noEligibleAccess:
             // Not an apology. This usually means their access is permanent rather than
@@ -266,7 +310,7 @@ struct PrivilegedFailure: Equatable {
                 """
         case .consentRequired:
             title = "Permission not granted yet"
-            explanation = "Turn \"Allow role activation\" off and on again in Settings to request permission. If Microsoft refuses, these permissions need an Entra administrator to approve them for your organization — being an Intune Administrator is not enough, because reading role eligibility is a directory permission."
+            explanation = "LAPSlock hasn't been granted permission in this organization yet. Consent is granted per organization, so signing in somewhere new needs it again. If Microsoft refuses, these are directory permissions and need an Entra administrator to approve them — an Intune Administrator cannot."
         case .alreadyActive:
             title = "Already active"
             explanation = """

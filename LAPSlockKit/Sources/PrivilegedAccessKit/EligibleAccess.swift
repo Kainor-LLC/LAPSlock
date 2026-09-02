@@ -89,13 +89,28 @@ public struct EligibleAccess: Sendable, Equatable, Identifiable, Hashable {
 public enum PrivilegedAccessGraph {
 
     // Directory roles.
-    public static let roleEligibilityPath = "/v1.0/roleManagement/directory/roleEligibilitySchedules"
+    //
+    // `filterByCurrentUser(on='principal')` rather than the plain list, and that is a
+    // correctness matter rather than a nicety. The unfiltered collection returns every
+    // schedule the CALLER can see, which needs directory-wide read — so it works for a
+    // Global Administrator and returns nothing useful for the ordinary admin this feature
+    // exists to help. The self-service function returns exactly the caller's own
+    // eligibility with only the read scope.
+    public static let roleEligibilityPath =
+        "/v1.0/roleManagement/directory/roleEligibilitySchedules/filterByCurrentUser(on='principal')"
     public static let roleActivationPath = "/v1.0/roleManagement/directory/roleAssignmentScheduleRequests"
     public static let roleReadScope = "RoleEligibilitySchedule.Read.Directory"
     public static let roleActivateScope = "RoleAssignmentSchedule.ReadWrite.Directory"
 
     // PIM for Groups.
-    public static let groupEligibilityPath = "/v1.0/identityGovernance/privilegedAccess/group/eligibilitySchedules"
+    //
+    // Here the filter is not optional at all: Graph documents that listing group
+    // eligibility **requires** either a `principalId` or a `groupId` filter, so the plain
+    // collection is simply an invalid request. Calling it returned nothing, one surface
+    // failing is tolerated by design, and the result was a tenant with PIM for Groups
+    // configured showing no groups — a silent half-failure rather than an error.
+    public static let groupEligibilityPath =
+        "/v1.0/identityGovernance/privilegedAccess/group/eligibilitySchedules/filterByCurrentUser(on='principal')"
     public static let groupActivationPath = "/v1.0/identityGovernance/privilegedAccess/group/assignmentScheduleRequests"
     public static let groupReadScope = "PrivilegedEligibilitySchedule.Read.AzureADGroup"
     public static let groupActivateScope = "PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup"

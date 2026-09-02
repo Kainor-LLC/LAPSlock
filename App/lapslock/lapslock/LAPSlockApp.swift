@@ -620,7 +620,8 @@ struct AppRootView: View {
                                     activate: { access, justification, ticket in
                                         await root.activatePrivilegedAccess(
                                             access, justification: justification, ticketNumber: ticket)
-                                    }
+                                    },
+                                    requestConsent: { await root.requestPrivilegedActivationConsent() }
                                 )
                             }
                         )
@@ -643,7 +644,8 @@ struct AppRootView: View {
                                     activate: { access, justification, ticket in
                                         await root.activatePrivilegedAccess(
                                             access, justification: justification, ticketNumber: ticket)
-                                    }
+                                    },
+                                    requestConsent: { await root.requestPrivilegedActivationConsent() }
                                 )
                             }
                         )
