@@ -62,6 +62,11 @@ public enum DiagnosticOutcome: String, Sendable, Codable, CaseIterable {
     case biometricUnavailable
     case biometricFailed
     case unknown
+    /// The request itself was rejected — a 4xx that is not an auth problem. Distinct from
+    /// `serviceUnavailable` because they lead somewhere completely different: one is our
+    /// request being wrong, the other is Microsoft being down. Conflating them sent a
+    /// diagnostics reader looking for an outage that was not happening.
+    case badRequest
 }
 
 /// One recorded event. Note what ISN'T here: no device name, no UPN, no serial, no URL,
@@ -102,6 +107,15 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     /// Whether the Authenticator broker handled the request.
     public let brokerInvolved: Bool?
 
+    /// Microsoft Graph's own error code — `InvalidRequest`, `RoleAssignmentExists` and so
+    /// on. Allowlisted to an identifier shape, so a code passes and the human-readable
+    /// message that accompanies it cannot.
+    ///
+    /// Added 2026-09-02 after a Graph 400 produced a report that said only "service
+    /// unavailable". The status and the code are the whole difference between a report that
+    /// answers the question and one that wastes a device cycle guessing.
+    public let graphErrorCode: String?
+
     public init(
         operation: DiagnosticOperation,
         outcome: DiagnosticOutcome,
@@ -114,7 +128,8 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
         aadErrorCode: String? = nil,
         oauthError: String? = nil,
         correlationId: String? = nil,
-        brokerInvolved: Bool? = nil
+        brokerInvolved: Bool? = nil,
+        graphErrorCode: String? = nil
     ) {
         self.id = UUID()
         self.timestamp = Date()
@@ -132,6 +147,9 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
         self.oauthError = Self.sanitizedShape(oauthError, "^[a-z_]{3,40}$")
         self.correlationId = Self.sanitizedRequestId(correlationId)
         self.brokerInvolved = brokerInvolved
+        // An identifier, never a sentence: letters, digits and underscores only. Graph puts
+        // a prose message next to the code and that message must not ride along.
+        self.graphErrorCode = Self.sanitizedShape(graphErrorCode, "^[A-Za-z][A-Za-z0-9_]{2,60}$")
     }
 
     /// Keeps a value only if it matches the given shape exactly. Anything else becomes nil.
@@ -164,6 +182,7 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
         if let oauthError { parts.append("oauth=\(oauthError)") }
         if let brokerInvolved { parts.append("broker=\(brokerInvolved ? "yes" : "no")") }
         if let correlationId { parts.append("correlation-id=\(correlationId)") }
+        if let graphErrorCode { parts.append("graph-error=\(graphErrorCode)") }
         return parts.joined(separator: "  ")
     }
 }

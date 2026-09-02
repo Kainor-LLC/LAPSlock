@@ -179,5 +179,7 @@ public enum PrivilegedAccessError: Error, Sendable, Equatable {
     case notAuthorized
     case transport
     case decodeFailure
-    case serviceError(status: Int)
+    /// Graph rejected the request or the service failed. `code` is Graph's own error
+    /// identifier when it sent one, which is usually the only thing that explains a 400.
+    case serviceError(status: Int, code: String?)
 }

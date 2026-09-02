@@ -9,10 +9,25 @@ import Foundation
 
 public enum ActivationRequest {
 
-    /// Graph caps self-activation at 8 hours and tenants commonly configure less. Five is a
-    /// working afternoon: long enough to finish the job, short enough that an activation
-    /// somebody forgot about expires on its own.
-    public static let defaultDuration = "PT5H"
+    /// Durations offered, shortest first.
+    ///
+    /// **The default is deliberately the shortest, and that is a correctness matter rather
+    /// than a security preference.** Every PIM policy caps how long access may be activated
+    /// for, the cap is per-tenant and often per-group, and asking for longer than the policy
+    /// allows is rejected with a bare 400 that names no reason. A hardcoded five hours
+    /// therefore failed outright in a tenant whose policy allowed less — the request was not
+    /// merely generous, it was invalid.
+    ///
+    /// One hour clears almost any policy and is enough to finish a job at a bench. Anyone
+    /// who needs longer can choose it and will be told if their policy refuses.
+    public static let durations: [(label: String, iso: String)] = [
+        ("1 hour", "PT1H"),
+        ("2 hours", "PT2H"),
+        ("4 hours", "PT4H"),
+        ("8 hours", "PT8H"),
+    ]
+
+    public static let defaultDuration = "PT1H"
 
     /// A request ready to send: which endpoint, and what body.
     ///
@@ -32,18 +47,20 @@ public enum ActivationRequest {
         /// The body as Graph wants it. Built on demand, so the nested shape never has to be
         /// stored in a form that defeats `Sendable`.
         public var json: [String: Any] {
-            var schedule: [String: Any] = [
+            var body: [String: Any] = fields
+            body["scheduleInfo"] = [
                 "startDateTime": startDateTime,
                 "expiration": ["type": "afterDuration", "duration": duration],
             ]
+            // TOP LEVEL, beside scheduleInfo rather than inside it. It was nested at first,
+            // which makes the whole request invalid — Graph rejects an unknown property on
+            // scheduleInfo with a 400 that says nothing about which property.
             if let ticket {
-                schedule["ticketInfo"] = [
+                body["ticketInfo"] = [
                     "ticketNumber": ticket.number,
                     "ticketSystem": ticket.system,
                 ]
             }
-            var body: [String: Any] = fields
-            body["scheduleInfo"] = schedule
             return body
         }
     }

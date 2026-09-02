@@ -19,7 +19,8 @@ public protocol PrivilegedAccessProviding: Sendable {
     func activate(
         _ access: EligibleAccess,
         justification: String,
-        ticketNumber: String?
+        ticketNumber: String?,
+        duration: String
     ) async throws -> ActivationOutcome
 }
 
@@ -154,7 +155,8 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     public func activate(
         _ access: EligibleAccess,
         justification: String,
-        ticketNumber: String? = nil
+        ticketNumber: String? = nil,
+        duration: String = ActivationRequest.defaultDuration
     ) async throws -> ActivationOutcome {
         guard let principalId = await auth.currentAccount?.objectId, !principalId.isEmpty else {
             // The oid claim, not the MSAL account identifier. Without it there is no
@@ -166,6 +168,7 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
             access,
             principalId: principalId,
             justification: justification,
+            duration: duration,
             ticketNumber: ticketNumber)
 
         do {
@@ -262,23 +265,36 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
             // Graph answers 400 for "role is already active", which is not a failure worth
             // an alarming message. Detected by the error code rather than by matching prose,
             // which is localised.
-            let code = Self.graphErrorCode(data)
-            throw code.contains("roleassignmentexists") || code.contains("activeassignment")
-                ? PrivilegedAccessError.alreadyActive
-                : PrivilegedAccessError.serviceError(status: 400)
+            let haystack = Self.graphErrorHaystack(data)
+            if haystack.contains("roleassignmentexists") || haystack.contains("activeassignment") {
+                throw PrivilegedAccessError.alreadyActive
+            }
+            throw PrivilegedAccessError.serviceError(status: 400, code: Self.graphErrorCode(data))
         default:
-            throw PrivilegedAccessError.serviceError(status: response.statusCode)
+            throw PrivilegedAccessError.serviceError(
+                status: response.statusCode, code: Self.graphErrorCode(data))
         }
     }
 
-    static func graphErrorCode(_ data: Data) -> String {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let error = json["error"] as? [String: Any]
-        else { return "" }
-        // Graph nests a machine-readable code inside `message` on some endpoints, so both
-        // are searched. Lowercased for comparison; never shown to the user.
+    /// Code and message together, lowercased, for MATCHING only. Never shown or recorded:
+    /// Graph nests a machine-readable code inside `message` on some endpoints, so both have
+    /// to be searched, and the message is prose that must not leave this function.
+    static func graphErrorHaystack(_ data: Data) -> String {
+        guard let error = errorObject(data) else { return "" }
         let code = (error["code"] as? String ?? "")
         let message = (error["message"] as? String ?? "")
         return (code + " " + message).lowercased()
+    }
+
+    /// Graph's error code alone, for the diagnostics report. Just the identifier — the
+    /// message beside it is prose and stays out.
+    static func graphErrorCode(_ data: Data) -> String? {
+        guard let code = errorObject(data)?["code"] as? String, !code.isEmpty else { return nil }
+        return code
+    }
+
+    private static func errorObject(_ data: Data) -> [String: Any]? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["error"] as? [String: Any]
     }
 }

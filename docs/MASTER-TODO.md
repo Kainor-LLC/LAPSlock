@@ -530,6 +530,41 @@ macOS password retrieval.
   A suffix in the label was tried and reverted: every screen showing a label shows the
   subtitle beside it, so it said the same thing twice in one row.
 
+  ### HTTP 400 on group activation, 2026-09-02 — diagnosed as far as the report allowed
+
+  **The report could not explain it, and that was a defect in the report.** It said "service
+  unavailable" for a 400, because every `serviceError` mapped to that outcome, and **the
+  Graph status and error code were never recorded at all** — `httpStatus` was read from the
+  AUTH failure detail, which is nil for a Graph error. So a rejected request was reported as
+  an outage, with no status and no code. Fixed:
+
+  * `DiagnosticEvent.graphErrorCode`, allowlisted to an identifier shape so the code passes
+    and the prose message beside it cannot.
+  * Graph's status recorded, not MSAL's.
+  * `endpointTemplate` recorded, so a role failure and a group failure are told apart at a
+    glance without naming any group or tenant.
+  * `DiagnosticOutcome.badRequest`, distinct from `serviceUnavailable`: one is our request
+    being wrong, the other is Microsoft being down, and conflating them sent a reader hunting
+    an outage that was not happening.
+
+  **Two candidate causes, both addressed, and the next report will say which.**
+
+  1. ✅ **`ticketInfo` was nested inside `scheduleInfo` instead of being its sibling.** That
+     makes the whole request invalid — Graph rejects an unknown property on `scheduleInfo`
+     with a 400 that does not name the property. **If a ticket number was entered, this is
+     almost certainly it.** Now top level, with a test asserting both the placement and that
+     `scheduleInfo` carries only `startDateTime` and `expiration`.
+  2. ✅ **The duration was hardcoded at `PT5H`.** Every PIM policy caps activation length,
+     the cap is per-tenant and often per-group, and asking for longer than allowed is
+     rejected with a bare 400 naming no reason — so five hours was not merely generous, it
+     was invalid wherever the policy allowed less. Now a picker (1, 2, 4, 8 hours)
+     **defaulting to the shortest**, which clears almost any policy, and the 400 copy names
+     the duration cap as the first thing to try.
+
+  Also fixed: the Python-escape trap from earlier the same day, hit twice more while writing
+  that copy. `PrivilegedFailure.codeSuffix` now owns the newline so no Swift escape sequence
+  is ever generated through a text-processing step.
+
   ⬜ **Still unobserved: whether a claims challenge fires.** Activation succeeded in Kainor
   without one, which means that session already satisfied the MFA requirement. The retry path
   remains built-but-unseen. A tenant with a Conditional Access policy demanding stronger auth
