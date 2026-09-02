@@ -231,6 +231,44 @@ public actor MSALAuthManager: AuthManaging {
         return result.accessToken
     }
 
+    /// Acquires a token while satisfying a claims challenge. See the default implementation
+    /// in AuthKit for why this exists.
+    ///
+    /// A challenge always forces INTERACTIVE acquisition. That is the point: the challenge
+    /// exists because the cached token does not meet the bar, so a silent retry would return
+    /// the same inadequate token and the caller would loop. `allowInteractive: false` with a
+    /// challenge present is therefore a failure rather than a silent attempt.
+    public func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String {
+        guard let claims, !claims.isEmpty else {
+            return try await token(scopes: scopes, allowInteractive: allowInteractive)
+        }
+        guard allowInteractive else { throw AuthError.interactionRequired }
+
+        guard let account = pinnedAccount else { throw AuthError.noAccount }
+        guard let pin = operatingPin else { throw AuthError.noAccount }
+        // MSALClaimsRequest reports parse failure through the NSError out-parameter rather
+        // than by returning nil, so the error has to be inspected explicitly. A guard on the
+        // return value compiles to nothing useful here — the initializer is non-optional.
+        var claimsError: NSError?
+        let claimsRequest = MSALClaimsRequest(jsonString: claims, error: &claimsError)
+        if let claimsError {
+            // Not something to retry differently. ClaimsChallenge validates the shape before
+            // it ever reaches here, so this means the two disagree, which is a bug rather
+            // than a user-facing condition.
+            throw AuthError.underlying("malformed claims request (\(claimsError.code))")
+        }
+
+        let webParams = try await MainActorUI.webviewParameters()
+        let params = MSALInteractiveTokenParameters(scopes: scopes, webviewParameters: webParams)
+        params.authority = try MSALAADAuthority(url: pin.authorityURL)
+        params.loginHint = account.username
+        params.claimsRequest = claimsRequest
+
+        let result = try await recording(.tokenInteractive) { try await acquireInteractive(params) }
+        try pin.validate(returnedTenantId: Self.tenantId(of: result))
+        return result.accessToken
+    }
+
     // MARK: - tenant switching (MSP tiers)
 
     /// Switches the tenant this manager operates in, or returns to the account's own tenant
@@ -360,7 +398,12 @@ public actor MSALAuthManager: AuthManaging {
         return AdminAccount(
             id: result.account.identifier ?? "",
             tenantId: tenantId,
-            username: result.account.username ?? ""
+            username: result.account.username ?? "",
+            // The oid claim, which is the DIRECTORY object id. Deliberately read from the
+            // claims rather than split out of `identifier`: the identifier's `{oid}.{utid}`
+            // shape is an MSAL implementation detail, and anything that needs a principal id
+            // should not depend on it holding.
+            objectId: result.account.accountClaims?["oid"] as? String
         )
     }
 

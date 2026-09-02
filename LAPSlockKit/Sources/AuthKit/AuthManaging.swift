@@ -16,10 +16,23 @@ public struct AdminAccount: Sendable, Equatable, Identifiable {
     public let id: String            // MSAL account identifier (home account id)
     public let tenantId: String      // authoritative tenant, resolved from the ID token (§3.3)
     public let username: String      // UPN, for display only
-    public init(id: String, tenantId: String, username: String) {
+
+    /// The directory object id of the signed-in user — the `oid` claim.
+    ///
+    /// **NOT the same as `id`, and the difference matters.** MSAL's account identifier is
+    /// `{oid}.{utid}`, so anything that needs a *principal* — PIM self-activation, for one —
+    /// must use this and not `id`. Passing the MSAL identifier where Graph wants a principal
+    /// targets a directory object that does not exist, and the request fails in a way that
+    /// looks like a permissions problem rather than a wrong-id problem.
+    ///
+    /// Optional and defaulted so existing conformances and test doubles keep compiling.
+    public let objectId: String?
+
+    public init(id: String, tenantId: String, username: String, objectId: String? = nil) {
         self.id = id
         self.tenantId = tenantId
         self.username = username
+        self.objectId = objectId
     }
 }
 
@@ -27,6 +40,23 @@ public struct AdminAccount: Sendable, Equatable, Identifiable {
 // threw. `underlying(String)` is the only payload and String is Equatable, so this is
 // synthesised — and it matters for the §3.3 guard, whose whole job is to throw ONE specific
 // error and not some other one that happens to also fail the call.
+public extension AuthManaging {
+
+    /// Default: ignore the challenge and fall through.
+    ///
+    /// Graph refuses privileged operations — PIM self-activation above all — unless MFA was
+    /// satisfied in the CURRENT session, and says so with a claims challenge rather than a
+    /// plain 403. The only legitimate response is to re-authenticate carrying those claims.
+    /// There is no way to satisfy it locally: a device biometric gate is not an identity
+    /// assertion, and treating one as though it were would be security theatre.
+    ///
+    /// This default exists so a token provider that never sees a challenge — every test
+    /// double, and the demo path — keeps working unchanged. `MSALAuthManager` overrides it.
+    func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String {
+        try await token(scopes: scopes, allowInteractive: allowInteractive)
+    }
+}
+
 public enum AuthError: Error, Sendable, Equatable {
     case noAccount                   // nobody signed in
     case interactionRequired         // silent failed; caller must allow interactive
@@ -49,6 +79,17 @@ public protocol AuthManaging: Sendable {
     ///   can be prompted (§4 incremental consent).
     /// - Returns: a bearer access token string. Callers must not log or persist it.
     func token(scopes: [String], allowInteractive: Bool) async throws -> String
+
+    /// Acquire a token while satisfying a claims challenge.
+    ///
+    /// **A protocol REQUIREMENT, not merely an extension method, and that distinction is
+    /// load-bearing.** A method that lives only in a protocol extension is statically
+    /// dispatched, so calling it through `any AuthManaging` runs the extension's version
+    /// even when the concrete type has its own — which would mean the claims were silently
+    /// discarded and every privileged operation failed forever with "not authorized". It
+    /// carries a default implementation below, so existing conformances and test doubles
+    /// still satisfy it without change.
+    func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String
 
     /// Interactive account selection sign-in (uses /common or /organizations, §2.1).
     @discardableResult
