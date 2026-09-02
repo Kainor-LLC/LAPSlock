@@ -423,7 +423,21 @@ Others:
       with no request or response body collection (the cap bounds the cost, it does not stop
       a body containing a tenant ID being written, which contract section 8.2 forbids), and
       move `AzureWebJobsStorage` off its account key.
-   3. **The Function — this is where the next session starts.** Contract sections 2 to 6
+   3. ~~**The Function**~~ — WRITTEN, TESTED AND DEPLOYED 2026-09-02. Live at
+      `https://kainor-lapslock-prod-func.azurewebsites.net/entitlement`. 69 tests, verified
+      to fail on injected defects. **A live token was verified against the public key in
+      `docs/entitlement-jwks.json`, and a tampered payload correctly failed**, so the whole
+      chain — table lookup, Key Vault signing, published key — is proven end to end rather
+      than assumed.
+
+      Deploying found three contract-versus-reality gaps, and the direction of each fix is
+      the point. The Functions host prepends `/api` to routes, which would have silently
+      made the real path `/api/entitlement`; the host answers 404 rather than the promised
+      405 for a non-POST. Both were fixed in the CODE to match the published contract. The
+      third went the other way: `httpsOnly` on App Service redirects rather than refuses,
+      so §2 was wrong and was corrected. **This is what writing the contract first bought.**
+
+      ### OLD NOTES, kept for the reasoning Contract sections 2 to 6
       are the spec, including the error table and the rule that an unlicensed tenant gets a
       200 with a `free` token rather than a 404. Code goes in
       **`Kainor-LLC/LAPSlock-backend`** (private, created 2026-09-02, cloned at

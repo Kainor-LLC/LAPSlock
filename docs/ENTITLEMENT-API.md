@@ -52,7 +52,7 @@ them rather than the other way around:
 | Method | `POST` |
 | Path | `/entitlement` |
 | Host (v1) | `kainor-lapslock-prod-func.azurewebsites.net` |
-| Scheme | `https` only. Plain HTTP is refused, not redirected. |
+| Scheme | `https`. A plain-HTTP request gets a 301 redirect to the HTTPS URL rather than a refusal — see below. |
 | TLS | Standard public PKI, Azure-managed certificate. No certificate pinning. |
 | Authentication | **None.** No API key, no bearer token, no function key. |
 | Request content type | `application/json; charset=utf-8` |
@@ -63,6 +63,23 @@ The host may move to a custom domain later. A host change is not a contract chan
 is a release-notes change and the network transparency document is updated with it in the
 same release, because "the app talks to exactly these hosts" is only a useful claim if the
 list is current.
+
+### On plain HTTP, and a correction
+
+Azure App Service's `httpsOnly` **redirects** rather than refuses, and an earlier version of
+this document claimed the opposite. Correcting it matters more than the stronger-sounding
+claim did: a reviewer with a proxy measures this in seconds, and a contract found wrong in a
+detail anyone can check is not worth much on the details they cannot.
+
+What the redirect does and does not buy: a client that mistakenly used `http://` would have
+already put its request on the wire in plaintext before the redirect arrived. The shipping
+client cannot do this — it uses a compiled-in `https://` URL and iOS App Transport Security
+refuses plaintext — but a hand-written client could.
+
+The exposure if one did is a tenant ID, which is not a secret. It is returned by
+unauthenticated OIDC discovery for any domain, which is exactly why §9.1 accepts that a bare
+tenant ID is spoofable. Nothing else in the exchange is confidential either: the response is
+a signed token whose security rests on the signature and not on the channel (§9.3).
 
 ### Why there is no API key
 
@@ -724,3 +741,4 @@ stale client must degrade to `free`, never to broken.
 |---|---|
 | 2026-09-01 | Version 1. Initial published contract. |
 | 2026-09-01 | §8 tightened before implementation: tenant IDs out of request logs, purchaser contact details out of the license table, rate limiting moved to ephemeral state, running cost stated. No wire-format change. |
+| 2026-09-02 | §2 corrected after measuring the deployed endpoint: plain HTTP is redirected, not refused. No wire-format change. The implementation was corrected to match this document in two other places rather than the reverse — the Functions host's default `/api` route prefix was removed so the path is `/entitlement` as published, and a non-POST now returns 405 as the error table promises instead of the host's default 404. |
