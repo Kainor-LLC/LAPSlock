@@ -76,6 +76,24 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     /// Milliseconds the operation took, for diagnosing "Graph is slow" reports.
     public let durationMs: Int?
 
+    // Auth failure detail, added 2026-09-02 after the broker bug proved it necessary. Each
+    // is allowlisted here again, independently of whoever produced it: this type does not
+    // trust its callers to have sanitised. A description string is deliberately NOT among
+    // them — an MSAL description can carry a redirect URL, and a redirect URL can carry an
+    // authorization code.
+
+    /// `NSError.code` from the MSAL domain. A number.
+    public let msalErrorCode: Int?
+    /// Entra error code, `AADSTS` followed by digits, and nothing else. The field Microsoft
+    /// support asks for first.
+    public let aadErrorCode: String?
+    /// RFC 6749 error string such as `invalid_grant`. Lowercase words only.
+    public let oauthError: String?
+    /// Entra correlation ID. A GUID identifying a request, not a person.
+    public let correlationId: String?
+    /// Whether the Authenticator broker handled the request.
+    public let brokerInvolved: Bool?
+
     public init(
         operation: DiagnosticOperation,
         outcome: DiagnosticOutcome,
@@ -83,7 +101,12 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
         graphRequestId: String? = nil,
         endpointTemplate: String? = nil,
         devicePlatform: String? = nil,
-        durationMs: Int? = nil
+        durationMs: Int? = nil,
+        msalErrorCode: Int? = nil,
+        aadErrorCode: String? = nil,
+        oauthError: String? = nil,
+        correlationId: String? = nil,
+        brokerInvolved: Bool? = nil
     ) {
         self.id = UUID()
         self.timestamp = Date()
@@ -96,6 +119,18 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
         self.endpointTemplate = endpointTemplate
         self.devicePlatform = devicePlatform
         self.durationMs = durationMs
+        self.msalErrorCode = msalErrorCode
+        self.aadErrorCode = Self.sanitizedShape(aadErrorCode, "^AADSTS[0-9]{4,8}$")
+        self.oauthError = Self.sanitizedShape(oauthError, "^[a-z_]{3,40}$")
+        self.correlationId = Self.sanitizedRequestId(correlationId)
+        self.brokerInvolved = brokerInvolved
+    }
+
+    /// Keeps a value only if it matches the given shape exactly. Anything else becomes nil.
+    static func sanitizedShape(_ raw: String?, _ pattern: String) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.range(of: pattern, options: .regularExpression) != nil ? trimmed : nil
     }
 
     /// Accepts only GUID-shaped strings. Anything else becomes nil.
@@ -116,6 +151,11 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
         if let devicePlatform { parts.append("platform=\(devicePlatform)") }
         if let durationMs { parts.append("ms=\(durationMs)") }
         if let graphRequestId { parts.append("graph-request-id=\(graphRequestId)") }
+        if let msalErrorCode { parts.append("msal=\(msalErrorCode)") }
+        if let aadErrorCode { parts.append("aad=\(aadErrorCode)") }
+        if let oauthError { parts.append("oauth=\(oauthError)") }
+        if let brokerInvolved { parts.append("broker=\(brokerInvolved ? "yes" : "no")") }
+        if let correlationId { parts.append("correlation-id=\(correlationId)") }
         return parts.joined(separator: "  ")
     }
 }

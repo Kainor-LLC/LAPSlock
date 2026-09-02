@@ -79,6 +79,15 @@ public actor MSALAuthManager: AuthManaging {
     private let application: MSALPublicClientApplication
     private var pinnedAccount: AdminAccount?
 
+    /// The most recent MSAL failure, reduced to the allowlisted shape in `AuthFailureDetail`.
+    ///
+    /// Kept here rather than pushed into DiagnosticsKit because this module must not grow a
+    /// dependency (the app layer records diagnostics from typed data; see Diagnostics.swift).
+    /// The app reads this after a failed sign-in, and the support report reads it at export
+    /// time, which covers silent token failures during browsing without wiring every call.
+    private var lastFailure: AuthFailureDetail?
+    public var lastAuthFailure: AuthFailureDetail? { lastFailure }
+
     public init(config: AuthConfiguration) throws {
         self.config = config
 
@@ -110,10 +119,21 @@ public actor MSALAuthManager: AuthManaging {
         let params = MSALInteractiveTokenParameters(scopes: Self.baseScopes, webviewParameters: webParams)
         params.promptType = .selectAccount
 
-        let result = try await acquireInteractive(params)
+        let result = try await recording(.signIn) { try await acquireInteractive(params) }
         let account = try Self.account(from: result)
         self.pinnedAccount = account
         return account
+    }
+
+    /// Runs an MSAL call, and on failure reduces the raw error to `AuthFailureDetail`
+    /// before mapping it to the public `AuthError`. The raw error never leaves this actor.
+    private func recording<T>(_ step: AuthStep, _ body: () async throws -> T) async throws -> T {
+        do {
+            return try await body()
+        } catch let failure as MSALFailure {
+            lastFailure = Self.detail(from: failure.error, step: step)
+            throw Self.map(failure.error)
+        }
     }
 
     // MARK: - token acquisition
@@ -133,7 +153,7 @@ public actor MSALAuthManager: AuthManaging {
         silent.authority = tenantAuthority
 
         do {
-            let result = try await acquireSilent(silent)
+            let result = try await recording(.tokenSilent) { try await acquireSilent(silent) }
             try Self.assertTenant(result, matches: account)   // §3.3 guard
             return result.accessToken
         } catch let error as AuthError {
@@ -176,7 +196,7 @@ public actor MSALAuthManager: AuthManaging {
         params.authority = authority
         params.loginHint = account.username
 
-        let result = try await acquireInteractive(params)
+        let result = try await recording(.tokenInteractive) { try await acquireInteractive(params) }
         try Self.assertTenant(result, matches: account)
         return result.accessToken
     }
@@ -192,7 +212,7 @@ public actor MSALAuthManager: AuthManaging {
             DispatchQueue.main.async {
                 app.acquireToken(with: params) { result, error in
                     if let result { cont.resume(returning: result) }
-                    else { cont.resume(throwing: Self.map(error)) }
+                    else { cont.resume(throwing: MSALFailure(error: error)) }
                 }
             }
         }
@@ -218,7 +238,7 @@ public actor MSALAuthManager: AuthManaging {
         try await withCheckedThrowingContinuation { cont in
             application.acquireTokenSilent(with: params) { result, error in
                 if let result { cont.resume(returning: result) }
-                else { cont.resume(throwing: Self.map(error)) }
+                else { cont.resume(throwing: MSALFailure(error: error)) }
             }
         }
     }
@@ -282,6 +302,28 @@ public actor MSALAuthManager: AuthManaging {
         guard tid == account.tenantId else { throw AuthError.tenantMismatch }
     }
 
+    /// Reduces an MSAL error to the allowlisted support-report shape. Reads only fixed
+    /// userInfo keys. The description is consulted for an `AADSTS` code by regex and then
+    /// discarded — it can contain the failing URL, and a broker redirect URL can contain an
+    /// authorization code, which is why no field here is a description.
+    private static func detail(from error: Error?, step: AuthStep) -> AuthFailureDetail {
+        guard let error = error as NSError?, error.domain == MSALErrorDomain else {
+            return AuthFailureDetail(step: step)
+        }
+        let info = error.userInfo
+        return AuthFailureDetail(
+            step: step,
+            msalErrorCode: error.code,
+            aadErrorCode: AuthFailureDetail.extractAADCode(from: info[MSALErrorDescriptionKey] as? String),
+            oauthError: info[MSALOAuthErrorKey] as? String,
+            correlationId: info[MSALCorrelationIDKey] as? String,
+            httpStatus: (info[MSALHTTPResponseCodeKey] as? NSNumber)?.intValue,
+            // MSAL sets the broker version key only when the Authenticator broker handled
+            // the request. Its presence is the broker-path flag; its value is not kept.
+            brokerInvolved: info[MSALBrokerVersionKey] != nil
+        )
+    }
+
     /// Maps MSAL errors onto AuthError. Never includes secret material in the message.
     private static func map(_ error: Error?) -> AuthError {
         guard let error = error as NSError? else { return .underlying("unknown") }
@@ -308,6 +350,12 @@ public actor MSALAuthManager: AuthManaging {
         }
         return .underlying(error.localizedDescription)
     }
+}
+
+/// Carries the raw MSAL error from a completion closure back onto the actor, where it is
+/// reduced and mapped. Private so a raw error cannot escape this file.
+private struct MSALFailure: Error {
+    let error: Error?
 }
 
 // MARK: - main-actor UIKit access

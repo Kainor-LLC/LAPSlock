@@ -83,6 +83,9 @@ struct SettingsView: View {
     var entitlement: EntitlementManager? = nil
     /// Lets the root recompute `isPro` after Activate, Refresh or Remove.
     var entitlementDidChange: (() -> Void)? = nil
+    /// The most recent MSAL failure, allowlisted, read at export time. Covers silent token
+    /// failures during browsing as well as sign-in, with one hook instead of one per call.
+    var lastAuthFailure: (() async -> AuthFailureDetail?)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isRequestingConsent = false
@@ -99,6 +102,8 @@ struct SettingsView: View {
     // Free tier
     @State private var remainingReveals = 0
     @State private var nextAvailable: Date?
+
+    @State private var copiedTenantId = false
 
     // Organization license
     @State private var license: EntitlementState = .free
@@ -520,10 +525,16 @@ struct SettingsView: View {
         isBuildingReport = true
         defer { isBuildingReport = false }
         let env = DiagnosticsExport.environment(tenantId: tenantId)
-        report = await DiagnosticsRecorder.shared.buildReport(
+        var text = await DiagnosticsRecorder.shared.buildReport(
             environment: env,
             includeTenantId: includeTenantId && tenantId != nil
         )
+        // The single most useful line for an auth problem. `reportFragment` is fixed keys
+        // and allowlisted values only; there is no free text for a description to hide in.
+        if let detail = await lastAuthFailure?() {
+            text += "\n\nLast sign-in or token failure\n  \(detail.reportFragment)"
+        }
+        report = text
     }
 
     // MARK: - about
@@ -531,6 +542,19 @@ struct SettingsView: View {
     private var aboutSection: some View {
         Section("About") {
             LabeledContent("Version", value: Self.versionString)
+            if let tenantId, !isDemo {
+                // Feeds the organization purchase flow, which is keyed to the tenant. A
+                // plain copy, not the expiring local-only pasteboard used for credentials:
+                // a tenant ID is public — any domain's is returned by unauthenticated OIDC
+                // discovery — and the buyer needs to paste it into a web form.
+                Button {
+                    UIPasteboard.general.string = tenantId
+                    copiedTenantId = true
+                } label: {
+                    LabeledContent("Tenant ID", value: copiedTenantId ? "Copied" : "Copy")
+                }
+                .buttonStyle(.plain)
+            }
             Link("Privacy policy", destination: URL(string: "https://kainor.com/privacy")!)
             Link("Terms", destination: URL(string: "https://kainor.com/terms")!)
             Link("Source code", destination: URL(string: "https://github.com/Kainor-LLC/LAPSlock")!)

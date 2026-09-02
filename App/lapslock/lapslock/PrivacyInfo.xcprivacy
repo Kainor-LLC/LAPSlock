@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	Privacy manifest. Every claim here is backed by docs/privacy/index.html,
+	docs/NETWORK-TRANSPARENCY.md and the isolation check that fails the build if the
+	credential module gains a logging or analytics dependency.
+
+	Tracking: none. Collected data types: none. The app has no analytics, telemetry or crash
+	reporting, and the one server request it can make (after an organization activates a
+	license) carries a tenant identifier, which identifies an organization, not a user, and
+	is not linked to or used to track anyone. It is therefore not a collected data type under
+	Apple's definitions, and the nutrition label is "Data Not Collected".
+
+	Required-reason APIs: UserDefaults, for the app's own settings (appearance, whether
+	BitLocker rotation is enabled). Reason CA92.1: accessing only the app's own preferences.
+	MSAL ships its own manifest as an SDK dependency and is not re-declared here.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

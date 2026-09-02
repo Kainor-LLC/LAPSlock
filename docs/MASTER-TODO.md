@@ -227,7 +227,18 @@ macOS password retrieval.
 
 - ⬜ Windows LAPS password history (`credentials` returns multiple; we take newest.
   History matters when a device hasn't checked in and still has an older password)
-- ⬜ **Auth diagnostics in the support report** ← proven necessary on 2026-08-26
+- ✅ **Auth diagnostics in the support report — DONE 2026-09-02, awaiting a device test.**
+  `AuthFailureDetail` (AuthKit) is an allowlist: MSAL error code (Int), `AADSTS` code
+  extracted by regex from the description and stored WITHOUT the description, OAuth error
+  string by shape, correlation ID by GUID shape, HTTP status, and a broker-path flag from the
+  presence of `MSALBrokerVersionKey`. There is no description field and the tests assert a
+  hostile description contributes nothing to the report. `MSALAuthManager` reduces the raw
+  NSError on the actor via a private `MSALFailure` wrapper so the raw error never leaves the
+  file. Sign-in failures are recorded as `DiagnosticEvent`s with the new fields, which
+  `DiagnosticEvent` re-sanitizes itself; the export appends the latest failure so silent
+  token failures during browsing are covered with one hook. **Device test:** force a broker
+  failure (Authenticator installed, wrong tenant) and confirm the report shows codes and no
+  URL.
 
   `signIn()` collapses every failure that isn't consent, cancellation, or tenant mismatch
   into one message: "Sign-in didn't complete. Check your connection and try again." Correct
@@ -376,7 +387,8 @@ macOS password retrieval.
 - ⬜ Recents / favorites
 - ⬜ Biometric app lock (distinct from the per-reveal gate)
 - ⬜ Tenant switcher (MSP tiers)
-- ⬜ "Copy your tenant ID" button (feeds the org purchase flow)
+- ✅ "Copy your tenant ID" — Settings → About, live mode only, 2026-09-02. Plain pasteboard,
+  deliberately not the expiring credential one: a tenant ID is public.
 - ⬜ BYO app registration UI (the config seam already exists)
 - ⬜ Entitlement check: call `/entitlement`, cache signed JWT, 14–30 day offline grace
 - ⬜ **App Attest gating** on `/entitlement` — **phase 2, and NOT "the real anti-sideload
@@ -839,7 +851,8 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 - ✅ **Publisher verification** — MPN 7147713 associated, "Kainor LLC" shows with the verified badge
 - ✅ **Privacy + terms pages** — live at kainor.com/privacy/ and /terms/, linked from the
   app registration, the site nav, and the in-app Settings screen
-- 🟡 "Not affiliated with Microsoft" disclaimer — in Settings and both legal pages;
+- ✅ "Not affiliated with Microsoft" disclaimer — in Settings, both legal pages, and as of
+  2026-09-02 the marketing site footer, with the Microsoft trademark line.
   still needed on the marketing site
 - ✅ **One-page security/data-handling doc written 2026-09-02** — `docs/SECURITY-ONE-PAGER.md`.
   For the approver, not the engineer: auth model, the storage table, what Kainor receives on
@@ -870,7 +883,11 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 - 🟡 **Listing copy drafted 2026-09-02** — `docs/APP-STORE-LISTING.md`, for your approval.
   Name, subtitle, promo text, description leading with the four testable claims, keywords
   at 96/100, macOS stated as a limitation up front.
-- ⬜ Privacy manifest + "Data Not Collected" nutrition label
+- ✅ **Privacy manifest added 2026-09-02** — `App/lapslock/lapslock/PrivacyInfo.xcprivacy`,
+  picked up automatically by the synchronized root group. Tracking false, no collected data
+  types, one required-reason API (UserDefaults, CA92.1, for the app's own settings). The
+  reasoning is in the file's comment so the label can be defended. MSAL carries its own
+  manifest. **"Data Not Collected" in App Store Connect is still a checkbox for you to tick.**
 - ✅ SECURITY.md with a disclosure policy and the five testable design claims
 - ⬜ Tag a source release per App Store version
 - ✅ **Network transparency doc written 2026-09-02** — `docs/NETWORK-TRANSPARENCY.md`, linked
