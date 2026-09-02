@@ -30,7 +30,7 @@ struct LAPSlockApp: App {
     var body: some Scene {
         WindowGroup {
             AppRootView()
-                .tint(Brand.signal)
+                .tint(Brand.accent)
                 .preferredColorScheme(AppSettings.shared.appearance.colorScheme)
                 // THIS is the handler that actually runs. See the note on AppDelegate.
                 .onOpenURL { url in

@@ -685,7 +685,7 @@ struct DeviceDetailView: View {
             .padding(.vertical, 4)
         }
         .disabled(model.isWorking)
-        .tint(Brand.signal)
+        .tint(Brand.accent)
     }
 
     private func explanation(_ text: String, icon: String) -> some View {
@@ -800,7 +800,7 @@ struct DeviceDetailView: View {
                         // doesn't become a single block of orange.
                         Text(key.volumeType.displayName)
                             .font(.subheadline.weight(.medium))
-                            .foregroundStyle(Brand.signal)
+                            .foregroundStyle(Brand.accent)
                         HStack(spacing: 6) {
                             // The prefix matches the key identifier BitLocker shows on
                             // the recovery screen, which is how you tell several keys apart.
@@ -814,7 +814,7 @@ struct DeviceDetailView: View {
                         .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: "faceid").foregroundStyle(Brand.signal)
+                    Image(systemName: "faceid").foregroundStyle(Brand.accent)
                 }
             }
             .buttonStyle(.plain)   // stops the tint bleeding onto the metadata line
@@ -953,7 +953,7 @@ struct RevealedCredentialCard: View {
                         .padding(.vertical, 10)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Brand.signal)
+                .tint(Brand.accentOnField)
 
                 Button(action: onHide) {
                     Label("Hide", systemImage: "eye.slash")
@@ -967,7 +967,7 @@ struct RevealedCredentialCard: View {
             }
         }
         .padding(18)
-        .background(Brand.pitWall)
+        .background(Brand.field)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .padding(.vertical, 6)
     }
@@ -1094,7 +1094,7 @@ struct RevealedRecoveryKeyCard: View {
                         .padding(.vertical, 10)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Brand.signal)
+                .tint(Brand.accentOnField)
 
                 Button(action: onHide) {
                     Label("Hide", systemImage: "eye.slash")
@@ -1108,7 +1108,7 @@ struct RevealedRecoveryKeyCard: View {
             }
         }
         .padding(18)
-        .background(Brand.pitWall)
+        .background(Brand.field)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay {
             RoundedRectangle(cornerRadius: 14)
@@ -1143,7 +1143,7 @@ struct CountdownRing: View {
             Circle().stroke(Brand.mist.opacity(0.25), lineWidth: 3)
             Circle()
                 .trim(from: 0, to: max(0.001, 1 - progress))
-                .stroke(Brand.signal, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(Brand.accentOnField, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text("\(secondsRemaining)")
                 .font(Brand.data(15, weight: .semibold))
