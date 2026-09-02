@@ -723,8 +723,12 @@ Decided *by* the contract, because the implementation needed an answer:
   account key that granted blob AND table read/write over the whole account — quietly
   defeating the scoped read-only table role — is gone. Logging down to Warning with
   `Host.Results` at Error. App Insights retention 30 days. FTP disabled. TLS 1.2.
-- ⬜ **Client half** — fetch, verify per §7.4, Keychain storage, Activate/Remove licence in
-  Settings, `isPro` wired up. Still hardcoded false in `LAPSlockApp.swift`.
+- 🟡 **Client half — security core done 2026-09-02.** `EntitlementKeyring`,
+  `EntitlementToken`, `EntitlementVerifier` in `LicensingKit`, 24 tests verified by
+  injection, suite at 162. LicensingKit still imports Foundation + CryptoKit + Security only;
+  isolation check green. Remaining: `EntitlementClient`, `EntitlementStore` (Keychain),
+  `EntitlementManager` (activation gating, refresh schedule, grace, `msp` exemption, StoreKit
+  precedence), Settings UI, `isPro` wiring. Detail and order in the handoff.
 - ⚠️ **Privacy policy still says two hosts** and must say three in the release that ships
   the client half. The endpoint being live does not change that yet, because no client
   contacts it.
@@ -841,6 +845,65 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 - 🔵 Launch posts: r/Intune, r/msp, Intune blog circuit
 - 🔵 File the Microsoft support case for the macOS 500 (request ID
   `d4576653-30f5-44ae-8790-06fff930667f`) — the only path to macOS ever working
+
+---
+
+# Public roadmap and user feedback — ⬜ not started, design not settled
+
+**The goal:** a way for real users to send feedback, and a public roadmap on kainor.com that
+Connor curates. Automatic intake, manual approval, nothing user-written reaches the public
+page without a deliberate step.
+
+## The constraint that shapes the whole thing
+
+**A feedback channel must not become a data collection channel.** The privacy policy says no
+analytics and no telemetry, and that claim is the product's strongest asset. So no in-app
+feedback widget that phones home, no session replay, no "how are we doing?" prompt that
+reports anything on its own.
+
+The pattern already exists in this codebase and should be reused: `DiagnosticsKit` assembles
+a report, shows the user the whole thing, and sends nothing until they tap. Feedback works
+the same way — composed locally, displayed in full, transmitted only by explicit action.
+
+## Intake, in order of preference
+
+1. **GitHub Issues on the public repo.** Costs nothing, is already the plan (issues on, pull
+   requests off), and suits the audience: this buyer already lives on GitHub. An issue form
+   template gives structure without a server.
+2. **An in-app "Send feedback" that opens the mail composer**, prefilled with app and iOS
+   version and nothing else. No network call, no third-party SDK, no identifiers. For the
+   admin who will never open GitHub.
+3. **A form on the marketing site**, only if 1 and 2 prove insufficient. It needs a
+   third-party form service, which is a new data processor to name in the privacy policy —
+   a real cost, so do not reach for it first.
+
+## Curation and publication
+
+**A file in the repo is the source of truth, and the commit is the approval step.** Something
+like `docs/roadmap.json`, hand-edited, rendered into `docs/roadmap/index.html`. That gives
+review, history, and a diff for free, with no admin UI to build or secure.
+
+Three rules for what gets published:
+
+- **Never identify who asked.** No names, no employers, no tenants, no "requested by a large
+  insurance customer". The buyer is enterprise IT and their roadmap requests reveal what they
+  do not have yet. Describe the item in the abstract, always.
+- **No dates, ever.** Status only — considered, planned, in progress, shipped. A public
+  roadmap with dates becomes a commitment in a procurement conversation, and a missed one is
+  worse than never having published.
+- **Shipped items stay.** The archive is the evidence the roadmap is real, and it is the
+  cheapest possible proof that a one-person company actually delivers.
+
+Consider publishing "declined, and why" as well. It is unusual, it is honest, and for this
+audience an explained no builds more trust than silence — the macOS reveal finding is
+already the model for that.
+
+## Sequencing
+
+Not before there are users, and specifically not before the first paying customer: an empty
+public roadmap advertises that nobody is asking for anything. GitHub Issues can be switched
+on immediately at zero cost, which starts collecting the raw material. The rendered page
+waits until there is something on it worth reading.
 
 ---
 
