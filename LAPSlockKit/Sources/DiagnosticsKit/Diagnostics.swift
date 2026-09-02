@@ -35,6 +35,10 @@ public enum DiagnosticOperation: String, Sendable, Codable, CaseIterable {
     case credentialReveal
     case credentialRotate
     case biometricGate
+    /// Switching to a customer organization (MSP tiers). Added 2026-09-02 because that path
+    /// cannot be tested by the vendor — the first person to hit a failure is a customer, so
+    /// the report has to carry enough to answer them.
+    case tenantSwitch
 }
 
 /// Why it failed. Mirrors the error taxonomies without carrying their payloads.

@@ -220,6 +220,20 @@ final class AppRootModel: ObservableObject {
         Entitlements.live.state(signedInTenantId: signedInTenantId).tier.allowsTenantSwitching
     }
 
+    /// Label for the tenant banner. Prefers a name a human recognises, falling back to the
+    /// GUID only when nothing better exists.
+    var operatingTenantLabel: String? {
+        guard let operating = operatingTenantId?.lowercased() else { return signedInDomain }
+        if operating == signedInTenantId?.lowercased() { return signedInDomain }
+        if let saved = savedTenants.first(where: { $0.tenantId == operating }) { return saved.label }
+        return operating
+    }
+
+    var isOperatingAwayFromHome: Bool {
+        guard let operating = operatingTenantId?.lowercased(), let home = signedInTenantId?.lowercased() else { return false }
+        return operating != home
+    }
+
     func refreshTenants() async {
         savedTenants = TenantList.sorted((try? TenantStores.live.load()) ?? [])
         operatingTenantId = await liveSession?.auth.operatingTenantId
@@ -258,8 +272,10 @@ final class AppRootModel: ObservableObject {
         do {
             try await session.auth.setActiveTenant(tenantId)
         } catch let error as AuthError {
+            await recordTenantSwitchFailure(error)
             return error
         } catch {
+            await recordTenantSwitchFailure(.underlying("tenant switch failed"))
             return .underlying("tenant switch failed")
         }
 
@@ -305,7 +321,7 @@ final class AppRootModel: ObservableObject {
             // Consent problems get a recovery path, not just an error (§8).
             if let state = ConsentDiagnostics.state(from: error) {
                 consentState = state
-                await recordSignInFailure(.consentRequired)
+                await recordSignInFailure(.consentRequired)  // mapped by ConsentDiagnostics
             } else if case .userCancelled = error {
                 await recordSignInFailure(.userCancelled)
                 return                      // user chose not to continue; not an error
@@ -319,6 +335,42 @@ final class AppRootModel: ObservableObject {
         } catch {
             signInError = "Sign-in didn't complete. Check your connection and try again."
             await recordSignInFailure(.unknown)
+        }
+    }
+
+    /// Records a failed tenant switch, with the MSAL detail behind it.
+    ///
+    /// This is the compensation for a feature that cannot be tested here. An MSP who cannot
+    /// reach a customer tenant has an on-screen explanation from `SwitchFailure`, and if that
+    /// is not enough, the support report now carries the AADSTS code, the correlation ID and
+    /// whether the broker answered — which is what Microsoft support needs to say why.
+    ///
+    /// The TARGET TENANT IS DELIBERATELY NOT RECORDED. It identifies one of the MSP's
+    /// customers, and a support report is a thing people email. The correlation ID lets
+    /// Microsoft find the request, tenant included, without putting a customer's directory
+    /// ID in our inbox.
+    private func recordTenantSwitchFailure(_ error: AuthError) async {
+        let detail = await auth?.lastAuthFailure
+        await DiagnosticsRecorder.shared.record(DiagnosticEvent(
+            operation: .tenantSwitch,
+            outcome: Self.outcome(for: error),
+            httpStatus: detail?.httpStatus,
+            msalErrorCode: detail?.msalErrorCode,
+            aadErrorCode: detail?.aadErrorCode,
+            oauthError: detail?.oauthError,
+            correlationId: detail?.correlationId,
+            brokerInvolved: detail?.brokerInvolved
+        ))
+    }
+
+    static func outcome(for error: AuthError) -> DiagnosticOutcome {
+        switch error {
+        case .noAccount:           return .missingIdentifier
+        case .interactionRequired: return .notAuthorized
+        case .consentRequired:     return .consentRequired
+        case .userCancelled:       return .userCancelled
+        case .tenantMismatch:      return .tenantMismatch
+        case .underlying:          return .unknown
         }
     }
 
@@ -457,6 +509,9 @@ struct AppRootView: View {
                         )
                     } : nil,
                     onAppearRefresh: { await root.refreshTenants() },
+                    tenantBanner: root.operatingTenantLabel.map {
+                        (label: $0, isAwayFromHome: root.isOperatingAwayFromHome)
+                    },
                     settingsBuilder: {
                         SettingsView(
                             settings: AppSettings.shared,

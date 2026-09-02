@@ -550,13 +550,23 @@ macOS password retrieval.
   The saved-list footer says the list never leaves the device. That is the client-side half
   of §7.1 and worth keeping honest.
 
-  **Still to build:** the active tenant is not shown anywhere except inside the switcher
-  sheet, so an MSP working in a customer tenant has no persistent on-screen reminder of
-  which organization they are in. For a tool that reveals administrator passwords that is
-  worth fixing — a banner or a subtitle on the device list. Deliberately left because it is
-  a visual-design call and the screen cannot be seen from here.
+  ✅ **Tenant banner added 2026-09-02.** `TenantBanner` sits at the top of the device list in
+  the live path, always, not only when switched. Quiet secondary text for your own
+  organization; the orange warning treatment and "Working in contoso.com" when away from
+  home. Absence of a banner is easy to miss, a differently coloured one is not — and for a
+  credential tool, "whose directory am I looking at" is the question to answer before a
+  reveal, not after.
 
-  Also: switching does not yet destroy a credential already on screen. In practice the
+  ✅ **Tenant-switch failures now reach the support report.** `DiagnosticOperation.tenantSwitch`,
+  carrying the AADSTS code, correlation ID and broker flag through the same allowlist as
+  sign-in failures. This is the compensation for a feature the vendor cannot test: the
+  on-screen `SwitchFailure` explanation handles the common cases, and when it does not, the
+  report carries what Microsoft support actually needs. **The target tenant is deliberately
+  NOT recorded** — it identifies one of the MSP's customers and a support report is a thing
+  people email; the correlation ID lets Microsoft find the request, tenant included, without
+  a customer's directory ID landing in Kainor's inbox.
+
+  **Still to build:** switching does not yet destroy a credential already on screen. In practice the
   switcher is reached from the list rather than the detail view, so the case may be
   unreachable, but "may be unreachable" is not the standard this project holds for credential
   lifetime — verify or handle it.

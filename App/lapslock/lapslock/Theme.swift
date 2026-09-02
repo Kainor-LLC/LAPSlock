@@ -103,6 +103,47 @@ struct StatusPill: View {
 
 /// Persistent demo indicator. Required, not optional: a screen showing
 /// DEMO-Not-A-Real-Password must never be mistakable for a live tenant.
+/// Which organization's devices are on screen.
+///
+/// Always shown in the live path, not only when switched. For a single-organization admin it
+/// is quiet context; for an MSP it is the answer to the question that matters most before
+/// revealing a password — whose directory am I actually looking at. A tool where that is
+/// ambiguous is a tool that eventually reveals the right password to the wrong ticket.
+///
+/// Away from home it becomes a warning rather than a label. Absence of a banner is easy to
+/// miss; a differently coloured banner is not.
+struct TenantBanner: View {
+    let label: String
+    /// True when operating somewhere other than the signed-in account's own organization.
+    let isAwayFromHome: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: isAwayFromHome ? "building.2.fill" : "building.2")
+            Text(isAwayFromHome ? "Working in \(label)" : label)
+                .font(.caption.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background {
+            ZStack {
+                Rectangle().fill(.background)
+                if isAwayFromHome {
+                    Rectangle().fill(Brand.signal.opacity(0.16))
+                }
+            }
+        }
+        .foregroundStyle(isAwayFromHome ? Brand.signal : .secondary)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityLabel(isAwayFromHome
+            ? "Working in another organization, \(label)"
+            : "Organization, \(label)")
+    }
+}
+
 struct DemoBanner: View {
     var body: some View {
         HStack(spacing: 8) {
