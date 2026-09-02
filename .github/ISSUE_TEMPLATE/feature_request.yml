@@ -1,0 +1,31 @@
+name: Feature request
+description: Something LAPSlock should do, or do differently.
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: no-credentials
+    attributes:
+      label: No credentials or identifiers
+      options:
+        - label: This request contains no password, recovery key, token, tenant ID, device name, or user name.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The situation
+      description: What you were trying to do, and where the app got in the way. The situation is more useful than the proposed solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like instead (optional)
+  - type: dropdown
+    id: role
+    attributes:
+      label: How you use LAPSlock
+      options:
+        - Administrator in one organization
+        - MSP working across customer tenants
+        - Evaluating it for security review
+        - Other

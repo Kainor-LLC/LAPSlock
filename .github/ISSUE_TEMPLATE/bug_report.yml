@@ -1,0 +1,49 @@
+name: Bug report
+description: Something did not work the way it should.
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: no-credentials
+    attributes:
+      label: No credentials or identifiers
+      description: This app handles administrator passwords. An issue containing one will be deleted, not edited, because GitHub keeps history.
+      options:
+        - label: This report contains no password, recovery key, token, tenant ID, device name, user name, or pasted Graph response.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings → About.
+      placeholder: "1.0 (12)"
+    validations:
+      required: true
+  - type: input
+    id: ios
+    attributes:
+      label: iOS version
+      placeholder: "18.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Signed in to a real tenant
+        - Demo mode
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you saw instead. Describe devices and users rather than naming them.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics report (optional)
+      description: Settings → Gather diagnostics. It cannot contain a credential, device name or user name, and you can read it before pasting. Leave the tenant ID toggle off unless asked.
+      render: text

@@ -1,0 +1,41 @@
+name: Pull requests are not accepted
+
+# Source-available, not open source. Kainor LLC must remain the sole copyright holder so
+# the license can be enforced and changed without tracking down past contributors. See
+# CONTRIBUTING.md. This closes PRs politely and points at Issues instead.
+#
+# pull_request_target runs with the base repository's token so it can comment and close on
+# PRs from forks. It does NOT check out the PR's code, and must never be changed to do so.
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              "Thanks for taking the time. LAPSlock does not accept pull requests — not because of this",
+              "one, but because the project is source-available rather than open source, and Kainor LLC",
+              "has to remain the sole copyright holder to enforce the license. CONTRIBUTING.md explains.",
+              "",
+              "If this fixes a bug or adds something you need, please open an Issue describing it. That",
+              "is exactly as useful to us, and you will be credited in the release notes if you want.",
+              "",
+              "If it is a security fix: please do not describe it here. Email as described in SECURITY.md.",
+            ].join("\n");
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number, body,
+            });
+            await github.rest.pulls.update({
+              owner: context.repo.owner, repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number, state: "closed",
+            });
