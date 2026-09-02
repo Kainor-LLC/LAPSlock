@@ -636,9 +636,19 @@ Decided *by* the contract, because the implementation needed an answer:
 
 - ⬜ ES256 signing key in the vault (created in-vault, never exported). `kid`
   `lapslock-ent-2026-09` per the contract.
-- ⬜ Licences table in `kainorlapslockprodst`. Schema is constrained by §8 of the contract:
-  tenant GUID, tier, term, order ref, purchase contact. A row exists only for a PAYING
-  tenant. Request logs 30-day retention.
+- ⬜ Licences table in `kainorlapslockprodst`. Schema is constrained by §8.1 of the
+  contract and is four columns: tenant GUID, tier, term start/end, order reference. **No
+  purchaser name or email** — the order reference resolves to those in Stripe, which holds
+  them as a billing record anyway, so no personal data lands in Azure. A row exists only for
+  a PAYING tenant.
+- ⬜ **Turn Application Insights down before the Function goes live.** Failures and platform
+  metrics only, no body collection, minimum retention. The Flex Consumption template wires
+  it up at defaults with 90-day retention, and it is the one thing here that could cost real
+  money. The other is always-ready instances above zero. Neither is traffic-driven, so a
+  surprise bill would be configuration.
+- ⬜ Rate limiting per §8.3: source IP plus a keyed hash of the tid in cache with a sub-hour
+  TTL, never persisted. **No per-tenant request counters** — that history is exactly the
+  file the product promises not to build.
 - ⬜ Function code: `/entitlement` — tid in, signed JWT out. Contract §2–§6 is the spec.
 - ⬜ Client: entitlement fetch + verification in `LicensingKit`, Activate/Remove licence UI
   in Settings, and `isPro` wired up (currently hardcoded false in `LAPSlockApp.swift`).

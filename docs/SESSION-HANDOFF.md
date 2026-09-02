@@ -343,10 +343,15 @@ Others:
    1. **ES256 key in `kainor-lapslock-prod-kv`**, created in-vault and never exported.
       `kid` `lapslock-ent-2026-09`. The managed identity already holds Key Vault Crypto
       User scoped to that vault only.
-   2. **Licences table in `kainorlapslockprodst`.** Contract section 8 constrains the
-      schema: tenant GUID, tier, term start and end, order reference, purchase contact. A
-      row exists only for a PAYING tenant — nothing creates one for a free tenant. Request
-      logs get 30-day retention.
+   2. **Licences table in `kainorlapslockprodst`.** Contract section 8.1 constrains the
+      schema to four columns: tenant GUID, tier, term start and end, order reference. No
+      purchaser name or email — those stay in Stripe, so no personal data lands in Azure. A
+      row exists only for a PAYING tenant; nothing creates one for a free tenant.
+      Section 8.2 is the other half: the tenant ID is never logged, which is why the
+      contract forbids ever putting it in a URL. **Turn Application Insights down before
+      going live** — failures and platform metrics only, minimum retention, no body
+      collection. It ships at defaults with 90-day retention and is the one thing here that
+      could cost real money; always-ready instances above zero is the other.
    3. **The Function.** Contract sections 2 to 6 are the spec, including the error table
       and the rule that an unlicensed tenant gets a 200 with a `free` token rather than a
       404.

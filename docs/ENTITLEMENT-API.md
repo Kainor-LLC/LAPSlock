@@ -89,8 +89,10 @@ Content-Length: <n>
 - **No cookies.** The request is made on an ephemeral `URLSession` with no cookie store and
   no cache, so there is no persistent client identifier and no cross-request linkage.
 - **The `User-Agent` carries the app version and nothing else** — no device model, no OS
-  build, no install identifier. It is there so a support ticket can be matched to a
-  release. It is documented here rather than left as an accident of the HTTP stack.
+  build, no install identifier. The client MUST set it explicitly, because `URLSession`'s
+  default carries the bundle identifier, the build number and the OS version. Overriding it
+  is the difference between deciding what goes on the wire and letting the HTTP stack decide
+  for you.
 
 Servers MUST ignore request headers not listed here. Clients MUST NOT add any.
 
@@ -120,8 +122,13 @@ has broken this contract and needs `"version": 2`.
 App Attest later is an additive change rather than a breaking one. App Attest is
 deliberately phase 2; §9.6 says why.
 
-### Server-side request rules
+### 3.1 Server-side request rules
 
+- **The tenant ID travels in the body and nowhere else.** Servers MUST NOT accept it in a
+  path segment, a query string, or a header, and MUST NOT echo it into one. This is not
+  style: an identifier in a URL is captured automatically and permanently by platform
+  logging, by Application Insights, and by anything sitting in front of the app, with no
+  code involved and no way to notice. §8.2 is only true because of this rule.
 - Servers MUST accept and ignore unknown fields. A v1 server receiving an `attestation` it
   does not understand answers normally.
 - Servers MUST reject a body larger than 4 KiB with `400`.
@@ -232,9 +239,9 @@ adding one later is additive; servers MUST NOT add one that changes the meaning 
 existing claim.
 
 **`jti` is honest about its job.** There is no revocation list in v1, so `jti` enforces
-nothing today. It exists because a support ticket saying "token `9f1d4a2e…` says free and I
-paid" is answerable in one query, and because a future revocation list must not require a
-token format change.
+nothing today, and nothing on the server records which `jti` went to whom (§8.2). It exists
+so that a future revocation list does not require a token format change, and so a customer
+quoting a token from the diagnostics screen is quoting something unambiguous.
 
 ### 5.3 Tiers and what they unlock
 
@@ -451,46 +458,101 @@ the design is wrong, not the check.
 
 ---
 
-## 8. What the server stores and logs
+## 8. What the server stores, what it costs, and why both are tiny
 
-Stated at this level of detail because a claim about what is *not* collected is only
-credible next to a complete account of what is.
+Stated at this length because a claim about what is *not* collected is only credible next to
+a complete account of what is. **No device information reaches this service at all** — not a
+count, not a name, not an identifier, not a model, not an OS version, not a compliance
+state. There is no field for one in §3 and no place to put one if there were.
 
-**Stored, durably — the license table:**
+### 8.1 Durable storage: the license table, and nothing else
+
+One row per paying customer, in Azure Table Storage:
 
 | Field | Why |
 |---|---|
-| Tenant GUID | The license key itself. |
+| Tenant GUID | The license key itself. Partition and row key. |
 | Tier | What was sold. |
 | Term start and end | When it lapses. |
-| Order or invoice reference | Support and accounting. |
-| Contact email supplied at purchase | Renewals and license problems. |
+| Order reference | The payment processor's identifier for the sale. |
 
-A row exists only for a **paying** customer. Nothing creates a row for a free-tier tenant.
+That is the entire schema. Specifically **not** in it:
 
-**Logged, transiently — request logs, 30-day retention:**
+- **No purchaser name or email.** The order reference resolves to those inside the payment
+  processor, which holds them as a billing record and has to regardless. Copying them into
+  Azure would put personal data into a second system for no operational gain, and would put
+  a hole in the privacy policy's statement that Kainor holds no personal information about
+  LAPSlock users.
+- **No device data of any kind.** See above.
+- **No user identity.** Nobody at a customer organization is named anywhere in this system.
+- **No reveal count, ever, anywhere.** §1.2.
+- **No row at all for an unlicensed tenant.** Nothing about a free-tier install exists on
+  the server, because a free-tier install never calls it (§7.1).
 
-| Field | Why |
-|---|---|
-| Timestamp | Diagnosis. |
-| Tenant GUID from the request | Rate limiting, and spotting a tenant ID being hammered. |
-| HTTP status and `jti` issued | Answering "my license says free and I paid". |
-| Source IP | Abuse handling. Standard for any HTTP service. |
+A tenant GUID identifies an organization, not a person. **The durable side of this service
+therefore holds no personal data.**
 
-**Never present in any log or table, because it is never in the request:** any credential,
-any Graph token, any user identity, any device identifier, any device name, any device
-count, any reveal count, any search term, any App Insights session or user identifier.
+### 8.2 Logs: platform HTTP logs only, with no tenant ID in them
 
-**Rate limits:** per tenant GUID and per source IP. A correctly behaving client makes about
-12 requests per install per year; the limits are set orders of magnitude above that and
-exist to make a scripted tenant-ID sweep expensive.
+- Standard Azure HTTP request logs — timestamp, source IP, method, path, status code —
+  retained for the platform minimum. Every HTTP service has these and pretending otherwise
+  would be dishonest. Source IP is personal data in some jurisdictions; short retention is
+  the honest answer, not a claim of zero.
+- **The tenant ID is not logged.** It travels only in the request body, and no request body
+  is logged.
+- **This is the reason §3.1 forbids ever accepting the tenant ID in a URL.** A tenant ID in
+  a path or query string is captured automatically and permanently by platform logging, by
+  Application Insights, and by any proxy or WAF in front of the app — no code required, and
+  no way to notice it happening. In a body it is captured by nothing unless somebody writes
+  a line of code to capture it, and that line is not written.
+- **No custom telemetry.** No Application Insights custom events, no per-tenant counters
+  written anywhere, no logging added by the Function beyond unhandled faults. Application
+  Insights stays on failures and platform metrics; request and response body collection
+  stays off. **Verify this after deploying** — the Flex Consumption template wires
+  Application Insights up by default and its default retention is 90 days.
+- **No cookies, no session identifier, no correlation identifier carried between requests.**
+  Two calls from the same install are not linkable server-side beyond what a source IP
+  implies, and §7.3 makes them a month apart.
 
-**On what request logs do and do not reveal.** They show that someone in a licensed tenant
-opened LAPSlock roughly monthly. They cannot show how often anyone revealed a password,
-which devices were looked at, or who did the looking, because §7.2 forbids the client from
-tying a request to any of those and the request body has nowhere to carry them. This is the
-difference between knowing a license was checked and knowing how a tool was used, and it is
-the line the product refuses to cross.
+### 8.3 Rate limiting that keeps nothing
+
+Abuse control is a source-IP limit plus a per-tenant limit computed over a keyed hash of the
+tenant ID held in memory or in a cache entry that expires within the hour, never written to
+a table, a log, or a metric. That stops a scripted sweep of tenant GUIDs. It cannot answer
+"which tenants called last month", because an hour later the data to answer it is gone.
+
+Anomaly watching is aggregate only: requests per day and error rate, with no identifiers. A
+spike is visible; the tenants inside it are not.
+
+### 8.4 Answering a support ticket without logs
+
+"My license says free and I paid" is answered from the license table — does a row exist for
+that tenant, and is the term current — plus the token claims, which the customer can read
+out of the app's own diagnostics screen and quote. Neither requires a server-side record of
+who called when, which is why none is kept.
+
+### 8.5 What it costs to run
+
+Kept near zero on purpose. A service that costs real money invites the temptation to make it
+earn its keep by collecting something.
+
+- The license table is a few hundred rows of a few hundred bytes. Table Storage bills that
+  in fractions of a cent per month.
+- A licensed install makes roughly 12 requests a year (§7.3) and an unlicensed one makes
+  none. A hundred enterprise customers is on the order of 1,200 requests a year — a rounding
+  error against any serverless plan.
+- **The two knobs that could actually cost money are Application Insights ingestion left at
+  defaults, and always-ready instance count on the Flex Consumption plan set above zero.**
+  Check both after deploying. Neither is driven by traffic, so a surprising bill here would
+  come from configuration rather than from load.
+
+### 8.6 What the remaining logs do and do not reveal
+
+They show that some address checked a license roughly monthly. They cannot show which tenant
+did it (§8.2), how often anyone revealed a password, which devices were looked at, or who
+did the looking — §7.2 forbids the client from tying a request to any of those, and the
+request body has nowhere to carry them. That is the difference between knowing licenses get
+checked and knowing how the tool is used, and it is the line the product refuses to cross.
 
 ---
 
@@ -577,8 +639,11 @@ portal or during an Apple service blip, a paying customer sees "unlicensed", so 
 path gets written — and a soft-fail path is a bypass.
 
 The request and the contract are shaped for it (§3), so adding it later is additive. The
-cheaper interim measures — rate limiting per tenant and watching for anomalous request
-counts — are in §8 and ship with v1.
+cheaper interim measure ships with v1: rate limiting that keeps nothing (§8.3), with anomaly
+watching on aggregate counts only. Per-tenant request counts were considered and rejected —
+they are the one piece of data this service could plausibly have justified accumulating, and
+a stored history of which tenants check in when is precisely the sort of file the product
+promises not to build.
 
 ---
 
@@ -617,6 +682,8 @@ Named so that their absence reads as a decision rather than an oversight:
 | Token revocation list | Deferred. `jti` reserved for it. 30-day lag accepted (§5.4). |
 | Seat or device counting | Never here. Contract and audit, not telemetry (§5.3). |
 | Reveal counting of any kind | Never, anywhere. §1.2. |
+| Per-tenant request counts or check-in history | Rejected, not deferred. §8.3. |
+| Purchaser name or email in Azure | Stays in the payment processor. §8.1. |
 | Stripe webhook | A separate endpoint, separate contract, not client-facing. |
 | Domain to tenant GUID resolution | Purchase flow on the website, not this API. |
 | User accounts, sign-up, sign-in to Kainor | There is no Kainor account and none is planned. |
@@ -656,3 +723,4 @@ stale client must degrade to `free`, never to broken.
 | Date | Change |
 |---|---|
 | 2026-09-01 | Version 1. Initial published contract. |
+| 2026-09-01 | §8 tightened before implementation: tenant IDs out of request logs, purchaser contact details out of the license table, rate limiting moved to ephemeral state, running cost stated. No wire-format change. |
