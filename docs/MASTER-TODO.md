@@ -655,7 +655,26 @@ macOS password retrieval.
 
   At $9 against the $99 already spent on the Apple program, this is a rounding error on a
   deductible business expense, and it is the difference between a roadmap feature being
-  buildable or not. **Founder's call, but the recommendation is to buy one month of P2.**
+  buildable or not.
+
+  **Buy-then-cancel is the supported pattern, and one checkout choice decides whether it
+  works. Pick MONTHLY commitment, not annual.** Both are presented as a per-user monthly
+  price, which is the trap: cancelling a monthly subscription ends it at the end of the paid
+  month with no further charge, while cancelling an annual-billed-monthly one still bills the
+  remainder of the year. Re-buying later is unrestricted. Cancel path is Microsoft 365 admin
+  center → the subscription → Billing settings → Subscription status → Cancel subscription.
+
+  **Try the free P2 trial first, but know what it will not do.** Entra ID P2 has historically
+  offered a 30-day trial, which should be enough to develop PIM for nothing. It will very
+  likely NOT unblock add-on tenant creation, because Microsoft's own docs say customers on a
+  free or trial subscription cannot create additional tenants, and the error names the absence
+  of a *paid* license. So: trial for PIM, a paid month only if the MSP tenant test earns it
+  on its own.
+
+  **Batch the PIM work into the licensed window.** When the license lapses PIM stops working
+  and any eligible assignments configured during the term become unusable, so this wants one
+  focused block — build the claims-challenge handling, test it, let it lapse — rather than
+  months of on-and-off licensing.
 
   **Until then, the first real test of an MSP tenant switch is a customer, and that was the
   design assumption rather than a surprise.** It is why `SwitchFailure` explains all ten error cases
