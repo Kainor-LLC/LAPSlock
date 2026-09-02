@@ -491,7 +491,55 @@ macOS password retrieval.
 - ⬜ Gate copy-to-clipboard, BitLocker rotation, favourites, and app lock behind Pro
 - ⬜ Recents / favorites
 - ⬜ Biometric app lock (distinct from the per-reveal gate)
-- ⚠️ **Tenant switcher — reclassified 2026-09-02 from a convenience to a PREREQUISITE for
+- 🟡 **Tenant switcher — AUTH LAYER DONE 2026-09-02, UI still to build.**
+
+  The §3.3 tenant guard was the obstacle, and it was re-pointed rather than removed. It used
+  to compare a returned token's `tid` against the signed-in account's OWN tenant, which is
+  right for a single-organization admin and wrong for an MSP. Deleting the comparison would
+  have removed the only thing stopping a token for one organization being used against
+  another. So the expectation became explicit instead: `TenantPin` in AuthKit holds the
+  tenant we deliberately selected, builds the authority URL from it, and refuses any token
+  whose `tid` is not that value. **The authority we ASK and the tenant we ACCEPT are now the
+  same value**, which is what makes the guard mean anything.
+
+  It lives in AuthKit, not AuthKitMSAL, because AuthKitMSAL is `#if os(iOS)` and MSALResult
+  cannot be built on macOS — so the most security-relevant comparison in the auth path was
+  previously impossible to unit test. It now has 7 tests, verified to fail on the two
+  classic defects: treating a missing `tid` as acceptable, and allowing `common` to be
+  pinned.
+
+  `MSALAuthManager.setActiveTenant(_:)` switches tenants and **validates before committing**
+  — it acquires a token for the target first and rolls back on failure, so a switch never
+  leaves the app pointed at a directory the user cannot read. The active tenant is
+  deliberately NOT persisted: a switch lasts one session, and reopening the app returns you
+  to your own tenant, because somebody handed an unlocked phone should not find it already
+  aimed at a customer's directory. Sign-in and sign-out both reset it.
+
+  `TenantDirectory` resolves a customer domain to a tenant GUID via unauthenticated OIDC
+  discovery against `login.microsoftonline.com` — a host already in the transparency doc, so
+  **no new network destination and no privacy policy change**. A GUID passes through with no
+  round trip. 11 tests, including path-traversal rejection since the domain is interpolated
+  into a URL.
+
+  **⚠️ THE SALES-RELEVANT FINDING: app consent is per-tenant.** An MSP cannot self-serve
+  their way into a customer tenant. Each customer's Entra administrator must approve
+  LAPSlock in their own tenant before a partner account can get a token for it, so expect
+  `consentRequired` on first switch. `AdminConsentLink.url(clientId:tenant:)` already builds
+  the right link per tenant, so the flow exists — but the MSP onboarding story is "ask each
+  customer's admin to click this once", not "add a tenant and go". That has to be said at
+  the point of sale.
+
+  **Still to build:** the picker UI, the stored customer list (Keychain, device-only — it is
+  a list of an MSP's clients and must never leave the device, the client-side mirror of why
+  §7.1 refuses to collect it), gating behind the `msp` tier, and clearing tenant-scoped state
+  on switch (inventory reset and destroying any displayed credential, same requirement as
+  sign-out).
+
+  **⚠️ CANNOT BE FULLY TESTED HERE.** Guest/B2B needs a second tenant that has invited the
+  Kainor account; GDAP needs a real partner relationship. The auth layer is unit tested and
+  the guard is covered, but the end-to-end MSP path needs a customer tenant to prove.
+
+- ~~⚠️ Tenant switcher — reclassified 2026-09-02 from a convenience to a PREREQUISITE for
   selling the MSP tier.** Verified in `MSALAuthManager`: tokens are only ever requested for
   `account.tenantId`, the signed-in account's own home tenant. There is no code path to any
   other tenant. That means the three ways MSPs actually reach customer tenants divide

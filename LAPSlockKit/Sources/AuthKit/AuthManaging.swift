@@ -23,7 +23,11 @@ public struct AdminAccount: Sendable, Equatable, Identifiable {
     }
 }
 
-public enum AuthError: Error, Sendable {
+// Equatable so tests can assert on a specific failure rather than merely that something
+// threw. `underlying(String)` is the only payload and String is Equatable, so this is
+// synthesised — and it matters for the §3.3 guard, whose whole job is to throw ONE specific
+// error and not some other one that happens to also fail the call.
+public enum AuthError: Error, Sendable, Equatable {
     case noAccount                   // nobody signed in
     case interactionRequired         // silent failed; caller must allow interactive
     case consentRequired             // scope not yet consented (incremental consent, §4)
