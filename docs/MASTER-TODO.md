@@ -13,19 +13,60 @@ Items below either need a decision, a device, or an account only you hold. Every
 from this session is committed (not pushed) with all three checks green.
 
 ## Needs your hands on a phone
+- **Auth diagnostics.** With Authenticator installed, force a sign-in failure (wrong tenant
+  is easiest) and then Settings → Gather diagnostics. Expect a "Last sign-in or token
+  failure" block with `msal=`, `aad=AADSTS…`, `broker=yes` and a correlation ID — and no URL
+  and no description text anywhere in the report.
 - **Entitlement client end to end.** Build to the phone, Settings → Organization license →
   Activate. Expect the row to read Enterprise (the dogfood row exists for the Kainor tenant).
   Then Remove, expect Free. Then, with a proxy, confirm a fresh install shows no Kainor host
   until Activate is tapped. I cannot do any of this from here.
 
 ## Needs a decision
+- **Search only covers loaded pages** (the #3 item in the decided order). This is a design
+  call, so I did not touch it. Three shapes, with a recommendation:
+  1. *Fetch every page first, then search locally.* Simplest; correct; Graph pages are 1000
+     devices, so a 10k-device tenant is ten calls at sign-in. Cost is the initial wait and
+     memory on the largest tenants. Search stays instant and diacritic-insensitive as today.
+  2. *Server-side `$filter` on `deviceName` / user fields per keystroke.* No wait at
+     sign-in, but Intune's `managedDevices` `$filter` support is narrow (startswith on a
+     few properties, no `$search`), so it would REGRESS the current matching on display
+     name, email and diacritics — the thing that was just fixed.
+  3. *Hybrid.* Local search over loaded pages as now, plus paging continues in the
+     background after the first page so the working set fills within seconds, with a
+     "still loading N of M" indicator until it does. Search results are complete once
+     loading finishes and are labelled honestly until then.
+  **Recommendation: 3**, with 1 as the fallback if background paging proves awkward. It
+  keeps today's matching, removes the phantom-miss without a per-keystroke network call,
+  and the indicator turns "search found nothing" into "search is still filling" — the
+  actual bug is that the empty state lies.
+- **Guideline 3.1.3 stance** — please read `docs/APP-STORE-3-1-3.md` once. It records why
+  the Settings license section must never grow a price or a link, and the blocked-reveal
+  message must never mention the website. Those are now compliance constraints, not copy.
 - **Push timing for `docs/`.** The privacy policy and the transparency doc are committed with
   today's date and name the azurewebsites host. Pushing `docs/` publishes both. They are true
   today, but they describe an Activate button that is not in the shipped app yet.
 - **Copy in the license section** — one read from you. It is deliberately a status readout
   with no pitch and no price, same rule as the reveals section.
 
+## Not attempted, and why
+- Dark mode audit, state-restoration disable on credential screens, offline detection, and
+  per-device enrichment (the four 🟡 items). Each needs either a device with the toggle in
+  hand, a change on the credential screen that has bitten this project twice when shipped
+  untested, or a Graph design decision. Left for a session with a phone.
+- Gating copy, rotation, favourites and app lock behind Pro. Decided policy, mechanical
+  gate, but it is the reveal screen and I cannot see it. Recommend: show the control, and on
+  free tier route a tap to the same one-line message style the meter uses. Small, worth
+  doing with the phone next to you.
+- Windows LAPS password history, recents/favourites, biometric app lock, tenant switcher,
+  BYO registration UI, PIM: features with design in them.
+
 ## Done this session (details in each section)
+- Auth diagnostics in the support report (decided-order item 2).
+- Contribution policy with issue forms and the PR-closing workflow.
+- Privacy manifest; site footer disclaimer; Copy tenant ID in Settings.
+- App Store review notes, listing copy, and the 3.1.3 compliance note — all drafts for you.
+- Security one-pager.
 - Entitlement client half built and tested; `isPro` wired; app compiles.
 - Privacy policy updated for the third host and the license record.
 - Network transparency doc written and linked from `SECURITY.md`.
@@ -336,7 +377,9 @@ macOS password retrieval.
   Worth measuring before choosing a design: 100 devices per page against a few thousand
   devices is tens of requests, which is fine once but wasteful on every keystroke.
 
-- ⬜ Device row shows the raw UPN. Now that search matches `userDisplayName` and
+- ✅ Device row shows the raw UPN — **fixed 2026-09-02**, `DeviceRow` now uses
+  `primaryUserLabel` (display name, then UPN, then email). Build verified; eyeball on device.
+  Original note: Now that search matches `userDisplayName` and
   `emailAddress`, a result can match on a field the row never displays, which looks like a
   phantom hit. `ManagedDeviceSummary.primaryUserLabel` exists for this; swap `DeviceRow`
   in `DeviceListView.swift` over to it. (No line number: the file has shifted twice since
@@ -878,8 +921,13 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   gap:** a reviewer cannot exercise Pro features until IAP exists (sandbox) — your call
   whether to accept that on first submission or add a compiled-out reviewer path.
 - ✅ Paid Apps agreement — accepted, bank and tax details in place
-- ⬜ Org purchasing on the website only, never linked in-app (verify current 3.1.3 text)
-- ⬜ 3.1.3(c) Enterprise Services documentation
+- ✅ Org purchasing on the website only, never linked in-app — **3.1.3 text verified
+  2026-09-02**, see `docs/APP-STORE-3-1-3.md`. The constraint that matters: the app must not
+  directly or indirectly steer iOS users to a non-IAP purchase. Activate sells nothing, the
+  blocked-reveal message offers only the IAP path, and Copy tenant ID stays a plain utility.
+- ✅ 3.1.3(c) Enterprise Services documentation — `docs/APP-STORE-3-1-3.md`, 2026-09-02.
+  The pricing table mapped onto the guideline, what the app must keep doing to stay inside
+  the line, and the paragraph for a review response.
 - 🟡 **Listing copy drafted 2026-09-02** — `docs/APP-STORE-LISTING.md`, for your approval.
   Name, subtitle, promo text, description leading with the four testable claims, keywords
   at 96/100, macOS stated as a limitation up front.
