@@ -665,6 +665,11 @@ Decided *by* the contract, because the implementation needed an answer:
   Stripe, which holds them as a billing record anyway, so no personal data lands in Azure.
   A row exists only for a PAYING tenant.
 - ✅ **Table roles granted 2026-09-02, scoped to the TABLE and not the storage account.**
+  Recreated at the `licenses` scope during the rename, and the two assignments orphaned on
+  the deleted `licences` path were removed. **Azure keeps role assignments that point at
+  deleted resources.** They do not error and they do not clean themselves up, so they sit in
+  an access review looking legitimate and would silently take effect again if anything ever
+  recreated a table by that name. Check for orphans after deleting any scoped resource.
   The human account has Storage Table Data Contributor, for inserting license rows by hand
   until Stripe exists. The Function identity has **Storage Table Data Reader** — read-only,
   because the entitlement endpoint never writes a license row. A compromise of the Function
