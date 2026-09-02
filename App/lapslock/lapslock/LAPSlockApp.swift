@@ -7,6 +7,7 @@ import CredentialKit
 import DiagnosticsKit
 import InventoryKit
 import LicensingKit
+import PrivilegedAccessKit
 
 // App root. Owns the one decision the rest of the app depends on: which data source
 // is in play — a live tenant, or demo mode.
@@ -416,6 +417,90 @@ final class AppRootModel: ObservableObject {
     ///
     /// Asking here — at the moment the toggle flips — means an admin discovers a blocked
     /// permission while sitting at their desk, not while standing at a broken machine.
+    /// Requests consent for the PIM activation scopes.
+    ///
+    /// Mirrors `requestRotationConsent` deliberately: same opt-in shape, same incremental
+    /// consent, same rule that a customer who never enables it never sees the permission
+    /// requested. This one is the heavier ask of the two — it lets the app request a
+    /// privilege escalation — so it stays off by default.
+    func requestPrivilegedActivationConsent() async -> String? {
+        guard let auth else { return "Sign in first." }
+        do {
+            _ = try await auth.token(scopes: PrivilegedAccessGraph.activateScopes, allowInteractive: true)
+            return nil
+        } catch let error as AuthError {
+            if ConsentDiagnostics.state(from: error) != nil {
+                return "Your organization hasn't approved permission for LAPSlock to request role activation. An Entra administrator needs to grant it."
+            }
+            if case .userCancelled = error { return "Permission wasn't granted." }
+            return "Couldn't request permission. Check your connection and try again."
+        } catch {
+            return "Couldn't request permission. Check your connection and try again."
+        }
+    }
+
+    /// Reads what the signed-in user could activate.
+    func loadEligibleAccess() async -> Result<[EligibleAccess], PrivilegedAccessError> {
+        guard let session = liveSession else { return .failure(.notAuthorized) }
+        do {
+            return .success(try await PrivilegedAccessService(auth: session.auth).eligibleAccess())
+        } catch let error as PrivilegedAccessError {
+            return .failure(error)
+        } catch {
+            return .failure(.transport)
+        }
+    }
+
+    /// Activates one piece of eligible access, recording a failure in diagnostics.
+    func activatePrivilegedAccess(
+        _ access: EligibleAccess,
+        justification: String,
+        ticketNumber: String?
+    ) async -> Result<ActivationOutcome, PrivilegedAccessError> {
+        guard let session = liveSession else { return .failure(.notAuthorized) }
+        do {
+            let outcome = try await PrivilegedAccessService(auth: session.auth).activate(
+                access, justification: justification, ticketNumber: ticketNumber)
+            return .success(outcome)
+        } catch let error as PrivilegedAccessError {
+            await recordActivationFailure(error)
+            return .failure(error)
+        } catch {
+            await recordActivationFailure(.transport)
+            return .failure(.transport)
+        }
+    }
+
+    /// A failed activation reaches the support report, for the same reason a failed tenant
+    /// switch does: the tenant policy that refused it is not reproducible here, so the
+    /// Microsoft error code is the only thing that explains it.
+    ///
+    /// The role and the justification are NOT recorded. Which role somebody tried to
+    /// activate and why is their business and their audit log's, not a support inbox's.
+    private func recordActivationFailure(_ error: PrivilegedAccessError) async {
+        let detail = await auth?.lastAuthFailure
+        let outcome: DiagnosticOutcome = {
+            switch error {
+            case .consentRequired: return .consentRequired
+            case .notAuthorized, .claimsChallenge: return .notAuthorized
+            case .noEligibleAccess, .alreadyActive: return .notFound
+            case .transport: return .transportError
+            case .decodeFailure: return .decodeFailure
+            case .serviceError: return .serviceUnavailable
+            }
+        }()
+        await DiagnosticsRecorder.shared.record(DiagnosticEvent(
+            operation: .roleActivation,
+            outcome: outcome,
+            httpStatus: detail?.httpStatus,
+            msalErrorCode: detail?.msalErrorCode,
+            aadErrorCode: detail?.aadErrorCode,
+            oauthError: detail?.oauthError,
+            correlationId: detail?.correlationId,
+            brokerInvolved: detail?.brokerInvolved
+        ))
+    }
+
     func requestRotationConsent() async -> String? {
         guard let auth else { return "Sign in first." }
         do {
@@ -524,7 +609,18 @@ struct AppRootView: View {
                             entitlementDidChange: { root.recomputeEntitlement() },
                             lastAuthFailure: { await session.auth.lastAuthFailure },
                             signedInDomain: root.signedInDomain,
-                            endSession: { await root.signOut() }
+                            endSession: { await root.signOut() },
+                            requestPrivilegedConsent: { await root.requestPrivilegedActivationConsent() },
+                            privilegedSheet: {
+                                PrivilegedAccessView(
+                                    deviceName: nil,
+                                    loadEligible: { await root.loadEligibleAccess() },
+                                    activate: { access, justification, ticket in
+                                        await root.activatePrivilegedAccess(
+                                            access, justification: justification, ticketNumber: ticket)
+                                    }
+                                )
+                            }
                         )
                     },
                     detailBuilder: { device in
@@ -537,7 +633,17 @@ struct AppRootView: View {
                                 rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
                                 meter: RevealMeters.live,
                                 isPro: root.isPro
-                            )
+                            ),
+                            privilegedSheet: {
+                                PrivilegedAccessView(
+                                    deviceName: device.deviceName,
+                                    loadEligible: { await root.loadEligibleAccess() },
+                                    activate: { access, justification, ticket in
+                                        await root.activatePrivilegedAccess(
+                                            access, justification: justification, ticketNumber: ticket)
+                                    }
+                                )
+                            }
                         )
                     }
                 )

@@ -407,7 +407,43 @@ macOS password retrieval.
      populated from the `oid` claim rather than by splitting the identifier, since that shape
      is an MSAL implementation detail.
 
-  **Still to build:** the UI — a Settings opt-in toggle with incremental consent, and an
+  ### UI built 2026-09-02
+
+  Two entry points, and the second is the one that matters. Settings gains a **Privileged
+  access** section with an opt-in toggle — same shape as the rotation toggle, same
+  incremental consent, and off by default because "request a privilege escalation" reads
+  worse on a consent screen than reading a password does. The activation button appears only
+  once the toggle is on, since offering an action whose permission was never granted just
+  produces a second failure the user cannot act on either.
+
+  The real entry point is **on the failed reveal**. The `notAuthorized` copy already told the
+  user that Cloud Device Administrator can be activated just-in-time through PIM; there is now
+  an **Activate your role** button under it, so that sentence becomes something they can act
+  on without leaving the bench. `DeviceDetailModel.lastFailureWasMissingRole` drives it —
+  a separate flag rather than matching the prose, because matching prose would break silently
+  the first time somebody reworded the copy.
+
+  `PrivilegedAccessView` prefills the justification with the device name, since the
+  justification lands in the CUSTOMER's own audit log and naming the device makes their log
+  more useful rather than less private. A single eligible option is preselected: an
+  administrator at a broken machine should not have to tap a list of one.
+
+  **Pending approval is deliberately not dressed as success** — no checkmark, no accent
+  colour, header reading "Requested, not yet active", and copy saying plainly that the
+  password will still be refused until someone approves. `PrivilegedFailure` translates all
+  eight error cases, including the claims challenge as a Conditional Access explanation
+  rather than a retry suggestion, since the service already retried once.
+
+  Failures reach the support report as `DiagnosticOperation.roleActivation`. **The role and
+  the justification are not recorded** — which role somebody tried to activate and why is
+  their business and their audit log's, not a support inbox's.
+
+  The sheet is attached to the `List`, not to a `Section`: a Section re-renders on every form
+  state change, which dismissed a sheet the instant it opened once before in this project.
+
+  **Ready for a device test.** Set the Settings toggle on, then either activate proactively
+  from Settings or fail a reveal and use the button. Founder plan: PIM **Groups** in the work
+  tenant first, then a direct **role** in Kainor — which between them exercise both surfaces. — a Settings opt-in toggle with incremental consent, and an
   activation sheet reachable from the `notAuthorized` error on a failed reveal.
 
   ⚠️ **Needs an ELIGIBLE assignment to test against.** Permanent Global Admin is an *active*

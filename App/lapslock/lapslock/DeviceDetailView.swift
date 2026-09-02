@@ -32,6 +32,14 @@ final class DeviceDetailModel: ObservableObject {
     @Published var secondsRemaining = 0
     @Published var progress: Double = 0
     @Published var errorMessage: String?
+
+    /// True when the last failure was specifically "your account holds no role that can
+    /// read this", which is the one error a user can fix from inside the app.
+    ///
+    /// Kept separate from `errorMessage` deliberately. Matching on the prose to decide
+    /// whether to offer activation would break the first time somebody reworded the copy,
+    /// and it would break silently — the button would just stop appearing.
+    @Published var lastFailureWasMissingRole = false
     @Published var statusNote: String?
     @Published var isWorking = false
     @Published var isCaptured = false
@@ -167,6 +175,7 @@ final class DeviceDetailModel: ObservableObject {
 
     func reveal() async {
         errorMessage = nil
+        lastFailureWasMissingRole = false
         statusNote = nil
 
         // Structural blocks first — no gate, no network, just an explanation.
@@ -251,6 +260,7 @@ final class DeviceDetailModel: ObservableObject {
                               platform: device.platform, since: fetchStarted)
         } catch {
             errorMessage = Self.describe(error)
+            lastFailureWasMissingRole = (error as? CredentialError).map { if case .notAuthorized = $0 { return true } else { return false } } ?? false
             await Self.record(.credentialReveal, Self.outcome(for: error),
                               endpoint: DiagnosticEndpoint.deviceLocalCredentials,
                               platform: device.platform, since: fetchStarted)
@@ -276,6 +286,7 @@ final class DeviceDetailModel: ObservableObject {
     /// Reveals one recovery key. Same order as the password path: gate, then fetch.
     func revealBitLockerKey(_ info: BitLockerKeyInfo) async {
         errorMessage = nil
+        lastFailureWasMissingRole = false
         statusNote = nil
 
         if isCaptured {
@@ -326,6 +337,7 @@ final class DeviceDetailModel: ObservableObject {
                               platform: device.platform, since: started)
         } catch {
             errorMessage = Self.describe(error)
+            lastFailureWasMissingRole = (error as? CredentialError).map { if case .notAuthorized = $0 { return true } else { return false } } ?? false
             await Self.record(.credentialReveal, Self.outcome(for: error),
                               endpoint: "/v1.0/informationProtection/bitlocker/recoveryKeys/{id}",
                               platform: device.platform, since: started)
@@ -336,6 +348,7 @@ final class DeviceDetailModel: ObservableObject {
     func rotateBitLockerKeys() async {
         guard rotationEnabled else { return }
         errorMessage = nil
+        lastFailureWasMissingRole = false
         isWorking = true
         defer { isWorking = false }
         do {
@@ -347,6 +360,7 @@ final class DeviceDetailModel: ObservableObject {
             await loadBitLockerKeys()
         } catch {
             errorMessage = Self.describe(error)
+            lastFailureWasMissingRole = (error as? CredentialError).map { if case .notAuthorized = $0 { return true } else { return false } } ?? false
         }
     }
 
@@ -438,6 +452,7 @@ final class DeviceDetailModel: ObservableObject {
             hideNow()
         } catch {
             errorMessage = Self.describe(error)
+            lastFailureWasMissingRole = (error as? CredentialError).map { if case .notAuthorized = $0 { return true } else { return false } } ?? false
         }
     }
 
@@ -562,6 +577,11 @@ struct DeviceDetailView: View {
     @StateObject private var privacy = ScreenPrivacyMonitor()
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Opens the PIM activation sheet. Nil in demo and wherever PIM does not apply.
+    var privilegedSheet: (() -> PrivilegedAccessView)? = nil
+    @ObservedObject var settings: AppSettings = .shared
+    @State private var showingPrivilegedSheet = false
+
     /// Drives the countdown. Half-second cadence so the label never appears to stall.
     private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
@@ -580,6 +600,11 @@ struct DeviceDetailView: View {
         // which looked like overlapping text at the top of the screen.
         .toolbarBackground(.visible, for: .navigationBar)
         // Hide the whole screen from the app-switcher snapshot while a password is up.
+        // Attached here rather than to the Section. A Section re-renders on every form
+        // state change, which dismissed a sheet the instant it opened once before.
+        .sheet(isPresented: $showingPrivilegedSheet) {
+            if let privilegedSheet { privilegedSheet() }
+        }
         .privacyCover(isProtected: model.revealedSecret != nil || model.revealedBitLockerSecret != nil)
         .onReceive(ticker) { _ in model.tick() }
         .onChange(of: scenePhase) { _, phase in
@@ -631,6 +656,24 @@ struct DeviceDetailView: View {
                 Text(error)
                     .font(.footnote)
                     .foregroundStyle(.red)
+
+                // The whole point of the PIM work. The copy above already tells the user
+                // Cloud Device Administrator can be activated just-in-time; this turns that
+                // sentence into something they can act on without leaving the bench.
+                //
+                // Shown only when the failure was a missing role AND the user has opted in,
+                // because offering an action whose permission was never granted just
+                // produces a second failure they cannot act on either.
+                if model.lastFailureWasMissingRole,
+                   privilegedSheet != nil,
+                   settings.privilegedActivationEnabled {
+                    Button {
+                        showingPrivilegedSheet = true
+                    } label: {
+                        Label("Activate your role", systemImage: "person.badge.key")
+                            .font(.footnote.weight(.medium))
+                    }
+                }
             }
         } header: {
             Text("Local administrator password")

@@ -4,6 +4,7 @@ import AuthKit
 import CredentialKit
 import DiagnosticsKit
 import LicensingKit
+import PrivilegedAccessKit
 
 // Settings. Three toggles, each with a deliberate design decision behind it.
 //
@@ -24,17 +25,29 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(bitLockerRotationEnabled, forKey: Keys.rotation) }
     }
 
+    /// Whether LAPSlock may request just-in-time activation of a PIM-eligible role.
+    ///
+    /// Same reasoning as rotation, and a heavier ask. `RoleAssignmentSchedule.ReadWrite.Directory`
+    /// lets the app request a privilege escalation, which reads worse on a consent screen
+    /// than reading a password does. Off by default: a customer who never turns it on never
+    /// sees that permission requested at all.
+    @Published var privilegedActivationEnabled: Bool {
+        didSet { UserDefaults.standard.set(privilegedActivationEnabled, forKey: Keys.privilegedActivation) }
+    }
+
     @Published var appearance: AppearancePreference {
         didSet { UserDefaults.standard.set(appearance.rawValue, forKey: Keys.appearance) }
     }
 
     private enum Keys {
         static let rotation = "settings.bitLockerRotationEnabled"
+        static let privilegedActivation = "settings.privilegedActivationEnabled"
         static let appearance = "settings.appearance"
     }
 
     private init() {
         self.bitLockerRotationEnabled = UserDefaults.standard.bool(forKey: Keys.rotation)
+        self.privilegedActivationEnabled = UserDefaults.standard.bool(forKey: Keys.privilegedActivation)
         let raw = UserDefaults.standard.string(forKey: Keys.appearance) ?? AppearancePreference.system.rawValue
         self.appearance = AppearancePreference(rawValue: raw) ?? .system
     }
@@ -96,6 +109,10 @@ struct SettingsView: View {
     /// it just leaves demo. One closure covers both because `AppRootModel.signOut()` already
     /// handles either state.
     var endSession: (() async -> Void)? = nil
+    /// Requests consent for the PIM activation scopes. Nil in demo.
+    var requestPrivilegedConsent: (() async -> String?)? = nil
+    /// Opens the activation sheet, injected so Settings need not know about Graph.
+    var privilegedSheet: (() -> PrivilegedAccessView)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isRequestingConsent = false
@@ -114,6 +131,9 @@ struct SettingsView: View {
     @State private var nextAvailable: Date?
 
     @State private var copiedTenantId = false
+    @State private var isRequestingPrivilegedConsent = false
+    @State private var privilegedConsentError: String?
+    @State private var showingPrivilegedSheet = false
 
     // Organization license
     @State private var license: EntitlementState = .free
@@ -127,6 +147,7 @@ struct SettingsView: View {
             Form {
                 appearanceSection
                 rotationSection
+                privilegedAccessSection
                 macOSSection
                 freeTierSection
                 licenseSection
@@ -144,6 +165,9 @@ struct SettingsView: View {
             // on every form state change, which dismissed the sheet the instant it opened.
             .sheet(isPresented: $showingReport) {
                 reportPreview
+            }
+            .sheet(isPresented: $showingPrivilegedSheet) {
+                if let privilegedSheet { privilegedSheet() }
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -229,6 +253,82 @@ struct SettingsView: View {
             consentError = error
         } else {
             settings.bitLockerRotationEnabled = true
+        }
+    }
+
+    // MARK: - privileged access
+
+    /// Just-in-time role activation, behind an opt-in toggle.
+    ///
+    /// Same shape as the rotation toggle above, and the same reason: the permission this
+    /// asks for — requesting a privilege escalation — reads worse on a consent screen than
+    /// reading a password does. A customer who never turns it on never sees it requested.
+    ///
+    /// The button appears only once the toggle is on, because offering an action whose
+    /// permission has not been granted just produces a failure the user cannot act on.
+    @ViewBuilder
+    private var privilegedAccessSection: some View {
+        if requestPrivilegedConsent != nil {
+            Section {
+                Toggle("Allow role activation", isOn: Binding(
+                    get: { settings.privilegedActivationEnabled },
+                    set: { newValue in
+                        if newValue {
+                            // Ask at the moment of the decision, like rotation. Discovering
+                            // your organization blocked it while standing at a broken
+                            // machine is the wrong time to find out.
+                            Task { await enablePrivilegedActivation() }
+                        } else {
+                            settings.privilegedActivationEnabled = false
+                            privilegedConsentError = nil
+                        }
+                    }
+                ))
+                .disabled(isRequestingPrivilegedConsent)
+
+                if settings.privilegedActivationEnabled, privilegedSheet != nil {
+                    Button {
+                        showingPrivilegedSheet = true
+                    } label: {
+                        Label("Activate a role now", systemImage: "person.badge.key")
+                    }
+                }
+
+                if let privilegedConsentError {
+                    Text(privilegedConsentError)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Privileged access")
+            } footer: {
+                Text("""
+                    If your role is eligible through Privileged Identity Management rather                     than permanently assigned, LAPSlock can activate it here instead of                     sending you to the portal.
+
+                    This asks Microsoft for permission to request activation of your own                     eligible roles — never anyone else's. Leave it off and that permission                     is never requested.
+                    """)
+            }
+        }
+    }
+
+    private func enablePrivilegedActivation() async {
+        privilegedConsentError = nil
+        guard let requestPrivilegedConsent else { return }
+
+        if isDemo {
+            settings.privilegedActivationEnabled = true
+            privilegedConsentError = "Demo mode: no permission was actually requested."
+            return
+        }
+
+        isRequestingPrivilegedConsent = true
+        defer { isRequestingPrivilegedConsent = false }
+
+        if let error = await requestPrivilegedConsent() {
+            settings.privilegedActivationEnabled = false
+            privilegedConsentError = error
+        } else {
+            settings.privilegedActivationEnabled = true
         }
     }
 
