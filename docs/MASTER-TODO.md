@@ -324,6 +324,11 @@ macOS password retrieval.
 - ✅ **BitLocker rotate** — behind the settings toggle, requests
   `DeviceManagementManagedDevices.ReadWrite.All` at toggle time
 - ⬜ **PIM role activation from the app** ← closes the most annoying gap in the workflow
+  **BLOCKED ON LICENSING, established 2026-09-02:** PIM requires Entra ID P2 ($9/user/month)
+  and the Kainor tenant has Entra ID Free. This is unbuildable, not just untestable — the MFA
+  claims-challenge handling cannot be written without a tenant where PIM exists to try it
+  against. The same purchase also unblocks the MSP tenant-switch test; see the Entra ID P2
+  note in the top block.
 
   The scenario: an admin needs a LAPS password, but their Cloud Device Administrator role
   is PIM-*eligible*, not active. Today that means leaving the phone, opening the portal on
@@ -616,18 +621,44 @@ macOS password retrieval.
     subscription.
   * *A plain workforce tenant* — the Azure portal no longer offers one. The choices are
     **governed workforce** or **external**, and legacy has been retired from that flow.
-  * *Governed workforce* — creation is free and the governed tenant needs no licenses, but
-    **cross-tenant delegated administration requires Entra P1, P2 or ID Governance**, which
-    the Kainor tenant does not have (Entra ID Free comes with a pay-as-you-go subscription).
-    Worth attempting, since creation may succeed with the governance relationship simply
-    inert, giving a usable second directory. **Abort if it asks to buy or trial a license.**
+  * *Governed workforce* — **attempted 2026-09-02 and refused outright**: "Base-tenant
+    4470dc21 does not have a paid license. Hence add-on tenant creation is not allowed on
+    this base-tenant." A pay-as-you-go Azure subscription is not a paid Entra license, so
+    add-on tenant creation is blocked on the Kainor tenant as it stands. See the licensing
+    note below.
   * *External* — wrong product. Entra External ID is a CIAM directory for customer-facing
     apps, not an organization.
   * *An M365 Business trial* — creates a tenant, but auto-renews and risks a bill, which is
     not a trade worth making for one test.
 
-  **So the first real test of an MSP tenant switch is a customer, and that was the design
-  assumption rather than a surprise.** It is why `SwitchFailure` explains all ten error cases
+  ### 🔵 Entra ID P2 would unblock this AND PIM, for about $9
+
+  Checked 2026-09-02: Entra ID P1 is $6/user/month list, **P2 is $9**, ID Governance about
+  $12. One user, so that is the entire bill; expect roughly 20% more on month-to-month
+  billing with no annual commitment.
+
+  **P2 rather than P1, and the tenant test is the lesser reason. PIM requires P2**, and "PIM
+  role activation from the app" is on this list as the most annoying gap in the workflow. It
+  is currently not merely untestable but *unbuildable* — the MFA claims-challenge handling
+  cannot be written without a tenant where PIM exists to try it against. So one purchase
+  converts two blocked items:
+
+  1. A paid license should satisfy the add-on tenant requirement, closing the MSP switch gap.
+  2. PIM becomes developable at all.
+
+  **Two things to verify rather than assume.** That P1/P2 actually satisfies "paid license"
+  for add-on tenant creation — the error names the absence of one and P2 is a paid Entra
+  license, so it should, but buy a single month and try before committing further. And
+  whether the add-on tenant survives cancelling P2; the directory should exist
+  independently, though the governance relationship may lapse, which does not matter here
+  because only the directory is needed.
+
+  At $9 against the $99 already spent on the Apple program, this is a rounding error on a
+  deductible business expense, and it is the difference between a roadmap feature being
+  buildable or not. **Founder's call, but the recommendation is to buy one month of P2.**
+
+  **Until then, the first real test of an MSP tenant switch is a customer, and that was the
+  design assumption rather than a surprise.** It is why `SwitchFailure` explains all ten error cases
   on screen and why `DiagnosticOperation.tenantSwitch` carries the AADSTS code and
   correlation ID into the support report. If an early MSP prospect appears, ask them to
   invite the Kainor account as a guest in a sandbox of theirs — that is a ten-minute favour
