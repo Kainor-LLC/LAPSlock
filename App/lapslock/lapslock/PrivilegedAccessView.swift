@@ -223,8 +223,29 @@ struct PrivilegedAccessView: View {
                     apply a new role, so if it still refuses, wait a moment and retry.
                     """)
             }
+        case .provisioning(let until):
+            // Accepted, nobody to chase. Not dressed as finished either: it is not usable
+            // for a few seconds yet, and the reveal will still refuse until it is.
+            Section {
+                Label("Activating now", systemImage: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(Brand.accent)
+                if let until {
+                    LabeledContent("Expires", value: SettingsView.relative(until))
+                }
+            } header: {
+                Text("Accepted — no approval needed")
+            } footer: {
+                Text("""
+                    Microsoft accepted the activation and is applying it now. Nobody has to \
+                    approve anything. This usually takes a few seconds. Go back and try the \
+                    reveal again — if it is still refused, wait a moment and retry.
+                    """)
+            }
         case .pendingApproval:
-            // Deliberately NOT dressed as success. No checkmark, no accent colour.
+            // Deliberately NOT dressed as success. No checkmark, no accent colour. And
+            // reached ONLY for the two statuses that genuinely mean a person must decide —
+            // this screen once appeared for ordinary provisioning delays, which sent
+            // somebody looking for an approver their tenant does not use.
             Section {
                 Label("Waiting for approval", systemImage: "clock")
                     .foregroundStyle(.secondary)
@@ -237,9 +258,55 @@ struct PrivilegedAccessView: View {
                     approved. Approvers are usually notified by email straight away.
                     """)
             }
+        case .requested(let status):
+            // Honest about not knowing. Blaming an approver would be a guess, and so would
+            // promising it is on its way.
+            Section {
+                Label("Requested", systemImage: "clock")
+                    .foregroundStyle(.secondary)
+                if let detail = Self.statusDetail(status) {
+                    Text(detail).font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Requested, not yet active")
+            } footer: {
+                Text("""
+                    Microsoft created the request but has not reported it as active. If your \
+                    organization requires approval, an approver has been notified. If it does \
+                    not, this should become active shortly — go back and try the reveal again.
+                    """)
+            }
+        case .refused(let status):
+            Section {
+                Label("Activation refused", systemImage: "xmark.circle")
+                    .foregroundStyle(.secondary)
+                if let detail = Self.statusDetail(status) {
+                    Text(detail).font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Nothing was activated")
+            } footer: {
+                Text("""
+                    Microsoft created the request and then refused it, so nothing is active \
+                    and waiting will not help. Usually that means an approver declined it, it \
+                    was cancelled, or a policy in your organization blocked it.
+                    """)
+            }
         case nil:
             if let failure { failureSection(failure) }
         }
+    }
+
+    /// Microsoft's own status word, shown only when there is one.
+    ///
+    /// Safe to display: it is a fixed Graph enumeration like `PendingScheduleCreation`, not
+    /// anything about the tenant, the group or the user. Worth displaying because for a
+    /// status this app does not recognise it is the one piece of information that explains
+    /// the screen, and reading it off the phone beats collecting it.
+    static func statusDetail(_ status: String) -> String? {
+        let trimmed = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return "Microsoft reported: " + trimmed
     }
 
     @ViewBuilder

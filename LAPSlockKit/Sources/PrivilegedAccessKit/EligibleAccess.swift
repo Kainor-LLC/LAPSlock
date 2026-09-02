@@ -167,9 +167,24 @@ public enum PrivilegedAccessGraph {
 /// tenant requires approval, `selfActivate` creates a request and returns — nothing is
 /// active. Telling an administrator otherwise sends them back to a broken machine to fail
 /// again.
+///
+/// **But "not active yet" is not the same thing as "waiting for a human".** PIM answers 201
+/// with a provisioning status for an activation that needs no approval at all and is simply
+/// still being applied. Reporting that as `pendingApproval` shipped once and sent somebody
+/// looking for an approver who did not exist. The question every case here answers is what
+/// the user has to DO: use it, wait, chase an approver, or stop trying.
 public enum ActivationOutcome: Sendable, Equatable {
+    /// Active now.
     case activated(until: Date?)
+    /// Accepted and being applied. Nobody has to act; it becomes active on its own.
+    case provisioning(until: Date?)
+    /// An approver must act before anything happens.
     case pendingApproval(requestId: String?)
+    /// Created, and PIM reported a state this app does not recognise. Neither promised as
+    /// active nor blamed on an approver who may not be involved.
+    case requested(status: String)
+    /// PIM created the request and then refused it. Waiting will not help.
+    case refused(status: String)
 }
 
 public enum PrivilegedAccessError: Error, Sendable, Equatable {
