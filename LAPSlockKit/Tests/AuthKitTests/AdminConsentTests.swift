@@ -143,15 +143,60 @@ final class ConsentDiagnosticsTests: XCTestCase {
         XCTAssertNil(ConsentState.granted.actionLabel)
     }
 
-    func test_recoverableStatesOfferAnAction() {
+    /// Narrowed 2026-09-02. It used to assert that `roleMissing` offers an action too, which
+    /// encoded a reasonable intent — the state IS recoverable — but the only screen that
+    /// renders `actionLabel` is the SIGNED-OUT one, and its button opens the admin-consent
+    /// sheet. So the action sent somebody with a role problem to an explanation about
+    /// approving the app, and it could not have done better: you cannot activate a role
+    /// while signed out, because activation needs a token.
+    ///
+    /// A missing role is recoverable where the app has a session and knows Graph refused for
+    /// want of a role, which is the failed reveal. That is where PIM activation is offered.
+    func test_consentStatesOfferAnApprovalAction() {
         XCTAssertNotNil(ConsentState.organizationApprovalRequired.actionLabel)
         XCTAssertNotNil(ConsentState.grantedForThisUserOnly.actionLabel)
-        XCTAssertNotNil(ConsentState.roleMissing.actionLabel)
     }
 
     func test_roleMissingExplanationNamesLeastPrivilegedRole() {
         // Telling an admin "you lack permission" is useless; naming the role is not.
         let text = ConsentState.roleMissing.explanation
         XCTAssertTrue(text.contains("Cloud Device Administrator"))
+    }
+}
+
+// MARK: - roleMissing must not offer a consent action
+
+extension ConsentDiagnosticsTests {
+
+    /// A role problem and a consent problem have different fixes, and the only screen that
+    /// renders `actionLabel` opens the admin-consent sheet. Offering an action here sent
+    /// somebody who needs a directory role to an explanation about approving the app.
+    func test_roleMissingOffersNoAction() {
+        XCTAssertNil(ConsentState.roleMissing.actionLabel)
+        XCTAssertNil(ConsentState.granted.actionLabel)
+        XCTAssertNotNil(ConsentState.organizationApprovalRequired.actionLabel)
+        XCTAssertNotNil(ConsentState.grantedForThisUserOnly.actionLabel)
+    }
+
+    /// With no button, the explanation has to stand alone — so it names both the
+    /// least-privileged role that works and the way to obtain it.
+    func test_roleMissingExplainsItselfWithoutAnAction() {
+        let explanation = ConsentState.roleMissing.explanation
+        XCTAssertTrue(explanation.contains("Privileged Identity Management"))
+    }
+
+    /// A missing role is a Graph 403, never a sign-in failure: Entra authenticates you
+    /// regardless of which directory roles you hold. So this state cannot be produced from
+    /// an AuthError, and anything that tries to detect it at sign-in is looking in the wrong
+    /// place.
+    func test_aMissingRoleIsNotASignInFailure() {
+        for error in [AuthError.noAccount, .interactionRequired, .userCancelled, .tenantMismatch] {
+            XCTAssertNotEqual(ConsentDiagnostics.state(from: error), .roleMissing)
+        }
+        XCTAssertEqual(ConsentDiagnostics.state(from: .consentRequired), .organizationApprovalRequired)
+        // It comes from a Graph payload instead.
+        XCTAssertEqual(
+            ConsentDiagnostics.state(fromErrorDescription: "Authorization_RequestDenied"),
+            .roleMissing)
     }
 }

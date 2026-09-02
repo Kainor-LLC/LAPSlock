@@ -107,11 +107,22 @@ public enum ConsentState: Sendable, Equatable {
     }
 
     /// The single next action, phrased as a button label.
+    ///
+    /// **`roleMissing` deliberately offers none.** It used to return "How to fix this", and
+    /// the only place that renders it opens the admin-consent sheet — which explains getting
+    /// an administrator to approve the app, a different problem with a different fix, as this
+    /// enum's own doc comment says two cases above. Sending somebody with a role problem to
+    /// a consent explanation is worse than sending them nowhere, and the explanation for this
+    /// case is already self-contained: it names the least-privileged role that works and says
+    /// it can be activated just-in-time.
+    ///
+    /// The place a missing role is actually actionable is the failed reveal, where the app
+    /// knows for certain that Graph refused for want of a role and can offer PIM activation
+    /// directly.
     public var actionLabel: String? {
         switch self {
-        case .granted: return nil
+        case .granted, .roleMissing: return nil
         case .organizationApprovalRequired, .grantedForThisUserOnly: return "Get the approval link"
-        case .roleMissing: return "How to fix this"
         }
     }
 }
