@@ -139,6 +139,24 @@ public final class EntitlementManager {
         )
     }
 
+    /// True when a license is activated, but for a DIFFERENT organization than the one
+    /// currently signed in.
+    ///
+    /// Activation binds an install to one tenant. An administrator who activates in tenant A
+    /// and later signs into tenant B is not unlicensed — they hold a license, it just does
+    /// not apply here. Without this distinction the UI shows the activated branch with a
+    /// Refresh button that would fetch for tenant A while the user is looking at tenant B,
+    /// and offers no way to activate B at all.
+    ///
+    /// The `msp` tier is exempt, because working across customer tenants is the whole point
+    /// of that tier (section 7.4).
+    public func isBoundToAnotherTenant(signedInTenantId: String?) -> Bool {
+        guard let record = try? store.load() else { return false }
+        guard let signedIn = signedInTenantId?.lowercased(), !signedIn.isEmpty else { return false }
+        if state(signedInTenantId: signedInTenantId).tier.allowsTenantSwitching { return false }
+        return record.boundTenantId.lowercased() != signedIn
+    }
+
     /// Section 7.7. StoreKit and the tenant license are independent; either suffices.
     public func isPro(signedInTenantId: String?, storeKitEntitlementActive: Bool) -> Bool {
         storeKitEntitlementActive || state(signedInTenantId: signedInTenantId).tier.isPaid

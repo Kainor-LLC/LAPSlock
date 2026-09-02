@@ -360,3 +360,79 @@ final class EntitlementManagerTests: XCTestCase {
         return f.string(from: date)
     }
 }
+
+// MARK: - activated for a different tenant
+
+@MainActor
+final class EntitlementCrossTenantTests: XCTestCase {
+
+    private let tenantA = "4470dc21-a4b7-4729-a232-56d4c0eedf73"
+    private let tenantB = "11111111-2222-3333-4444-555555555555"
+
+    private var factory = TestTokenFactory()
+    private var fetcher = FakeFetcher()
+    private var store = InMemoryEntitlementStore()
+    private var clock = ManualMeterClock(start: Date(timeIntervalSince1970: 1_788_321_139))
+    private var manager: EntitlementManager!
+
+    override func setUp() {
+        super.setUp()
+        factory = TestTokenFactory()
+        fetcher = FakeFetcher()
+        store = InMemoryEntitlementStore()
+        clock = ManualMeterClock(start: Date(timeIntervalSince1970: 1_788_321_139))
+        manager = EntitlementManager(store: store, client: fetcher, verifier: factory.verifier, clock: clock)
+    }
+
+    private func token(_ tier: String, tenant: String) -> String {
+        factory.token(tenant: tenant, tier: tier, issuedAt: clock.now)
+    }
+
+    func test_aFreshInstallIsNotBoundToAnotherTenant() {
+        XCTAssertFalse(manager.isBoundToAnotherTenant(signedInTenantId: tenantA))
+    }
+
+    func test_activatedForThisTenantIsNotBoundElsewhere() async {
+        fetcher.respond(token: token("enterprise", tenant: tenantA))
+        _ = await manager.activate(tenantId: tenantA)
+        XCTAssertFalse(manager.isBoundToAnotherTenant(signedInTenantId: tenantA))
+    }
+
+    func test_activatedForAnotherTenantIsDetected() async {
+        // The case that shipped broken: activate in one organization, sign into another.
+        // Settings showed the activated branch with a Refresh that would have fetched for
+        // the wrong tenant, and no way to activate the one in front of you.
+        fetcher.respond(token: token("enterprise", tenant: tenantA))
+        _ = await manager.activate(tenantId: tenantA)
+
+        XCTAssertTrue(manager.isBoundToAnotherTenant(signedInTenantId: tenantB))
+        XCTAssertEqual(manager.state(signedInTenantId: tenantB).tier, .free)
+    }
+
+    func test_anMSPLicenseIsNeverBoundElsewhere() async {
+        // Exempt by design: an MSP signs into customer tenants for a living.
+        fetcher.respond(token: token("msp", tenant: tenantA))
+        _ = await manager.activate(tenantId: tenantA)
+        XCTAssertFalse(manager.isBoundToAnotherTenant(signedInTenantId: tenantB))
+    }
+
+    func test_activatingForTheNewTenantRebinds() async {
+        fetcher.respond(token: token("enterprise", tenant: tenantA))
+        _ = await manager.activate(tenantId: tenantA)
+
+        fetcher.respond(token: token("free", tenant: tenantB))
+        let outcome = await manager.activate(tenantId: tenantB)
+
+        XCTAssertEqual(outcome, .updated(.free))
+        XCTAssertFalse(manager.isBoundToAnotherTenant(signedInTenantId: tenantB))
+        // The old token is gone, not kept alongside: an install holds one license.
+        XCTAssertTrue(manager.isBoundToAnotherTenant(signedInTenantId: tenantA))
+    }
+
+    func test_signedOutDoesNotReportBoundElsewhere() async {
+        // Nothing is "another tenant" when there is no current tenant to compare against.
+        fetcher.respond(token: token("enterprise", tenant: tenantA))
+        _ = await manager.activate(tenantId: tenantA)
+        XCTAssertFalse(manager.isBoundToAnotherTenant(signedInTenantId: nil))
+    }
+}

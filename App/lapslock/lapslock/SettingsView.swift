@@ -108,6 +108,7 @@ struct SettingsView: View {
     // Organization license
     @State private var license: EntitlementState = .free
     @State private var isLicenseActivated = false
+    @State private var licenseIsForAnotherOrganization = false
     @State private var isFetchingLicense = false
     @State private var licenseMessage: String?
 
@@ -292,7 +293,29 @@ struct SettingsView: View {
     private var licenseSection: some View {
         if let entitlement, !isDemo {
             Section {
-                if isLicenseActivated {
+                if isLicenseActivated, licenseIsForAnotherOrganization {
+                    // Activated, but for a different tenant. Not unlicensed — so do not
+                    // show a bare Activate button as if nothing had happened — but the
+                    // license does not apply here, so Refresh would fetch for the wrong
+                    // organization. Say which situation this is and offer the way out.
+                    LabeledContent("Plan", value: "Free here")
+                    Button {
+                        guard let tenantId else { return }
+                        Task { await runLicenseAction { await entitlement.activate(tenantId: tenantId) } }
+                    } label: {
+                        Label("Activate for this organization", systemImage: "checkmark.seal")
+                    }
+                    .disabled(isFetchingLicense || tenantId == nil)
+                    Button(role: .destructive) {
+                        entitlement.remove()
+                        licenseMessage = nil
+                        refreshLicense()
+                        entitlementDidChange?()
+                    } label: {
+                        Label("Remove license", systemImage: "xmark.circle")
+                    }
+                    .disabled(isFetchingLicense)
+                } else if isLicenseActivated {
                     LabeledContent("Plan", value: Self.tierName(license.tier))
                     if let expires = license.expiresAt {
                         LabeledContent(
@@ -332,7 +355,13 @@ struct SettingsView: View {
             } header: {
                 Text("Organization license")
             } footer: {
-                Text(isLicenseActivated
+                Text(licenseIsForAnotherOrganization
+                    ? """
+                      This license belongs to a different Microsoft organization, so it does \
+                      not apply while you are signed in here. Activating for this \
+                      organization replaces it; an install holds one license at a time.
+                      """
+                    : isLicenseActivated
                     ? """
                       Your license is keyed to this Microsoft tenant and checked against \
                       Kainor about once a month. Nothing about which devices or credentials \
@@ -351,6 +380,7 @@ struct SettingsView: View {
         guard let entitlement else { return }
         isLicenseActivated = entitlement.isActivated
         license = entitlement.state(signedInTenantId: tenantId)
+        licenseIsForAnotherOrganization = entitlement.isBoundToAnotherTenant(signedInTenantId: tenantId)
     }
 
     private func runLicenseAction(_ action: () async -> EntitlementFetchOutcome?) async {

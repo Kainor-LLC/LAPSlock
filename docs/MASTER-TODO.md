@@ -12,6 +12,26 @@ Legend: ✅ done · 🟡 partial · ⬜ not started · 🔵 not-code · ⚠️ n
 Items below either need a decision, a device, or an account only you hold. Everything else
 from this session is committed (not pushed) with all three checks green.
 
+## Found during the 2026-09-02 device test
+- ✅ **Cross-tenant license state was wrong, fixed on the spot.** `isActivated` meant only
+  "a record exists", so activating in one organization and then signing into another showed
+  the activated branch with a Refresh button that would have fetched for the wrong tenant and
+  no way to activate the one on screen. `EntitlementManager.isBoundToAnotherTenant` now makes
+  the distinction and Settings gains a third branch: "Free here" plus "Activate for this
+  organization". `msp` is exempt. Six tests, suite at 199.
+- ⬜ **Settings is unreachable while signed out.** Found on device: after a failed sign-in
+  the only route to the diagnostics report is via demo mode. `rotationSection` and
+  `macOSSection` are not conditional, so this is not a matter of passing nils — the sections
+  need gating before a signed-out Settings can exist. Small, worth doing.
+- ⬜ **The app's accent color is not in the icon.** `Brand.signal` safety orange `#D9480F`
+  tints every action, the Face ID glyph and the countdown ring, but the shipping mark is
+  navy `#16233A`, steel `#4A6E96` and cap `#EEF3F8` with no orange anywhere. `Brand.pitWall`
+  `#131E2E` is also a near-miss against the icon navy. The palette and its names (`pitWall`,
+  `signal`, "pit-lane language") are PitLAPS-era leftovers that the rename swept in code but
+  not in identity. **Steel is the obvious replacement since it is already in the mark, but it
+  reads calmer than orange on a reveal action, so it is a founder call.** This was never in
+  this file, but it should have been noticed from `design/icons/README.md`.
+
 ## Needs your hands on a phone
 - **Auth diagnostics.** With Authenticator installed, force a sign-in failure (wrong tenant
   is easiest) and then Settings → Gather diagnostics. Expect a "Last sign-in or token
