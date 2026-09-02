@@ -4,6 +4,7 @@ import Combine
 import AuthKit
 import AuthKitMSAL
 import CredentialKit
+import DiagnosticsKit
 import InventoryKit
 import LicensingKit
 
@@ -225,16 +226,42 @@ final class AppRootModel: ObservableObject {
             // Consent problems get a recovery path, not just an error (§8).
             if let state = ConsentDiagnostics.state(from: error) {
                 consentState = state
+                await recordSignInFailure(.consentRequired)
             } else if case .userCancelled = error {
+                await recordSignInFailure(.userCancelled)
                 return                      // user chose not to continue; not an error
             } else if case .tenantMismatch = error {
                 signInError = "The sign-in came back for a different organization than expected. Sign in again."
+                await recordSignInFailure(.tenantMismatch)
             } else {
                 signInError = "Sign-in didn't complete. Check your connection and try again."
+                await recordSignInFailure(.unknown)
             }
         } catch {
             signInError = "Sign-in didn't complete. Check your connection and try again."
+            await recordSignInFailure(.unknown)
         }
+    }
+
+    /// Records a sign-in failure with whatever allowlisted detail MSAL left behind.
+    ///
+    /// This is the change the 2026-08-26 broker bug asked for: the user still sees a plain
+    /// sentence, but the support report now carries the MSAL code, the AADSTS code, the
+    /// correlation ID and whether the broker was in the path — and nothing else, because
+    /// `AuthFailureDetail` and `DiagnosticEvent` each refuse anything that is not a number,
+    /// a bool, or a string of a fixed shape.
+    private func recordSignInFailure(_ outcome: DiagnosticOutcome) async {
+        let detail = await auth?.lastAuthFailure
+        await DiagnosticsRecorder.shared.record(DiagnosticEvent(
+            operation: .signIn,
+            outcome: outcome,
+            httpStatus: detail?.httpStatus,
+            msalErrorCode: detail?.msalErrorCode,
+            aadErrorCode: detail?.aadErrorCode,
+            oauthError: detail?.oauthError,
+            correlationId: detail?.correlationId,
+            brokerInvolved: detail?.brokerInvolved
+        ))
     }
 
     func signOut() async {
@@ -340,7 +367,8 @@ struct AppRootView: View {
                             meter: RevealMeters.live,
                             isPro: root.isPro,
                             entitlement: Entitlements.live,
-                            entitlementDidChange: { root.recomputeEntitlement() }
+                            entitlementDidChange: { root.recomputeEntitlement() },
+                            lastAuthFailure: { await session.auth.lastAuthFailure }
                         )
                     },
                     detailBuilder: { device in

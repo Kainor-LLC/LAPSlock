@@ -483,8 +483,8 @@ Others:
 1. **Entitlement backend — in progress.** Infrastructure provisioned, contract written and
    published. Next is the ES256 key, the licenses table, the Function code, and the client
    half. This is the whole revenue path.
-2. **Auth diagnostics in the support report** — MSAL/AAD error code, correlation ID, broker
-   path flag, allowlisted so no authorization code can ride along in an error description.
+2. ~~**Auth diagnostics in the support report**~~ — DONE 2026-09-02 (see MASTER-TODO); needs a
+   device test against a real broker failure.
    Promoted from nice-to-have to necessary by the broker bug: a customer hitting the same
    failure today gets "check your connection" and no path forward.
 3. **Search only covers loaded pages** — a device that exists is not found until the admin
