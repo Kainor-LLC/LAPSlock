@@ -120,6 +120,13 @@ cross-tenant license state, no sign-out button anywhere, and the Activate button
 the organization it would bind to. Worth remembering the next time a green suite feels like
 proof.
 
+## Founder intent, stated 2026-09-02
+- **If the app earns money, upgrade to Microsoft 365 Business Premium** (which includes Entra
+  ID P2) and **move the work email into the Kainor tenant**. Worth knowing because it changes
+  several assumptions: P2 stops being a rented test license and becomes permanent, the Kainor
+  tenant becomes a real working directory rather than a shell, and the tenant would then hold
+  actual business mail — which raises the bar on anything that touches it.
+
 ## Needs a decision
 - **Search only covers loaded pages** (the #3 item in the decided order). This is a design
   call, so I did not touch it. Three shapes, with a recommendation:
@@ -614,141 +621,27 @@ macOS password retrieval.
   unreachable, but "may be unreachable" is not the standard this project holds for credential
   lifetime — verify or handle it.
 
-  **⚠️ CANNOT BE FULLY TESTED HERE, and manufacturing a test tenant was investigated and
-  abandoned 2026-09-02.** Every route costs something that a single test does not justify:
+  ✅ **VERIFIED END TO END ON DEVICE 2026-09-02.** Entra ID P2 was purchased ($12/month on
+  monthly commitment, not the $9 list — the premium is the price of being able to cancel
+  cleanly), which unblocked add-on tenant creation. A governed workforce tenant was created,
+  `connor@kainor.com` invited into it as an external guest, and the switch exercised from the
+  app.
 
-  * *Microsoft 365 Developer Program* — no longer eligible; it now requires a Visual Studio
-    subscription.
-  * *A plain workforce tenant* — the Azure portal no longer offers one. The choices are
-    **governed workforce** or **external**, and legacy has been retired from that flow.
-  * *Governed workforce* — **attempted 2026-09-02 and refused outright**: "Base-tenant
-    4470dc21 does not have a paid license. Hence add-on tenant creation is not allowed on
-    this base-tenant." A pay-as-you-go Azure subscription is not a paid Entra license, so
-    add-on tenant creation is blocked on the Kainor tenant as it stands. See the licensing
-    note below.
-  * *External* — wrong product. Entra External ID is a CIAM directory for customer-facing
-    apps, not an organization.
-  * *An M365 Business trial* — creates a tenant, but auto-renews and risks a bill, which is
-    not a trade worth making for one test.
+  What that proves, and it was unprovable the same morning: **the re-pointed §3.3 guard
+  accepts a token for a foreign tenant when deliberately pinned to it**, MSAL acquires
+  against an arbitrary tenant authority for a guest account, switching back to the home
+  organization works, and the persistence design holds — after a relaunch the app is in its
+  own tenant while the customer organization is still listed in the picker.
 
-  ### 🔵 Entra ID P2 would unblock this AND PIM, for about $9
+  The device list is empty in the dev tenant, which is correct: it has no Intune and no
+  devices. The switch validates by acquiring a token, so an empty list afterwards is a
+  property of the directory rather than a failure of the switcher.
 
-  Checked 2026-09-02: Entra ID P1 is $6/user/month list, **P2 is $9**, ID Governance about
-  $12. One user, so that is the entire bill; expect roughly 20% more on month-to-month
-  billing with no annual commitment.
-
-  **P2 rather than P1, and the tenant test is the lesser reason. PIM requires P2**, and "PIM
-  role activation from the app" is on this list as the most annoying gap in the workflow. It
-  is currently not merely untestable but *unbuildable* — the MFA claims-challenge handling
-  cannot be written without a tenant where PIM exists to try it against. So one purchase
-  converts two blocked items:
-
-  1. A paid license should satisfy the add-on tenant requirement, closing the MSP switch gap.
-  2. PIM becomes developable at all.
-
-  **Two things to verify rather than assume.** That P1/P2 actually satisfies "paid license"
-  for add-on tenant creation — the error names the absence of one and P2 is a paid Entra
-  license, so it should, but buy a single month and try before committing further. And
-  whether the add-on tenant survives cancelling P2; the directory should exist
-  independently, though the governance relationship may lapse, which does not matter here
-  because only the directory is needed.
-
-  At $9 against the $99 already spent on the Apple program, this is a rounding error on a
-  deductible business expense, and it is the difference between a roadmap feature being
-  buildable or not.
-
-  **Buy-then-cancel is the supported pattern, and one checkout choice decides whether it
-  works. Pick MONTHLY commitment, not annual.** Both are presented as a per-user monthly
-  price, which is the trap: cancelling a monthly subscription ends it at the end of the paid
-  month with no further charge, while cancelling an annual-billed-monthly one still bills the
-  remainder of the year. Re-buying later is unrestricted. Cancel path is Microsoft 365 admin
-  center → the subscription → Billing settings → Subscription status → Cancel subscription.
-
-  **Try the free P2 trial first, but know what it will not do.** Entra ID P2 has historically
-  offered a 30-day trial, which should be enough to develop PIM for nothing. It will very
-  likely NOT unblock add-on tenant creation, because Microsoft's own docs say customers on a
-  free or trial subscription cannot create additional tenants, and the error names the absence
-  of a *paid* license. So: trial for PIM, a paid month only if the MSP tenant test earns it
-  on its own.
-
-  **Batch the PIM work into the licensed window.** When the license lapses PIM stops working
-  and any eligible assignments configured during the term become unusable, so this wants one
-  focused block — build the claims-challenge handling, test it, let it lapse — rather than
-  months of on-and-off licensing.
-
-  **Until then, the first real test of an MSP tenant switch is a customer, and that was the
-  design assumption rather than a surprise.** It is why `SwitchFailure` explains all ten error cases
-  on screen and why `DiagnosticOperation.tenantSwitch` carries the AADSTS code and
-  correlation ID into the support report. If an early MSP prospect appears, ask them to
-  invite the Kainor account as a guest in a sandbox of theirs — that is a ten-minute favour
-  and it closes this gap properly.
-
-  Original note: Guest/B2B needs a second tenant that has invited the
-  Kainor account; GDAP needs a real partner relationship. The auth layer is unit tested and
-  the guard is covered, but the end-to-end MSP path needs a customer tenant to prove.
-
-- ~~⚠️ Tenant switcher — reclassified 2026-09-02 from a convenience to a PREREQUISITE for
-  selling the MSP tier.** Verified in `MSALAuthManager`: tokens are only ever requested for
-  `account.tenantId`, the signed-in account's own home tenant. There is no code path to any
-  other tenant. That means the three ways MSPs actually reach customer tenants divide
-  sharply:
-  * **A dedicated admin account in each customer tenant** (`admin@customer.com`) — works
-    today. The account's home tenant IS the customer tenant, so signing out and back in with
-    the other account just works, and an `msp` license travels because that tier is exempt
-    from the signed-in-tenant check.
-  * **Guest / B2B**, where `tech@msp.com` is invited into the customer tenant — **does not
-    work.** The ID token's `tid` is the MSP's own tenant, so the app lists the MSP's devices
-    and there is no way to reach the customer's.
-  * **GDAP / Partner Center delegated admin** — **does not work**, same reason.
-
-  Microsoft pushed partners off legacy DAP onto GDAP, so the second and third cases are
-  probably where most MSPs live. **Selling MSP org at $999/yr before this exists would mean
-  selling a tier the app cannot serve for most buyers.** Either build the switcher before
-  offering the MSP tiers, or scope the MSP pricing explicitly to the dedicated-account model
-  and say so at the point of sale.
-
-  Note this was only reachable at all once Sign out existed (same day) — before that an MSP
-  could not change accounts without force-quitting.
-- ✅ "Copy your tenant ID" — Settings → About, live mode only, 2026-09-02. Plain pasteboard,
-  deliberately not the expiring credential one: a tenant ID is public.
-- ⬜ BYO app registration UI (the config seam already exists)
-- ⬜ Entitlement check: call `/entitlement`, cache signed JWT, 14–30 day offline grace
-- ⬜ **App Attest gating** on `/entitlement` — **phase 2, and NOT "the real anti-sideload
-  teeth" as this line used to claim.** Against a source-available app there are no teeth,
-  only friction: App Attest proves a request came from *your* bundle ID, and anyone
-  building from the public source has their own. See "Why App Attest is phase 2, not v1"
-  in the Backend section for the full cost/benefit.
-
-## App icon
-
-- ✅ **Shipping icon, 2026-08-29** — a keyhole inside a photoreal tire tread ring, navy
-  field. Comes from `design/icons/texturize-icon.py` (`SHIP_BASE` / `SHIP_LIGHT` there are
-  authoritative), which imports geometry from `render-icon.py` and adds the print
-  treatment. `render-icon.py` no longer emits shipping assets — it used to, and running it
-  silently overwrote the icon with the earlier keycap.
-
-  Full reasoning, palette, and the tread patterns that FAILED (poker chip, camera shutter,
-  recycle glyph, and sparse blocks turning to noise below 87px) are in
-  `design/icons/README.md`.
-
-- ⬜ **Alternate icon picker** — deferred, and the premise changed. The orange asset this
-  item assumed no longer exists: `AppIcon-J4-orange-1024.png` was deleted in the rename,
-  and the new mark has no orange variant. Reviving this means designing a second variant
-  first, which is a design decision, not a 45-minute wiring job.
-
-  If it is ever built, two things learned earlier still hold: iOS shows an unsuppressable
-  system alert on every icon change, so it is two taps for a preference set once; and icon
-  variants cannot appear in App Store screenshots, so nobody discovers the feature unless
-  they open Settings. Low priority for an audience that opens Settings once and rarely
-  again.
-
-- ⬜ **Hand-authored dark and tinted icon variants.** iOS derives them automatically today,
-  which is acceptable. Note that `texturize-icon.py` already emits Icon Composer layers
-  (background / tread / keyhole) for Liquid Glass, and **nothing consumes them yet** — the
-  shipping icon is still a flat 1024. That is the real open thread here: the layers exist
-  without an `.icon` file.
-
-## Loose ends from the build spec
+  Routes to a test tenant that did NOT work, recorded so nobody retries them: the Microsoft
+  365 Developer Program now requires a Visual Studio subscription; the Azure portal no longer
+  offers a plain workforce tenant, only governed or external; External is the wrong product
+  (a CIAM directory, not an organization); and add-on tenant creation is refused outright
+  without a **paid** Entra license, which a pay-as-you-go Azure subscription is not.
 
 - 🟡 **Dark mode audit** — semantic colors adapt, but the reveal card's hardcoded navy
   needs verifying. You named this explicitly; it's cheap and worth doing with the toggle.
