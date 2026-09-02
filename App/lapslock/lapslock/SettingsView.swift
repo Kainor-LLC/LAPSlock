@@ -86,6 +86,10 @@ struct SettingsView: View {
     /// The most recent MSAL failure, allowlisted, read at export time. Covers silent token
     /// failures during browsing as well as sign-in, with one hook instead of one per call.
     var lastAuthFailure: (() async -> AuthFailureDetail?)? = nil
+    /// Domain of the signed-in account, shown on the Activate button so nobody licenses an
+    /// organization they did not mean to. An MSP signed into a customer tenant is the case
+    /// this exists for.
+    var signedInDomain: String? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isRequestingConsent = false
@@ -303,7 +307,7 @@ struct SettingsView: View {
                         guard let tenantId else { return }
                         Task { await runLicenseAction { await entitlement.activate(tenantId: tenantId) } }
                     } label: {
-                        Label("Activate for this organization", systemImage: "checkmark.seal")
+                        Label(Self.activateLabel(signedInDomain), systemImage: "checkmark.seal")
                     }
                     .disabled(isFetchingLicense || tenantId == nil)
                     Button(role: .destructive) {
@@ -343,7 +347,7 @@ struct SettingsView: View {
                         guard let tenantId else { return }
                         Task { await runLicenseAction { await entitlement.activate(tenantId: tenantId) } }
                     } label: {
-                        Label("Activate organization license", systemImage: "checkmark.seal")
+                        Label(Self.activateLabel(signedInDomain), systemImage: "checkmark.seal")
                     }
                     .disabled(isFetchingLicense || tenantId == nil)
                 }
@@ -358,8 +362,12 @@ struct SettingsView: View {
                 Text(licenseIsForAnotherOrganization
                     ? """
                       This license belongs to a different Microsoft organization, so it does \
-                      not apply while you are signed in here. Activating for this \
-                      organization replaces it; an install holds one license at a time.
+                      not apply while you are signed in here. Activating replaces it; an \
+                      install holds one license at a time.
+
+                      If you manage several organizations, activate against your own \
+                      instead. An MSP license covers you in every tenant you sign into, \
+                      with nothing to re-activate.
                       """
                     : isLicenseActivated
                     ? """
@@ -371,9 +379,19 @@ struct SettingsView: View {
                       An organization license is keyed to your Microsoft tenant. Until you \
                       activate one, LAPSlock never contacts Kainor: it talks to Microsoft and \
                       nothing else, which you can confirm with a network proxy.
+
+                      If you manage several organizations, activate while signed in to your \
+                      own. An MSP license then covers every tenant you sign into.
                       """)
             }
         }
+    }
+
+    /// Names the organization being licensed. Falls back to generic wording rather than
+    /// showing a GUID, which would mean nothing to the person reading it.
+    static func activateLabel(_ domain: String?) -> String {
+        guard let domain else { return "Activate organization license" }
+        return "Activate license for \(domain)"
     }
 
     private func refreshLicense() {

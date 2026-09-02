@@ -167,6 +167,19 @@ final class AppRootModel: ObservableObject {
         return nil
     }
 
+    /// Domain of the signed-in account, for labelling the Activate button.
+    ///
+    /// The UPN's domain, not the tenant GUID: an administrator recognises "contoso.com"
+    /// instantly and a GUID not at all, and the whole point of showing it is to stop
+    /// somebody activating against an organization they did not mean to.
+    var signedInDomain: String? {
+        if case .live(let account) = mode {
+            let domain = account.username.split(separator: "@").last.map(String.init)
+            return domain?.isEmpty == false ? domain : nil
+        }
+        return nil
+    }
+
     var consentURL: URL? {
         let tenant: String? = {
             if case .live(let account) = mode { return account.tenantId }
@@ -368,7 +381,8 @@ struct AppRootView: View {
                             isPro: root.isPro,
                             entitlement: Entitlements.live,
                             entitlementDidChange: { root.recomputeEntitlement() },
-                            lastAuthFailure: { await session.auth.lastAuthFailure }
+                            lastAuthFailure: { await session.auth.lastAuthFailure },
+                            signedInDomain: root.signedInDomain
                         )
                     },
                     detailBuilder: { device in
