@@ -60,7 +60,7 @@ final class StubProtocol: URLProtocol {
             return data
         } ?? request.httpBody))
 
-        let key = Self.replies.keys.first { path.contains($0) }
+        let key = Self.replies.keys.first { path.lowercased().contains($0.lowercased()) }
         let reply = key.flatMap { k -> Reply? in
             guard var queue = Self.replies[k], !queue.isEmpty else { return nil }
             let next = queue.removeFirst()
@@ -207,7 +207,7 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         StubProtocol.replies = ["roleAssignmentScheduleRequests": [
             .init(status: 201, body: #"{"id":"r1","status":"Provisioned"}"#)]]
 
-        let outcome = try await service.activate(role, justification: "ticket INC-1", ticketNumber: nil)
+        let outcome = try await service.activate(role, justification: "ticket INC-1", ticketNumber: nil, duration: "PT1H")
         guard case .activated = outcome else { return XCTFail("expected activated") }
 
         let posted = StubProtocol.requests.first { $0.method == "POST" }
@@ -227,7 +227,7 @@ final class PrivilegedAccessServiceTests: XCTestCase {
             .init(status: 201, body: #"{"id":"r1","status":"Provisioned"}"#),
         ]]
 
-        let outcome = try await service.activate(role, justification: "ticket INC-1", ticketNumber: nil)
+        let outcome = try await service.activate(role, justification: "ticket INC-1", ticketNumber: nil, duration: "PT1H")
         guard case .activated = outcome else { return XCTFail("expected activated after the retry") }
 
         let withClaims = auth.calls.filter { $0.claims != nil }
@@ -243,7 +243,7 @@ final class PrivilegedAccessServiceTests: XCTestCase {
             .init(status: 401, body: "{}", headers: claimsHeader),
         ]]
         do {
-            _ = try await service.activate(role, justification: "j", ticketNumber: nil)
+            _ = try await service.activate(role, justification: "j", ticketNumber: nil, duration: "PT1H")
             XCTFail("expected the second challenge to surface")
         } catch {
             guard case .claimsChallenge = error as? PrivilegedAccessError else {
@@ -258,7 +258,7 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         StubProtocol.replies = ["roleAssignmentScheduleRequests": [
             .init(status: 401, body: "{}", headers: ["WWW-Authenticate": "Bearer error=\"invalid_token\""])]]
         do {
-            _ = try await service.activate(role, justification: "j", ticketNumber: nil)
+            _ = try await service.activate(role, justification: "j", ticketNumber: nil, duration: "PT1H")
             XCTFail("expected notAuthorized")
         } catch {
             XCTAssertEqual(error as? PrivilegedAccessError, .notAuthorized)
@@ -266,10 +266,58 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         XCTAssertTrue(auth.calls.allSatisfy { $0.claims == nil }, "no claims retry for a plain 401")
     }
 
+    func test_anAcrsFourHundredIsRetriedAsAClaimsChallenge() async throws {
+        // The failure observed on device: a PIM policy requiring a Conditional Access
+        // authentication context answers 400, not 401, and carries the required claim in
+        // the message. Nothing watched for it, so activation died on a bare bad request.
+        // Built rather than written as a literal: the message contains a JSON object, so a
+        // hand-escaped literal needs backslashes, and backslashes in Swift string literals
+        // have been destroyed three times today by the text-processing step that writes this
+        // file. JSONSerialization does the escaping at runtime and there is nothing to eat.
+        let claims = #"{"access_token":{"acrs":{"essential":true,"value":"c1"}}}"#
+        let message = "RoleAssignmentRequestAcrsValidationFailed claims=" + claims
+        let acrsBody = String(
+            data: try JSONSerialization.data(
+                withJSONObject: ["error": ["code": "UnknownError", "message": message]]),
+            encoding: .utf8)!
+        StubProtocol.replies = ["assignmentScheduleRequests": [
+            .init(status: 400, body: acrsBody),
+            .init(status: 201, body: #"{"id":"r1","status":"Provisioned"}"#),
+        ]]
+
+        let group = EligibleAccess(
+            id: "g", kind: .group(groupId: "gggggggg-1111-2222-3333-444455556666", accessId: .member),
+            displayName: "LAPS Readers", eligibilityEndsAt: nil)
+
+        let outcome = try await service.activate(group, justification: "j", ticketNumber: nil, duration: "PT1H")
+        guard case .activated = outcome else { return XCTFail("expected activated after re-authenticating") }
+
+        let withClaims = auth.calls.filter { $0.claims != nil }
+        XCTAssertEqual(withClaims.count, 1, "exactly one claims-carrying acquisition")
+        XCTAssertTrue(withClaims.first?.claims?.contains("acrs") == true)
+        XCTAssertTrue(withClaims.first?.interactive == true, "satisfying an auth context needs a sign-in")
+    }
+
+    func test_anOrdinaryFourHundredIsNotRetried() async {
+        // Every other bad request must not trigger re-authentication, which cannot fix it.
+        StubProtocol.replies = ["assignmentScheduleRequests": [
+            .init(status: 400, body: String(
+                data: try! JSONSerialization.data(withJSONObject: [
+                    "error": ["code": "InvalidRequest", "message": "The duration exceeds policy"]]),
+                encoding: .utf8)!)]]
+        do {
+            _ = try await service.activate(role, justification: "j", ticketNumber: nil, duration: "PT8H")
+            XCTFail("expected serviceError")
+        } catch {
+            XCTAssertEqual(error as? PrivilegedAccessError, .serviceError(status: 400, code: "InvalidRequest"))
+        }
+        XCTAssertTrue(auth.calls.allSatisfy { $0.claims == nil }, "no claims retry for an ordinary 400")
+    }
+
     func test_pendingApprovalSurvivesTheServiceLayer() async throws {
         StubProtocol.replies = ["roleAssignmentScheduleRequests": [
             .init(status: 201, body: #"{"id":"r9","status":"PendingApproval"}"#)]]
-        let outcome = try await service.activate(role, justification: "j", ticketNumber: nil)
+        let outcome = try await service.activate(role, justification: "j", ticketNumber: nil, duration: "PT1H")
         guard case .pendingApproval(let id) = outcome else { return XCTFail("expected pending") }
         XCTAssertEqual(id, "r9")
     }
@@ -279,7 +327,7 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         StubProtocol.replies = ["roleAssignmentScheduleRequests": [
             .init(status: 400, body: #"{"error":{"code":"RoleAssignmentExists","message":"already active"}}"#)]]
         do {
-            _ = try await service.activate(role, justification: "j", ticketNumber: nil)
+            _ = try await service.activate(role, justification: "j", ticketNumber: nil, duration: "PT1H")
             XCTFail("expected alreadyActive")
         } catch {
             XCTAssertEqual(error as? PrivilegedAccessError, .alreadyActive)
@@ -291,7 +339,7 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         // a nonexistent directory object.
         auth.account = AdminAccount(id: "x.y", tenantId: "t", username: "u", objectId: nil)
         do {
-            _ = try await service.activate(role, justification: "j", ticketNumber: nil)
+            _ = try await service.activate(role, justification: "j", ticketNumber: nil, duration: "PT1H")
             XCTFail("expected notAuthorized")
         } catch {
             XCTAssertEqual(error as? PrivilegedAccessError, .notAuthorized)

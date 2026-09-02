@@ -135,8 +135,15 @@ public enum PrivilegedAccessGraph {
     public static let groupReadScope = "PrivilegedEligibilitySchedule.Read.AzureADGroup"
     public static let groupActivateScope = "PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup"
 
+    // The activation POLICY, which says how long activation may last, whether a
+    // justification or ticket is required, and whether a Conditional Access authentication
+    // context is demanded. Read-only, and separate scopes for the two surfaces.
+    public static let policyPath = "/v1.0/policies/roleManagementPolicies"
+    public static let rolePolicyReadScope = "RoleManagementPolicy.Read.Directory"
+    public static let groupPolicyReadScope = "RoleManagementPolicy.Read.AzureADGroup"
+
     /// Read scopes.
-    public static let readScopes = [roleReadScope, groupReadScope]
+    public static let readScopes = [roleReadScope, groupReadScope, rolePolicyReadScope, groupPolicyReadScope]
 
     /// Activation scopes.
     public static let activateScopes = [roleActivateScope, groupActivateScope]

@@ -33,6 +33,9 @@ struct PrivilegedAccessView: View {
     /// on and no consent in the tenant they just signed into, and telling them to go
     /// toggle a switch off and on again is a puzzle, not an instruction.
     let requestConsent: (() async -> String?)?
+    /// The tenant's activation rules for one piece of access. Never fails — an unreadable
+    /// policy returns `.unknown` and the sheet behaves as it did before policies were read.
+    let policy: (EligibleAccess) async -> ActivationPolicy
 
     @Environment(\.dismiss) private var dismiss
 
@@ -45,6 +48,8 @@ struct PrivilegedAccessView: View {
     @State private var outcome: ActivationOutcome?
     @State private var isRequestingConsent = false
     @State private var duration = ActivationRequest.defaultDuration
+    @State private var activePolicy: ActivationPolicy = .unknown
+    @State private var isLoadingPolicy = false
 
     private enum Phase: Equatable {
         case loading
@@ -89,6 +94,7 @@ struct PrivilegedAccessView: View {
             ForEach(eligible) { access in
                 Button {
                     selected = access
+                    Task { await loadPolicy(for: access) }
                 } label: {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 2) {
@@ -114,6 +120,25 @@ struct PrivilegedAccessView: View {
     ///
     /// Groups are never claimed to grant credential access — a group's id says nothing about
     /// which roles it carries, so promoting one would be a guess presented as fact.
+    /// Says what the tenant actually requires, once its policy has been read, rather than
+    /// hedging about what tenants generally require.
+    private var reasonFooter: String {
+        var parts = ["The reason is recorded in your organization's own audit log alongside the activation."]
+        if activePolicy.justificationRequired {
+            parts.append("Your organization requires one.")
+        }
+        if activePolicy.ticketRequired {
+            parts.append("Your organization also requires a ticket number.")
+        }
+        if let maximum = activePolicy.maximumDuration, let hours = ActivationPolicy.hours(maximum) {
+            parts.append("The longest it permits is \(ActivationPolicy.label(hours: hours)).")
+        }
+        if activePolicy.authenticationContextClaim != nil {
+            parts.append("It also requires you to verify your identity, so expect a sign-in prompt.")
+        }
+        return parts.joined(separator: " ")
+    }
+
     private func subtitle(for access: EligibleAccess) -> String {
         switch access.kind {
         case .directoryRole:
@@ -139,20 +164,15 @@ struct PrivilegedAccessView: View {
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
             Picker("Activate for", selection: $duration) {
-                ForEach(ActivationRequest.durations, id: \.iso) { option in
+                ForEach(activePolicy.offeredDurations, id: \.iso) { option in
                     Text(option.label).tag(option.iso)
                 }
             }
+            .disabled(isLoadingPolicy)
         } header: {
             Text("Reason")
         } footer: {
-            Text("""
-                The reason is recorded in your organization's own audit log alongside the \
-                activation, and many tenants require it.
-
-                Your organization sets a maximum activation length. Asking for longer than \
-                it allows is refused, so start short.
-                """)
+            Text(reasonFooter)
         }
     }
 
@@ -166,13 +186,23 @@ struct PrivilegedAccessView: View {
                     Text(phase == .activating ? "Activating…" : "Activate")
                 }
             }
-            .disabled(selected == nil || justification.trimmingCharacters(in: .whitespaces).isEmpty || phase == .activating)
+            .disabled(!canActivate)
         } footer: {
             Text("""
                 Microsoft may ask you to sign in again. That is required: it will not grant \
                 privileged access unless you have verified your identity in this session.
                 """)
         }
+    }
+
+    /// Everything the tenant's own policy requires, so Activate is not a button that fails.
+    private var canActivate: Bool {
+        guard selected != nil, phase != .activating, !isLoadingPolicy else { return false }
+        guard !justification.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        if activePolicy.ticketRequired, ticket.trimmingCharacters(in: .whitespaces).isEmpty {
+            return false
+        }
+        return true
     }
 
     // MARK: - outcome, where over-promising is the danger
@@ -249,6 +279,23 @@ struct PrivilegedAccessView: View {
 
     // MARK: - actions
 
+    /// Reads the policy for the chosen access and clamps the duration into it.
+    ///
+    /// Clamping matters as much as the picker: a duration chosen before the policy arrived
+    /// could exceed it, and the request would be refused with a 400 that names no reason.
+    private func loadPolicy(for access: EligibleAccess) async {
+        isLoadingPolicy = true
+        let read = await policy(access)
+        activePolicy = read
+        let allowed = read.offeredDurations.map(\.iso)
+        if !allowed.contains(duration) {
+            duration = allowed.first ?? ActivationRequest.defaultDuration
+        }
+        // A tenant that requires a ticket should not offer an Activate button that fails, so
+        // the requirement is reflected in the field's own validation below.
+        isLoadingPolicy = false
+    }
+
     private func load() async {
         phase = .loading
         failure = nil
@@ -260,6 +307,7 @@ struct PrivilegedAccessView: View {
             selected = access.count == 1 ? access.first : nil
             justification = defaultJustification
             phase = .ready
+            if let only = selected { await loadPolicy(for: only) }
         case .failure(let error):
             failure = PrivilegedFailure(error)
             phase = .ready

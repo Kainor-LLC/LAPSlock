@@ -294,10 +294,14 @@ final class PrivilegedScopeTests: XCTestCase {
     }
 
     func test_bothPIMSurfacesAreCoveredInEachDirection() {
-        // Four scopes: read and activate, roles and groups. Missing any one shows a tenant
-        // "no eligible access" or refuses activation, both of which read as the feature
-        // being broken rather than a permission being absent.
-        XCTAssertEqual(Set(PrivilegedAccessGraph.allScopes).count, 4)
+        // Six scopes: eligibility read, policy read and activate, each for roles and for
+        // groups. Missing any one shows a tenant "no eligible access", offers a duration the
+        // policy will refuse, or fails activation — all of which read as the feature being
+        // broken rather than a permission being absent.
+        XCTAssertEqual(Set(PrivilegedAccessGraph.allScopes).count, 6)
+        for scope in [PrivilegedAccessGraph.rolePolicyReadScope, PrivilegedAccessGraph.groupPolicyReadScope] {
+            XCTAssertTrue(PrivilegedAccessGraph.allScopes.contains(scope), "\(scope) must be requested")
+        }
         for scope in [
             PrivilegedAccessGraph.roleReadScope,
             PrivilegedAccessGraph.roleActivateScope,

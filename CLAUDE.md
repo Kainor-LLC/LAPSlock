@@ -64,6 +64,11 @@ xcodebuild -project App/lapslock/lapslock.xcodeproj -scheme lapslock \
 - CISSP, very strong in PowerShell and Entra. Do not explain identity concepts. Do explain
   Swift and Xcode.
 - No comments inside shell blocks. Apostrophes in them have broken pastes.
+- **Writing Swift string literals through Python: use NO backslashes at all.** Hit three
+  times on 2026-09-02 — `\` continuations eaten, `\n` turned into a real newline, `\"`
+  unescaped inside JSON. Python processes the escape before Swift ever sees it. Build the
+  string at runtime instead (`JSONSerialization`, `String(repeating:)`, concatenation) or
+  write the file with a quoted heredoc, which passes everything through untouched.
 - **Never write Swift `\` line continuations through a Python string.** Python treats a
   trailing backslash as its OWN line continuation and eats it, joining the Swift lines and
   leaving the leading indentation stranded mid-sentence — so a footer renders with a run of
