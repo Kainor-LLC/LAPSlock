@@ -441,6 +441,34 @@ macOS password retrieval.
   The sheet is attached to the `List`, not to a `Section`: a Section re-renders on every form
   state change, which dismissed a sheet the instant it opened once before in this project.
 
+  ### ⬜ Should the PIM screen appear at SIGN-IN? Investigated 2026-09-02: no.
+
+  **A missing role cannot be detected at sign-in.** Entra authenticates you regardless of
+  which directory roles you hold — sign-in succeeds, and the role only reveals itself when
+  Graph refuses an operation. Knowing earlier would require one of two bad things:
+
+  * `RoleManagement.Read.Directory` requested at sign-in for **every** customer, which is a
+    consent-screen regression for the majority who are permanently assigned and will never
+    touch PIM; or
+  * probing Graph with a real credential read, which **generates an audit event in the
+    customer's tenant for a read nobody asked for** — directly against the settled decision
+    that the biometric gate runs before the Graph call so an abandoned reveal leaves no
+    audit trace.
+
+  A successful device-list load proves nothing either: listing devices and reading a
+  credential are different roles, so someone can browse fine and still be refused a
+  password. **The only reliable signal is a failed credential read, which is exactly where
+  the button now is** — no extra scope, no extra call, and certainty rather than a guess.
+
+  ✅ **A real bug fell out of checking.** `ConsentState.roleMissing` offered an action labelled
+  "How to fix this", and the only screen rendering `actionLabel` is the SIGNED-OUT one, whose
+  button opens the admin-consent sheet. So a role problem routed to an explanation about
+  approving the app — and it could not have done better, because activation needs a token and
+  there is no session on that screen. The enum's own doc comment already said "a different
+  problem with a different fix". `roleMissing` now offers no action and its explanation
+  stands alone. A pre-existing test asserting the opposite was narrowed, with the reasoning
+  recorded rather than the assertion simply deleted.
+
   **Ready for a device test.** Set the Settings toggle on, then either activate proactively
   from Settings or fail a reveal and use the button. Founder plan: PIM **Groups** in the work
   tenant first, then a direct **role** in Kainor — which between them exercise both surfaces. — a Settings opt-in toggle with incremental consent, and an
