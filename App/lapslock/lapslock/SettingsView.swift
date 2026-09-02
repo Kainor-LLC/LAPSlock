@@ -90,6 +90,12 @@ struct SettingsView: View {
     /// organization they did not mean to. An MSP signed into a customer tenant is the case
     /// this exists for.
     var signedInDomain: String? = nil
+    /// Ends the session. Injected because Settings must not know about MSAL.
+    ///
+    /// In live mode this signs out of Microsoft and clears tenant-scoped data; in demo mode
+    /// it just leaves demo. One closure covers both because `AppRootModel.signOut()` already
+    /// handles either state.
+    var endSession: (() async -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isRequestingConsent = false
@@ -126,6 +132,7 @@ struct SettingsView: View {
                 licenseSection
                 diagnosticsSection
                 aboutSection
+                sessionSection
                 #if DEBUG
                 debugSection
                 #endif
@@ -609,6 +616,47 @@ struct SettingsView: View {
             Text("LAPSlock is not affiliated with, endorsed by, or sponsored by Microsoft Corporation.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - session
+
+    /// Sign out, or leave demo.
+    ///
+    /// This was missing entirely until 2026-09-02: `signOut()` existed on the root model and
+    /// was only reachable from an error-recovery path, so there was no way for a user to end
+    /// a session at all. For a tool that reveals administrator passwords that is not a
+    /// missing convenience — you could not hand the phone back, and an MSP could not change
+    /// tenants without force-quitting.
+    ///
+    /// The license is deliberately NOT removed here. It is bound to a tenant and re-verified
+    /// on every read, so signing back into the same organization keeps it, and signing into a
+    /// different one shows the "Free here" branch. Discarding it on sign-out would make
+    /// every tenant change an unnecessary round trip to Kainor.
+    @ViewBuilder
+    private var sessionSection: some View {
+        if let endSession {
+            Section {
+                Button(role: .destructive) {
+                    // Dismiss first: signing out swaps the whole view tree beneath this
+                    // sheet, and a sheet outliving its presenter is how the Section-attached
+                    // sheet bug happened before.
+                    dismiss()
+                    Task { await endSession() }
+                } label: {
+                    Label(
+                        isDemo ? "Leave demo" : "Sign out",
+                        systemImage: "rectangle.portrait.and.arrow.right"
+                    )
+                }
+            } footer: {
+                Text(isDemo
+                    ? "Returns to the sign-in screen."
+                    : """
+                      Signs out of Microsoft and clears the device list from memory. Your \
+                      organization license stays activated for the next time you sign in.
+                      """)
+            }
         }
     }
 

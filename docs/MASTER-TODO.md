@@ -31,6 +31,25 @@ from this session is committed (not pushed) with all three checks green.
   argument is worse than the rule: for an MSP it would send Kainor the identifier of every
   customer tenant they sign into, building a list of that MSP's customers. Not ours to have.
   The MSP tier already solves it by binding one license to the MSP's own tenant.
+- ✅ **There was no way to sign out. Fixed 2026-09-02.** `signOut()` existed on the root
+  model and was reachable only from an error-recovery path, so no button anywhere ended a
+  session. For a tool that reveals administrator passwords that is not a missing
+  convenience: you could not hand the phone back, and an MSP could not change tenants
+  without force-quitting. Settings now has a destructive Sign out in live mode and Leave
+  demo in demo, both calling the same method, which already handled either state. The
+  license is deliberately kept — it is tenant-bound and re-verified, so returning to the
+  same organization keeps it and a different one shows "Free here".
+- ⬜ **Device rows show the UPN because Intune returns no `userDisplayName`.** Not a code
+  bug: `userDisplayName` is in the `$select` and is decoded, and `primaryUserLabel` prefers
+  it. The Kainor tenant simply returns it empty, which is common depending on how the
+  primary user was assigned. **This is the 🟡 "per-device enrichment" item**, and it costs a
+  Graph call per device or a directory lookup per user, which is why it was deferred. Decide
+  whether display names are worth that.
+- ⬜ **`broker=yes` means the broker ANSWERED, not that it was opened.** Observed on device:
+  launching Authenticator and abandoning it reported `broker=no`, because
+  `MSALBrokerVersionKey` is only set on a broker response. Defensible, but it could mislead
+  during exactly the diagnosis the flag exists for. Consider a three-state value, or rename
+  it to `broker-responded`.
 - ⬜ **Settings is unreachable while signed out.** Found on device: after a failed sign-in
   the only route to the diagnostics report is via demo mode. `rotationSection` and
   `macOSSection` are not conditional, so this is not a matter of passing nils — the sections

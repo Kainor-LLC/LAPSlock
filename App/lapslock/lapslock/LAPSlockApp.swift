@@ -345,7 +345,8 @@ struct AppRootView: View {
                         requestRotationConsent: { nil },   // no tenant in demo mode
                         isDemo: true,
                         tenantId: nil,
-                        meter: RevealMeters.demo
+                        meter: RevealMeters.demo,
+                        endSession: { await root.signOut() }
                     )
                 },
                 detailBuilder: { device in
@@ -382,7 +383,8 @@ struct AppRootView: View {
                             entitlement: Entitlements.live,
                             entitlementDidChange: { root.recomputeEntitlement() },
                             lastAuthFailure: { await session.auth.lastAuthFailure },
-                            signedInDomain: root.signedInDomain
+                            signedInDomain: root.signedInDomain,
+                            endSession: { await root.signOut() }
                         )
                     },
                     detailBuilder: { device in
