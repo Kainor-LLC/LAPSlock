@@ -63,6 +63,21 @@ from this session is committed (not pushed) with all three checks green.
   reads calmer than orange on a reveal action, so it is a founder call.** This was never in
   this file, but it should have been noticed from `design/icons/README.md`.
 
+## MSP tier: switcher VERIFIED on device 2026-09-02
+
+Everything testable without a customer tenant now works on hardware. With the license row
+temporarily set to `msp`: Settings read Plan MSP, the building icon appeared on the device
+list, the picker listed Kainor's own organization with its GUID, and both resolver failure
+paths gave their intended messages — an unresolvable domain and a path-traversal attempt.
+Flipping the row back to `enterprise` and refreshing made the icon disappear again, which
+also exercised the Refresh license path properly for the first time.
+
+**Still unproven, and it needs a customer:** an actual switch into a tenant the account can
+reach. That requires a second tenant that has invited the Kainor account, or a GDAP
+relationship. The compensations for that are in place — `SwitchFailure` explains all ten
+error cases on screen, and `DiagnosticOperation.tenantSwitch` carries the AADSTS code and
+correlation ID into the support report.
+
 ## Device test PASSED 2026-09-02
 
 Everything built without hardware has now run on a phone.
@@ -978,8 +993,8 @@ Decided *by* the contract, because the implementation needed an answer:
   Security only. 45 new tests, suite at 183, both the verifier and the manager verified to
   fail on injected defects. `isPro` is wired in `LAPSlockApp.swift`; Settings has an
   Organization license section with Activate, Refresh and Remove; the app target compiles.
-  **What only a phone can verify:** Activate against the live endpoint with the dogfood
-  row, the Settings row reading Enterprise, Remove returning to free, and that a fresh
+  **What only a phone can verify:** Activate against the live endpoint with Kainor's own
+  license row, the Settings row reading Enterprise, Remove returning to free, and that a fresh
   install shows no Kainor host in a proxy capture. Note `isPro` today lifts only the
   meter — gating copy, rotation, favourites and app lock behind it is a separate item.
 - ✅ **Privacy policy updated 2026-09-02** — two hosts always, a third only after a license
