@@ -249,3 +249,39 @@ final class ActivationRequestTests: XCTestCase {
         }
     }
 }
+
+/// The scope sets, which shipped wrong once.
+final class PrivilegedScopeTests: XCTestCase {
+
+    /// The toggle consents to `allScopes`. It used to consent to `activateScopes` alone,
+    /// which left the read scopes unconsented — so opening the sheet made a silent request
+    /// for a scope nobody had approved, and the failure surfaced as "your account may not be
+    /// eligible", a message about a different problem entirely.
+    func test_allScopesCoversBothReadingAndActivating() {
+        let all = Set(PrivilegedAccessGraph.allScopes)
+        XCTAssertTrue(all.isSuperset(of: PrivilegedAccessGraph.readScopes), "reading eligibility must be consented")
+        XCTAssertTrue(all.isSuperset(of: PrivilegedAccessGraph.activateScopes), "activating must be consented")
+    }
+
+    func test_bothPIMSurfacesAreCoveredInEachDirection() {
+        // Four scopes: read and activate, roles and groups. Missing any one shows a tenant
+        // "no eligible access" or refuses activation, both of which read as the feature
+        // being broken rather than a permission being absent.
+        XCTAssertEqual(Set(PrivilegedAccessGraph.allScopes).count, 4)
+        for scope in [
+            PrivilegedAccessGraph.roleReadScope,
+            PrivilegedAccessGraph.roleActivateScope,
+            PrivilegedAccessGraph.groupReadScope,
+            PrivilegedAccessGraph.groupActivateScope,
+        ] {
+            XCTAssertTrue(PrivilegedAccessGraph.allScopes.contains(scope), "\(scope) must be requested")
+        }
+    }
+
+    func test_readAndActivateScopesAreDistinct() {
+        // A read scope where an activate scope belongs would fail only at the moment of
+        // activation, which is the worst time to discover it.
+        XCTAssertTrue(Set(PrivilegedAccessGraph.readScopes)
+            .isDisjoint(with: Set(PrivilegedAccessGraph.activateScopes)))
+    }
+}

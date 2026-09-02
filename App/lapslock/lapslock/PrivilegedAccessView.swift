@@ -266,11 +266,7 @@ struct PrivilegedFailure: Equatable {
                 """
         case .consentRequired:
             title = "Permission not granted yet"
-            explanation = """
-                Turn on "Allow role activation" in Settings first. LAPSlock asks for \
-                permission to request role activation only when you enable it, so the \
-                permission has not been requested yet.
-                """
+            explanation = "Turn \"Allow role activation\" off and on again in Settings to request permission. If Microsoft refuses, these permissions need an Entra administrator to approve them for your organization — being an Intune Administrator is not enough, because reading role eligibility is a directory permission."
         case .alreadyActive:
             title = "Already active"
             explanation = """
@@ -292,11 +288,7 @@ struct PrivilegedFailure: Equatable {
                 """
         case .notAuthorized:
             title = "Microsoft refused the request"
-            explanation = """
-                Your account may not be eligible for that access, or your organization may \
-                not permit activating it from a mobile app. A diagnostics report from \
-                Settings will carry the Microsoft error code, which says which.
-                """
+            explanation = "The most likely reason is that these permissions have not been approved for your organization — they need an Entra administrator, and an Intune Administrator cannot grant them. A diagnostics report from Settings carries the Microsoft error code, which says exactly which."
         case .serviceError(let status):
             title = "Microsoft returned an error (HTTP \(status))"
             explanation = "Nothing was changed. Try again shortly; if it persists, send a diagnostics report from Settings."

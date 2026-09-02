@@ -100,13 +100,23 @@ public enum PrivilegedAccessGraph {
     public static let groupReadScope = "PrivilegedEligibilitySchedule.Read.AzureADGroup"
     public static let groupActivateScope = "PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup"
 
-    /// Read scopes, requested together when the user opts in.
+    /// Read scopes.
     public static let readScopes = [roleReadScope, groupReadScope]
 
-    /// Activation scopes. A heavier ask than reading a password, so these live behind an
-    /// opt-in Settings toggle with incremental consent, exactly like BitLocker rotation.
-    /// A customer who leaves it off never sees them on a consent screen.
+    /// Activation scopes.
     public static let activateScopes = [roleActivateScope, groupActivateScope]
+
+    /// **Everything the feature needs, requested together when the user opts in.**
+    ///
+    /// Read AND activate, and asking for only half is a bug this shipped once: the Settings
+    /// toggle consented to the activation scopes alone, so opening the sheet then made a
+    /// silent request for the unconsented READ scopes, which failed and surfaced as "your
+    /// account may not be eligible" — a message about the wrong problem entirely.
+    ///
+    /// These are the only scopes gated behind the opt-in toggle, and they are a heavier ask
+    /// than reading a password: they let the app request a privilege escalation. A customer
+    /// who leaves the toggle off never sees any of them on a consent screen.
+    public static let allScopes = readScopes + activateScopes
 }
 
 /// Where an activation ended up.

@@ -64,6 +64,12 @@ xcodebuild -project App/lapslock/lapslock.xcodeproj -scheme lapslock \
 - CISSP, very strong in PowerShell and Entra. Do not explain identity concepts. Do explain
   Swift and Xcode.
 - No comments inside shell blocks. Apostrophes in them have broken pastes.
+- **Never write Swift `\` line continuations through a Python string.** Python treats a
+  trailing backslash as its OWN line continuation and eats it, joining the Swift lines and
+  leaving the leading indentation stranded mid-sentence — so a footer renders with a run of
+  twenty spaces in the middle of a word. Hit again on 2026-09-02 in `SettingsView`. Heredocs
+  (`cat > file <<'EOF'`) pass it through untouched; Python string replacement does not. When
+  editing prose through Python, write each paragraph as ONE long line.
 
 ## The most expensive lesson so far
 

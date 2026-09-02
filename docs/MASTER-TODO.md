@@ -469,6 +469,27 @@ macOS password retrieval.
   stands alone. A pre-existing test asserting the opposite was narrowed, with the reasoning
   recorded rather than the assertion simply deleted.
 
+  ### Two bugs from the first device test, 2026-09-02
+
+  ✅ **The toggle consented to the wrong permissions.** It requested `activateScopes` only,
+  so opening the sheet then made a SILENT request for the unconsented READ scopes. That
+  failed, and because `attemptList` mapped only `consentRequired` (not `interactionRequired`,
+  which is what a silent request for an unconsented scope actually throws) it surfaced as
+  "your account may not be eligible for that access" — a message about eligibility when the
+  real problem was a permission never asked for. Now `PrivilegedAccessGraph.allScopes`
+  covers read and activate together, `interactionRequired` maps to `consentRequired`, and
+  three tests lock it in, verified to fail on the original bug.
+
+  The copy for both cases now names the likely cause: **these are directory permissions and
+  need an Entra administrator — Intune Administrator is not enough.** That matters for the
+  work-tenant test specifically.
+
+  ✅ **Mangled footer text.** The `\` line continuations in the toggle's footer were eaten,
+  leaving twenty spaces mid-sentence. Cause recorded in `CLAUDE.md`: Python treats a trailing
+  backslash as its own line continuation, so writing Swift continuations through a Python
+  string replacement destroys them. Heredocs are unaffected. Only two lines were damaged —
+  everything else flagged by the scan was deliberate code alignment.
+
   **Ready for a device test.** Set the Settings toggle on, then either activate proactively
   from Settings or fail a reveal and use the button. Founder plan: PIM **Groups** in the work
   tenant first, then a direct **role** in Kainor — which between them exercise both surfaces. — a Settings opt-in toggle with incremental consent, and an

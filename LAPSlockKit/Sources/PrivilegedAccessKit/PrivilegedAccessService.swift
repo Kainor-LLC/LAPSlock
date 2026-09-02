@@ -133,7 +133,17 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         } catch let error as PrivilegedAccessError {
             return .failure(error)
         } catch let error as AuthError {
-            return .failure(error == .consentRequired ? .consentRequired : .notAuthorized)
+            // interactionRequired matters as much as consentRequired here. A SILENT request
+            // for a scope nobody has consented to throws interactionRequired, not
+            // consentRequired — so mapping only the latter reported "not authorized" for
+            // what is really "permission not granted yet", which points the user at the
+            // wrong problem.
+            switch error {
+            case .consentRequired, .interactionRequired:
+                return .failure(.consentRequired)
+            default:
+                return .failure(.notAuthorized)
+            }
         } catch {
             return .failure(.transport)
         }
