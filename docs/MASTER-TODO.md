@@ -7,6 +7,30 @@ Legend: ✅ done · 🟡 partial · ⬜ not started · 🔵 not-code · ⚠️ n
 
 ---
 
+# For Connor when back — 2026-09-02 autonomous session
+
+Items below either need a decision, a device, or an account only you hold. Everything else
+from this session is committed (not pushed) with all three checks green.
+
+## Needs your hands on a phone
+- **Entitlement client end to end.** Build to the phone, Settings → Organization license →
+  Activate. Expect the row to read Enterprise (the dogfood row exists for the Kainor tenant).
+  Then Remove, expect Free. Then, with a proxy, confirm a fresh install shows no Kainor host
+  until Activate is tapped. I cannot do any of this from here.
+
+## Needs a decision
+- **Push timing for `docs/`.** The privacy policy and the transparency doc are committed with
+  today's date and name the azurewebsites host. Pushing `docs/` publishes both. They are true
+  today, but they describe an Activate button that is not in the shipped app yet.
+- **Copy in the license section** — one read from you. It is deliberately a status readout
+  with no pitch and no price, same rule as the reveals section.
+
+## Done this session (details in each section)
+- Entitlement client half built and tested; `isPro` wired; app compiles.
+- Privacy policy updated for the third host and the license record.
+- Network transparency doc written and linked from `SECURITY.md`.
+- Public roadmap / feedback design captured as a TODO section.
+
 # ⚠️ READ FIRST — three conflicts between the plans (two now resolved)
 
 ## 1. ✅ RESOLVED — relicensed to PolyForm Strict + security-review permission
@@ -723,15 +747,21 @@ Decided *by* the contract, because the implementation needed an answer:
   account key that granted blob AND table read/write over the whole account — quietly
   defeating the scoped read-only table role — is gone. Logging down to Warning with
   `Host.Results` at Error. App Insights retention 30 days. FTP disabled. TLS 1.2.
-- 🟡 **Client half — security core done 2026-09-02.** `EntitlementKeyring`,
-  `EntitlementToken`, `EntitlementVerifier` in `LicensingKit`, 24 tests verified by
-  injection, suite at 162. LicensingKit still imports Foundation + CryptoKit + Security only;
-  isolation check green. Remaining: `EntitlementClient`, `EntitlementStore` (Keychain),
-  `EntitlementManager` (activation gating, refresh schedule, grace, `msp` exemption, StoreKit
-  precedence), Settings UI, `isPro` wiring. Detail and order in the handoff.
-- ⚠️ **Privacy policy still says two hosts** and must say three in the release that ships
-  the client half. The endpoint being live does not change that yet, because no client
-  contacts it.
+- ✅ **Client half built 2026-09-02, awaiting a device test.** `EntitlementClient`,
+  `EntitlementStore` (Keychain, AfterFirstUnlockThisDeviceOnly), `EntitlementManager`
+  (every section 7 rule), all in `LicensingKit`, which still imports Foundation + CryptoKit +
+  Security only. 45 new tests, suite at 183, both the verifier and the manager verified to
+  fail on injected defects. `isPro` is wired in `LAPSlockApp.swift`; Settings has an
+  Organization license section with Activate, Refresh and Remove; the app target compiles.
+  **What only a phone can verify:** Activate against the live endpoint with the dogfood
+  row, the Settings row reading Enterprise, Remove returning to free, and that a fresh
+  install shows no Kainor host in a proxy capture. Note `isPro` today lifts only the
+  meter — gating copy, rotation, favourites and app lock behind it is a separate item.
+- ✅ **Privacy policy updated 2026-09-02** — two hosts always, a third only after a license
+  is activated, plus a license-token row in the storage table and a section on what Kainor
+  keeps for a paying organization. The wording is true both before and after the client
+  ships. **Pushing `docs/` publishes it with the new effective date**, so push it alongside
+  the app release rather than ahead of it.
 - ⬜ Client: entitlement fetch + verification in `LicensingKit`, Activate/Remove license UI
   in Settings, and `isPro` wired up (currently hardcoded false in `LAPSlockApp.swift`).
 - ⚠️ **Privacy policy says "exactly two hosts" and must say three in the same release that
@@ -836,7 +866,11 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 - ⬜ Privacy manifest + "Data Not Collected" nutrition label
 - ✅ SECURITY.md with a disclosure policy and the five testable design claims
 - ⬜ Tag a source release per App Store version
-- ⬜ **Network transparency doc** — the app talks to exactly three hosts
+- ✅ **Network transparency doc written 2026-09-02** — `docs/NETWORK-TRANSPARENCY.md`, linked
+  from `SECURITY.md`. Three hosts, the one Kainor request byte for byte, the ten-minute proxy
+  recipe, and an honest section on what it cannot prove (no reproducible builds on iOS).
+  Names the azurewebsites host, so it changes when a custom domain lands.
+- ~~⬜ Network transparency doc~~ — the app talks to exactly three hosts
   (login.microsoftonline.com, graph.microsoft.com, your entitlement domain). Any admin can
   verify in ten minutes with a proxy. For this audience, observed behavior beats any badge.
   **This is your strongest trust artifact.**

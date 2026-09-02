@@ -181,7 +181,7 @@ final class EntitlementVerifierTests: XCTestCase {
         let verifier = makeVerifier()
 
         // Just expired, inside tolerance: still accepted, so a phone whose clock runs a
-        // minute fast does not lose its licence.
+        // minute fast does not lose its license.
         let justExpired = Int(now.timeIntervalSince1970) - 60
         _ = try verifier.verify(
             token: makeToken(claims: ["exp": justExpired, "nbf": justExpired - 86_400, "iat": justExpired - 86_400]),
@@ -207,7 +207,7 @@ final class EntitlementVerifierTests: XCTestCase {
 
     // MARK: - claims
 
-    func test_anUnrecognisedTierBecomesFree() throws {
+    func test_anUnrecognizedTierBecomesFree() throws {
         for tier in ["platinum", "PRO ULTIMATE", "", "admin"] {
             let entitlement = try makeVerifier().verify(
                 token: makeToken(claims: ["tier": tier]), boundTenantId: tenant, now: now)

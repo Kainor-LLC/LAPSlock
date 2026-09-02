@@ -37,7 +37,7 @@ public struct EntitlementVerifier: Sendable {
 
     /// Verifies a compact JWS.
     ///
-    /// - Parameter boundTenantId: the tenant the licence was activated against. `sub` must
+    /// - Parameter boundTenantId: the tenant the license was activated against. `sub` must
     ///   equal this. Whether it must ALSO be the tenant currently signed in is a separate
     ///   question the caller answers, because the answer differs by tier — see
     ///   `EntitlementManager`.
@@ -125,7 +125,7 @@ public struct EntitlementVerifier: Sendable {
             throw EntitlementVerificationFailure.expired(at: expiresAt)
         }
 
-        // 8. sub equals the tenant this licence was activated against, compared lowercase.
+        // 8. sub equals the tenant this license was activated against, compared lowercase.
         guard let subject = claims["sub"] as? String else {
             throw EntitlementVerificationFailure.missingClaim("sub")
         }
@@ -137,7 +137,7 @@ public struct EntitlementVerifier: Sendable {
             throw EntitlementVerificationFailure.missingClaim("jti")
         }
 
-        // 9. Unrecognised tier becomes free. Unknown CLAIMS are ignored entirely, so that a
+        // 9. Unrecognized tier becomes free. Unknown CLAIMS are ignored entirely, so that a
         //    server adding one later is additive rather than breaking (section 12).
         return VerifiedEntitlement(
             issuer: issuer,

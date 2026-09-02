@@ -78,6 +78,11 @@ struct SettingsView: View {
     /// ledger. Optional and defaulted so existing call sites and previews still compile.
     var meter: RevealMeter? = nil
     var isPro: Bool = false
+    /// Tenant-keyed organization license. Live mode only: nil in demo and in previews, which
+    /// is also what keeps a demo install from ever having a path to Kainor's server.
+    var entitlement: EntitlementManager? = nil
+    /// Lets the root recompute `isPro` after Activate, Refresh or Remove.
+    var entitlementDidChange: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var isRequestingConsent = false
@@ -95,6 +100,12 @@ struct SettingsView: View {
     @State private var remainingReveals = 0
     @State private var nextAvailable: Date?
 
+    // Organization license
+    @State private var license: EntitlementState = .free
+    @State private var isLicenseActivated = false
+    @State private var isFetchingLicense = false
+    @State private var licenseMessage: String?
+
     var body: some View {
         NavigationStack {
             Form {
@@ -102,13 +113,14 @@ struct SettingsView: View {
                 rotationSection
                 macOSSection
                 freeTierSection
+                licenseSection
                 diagnosticsSection
                 aboutSection
                 #if DEBUG
                 debugSection
                 #endif
             }
-            .task { refreshMeter() }
+            .task { refreshMeter(); refreshLicense() }
             .navigationTitle("Settings")
             .toolbarBackground(.visible, for: .navigationBar)
             // Attached to the NavigationStack, not to the Section. A Section re-renders
@@ -259,6 +271,111 @@ struct SettingsView: View {
                     record which credentials you retrieve, or how often, on any server.
                     """)
             }
+        }
+    }
+
+    // MARK: - organization license
+
+    /// Contract section 7.1: the app contacts Kainor's server only after the user taps
+    /// Activate here (or Refresh, later, or on the monthly schedule once activated). This
+    /// section is the whole user-facing surface of that decision, so the footer says it out
+    /// loud: until you activate, the app talks to Microsoft and nothing else.
+    ///
+    /// No pitch, no price. The same rule as the reveals section — this is a status readout
+    /// and an action, for an audience that resents being sold to inside a settings screen.
+    @ViewBuilder
+    private var licenseSection: some View {
+        if let entitlement, !isDemo {
+            Section {
+                if isLicenseActivated {
+                    LabeledContent("Plan", value: Self.tierName(license.tier))
+                    if let expires = license.expiresAt {
+                        LabeledContent(
+                            license.isInGrace ? "Could not refresh" : "Renews by",
+                            value: Self.relative(expires)
+                        )
+                    }
+                    Button {
+                        Task { await runLicenseAction { await entitlement.refreshNow() } }
+                    } label: {
+                        Label("Refresh license", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(isFetchingLicense)
+                    Button(role: .destructive) {
+                        entitlement.remove()
+                        licenseMessage = nil
+                        refreshLicense()
+                        entitlementDidChange?()
+                    } label: {
+                        Label("Remove license", systemImage: "xmark.circle")
+                    }
+                    .disabled(isFetchingLicense)
+                } else {
+                    Button {
+                        guard let tenantId else { return }
+                        Task { await runLicenseAction { await entitlement.activate(tenantId: tenantId) } }
+                    } label: {
+                        Label("Activate organization license", systemImage: "checkmark.seal")
+                    }
+                    .disabled(isFetchingLicense || tenantId == nil)
+                }
+                if let licenseMessage {
+                    Text(licenseMessage)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Organization license")
+            } footer: {
+                Text(isLicenseActivated
+                    ? """
+                      Your license is keyed to this Microsoft tenant and checked against \
+                      Kainor about once a month. Nothing about which devices or credentials \
+                      you look at is ever sent.
+                      """
+                    : """
+                      An organization license is keyed to your Microsoft tenant. Until you \
+                      activate one, LAPSlock never contacts Kainor: it talks to Microsoft and \
+                      nothing else, which you can confirm with a network proxy.
+                      """)
+            }
+        }
+    }
+
+    private func refreshLicense() {
+        guard let entitlement else { return }
+        isLicenseActivated = entitlement.isActivated
+        license = entitlement.state(signedInTenantId: tenantId)
+    }
+
+    private func runLicenseAction(_ action: () async -> EntitlementFetchOutcome?) async {
+        isFetchingLicense = true
+        defer { isFetchingLicense = false }
+        let outcome = await action()
+        licenseMessage = Self.describe(outcome)
+        refreshLicense()
+        entitlementDidChange?()
+    }
+
+    static func tierName(_ tier: EntitlementTier) -> String {
+        switch tier {
+        case .free: return "Free"
+        case .pro: return "Pro"
+        case .msp: return "MSP"
+        case .enterprise: return "Enterprise"
+        }
+    }
+
+    /// One line, no drama. Contract section 7.6: every failure lands the user on the free
+    /// tier, and none of them is an alert.
+    static func describe(_ outcome: EntitlementFetchOutcome?) -> String? {
+        switch outcome {
+        case nil: return nil
+        case .updated(.free): return "No organization license was found for this tenant."
+        case .updated(let tier): return "\(tierName(tier)) license active."
+        case .offline: return "Couldn't reach the license service. Your current license still applies."
+        case .serverError: return "The license service is temporarily unavailable. Try again later."
+        case .rejected: return "The license service returned something this app could not accept."
         }
     }
 

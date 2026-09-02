@@ -93,6 +93,18 @@ enum RevealMeters {
     static let demo = RevealMeter(store: InMemoryRevealLedgerStore())
 }
 
+/// One entitlement manager for the live path, mirroring `RevealMeters`.
+///
+/// There is deliberately no `demo` counterpart. Demo mode is for evaluating the app without
+/// signing in, and an install in that state must have no code path that can contact Kainor
+/// (entitlement contract section 7.1). Passing nil to Settings in demo is what enforces it.
+enum Entitlements {
+    static let live = EntitlementManager(
+        store: KeychainEntitlementStore(),
+        client: EntitlementClient()
+    )
+}
+
 @MainActor
 final class AppRootModel: ObservableObject {
     enum Mode: Equatable {
@@ -165,6 +177,26 @@ final class AppRootModel: ObservableObject {
         )
     }
 
+    /// Contract section 7.7: `storeKit || tier != free`. StoreKit is not wired yet, so the
+    /// second operand is a literal false. When it lands, it goes here and nowhere else.
+    @Published private(set) var isPro = false
+
+    func recomputeEntitlement() {
+        isPro = Entitlements.live.isPro(
+            signedInTenantId: signedInTenantId,
+            storeKitEntitlementActive: false
+        )
+    }
+
+    /// The ONE calendar-shaped trigger for the scheduled refresh, contract section 7.3.
+    /// Called from launch and from nothing a user does. The manager's 24-hour floor turns
+    /// "every launch" into "at most daily", and an install that has never activated a
+    /// license returns before touching the network at all.
+    func refreshEntitlementIfDue() async {
+        await Entitlements.live.refreshIfDue()
+        recomputeEntitlement()
+    }
+
     func prepare() {
         guard auth == nil else { return }
         do {
@@ -188,6 +220,7 @@ final class AppRootModel: ObservableObject {
                 inventory: DeviceInventoryService(auth: auth)
             )
             mode = .live(account)
+            recomputeEntitlement()
         } catch let error as AuthError {
             // Consent problems get a recovery path, not just an error (§8).
             if let state = ConsentDiagnostics.state(from: error) {
@@ -213,6 +246,7 @@ final class AppRootModel: ObservableObject {
         liveSession = nil
         mode = .signedOut
         consentState = nil
+        recomputeEntitlement()
     }
 
     func enterDemoMode() {
@@ -246,7 +280,10 @@ struct AppRootView: View {
 
     var body: some View {
         content
-            .task { root.prepare() }
+            .task {
+                root.prepare()
+                await root.refreshEntitlementIfDue()
+            }
     }
 
     @ViewBuilder
@@ -291,7 +328,7 @@ struct AppRootView: View {
                     model: DeviceListModel(
                         inventory: session.inventory,
                         meter: RevealMeters.live,
-                        isPro: false          // TODO: wire to /entitlement
+                        isPro: root.isPro
                     ),
                     isDemo: false,
                     settingsBuilder: {
@@ -301,7 +338,9 @@ struct AppRootView: View {
                             isDemo: false,
                             tenantId: root.signedInTenantId,
                             meter: RevealMeters.live,
-                            isPro: false          // TODO: wire to /entitlement
+                            isPro: root.isPro,
+                            entitlement: Entitlements.live,
+                            entitlementDidChange: { root.recomputeEntitlement() }
                         )
                     },
                     detailBuilder: { device in
@@ -313,11 +352,7 @@ struct AppRootView: View {
                                 isDemo: false,
                                 rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
                                 meter: RevealMeters.live,
-                                // TODO: wire to the entitlement check once /entitlement
-                                // exists. Hardcoded false means everyone is metered,
-                                // which is the safe default while there is nothing to
-                                // sell — nobody is wrongly given Pro for free.
-                                isPro: false
+                                isPro: root.isPro
                             )
                         )
                     }

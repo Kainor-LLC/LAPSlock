@@ -8,7 +8,7 @@ import Foundation
 
 /// What the product sells. Contract section 5.3.
 ///
-/// Decoded from the `tier` claim. An unrecognised value becomes `.free`, deliberately:
+/// Decoded from the `tier` claim. An unrecognized value becomes `.free`, deliberately:
 /// failing to the metered tier rather than the unlocked one is the only safe direction for a
 /// value that arrived over a network.
 public enum EntitlementTier: String, Sendable, Equatable, CaseIterable {
