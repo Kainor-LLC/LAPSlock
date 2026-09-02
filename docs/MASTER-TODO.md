@@ -19,8 +19,28 @@ from this session is committed (not pushed) with all three checks green.
   and no description text anywhere in the report.
 - **Entitlement client end to end.** Build to the phone, Settings → Organization license →
   Activate. Expect the row to read Enterprise (the dogfood row exists for the Kainor tenant).
-  Then Remove, expect Free. Then, with a proxy, confirm a fresh install shows no Kainor host
-  until Activate is tapped. I cannot do any of this from here.
+  Then Remove, expect Free. I cannot do any of this from here.
+- **Proxy capture — NOT urgent, and cheaper than first described.** Do it once before
+  pushing `docs/`, since the privacy policy states the claim publicly. Two notes that make
+  it a five-minute job rather than an afternoon:
+  * **No certificate is needed to answer "which hosts."** Hostnames are visible from the TLS
+    handshake, so a proxy with SSL interception OFF is enough. A cert is only needed to read
+    inside request bodies, which is a separate and lesser question.
+  * The capture must be taken with **no license activated** — the entitlement record lives
+    in the Keychain and survives app deletion, so tap Remove license first or the "never
+    contacts Kainor" behaviour no longer exists to observe.
+
+  **Static verification done 2026-09-02 in place of it, and it covers most of the ground.**
+  Every `http(s)` literal across all 39 Swift files: `graph.microsoft.com`,
+  `login.microsoftonline.com`, the one entitlement endpoint, and four `Link` rows that open
+  Safari (kainor.com/privacy, /terms, github.com, intune.microsoft.com). `kainor.com/lapslock`
+  appears but is never fetched — it is the `iss` string the verifier compares against.
+  Connection-capable code lives in exactly six files: `EntitlementClient` plus the four
+  CredentialKit providers and `DeviceInventoryService`, all Graph. **What static analysis
+  cannot cover is MSAL**, a third-party binary; that is the one thing only a capture shows.
+  The credential-leak half is covered better than a capture could by `isolation-check.sh`,
+  which fails the build on every commit if CredentialKit gains a logging, analytics or
+  non-Graph networking dependency.
 
 ## Needs a decision
 - **Search only covers loaded pages** (the #3 item in the decided order). This is a design
