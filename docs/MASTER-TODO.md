@@ -643,11 +643,14 @@ Decided *by* the contract, because the implementation needed an answer:
 
 ## Remaining
 
-- ⬜ ES256 signing key in the vault (created in-vault, never exported). `kid`
-  `lapslock-ent-2026-09` per the contract. **Blocked on a data-plane role first:** Owner
-  does not grant Key Vault access on an RBAC vault, so the account needs Key Vault Crypto
-  Officer at the vault scope before `az keyvault key create` will work. Drop the role again
-  once the key and its public JWK are in hand.
+- ✅ **ES256 signing key created 2026-09-02.** `lapslock-ent-2026-09` in
+  `kainor-lapslock-prod-kv`, in-vault, `exportable: false`, sign and verify ops only.
+  Public key published at `docs/entitlement-jwks.json`, point verified against the P-256
+  curve equation. Vault version `ec4ca7dc7a284a19865eb9ea3a3806ec` — **pin it in Function
+  config**, since a new version would otherwise take over signing while `kid` stayed the
+  same and break every client in the field.
+- ⬜ **Remove Key Vault Crypto Officer from the human account** now that the key exists.
+  Nothing needs standing key-creation rights; re-granting for rotation takes seconds.
 - ⬜ Licences table in `kainorlapslockprodst`. Schema is constrained by §8.1 of the
   contract and is four columns: tenant GUID, tier, term start/end, order reference. **No
   purchaser name or email** — the order reference resolves to those in Stripe, which holds
