@@ -42,7 +42,8 @@ let package = Package(
         .library(name: "CredentialKit", targets: ["CredentialKit"]),
         .library(name: "PlatformSecurity", targets: ["PlatformSecurity"]),
         .library(name: "DiagnosticsKit", targets: ["DiagnosticsKit"]),
-        .library(name: "LicensingKit", targets: ["LicensingKit"])
+        .library(name: "LicensingKit", targets: ["LicensingKit"]),
+        .library(name: "PrivilegedAccessKit", targets: ["PrivilegedAccessKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -70,6 +71,16 @@ let package = Package(
         // ⚠ ISOLATION BOUNDARY (§3.1). Do NOT add dependencies to this target.
         .target(name: "CredentialKit", dependencies: ["AuthKit"]),
 
+        // PIM role activation. Foundation + AuthKit only, and it must NEVER import
+        // CredentialKit.
+        //
+        // Its own module rather than a folder in AuthKit because of what it asks for: this
+        // is the one part of the app that requests a privilege ESCALATION. Keeping it
+        // structurally unable to see a credential means "activating a role cannot touch a
+        // password" is a property of the link graph rather than a claim in a comment — the
+        // same argument that isolates CredentialKit and LicensingKit from each other.
+        .target(name: "PrivilegedAccessKit", dependencies: ["AuthKit"]),
+
         .target(name: "PlatformSecurity"),
 
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
@@ -91,6 +102,7 @@ let package = Package(
         .testTarget(name: "PlatformSecurityTests", dependencies: ["PlatformSecurity"]),
         .testTarget(name: "AuthKitTests", dependencies: ["AuthKit"]),
         .testTarget(name: "DiagnosticsKitTests", dependencies: ["DiagnosticsKit"]),
-        .testTarget(name: "LicensingKitTests", dependencies: ["LicensingKit"])
+        .testTarget(name: "LicensingKitTests", dependencies: ["LicensingKit"]),
+        .testTarget(name: "PrivilegedAccessKitTests", dependencies: ["PrivilegedAccessKit", "AuthKit"])
     ]
 )

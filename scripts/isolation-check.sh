@@ -10,6 +10,11 @@
 #                  It is where credentials live, so nothing that could log, transmit or
 #                  persist them may enter its link graph.
 #
+#   PrivilegedAccessKit  must import Foundation + AuthKit only.
+#                  It requests a privilege ESCALATION via PIM, so keeping it unable to reach
+#                  a credential makes "activating a role cannot touch a password" a property
+#                  of the link graph rather than a claim in a comment.
+#
 #   LicensingKit   must import Foundation + CryptoKit + Security only.
 #                  The free-tier meter counts EVENTS. If it ever imports CredentialKit it
 #                  gains the ability to hold a credential, and the guarantee that the meter
@@ -89,13 +94,24 @@ COMMON_FORBIDDEN=(
 
 check_module "CredentialKit" "Foundation|AuthKit" \
   "LicensingKit" \
+  "PrivilegedAccessKit" \
   "DiagnosticsKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
+# PrivilegedAccessKit requests a privilege ESCALATION. Keeping it structurally unable to
+# reach a credential means "activating a role cannot touch a password" is a property of the
+# link graph rather than a claim in a comment.
+check_module "PrivilegedAccessKit" "Foundation|AuthKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "InventoryKit" \
   "${COMMON_FORBIDDEN[@]}"
 
 check_module "LicensingKit" "Foundation|CryptoKit|Security" \
   "CredentialKit" \
   "InventoryKit" \
   "DiagnosticsKit" \
+  "PrivilegedAccessKit" \
   "${COMMON_FORBIDDEN[@]}"
 
 if [[ "$violations" -gt 0 ]]; then
@@ -106,4 +122,5 @@ if [[ "$violations" -gt 0 ]]; then
 fi
 
 echo "✅ isolation-check passed: CredentialKit imports only Foundation + AuthKit,"
-echo "   and LicensingKit cannot reach CredentialKit."
+echo "   LicensingKit cannot reach CredentialKit, and PrivilegedAccessKit — which requests"
+echo "   privilege escalation — cannot reach a credential."
