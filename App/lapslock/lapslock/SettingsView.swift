@@ -306,6 +306,8 @@ struct SettingsView: View {
                     If your role is eligible through Privileged Identity Management rather than permanently assigned, LAPSlock can activate it here instead of sending you to the portal.
 
                     This asks Microsoft for permission to request activation of your own eligible roles — never anyone else's. Leave it off and that permission is never requested.
+
+                    This switch is your preference; the permission itself is granted per organization. Signing in to a different one asks again, and the activation screen offers it there when needed.
                     """)
             }
         }

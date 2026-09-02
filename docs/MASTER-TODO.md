@@ -490,6 +490,34 @@ macOS password retrieval.
   string replacement destroys them. Heredocs are unaffected. Only two lines were damaged —
   everything else flagged by the scan was deliberate code alignment.
 
+  ### Three findings from the second device test, 2026-09-02
+
+  ✅ **PIM for Groups showed nothing, and the cause was an invalid request.** Graph documents
+  that listing group eligibility **requires** a `principalId` or `groupId` filter, so the
+  plain collection was never a valid call. It returned nothing, one surface failing is
+  tolerated by design, and the result was a tenant with PIM for Groups configured showing no
+  groups — a silent half-failure rather than an error. Both surfaces now use
+  `filterByCurrentUser(on='principal')`.
+
+  **The roles endpoint had the same latent bug and only worked by accident.** The unfiltered
+  collection returns every schedule the CALLER can see, which needs directory-wide read — so
+  it worked in Kainor where the account is Global Administrator, and would have returned
+  nothing for the ordinary admin this feature exists to help. Four tests now pin both paths,
+  including that the parentheses and quotes survive URL construction.
+
+  ✅ **Consent is per-organization; the toggle was per-install.** Switching tenants left the
+  toggle on with no consent in the new tenant, and the only remedy was toggling off and on
+  again — a puzzle rather than an instruction, and one an MSP would meet in every customer
+  tenant. **Founder's suggestion, and it was the right call:** the activation sheet now
+  offers **Request permission** inline on a consent failure and reloads on success. The
+  toggle is now explicitly a preference, with the footer saying consent is granted per
+  organization. A refusal after prompting is a distinct state, so it does not loop.
+
+  ⬜ **Still unobserved: whether a claims challenge fires.** Activation succeeded in Kainor
+  without one, which means that session already satisfied the MFA requirement. The retry path
+  remains built-but-unseen. A tenant with a Conditional Access policy demanding stronger auth
+  for privileged operations would exercise it — the work tenant may, once groups appear.
+
   **Ready for a device test.** Set the Settings toggle on, then either activate proactively
   from Settings or fail a reveal and use the button. Founder plan: PIM **Groups** in the work
   tenant first, then a direct **role** in Kainor — which between them exercise both surfaces. — a Settings opt-in toggle with incremental consent, and an
