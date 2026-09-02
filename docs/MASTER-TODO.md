@@ -63,35 +63,24 @@ from this session is committed (not pushed) with all three checks green.
   reads calmer than orange on a reveal action, so it is a founder call.** This was never in
   this file, but it should have been noticed from `design/icons/README.md`.
 
-## Needs your hands on a phone
-- **Auth diagnostics.** With Authenticator installed, force a sign-in failure (wrong tenant
-  is easiest) and then Settings → Gather diagnostics. Expect a "Last sign-in or token
-  failure" block with `msal=`, `aad=AADSTS…`, `broker=yes` and a correlation ID — and no URL
-  and no description text anywhere in the report.
-- **Entitlement client end to end.** Build to the phone, Settings → Organization license →
-  Activate. Expect the row to read Enterprise (the dogfood row exists for the Kainor tenant).
-  Then Remove, expect Free. I cannot do any of this from here.
-- **Proxy capture — NOT urgent, and cheaper than first described.** Do it once before
-  pushing `docs/`, since the privacy policy states the claim publicly. Two notes that make
-  it a five-minute job rather than an afternoon:
-  * **No certificate is needed to answer "which hosts."** Hostnames are visible from the TLS
-    handshake, so a proxy with SSL interception OFF is enough. A cert is only needed to read
-    inside request bodies, which is a separate and lesser question.
-  * The capture must be taken with **no license activated** — the entitlement record lives
-    in the Keychain and survives app deletion, so tap Remove license first or the "never
-    contacts Kainor" behaviour no longer exists to observe.
+## Device test PASSED 2026-09-02
 
-  **Static verification done 2026-09-02 in place of it, and it covers most of the ground.**
-  Every `http(s)` literal across all 39 Swift files: `graph.microsoft.com`,
-  `login.microsoftonline.com`, the one entitlement endpoint, and four `Link` rows that open
-  Safari (kainor.com/privacy, /terms, github.com, intune.microsoft.com). `kainor.com/lapslock`
-  appears but is never fetched — it is the `iss` string the verifier compares against.
-  Connection-capable code lives in exactly six files: `EntitlementClient` plus the four
-  CredentialKit providers and `DeviceInventoryService`, all Graph. **What static analysis
-  cannot cover is MSAL**, a third-party binary; that is the one thing only a capture shows.
-  The credential-leak half is covered better than a capture could by `isolation-check.sh`,
-  which fails the build on every commit if CredentialKit gains a logging, analytics or
-  non-Graph networking dependency.
+Everything built without hardware has now run on a phone.
+
+- **Entitlement, end to end.** Activate returned Enterprise from the live Function, survived
+  a force-quit, survived sign-out and back in without re-activating, and Remove returned to
+  the metered tier. Signing into a second tenant dropped to free — the tenant binding.
+- **Auth diagnostics.** An abandoned Authenticator sign-in produced an MSAL code and, most
+  importantly, **no URL and no error text anywhere in the report**.
+- **Regressions all clean.** Face ID prompts before the fetch, a cancelled prompt reveals
+  nothing and charges nothing, the switcher card reads Hidden, and revealing a BitLocker key
+  hides the LAPS password.
+- **Copy tenant ID** works. **Sign out** works and the license survives it.
+
+Three bugs were found and fixed during the test, none of which the 262 tests had caught:
+cross-tenant license state, no sign-out button anywhere, and the Activate button not naming
+the organization it would bind to. Worth remembering the next time a green suite feels like
+proof.
 
 ## Needs a decision
 - **Search only covers loaded pages** (the #3 item in the decided order). This is a design
@@ -339,7 +328,9 @@ macOS password retrieval.
 
 - ⬜ Windows LAPS password history (`credentials` returns multiple; we take newest.
   History matters when a device hasn't checked in and still has an older password)
-- ✅ **Auth diagnostics in the support report — DONE 2026-09-02, awaiting a device test.**
+- ✅ **Auth diagnostics in the support report — DONE and VERIFIED ON DEVICE 2026-09-02.**
+  Abandoning an Authenticator sign-in produced `signIn unknown` with an MSAL code and no URL
+  or error text anywhere in the report. The allowlist holds.
   `AuthFailureDetail` (AuthKit) is an allowlist: MSAL error code (Int), `AADSTS` code
   extracted by regex from the description and stored WITHOUT the description, OAuth error
   string by shape, correlation ID by GUID shape, HTTP status, and a broker-path flag from the
@@ -894,7 +885,10 @@ Decided *by* the contract, because the implementation needed an answer:
   account key that granted blob AND table read/write over the whole account — quietly
   defeating the scoped read-only table role — is gone. Logging down to Warning with
   `Host.Results` at Error. App Insights retention 30 days. FTP disabled. TLS 1.2.
-- ✅ **Client half built 2026-09-02, awaiting a device test.** `EntitlementClient`,
+- ✅ **Client half built and VERIFIED ON DEVICE 2026-09-02.** Activate against the live
+  endpoint returned Enterprise, it survived a force-quit and a sign-out/sign-in cycle, and
+  Remove returned to the metered tier. Signing into a second tenant correctly dropped to
+  free, which is the tenant binding working. `EntitlementClient`,
   `EntitlementStore` (Keychain, AfterFirstUnlockThisDeviceOnly), `EntitlementManager`
   (every section 7 rule), all in `LicensingKit`, which still imports Foundation + CryptoKit +
   Security only. 45 new tests, suite at 183, both the verifier and the manager verified to

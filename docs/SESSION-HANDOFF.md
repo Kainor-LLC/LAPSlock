@@ -63,8 +63,9 @@ Also verified on device: Face ID gate fires before the Graph call (so an abandon
 generates no audit event in the customer's tenant), and app-switcher redaction genuinely
 hides a revealed credential in the switcher card.
 
-**Next action:** device-test the entitlement client and the auth diagnostics (both built,
-neither has run on a phone), then decide the search design. Details in the TODO's top block.
+**Next action:** archive and upload to TestFlight. The device test passed on 2026-09-02 —
+entitlement end to end, auth diagnostics, and every regression — so nothing is unverified
+any more. Then decide the search design. Details in the TODO's top block.
 The older text below stands for the reasoning.
 
 **Previously:** the entitlement backend. Azure infrastructure is provisioned (see below)
