@@ -49,10 +49,12 @@ These are the properties the app is built to guarantee. If you can break one, th
 finding:
 
 1. **No credential reaches any server we control.** The app talks to
-   `login.microsoftonline.com`, `graph.microsoft.com`, and (for licensing only) our
-   entitlement endpoint. The entitlement endpoint receives a tenant ID and an attestation,
-   never a credential. Verify with a proxy — this is our strongest claim and the easiest
-   to check.
+   `login.microsoftonline.com`, `graph.microsoft.com`, and — only after an enterprise
+   license is activated — our entitlement endpoint. That endpoint receives a tenant ID and
+   nothing else: no credential, no Microsoft token, no user or device identity. The full
+   wire format, what the server logs, and how to check both are published in
+   `docs/ENTITLEMENT-API.md`. Verify with a proxy — this is our strongest claim and the
+   easiest to check.
 2. **No credential is logged.** `CredentialKit` links no logging framework, analytics SDK,
    or crash reporter. This is enforced at build time by `scripts/isolation-check.sh`, not
    by convention.

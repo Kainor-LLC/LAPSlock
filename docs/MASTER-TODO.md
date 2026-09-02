@@ -594,22 +594,58 @@ CLI gotcha: `az functionapp show` nests everything under `properties`, while
 against the other, and `--output table` hides null columns rather than showing them empty.
 Use `--output json` when verifying.
 
+## ✅ API contract written 2026-09-01 — `docs/ENTITLEMENT-API.md`
+
+Version 1, frozen for implementation. Published in the public repo; the Function stays
+private. **Read it before writing any Function code** — it is normative for both halves,
+and §7 is normative for the client, not advisory.
+
+Everything previously decided survived unchanged: tid and nothing else in the request,
+`attestation`/`assertion` reserved, ES256 signed through Key Vault, public key embedded,
+claims `iss`/`aud`/`sub`/`tier`/`iat`/`nbf`/`exp`/`jti`, 30-day lifetime.
+
+Decided *by* the contract, because the implementation needed an answer:
+
+- **A free-tier install never contacts the endpoint.** The call happens on Activate
+  license, on the refresh schedule afterwards, and on a manual refresh. Nothing else. The
+  alternative — every install checking in on launch — would build a list of every tenant
+  running the app, and that list has no use worth the explaining it would cost. Reversible
+  without a version bump if it turns out to generate support tickets.
+- **Hard prohibitions on when the client may call**, so request timing never becomes usage
+  telemetry: never on a reveal, a search, a device open, a launch, or as part of sign-in.
+- **Always `200` with a signed token, `tier: free` for unlicensed tenants.** No 404, so the
+  endpoint is not an oracle for who is paying.
+- **Unrecognized tier → free.** Fail to metered, never to unlocked.
+- `isPro = storeKitEntitlementActive || verifiedTier != .free`. IAP tiers never touch this
+  endpoint; it exists for the tenant-keyed direct sales.
+- **7-day offline grace past `exp`**, network-failure only, taking worst-case revocation lag
+  to 37 days. Buys a week in a datacenter with no signal.
+- **`msp` tokens are bound to the activating tenant, not the signed-in one.** An MSP signs
+  into customer tenants; the strict binding would revoke their licence for doing their job.
+  The one deliberate loosening, on the tier that is honour-system on seats anyway.
+- **Keyring of `kid` → public key compiled into the app; the client never fetches a key.**
+  A JWKS document is for auditors and hand-verification only. Rotation is a three-release
+  dance and emergency rotation is honestly documented as slow.
+- **No seat or device count in the token**, ever. Enforcing the ≤500-device tier would mean
+  the app reporting a device count to a Kainor server. Contract and invoice, not telemetry.
+- Client lives in `LicensingKit` — Foundation + CryptoKit + Security already covers
+  URLSession and ES256 verification, so no new dependency and neither isolation boundary
+  moves.
+
 ## Remaining
 
-- ⬜ ES256 signing key in the vault (created in-vault, never exported)
-- ⬜ Licences table in `kainorlapslockprodst`
-- ⬜ Function code: `/entitlement` — tid in, signed JWT out
-- ⬜ **API contract, published publicly while the implementation stays private.** This is the
-  next real design work. Decided so far: the request carries a tenant ID and NOTHING else —
-  no Graph token, no user identity, no device data. The product's whole positioning is that
-  no vendor server sits in the credential path, and an admin with a proxy must be able to
-  confirm that in ten minutes. A bare tid is spoofable, but the JWT is bound to `sub = tid`
-  and the app pins to the signed-in tenant, so a stolen entitlement is only usable by
-  someone already inside that tenant and therefore already covered. Version the request body
-  and define optional `attestation` / `assertion` fields from day one so App Attest is not a
-  breaking change later.
-- ⬜ Claims: `iss`, `aud` (bundle id), `sub` (tid), `tier`, `iat`, `nbf`, `exp`, `jti`.
-  30-day lifetime, which means revocation lags 30 days. Acceptable at these price points.
+- ⬜ ES256 signing key in the vault (created in-vault, never exported). `kid`
+  `lapslock-ent-2026-09` per the contract.
+- ⬜ Licences table in `kainorlapslockprodst`. Schema is constrained by §8 of the contract:
+  tenant GUID, tier, term, order ref, purchase contact. A row exists only for a PAYING
+  tenant. Request logs 30-day retention.
+- ⬜ Function code: `/entitlement` — tid in, signed JWT out. Contract §2–§6 is the spec.
+- ⬜ Client: entitlement fetch + verification in `LicensingKit`, Activate/Remove licence UI
+  in Settings, and `isPro` wired up (currently hardcoded false in `LAPSlockApp.swift`).
+- ⚠️ **Privacy policy says "exactly two hosts" and must say three in the same release that
+  ships activation.** `docs/privacy/index.html`, "Network connections". The wording should
+  keep the distinction the contract makes: two hosts always, a third only after a licence is
+  activated. Shipping the endpoint without this makes a published policy false.
 - ⬜ App Attest verification — **phase 2, deliberately.** See the reasoning below.
 - ⬜ Later: `/stripe-webhook` to auto-insert license rows
 - ⬜ Custom domain for the API (~$10–15/yr; expect <$2/mo Azure spend). Note that App Service
@@ -881,11 +917,11 @@ Deliberately deferred, not blocked:
 
 ## DECIDED ORDER, 2026-08-29. Do not re-argue this each session.
 
-1. **`/entitlement` API contract**, then the ES256 key, the licences table, and the
-   Function. The client half of the revenue path shipped 2026-08-29 and the infrastructure
-   is already provisioned, so nothing blocks this. It has now been deferred twice — once
-   for real-tenant verification, once for the rename — and both of those reasons are gone.
-   Roughly two sessions: contract, then implementation.
+1. ~~**`/entitlement` API contract**~~ — DONE 2026-09-01, `docs/ENTITLEMENT-API.md`.
+   Next: the ES256 key, the licences table, then the Function, then the client half
+   (fetch, verify, Activate licence UI, `isPro`). The privacy policy host list has to
+   change in the same release as the client work. The infrastructure is provisioned and
+   nothing blocks any of it.
 2. **Auth diagnostics in the support report.** Becomes urgent the moment there is a
    customer, and not before. Tonight proved it is needed: diagnosing the broker bug took a
    cable, Xcode and Console.app, and a customer hitting the same failure gets "check your
