@@ -19,6 +19,18 @@ from this session is committed (not pushed) with all three checks green.
   no way to activate the one on screen. `EntitlementManager.isBoundToAnotherTenant` now makes
   the distinction and Settings gains a third branch: "Free here" plus "Activate for this
   organization". `msp` is exempt. Six tests, suite at 199.
+- ✅ **Activate now names the organization it will license.** Found by asking what an MSP
+  would experience: nothing on the button said which tenant it bound to, so an MSP who
+  installed the app, signed into a customer first, and tapped Activate would silently
+  license the wrong organization. The button reads "Activate license for contoso.com", from
+  the UPN domain rather than the tenant GUID, which an administrator recognises instantly.
+  Both footers now also say that an MSP should activate against their own organization,
+  because an MSP license travels and needs no re-activation.
+- ✅ **Automatic activation on tenant switch: considered and REJECTED**, recorded in the
+  contract at §7.1. It violates §7.2 by making sign-in reach the network, but the deciding
+  argument is worse than the rule: for an MSP it would send Kainor the identifier of every
+  customer tenant they sign into, building a list of that MSP's customers. Not ours to have.
+  The MSP tier already solves it by binding one license to the MSP's own tenant.
 - ⬜ **Settings is unreachable while signed out.** Found on device: after a failed sign-in
   the only route to the diagnostics report is via demo mode. `rotationSection` and
   `macOSSection` are not conditional, so this is not a matter of passing nils — the sections

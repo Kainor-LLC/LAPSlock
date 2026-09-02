@@ -360,6 +360,15 @@ The app is therefore in one of two states, and an administrator can tell which f
 in seconds: unactivated, talking to two Microsoft hosts and nothing else; or activated,
 talking to those two plus this one, roughly monthly.
 
+> **Automatic activation on tenant switch was considered and rejected.** It is the obvious
+> convenience — an administrator signing into a new tenant could have their entitlement
+> resolved without tapping anything — and it would violate §7.2 by making sign-in trigger a
+> request. The deciding argument is sharper than the rule, though: for an MSP it would send
+> Kainor the identifier of every customer tenant they sign into, accumulating a list of who
+> that MSP's customers are. That list is commercially sensitive, it is not ours, and no
+> convenience justifies building it. The MSP tier solves the same problem correctly, by
+> binding one license to the MSP's own tenant and letting it travel (§7.4).
+>
 > This is a design choice, not a wire-format requirement, and it is reversible without a
 > version bump. The alternative — every install checking in on launch — is simpler to build
 > and would give Kainor a list of every tenant running the app. That list has no use that
@@ -741,4 +750,5 @@ stale client must degrade to `free`, never to broken.
 |---|---|
 | 2026-09-01 | Version 1. Initial published contract. |
 | 2026-09-01 | §8 tightened before implementation: tenant IDs out of request logs, purchaser contact details out of the license table, rate limiting moved to ephemeral state, running cost stated. No wire-format change. |
+| 2026-09-02 | §7.1 records why automatic activation on tenant switch is rejected: it would send Kainor the identifier of every customer tenant an MSP signs into. No wire-format change. |
 | 2026-09-02 | §2 corrected after measuring the deployed endpoint: plain HTTP is redirected, not refused. No wire-format change. The implementation was corrected to match this document in two other places rather than the reverse — the Functions host's default `/api` route prefix was removed so the path is `/entitlement` as published, and a non-POST now returns 405 as the error table promises instead of the host's default 404. |
