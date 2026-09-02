@@ -177,6 +177,22 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         XCTAssertFalse(auth.calls.contains { $0.interactive }, "reads must be silent-only")
     }
 
+    func test_anUnconsentedScopeReportsConsentRequiredNotNotAuthorized() async {
+        // A SILENT request for an unconsented scope throws interactionRequired, not
+        // consentRequired. Mapping only the latter reported "not authorized", which points
+        // the user at eligibility instead of at the permission they actually need.
+        auth.failures = [
+            PrivilegedAccessGraph.roleReadScope: .interactionRequired,
+            PrivilegedAccessGraph.groupReadScope: .interactionRequired,
+        ]
+        do {
+            _ = try await service.eligibleAccess()
+            XCTFail("expected consentRequired")
+        } catch {
+            XCTAssertEqual(error as? PrivilegedAccessError, .consentRequired)
+        }
+    }
+
     // MARK: activation and the claims challenge
 
     private var role: EligibleAccess {

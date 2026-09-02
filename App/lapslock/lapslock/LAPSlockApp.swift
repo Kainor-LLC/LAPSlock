@@ -426,7 +426,9 @@ final class AppRootModel: ObservableObject {
     func requestPrivilegedActivationConsent() async -> String? {
         guard let auth else { return "Sign in first." }
         do {
-            _ = try await auth.token(scopes: PrivilegedAccessGraph.activateScopes, allowInteractive: true)
+            // ALL of them — read and activate. Consenting to activation alone left the
+            // read scopes unconsented, so the sheet failed the moment it opened.
+            _ = try await auth.token(scopes: PrivilegedAccessGraph.allScopes, allowInteractive: true)
             return nil
         } catch let error as AuthError {
             if ConsentDiagnostics.state(from: error) != nil {
