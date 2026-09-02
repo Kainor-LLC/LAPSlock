@@ -128,6 +128,20 @@ bytes. `docs/entitlement-jwks.json` holds the correctly base64url-encoded form. 
 uncompressed form for `P256.Signing.PublicKey(x963Representation:)` is `0x04` followed by
 the 32-byte x then the 32-byte y, 65 bytes total.
 
+**Owner does not grant the STORAGE data plane either, and the failure is asymmetric.**
+Creating a table with `az storage table create` succeeds, because that is a management-plane
+call. Reading or writing an *entity* then fails, because that is the data plane and needs
+Storage Table Data Reader or Contributor. So the table appearing to be created is not
+evidence that anything can use it. Both roles are now assigned, scoped to the `licences`
+table rather than the storage account.
+
+**⚠️ The storage account key is in the Function app settings.** `AzureWebJobsStorage` and
+`DEPLOYMENT_STORAGE_CONNECTION_STRING` both hold connection strings containing an account
+key, which grants full read/write over the entire storage account including the licences
+table — bypassing the scoped Reader role entirely. Move to identity-based storage before
+go-live, as its own step, never alongside new Function code: getting `AzureWebJobsStorage`
+wrong stops the app starting.
+
 **The vault is `standard` SKU, so the signing key is software-protected, not HSM.**
 Deliberate. HSM needs Premium, and per contract section 9.2 the worst case for a stolen
 signing key is forged Pro features, never credential access.
@@ -390,18 +404,23 @@ Others:
       `docs/entitlement-jwks.json` and its point was verified to satisfy the P-256 curve
       equation, so it is not a transcription error. **Two traps came out of this, both
       recorded below.**
-   2. **Licences table in `kainorlapslockprodst`.** Contract section 8.1 constrains the
-      schema to four columns: tenant GUID, tier, term start and end, order reference. No
-      purchaser name or email — those stay in Stripe, so no personal data lands in Azure. A
-      row exists only for a PAYING tenant; nothing creates one for a free tenant.
-      Section 8.2 is the other half: the tenant ID is never logged, which is why the
-      contract forbids ever putting it in a URL. **Turn Application Insights down before
-      going live** — failures and platform metrics only, minimum retention, no body
-      collection. It ships at defaults with 90-day retention and is the one thing here that
-      could cost real money; always-ready instances above zero is the other.
-   3. **The Function.** Contract sections 2 to 6 are the spec, including the error table
-      and the rule that an unlicensed tenant gets a 200 with a `free` token rather than a
-      404.
+   2. ~~**Licences table**~~ — DONE 2026-09-02. `licences` in `kainorlapslockprodst`.
+      PartitionKey is the lowercase tenant GUID, RowKey is `current`, plus `Tier`,
+      `TermStart`, `TermEnd`, `OrderRef`. No purchaser name or email; those stay in Stripe,
+      so no personal data lands in Azure. Roles are scoped to the TABLE, not the account:
+      the human account has Table Data Contributor for inserting rows by hand, the Function
+      identity has Table Data **Reader** because it never writes one.
+      **Still to do before going live:** turn Application Insights down (failures and
+      platform metrics only, minimum retention, no body collection — it ships at defaults
+      with 90-day retention), keep always-ready instances at zero, and move
+      `AzureWebJobsStorage` off its account key. Those three are the whole pre-live list.
+   3. **The Function — this is where the next session starts.** Contract sections 2 to 6
+      are the spec, including the error table and the rule that an unlicensed tenant gets a
+      200 with a `free` token rather than a 404. Code goes in
+      **`Kainor-LLC/LAPSlock-backend`** (private, created 2026-09-02, cloned at
+      `~/Developer/LAPSlock-backend`). Toolchain is ready: .NET SDK 10.0.400 and Azure
+      Functions Core Tools 4.14.0 are installed, and `gh` is installed and authenticated as
+      `kainorllc`. Deploy with `func azure functionapp publish kainor-lapslock-prod-func`.
    4. **The client half**, in `LicensingKit`: fetch, verify per section 7.4, Keychain
       storage, Activate and Remove licence in Settings, and `isPro` wired up — it is
       hardcoded false in `LAPSlockApp.swift` today.
