@@ -609,7 +609,31 @@ macOS password retrieval.
   unreachable, but "may be unreachable" is not the standard this project holds for credential
   lifetime — verify or handle it.
 
-  **⚠️ CANNOT BE FULLY TESTED HERE.** Guest/B2B needs a second tenant that has invited the
+  **⚠️ CANNOT BE FULLY TESTED HERE, and manufacturing a test tenant was investigated and
+  abandoned 2026-09-02.** Every route costs something that a single test does not justify:
+
+  * *Microsoft 365 Developer Program* — no longer eligible; it now requires a Visual Studio
+    subscription.
+  * *A plain workforce tenant* — the Azure portal no longer offers one. The choices are
+    **governed workforce** or **external**, and legacy has been retired from that flow.
+  * *Governed workforce* — creation is free and the governed tenant needs no licenses, but
+    **cross-tenant delegated administration requires Entra P1, P2 or ID Governance**, which
+    the Kainor tenant does not have (Entra ID Free comes with a pay-as-you-go subscription).
+    Worth attempting, since creation may succeed with the governance relationship simply
+    inert, giving a usable second directory. **Abort if it asks to buy or trial a license.**
+  * *External* — wrong product. Entra External ID is a CIAM directory for customer-facing
+    apps, not an organization.
+  * *An M365 Business trial* — creates a tenant, but auto-renews and risks a bill, which is
+    not a trade worth making for one test.
+
+  **So the first real test of an MSP tenant switch is a customer, and that was the design
+  assumption rather than a surprise.** It is why `SwitchFailure` explains all ten error cases
+  on screen and why `DiagnosticOperation.tenantSwitch` carries the AADSTS code and
+  correlation ID into the support report. If an early MSP prospect appears, ask them to
+  invite the Kainor account as a guest in a sandbox of theirs — that is a ten-minute favour
+  and it closes this gap properly.
+
+  Original note: Guest/B2B needs a second tenant that has invited the
   Kainor account; GDAP needs a real partner relationship. The auth layer is unit tested and
   the guard is covered, but the end-to-end MSP path needs a customer tenant to prove.
 
