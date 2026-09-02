@@ -25,7 +25,7 @@ struct PrivilegedAccessView: View {
     /// log more useful, not less private.
     let deviceName: String?
     let loadEligible: () async -> Result<[EligibleAccess], PrivilegedAccessError>
-    let activate: (EligibleAccess, String, String?) async -> Result<ActivationOutcome, PrivilegedAccessError>
+    let activate: (EligibleAccess, String, String?, String) async -> Result<ActivationOutcome, PrivilegedAccessError>
     /// Requests consent for the PIM scopes, returning a message on failure.
     ///
     /// Here rather than only in Settings because **consent is per-organization while the
@@ -44,6 +44,7 @@ struct PrivilegedAccessView: View {
     @State private var failure: PrivilegedFailure?
     @State private var outcome: ActivationOutcome?
     @State private var isRequestingConsent = false
+    @State private var duration = ActivationRequest.defaultDuration
 
     private enum Phase: Equatable {
         case loading
@@ -137,12 +138,20 @@ struct PrivilegedAccessView: View {
             TextField("Ticket number (optional)", text: $ticket)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
+            Picker("Activate for", selection: $duration) {
+                ForEach(ActivationRequest.durations, id: \.iso) { option in
+                    Text(option.label).tag(option.iso)
+                }
+            }
         } header: {
             Text("Reason")
         } footer: {
             Text("""
-                This is recorded in your organization's own audit log alongside the \
-                activation. Many tenants require it.
+                The reason is recorded in your organization's own audit log alongside the \
+                activation, and many tenants require it.
+
+                Your organization sets a maximum activation length. Asking for longer than \
+                it allows is refused, so start short.
                 """)
         }
     }
@@ -273,7 +282,8 @@ struct PrivilegedAccessView: View {
         let result = await activate(
             selected,
             justification.trimmingCharacters(in: .whitespaces),
-            trimmedTicket.isEmpty ? nil : trimmedTicket)
+            trimmedTicket.isEmpty ? nil : trimmedTicket,
+            duration)
 
         switch result {
         case .success(let value):
@@ -288,6 +298,18 @@ struct PrivilegedAccessView: View {
 
 /// A failure in the user's terms, with what to do about it.
 struct PrivilegedFailure: Equatable {
+
+    /// Appends Microsoft's own error code on its own line.
+    ///
+    /// A helper rather than an inline escape because writing Swift escape sequences through
+    /// a text-processing step is how this file got mangled twice in one session — Python
+    /// turns a backslash-n into a real newline and the string literal ends mid-sentence.
+    /// Nothing here contains an escape for a tool to eat.
+    static func codeSuffix(_ code: String) -> String {
+        let blank = String(repeating: "\u{0A}", count: 2)
+        return blank + "Microsoft's error code: " + code
+    }
+
     let title: String
     let explanation: String
     /// True when a permission prompt is the fix, so the sheet can offer one inline.
@@ -339,9 +361,17 @@ struct PrivilegedFailure: Equatable {
         case .notAuthorized:
             title = "Microsoft refused the request"
             explanation = "The most likely reason is that these permissions have not been approved for your organization — they need an Entra administrator, and an Intune Administrator cannot grant them. A diagnostics report from Settings carries the Microsoft error code, which says exactly which."
-        case .serviceError(let status):
-            title = "Microsoft returned an error (HTTP \(status))"
-            explanation = "Nothing was changed. Try again shortly; if it persists, send a diagnostics report from Settings."
+        case .serviceError(let status, let code):
+            title = "Microsoft refused the request (HTTP \(status))"
+            let codeLine = code.map { PrivilegedFailure.codeSuffix($0) } ?? ""
+            if status == 400 {
+                // A 400 means the request was rejected, not that the service is down,
+                // and the commonest reason by far is an activation longer than the
+                // tenant PIM policy allows. Naming that first saves a support round trip.
+                explanation = "Nothing was changed. The most likely reason is that the activation length exceeds what your organization allows — try 1 hour. It can also mean the eligibility no longer exists, or that your organization requires a ticket number." + codeLine
+            } else {
+                explanation = "Nothing was changed. Try again shortly; if it persists, send a diagnostics report from Settings." + codeLine
+            }
         case .transport:
             title = "Couldn't reach Microsoft"
             explanation = "Check the connection and try again. Nothing was changed."

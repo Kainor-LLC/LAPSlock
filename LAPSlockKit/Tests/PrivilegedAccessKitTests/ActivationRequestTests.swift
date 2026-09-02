@@ -88,7 +88,24 @@ final class ActivationRequestTests: XCTestCase {
         let json = prepared(role).json
         let expiration = (json["scheduleInfo"] as? [String: Any])?["expiration"] as? [String: Any]
         XCTAssertEqual(expiration?["type"] as? String, "afterDuration")
-        XCTAssertEqual(expiration?["duration"] as? String, "PT5H")
+        XCTAssertEqual(expiration?["duration"] as? String, "PT1H")
+    }
+
+    func test_theDefaultDurationIsTheShortestOffered() {
+        // Not a security preference — a correctness one. Every PIM policy caps activation
+        // length, the cap is per-tenant and often per-group, and asking for longer than the
+        // policy allows is rejected with a bare 400 naming no reason. A hardcoded five hours
+        // was not merely generous, it was invalid in a tenant that allowed less.
+        XCTAssertEqual(ActivationRequest.defaultDuration, ActivationRequest.durations.first?.iso)
+        XCTAssertEqual(ActivationRequest.defaultDuration, "PT1H")
+    }
+
+    func test_everyOfferedDurationIsAValidISO8601Period() {
+        for option in ActivationRequest.durations {
+            XCTAssertNotNil(
+                option.iso.range(of: "^PT[0-9]{1,2}H$", options: .regularExpression),
+                "\(option.iso) is not a duration Graph will accept")
+        }
     }
 
     func test_ticketInfoIsOmittedWhenThereIsNoTicket() {
@@ -98,10 +115,23 @@ final class ActivationRequestTests: XCTestCase {
         XCTAssertNil(schedule?["ticketInfo"], "an empty ticketInfo is noise in an audit log")
     }
 
-    func test_aTicketIsPassedThroughWhenGiven() {
-        let schedule = prepared(role, ticket: "INC-4471").json["scheduleInfo"] as? [String: Any]
-        let info = schedule?["ticketInfo"] as? [String: Any]
+    func test_aTicketIsPassedThroughAtTheTopLevel() {
+        // ticketInfo is a sibling of scheduleInfo, NOT a property of it. It was nested at
+        // first, which makes the whole request invalid: Graph rejects an unknown property on
+        // scheduleInfo with a 400 that does not say which property offended it.
+        let json = prepared(role, ticket: "INC-4471").json
+        let info = json["ticketInfo"] as? [String: Any]
         XCTAssertEqual(info?["ticketNumber"] as? String, "INC-4471")
+
+        let schedule = json["scheduleInfo"] as? [String: Any]
+        XCTAssertNil(schedule?["ticketInfo"], "ticketInfo must not be nested inside scheduleInfo")
+    }
+
+    func test_scheduleInfoCarriesOnlyWhatGraphExpects() {
+        // An unknown property here is a 400 with an unhelpful message, so the shape is
+        // pinned rather than left to drift.
+        let schedule = prepared(role, ticket: "INC-4471").json["scheduleInfo"] as? [String: Any]
+        XCTAssertEqual(Set(schedule?.keys ?? [:].keys), ["startDateTime", "expiration"])
     }
 
     // MARK: - the outcome, where over-reporting success is the danger

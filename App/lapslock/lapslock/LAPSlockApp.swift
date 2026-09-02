@@ -457,18 +457,19 @@ final class AppRootModel: ObservableObject {
     func activatePrivilegedAccess(
         _ access: EligibleAccess,
         justification: String,
-        ticketNumber: String?
+        ticketNumber: String?,
+        duration: String
     ) async -> Result<ActivationOutcome, PrivilegedAccessError> {
         guard let session = liveSession else { return .failure(.notAuthorized) }
         do {
             let outcome = try await PrivilegedAccessService(auth: session.auth).activate(
-                access, justification: justification, ticketNumber: ticketNumber)
+                access, justification: justification, ticketNumber: ticketNumber, duration: duration)
             return .success(outcome)
         } catch let error as PrivilegedAccessError {
-            await recordActivationFailure(error)
+            await recordActivationFailure(error, access: access)
             return .failure(error)
         } catch {
-            await recordActivationFailure(.transport)
+            await recordActivationFailure(.transport, access: access)
             return .failure(.transport)
         }
     }
@@ -479,8 +480,12 @@ final class AppRootModel: ObservableObject {
     ///
     /// The role and the justification are NOT recorded. Which role somebody tried to
     /// activate and why is their business and their audit log's, not a support inbox's.
-    private func recordActivationFailure(_ error: PrivilegedAccessError) async {
+    private func recordActivationFailure(_ error: PrivilegedAccessError, access: EligibleAccess) async {
         let detail = await auth?.lastAuthFailure
+
+        // A 4xx is our request being rejected; a 5xx is Microsoft being unavailable. Mapping
+        // both to serviceUnavailable sent a diagnostics reader hunting an outage that was
+        // not happening.
         let outcome: DiagnosticOutcome = {
             switch error {
             case .consentRequired: return .consentRequired
@@ -488,18 +493,36 @@ final class AppRootModel: ObservableObject {
             case .noEligibleAccess, .alreadyActive: return .notFound
             case .transport: return .transportError
             case .decodeFailure: return .decodeFailure
-            case .serviceError: return .serviceUnavailable
+            case .serviceError(let status, _): return status < 500 ? .badRequest : .serviceUnavailable
             }
         }()
+
+        // Graph's status and code, not MSAL's. The previous version read httpStatus from the
+        // AUTH failure detail, which is nil for a Graph error — so a 400 was reported with no
+        // status at all and an outcome that claimed an outage.
+        var graphStatus: Int?
+        var graphCode: String?
+        if case .serviceError(let status, let code) = error {
+            graphStatus = status
+            graphCode = code
+        }
+
         await DiagnosticsRecorder.shared.record(DiagnosticEvent(
             operation: .roleActivation,
             outcome: outcome,
-            httpStatus: detail?.httpStatus,
+            httpStatus: graphStatus ?? detail?.httpStatus,
+            // Which endpoint, so role and group failures are told apart at a glance. A
+            // template, so no group or tenant identifier rides along.
+            endpointTemplate: {
+                if case .group = access.kind { return PrivilegedAccessGraph.groupActivationPath }
+                return PrivilegedAccessGraph.roleActivationPath
+            }(),
             msalErrorCode: detail?.msalErrorCode,
             aadErrorCode: detail?.aadErrorCode,
             oauthError: detail?.oauthError,
             correlationId: detail?.correlationId,
-            brokerInvolved: detail?.brokerInvolved
+            brokerInvolved: detail?.brokerInvolved,
+            graphErrorCode: graphCode
         ))
     }
 
@@ -617,9 +640,10 @@ struct AppRootView: View {
                                 PrivilegedAccessView(
                                     deviceName: nil,
                                     loadEligible: { await root.loadEligibleAccess() },
-                                    activate: { access, justification, ticket in
+                                    activate: { access, justification, ticket, duration in
                                         await root.activatePrivilegedAccess(
-                                            access, justification: justification, ticketNumber: ticket)
+                                            access, justification: justification,
+                                            ticketNumber: ticket, duration: duration)
                                     },
                                     requestConsent: { await root.requestPrivilegedActivationConsent() }
                                 )
@@ -641,9 +665,10 @@ struct AppRootView: View {
                                 PrivilegedAccessView(
                                     deviceName: device.deviceName,
                                     loadEligible: { await root.loadEligibleAccess() },
-                                    activate: { access, justification, ticket in
+                                    activate: { access, justification, ticket, duration in
                                         await root.activatePrivilegedAccess(
-                                            access, justification: justification, ticketNumber: ticket)
+                                            access, justification: justification,
+                                            ticketNumber: ticket, duration: duration)
                                     },
                                     requestConsent: { await root.requestPrivilegedActivationConsent() }
                                 )
