@@ -192,6 +192,22 @@ final class DeviceListModel: ObservableObject {
 struct DeviceListView: View {
     @StateObject var model: DeviceListModel
     let isDemo: Bool
+
+    /// The MSP organization picker, or nil when this tier cannot switch. Passing nil rather
+
+    /// than disabling a visible control is deliberate: a single-organization admin should
+
+    /// not see chrome for a feature that does not apply to them.
+
+    var tenantSwitcher: (() -> TenantSwitcherView)? = nil
+
+    /// Refreshes tenant state when the list appears. Note the NavigationStack does not
+
+    /// disappear when a detail view is pushed, so this fires once at launch — which is
+
+    /// enough here, because switching organizations happens through the sheet below.
+
+    var onAppearRefresh: (() async -> Void)? = nil
     /// Opens Settings. Injected so the list doesn't need to know how consent is requested.
     let settingsBuilder: () -> SettingsView
     /// Builds the detail screen for a device. Injected so the list doesn't need to know
@@ -199,6 +215,9 @@ struct DeviceListView: View {
     let detailBuilder: (ManagedDeviceSummary) -> DeviceDetailView
 
     @State private var showingSettings = false
+
+
+    @State private var showingTenantSwitcher = false
 
     var body: some View {
         NavigationStack {
@@ -219,6 +238,16 @@ struct DeviceListView: View {
             .searchable(text: $model.query, prompt: "Device, user, or serial")
             .refreshable { await model.load() }
             .toolbar {
+                if tenantSwitcher != nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            showingTenantSwitcher = true
+                        } label: {
+                            Image(systemName: "building.2")
+                        }
+                        .accessibilityLabel("Switch organization")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingSettings = true
@@ -231,6 +260,10 @@ struct DeviceListView: View {
             .sheet(isPresented: $showingSettings) {
                 settingsBuilder()
             }
+            .sheet(isPresented: $showingTenantSwitcher) {
+                if let tenantSwitcher { tenantSwitcher() }
+            }
+            .task { await onAppearRefresh?() }
             .safeAreaInset(edge: .top) {
                 if isDemo { DemoBanner() }
             }

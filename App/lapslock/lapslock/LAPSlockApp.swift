@@ -99,6 +99,13 @@ enum RevealMeters {
 /// There is deliberately no `demo` counterpart. Demo mode is for evaluating the app without
 /// signing in, and an install in that state must have no code path that can contact Kainor
 /// (entitlement contract section 7.1). Passing nil to Settings in demo is what enforces it.
+/// The MSP customer list. Live path only — demo mode has no tenants to switch between, and
+/// giving it a store would create a code path where an unsigned-in install holds a list of
+/// organizations.
+enum TenantStores {
+    static let live = KeychainTenantStore()
+}
+
 enum Entitlements {
     static let live = EntitlementManager(
         store: KeychainEntitlementStore(),
@@ -200,6 +207,65 @@ final class AppRootModel: ObservableObject {
             signedInTenantId: signedInTenantId,
             storeKitEntitlementActive: false
         )
+    }
+
+    /// Customer organizations, most recently used first.
+    @Published private(set) var savedTenants: [TenantReference] = []
+    /// The tenant being operated in, which differs from the account's own only for an MSP.
+    @Published private(set) var operatingTenantId: String?
+
+    /// True only for the msp tier. Enterprise and Pro are single-organization by design, so
+    /// the switcher does not appear for them at all rather than appearing and refusing.
+    var canSwitchTenants: Bool {
+        Entitlements.live.state(signedInTenantId: signedInTenantId).tier.allowsTenantSwitching
+    }
+
+    func refreshTenants() async {
+        savedTenants = TenantList.sorted((try? TenantStores.live.load()) ?? [])
+        operatingTenantId = await liveSession?.auth.operatingTenantId
+    }
+
+    func rememberTenant(_ tenant: TenantReference) {
+        let updated = TenantList.upsert(tenant, into: (try? TenantStores.live.load()) ?? [])
+        try? TenantStores.live.save(updated)
+        savedTenants = TenantList.sorted(updated)
+    }
+
+    func forgetTenant(_ tenantId: String) {
+        let updated = TenantList.removing(tenantId, from: (try? TenantStores.live.load()) ?? [])
+        try? TenantStores.live.save(updated)
+        savedTenants = TenantList.sorted(updated)
+    }
+
+    func resolveTenant(_ input: String) async -> Result<String, TenantDirectoryError> {
+        do {
+            return .success(try await TenantDirectory.resolve(input))
+        } catch let error as TenantDirectoryError {
+            return .failure(error)
+        } catch {
+            return .failure(.network)
+        }
+    }
+
+    /// Switches organization, or returns home when nil. Returns nil on success.
+    ///
+    /// Tenant-scoped state is discarded on success for the same reason it is on sign-out
+    /// (§7): a device list or a revealed credential from one organization must not survive
+    /// into another. `setActiveTenant` validates before committing, so on failure nothing
+    /// has changed and nothing needs clearing.
+    func switchTenant(to tenantId: String?) async -> AuthError? {
+        guard let session = liveSession else { return .noAccount }
+        do {
+            try await session.auth.setActiveTenant(tenantId)
+        } catch let error as AuthError {
+            return error
+        } catch {
+            return .underlying("tenant switch failed")
+        }
+
+        await session.inventory.reset()
+        operatingTenantId = await session.auth.operatingTenantId
+        return nil
     }
 
     /// The ONE calendar-shaped trigger for the scheduled refresh, contract section 7.3.
@@ -372,6 +438,25 @@ struct AppRootView: View {
                         isPro: root.isPro
                     ),
                     isDemo: false,
+                    tenantSwitcher: root.canSwitchTenants ? {
+                        TenantSwitcherView(
+                            homeTenantId: root.signedInTenantId ?? "",
+                            homeLabel: root.signedInDomain ?? "Your organization",
+                            operatingTenantId: root.operatingTenantId ?? root.signedInTenantId,
+                            saved: root.savedTenants,
+                            resolve: { await root.resolveTenant($0) },
+                            switchTo: { await root.switchTenant(to: $0) },
+                            remember: { root.rememberTenant($0) },
+                            forget: { root.forgetTenant($0) },
+                            consentURL: { tenant in
+                                AdminConsentLink.url(
+                                    clientId: AuthConfiguration.vendorDefault.clientId,
+                                    tenant: tenant
+                                )
+                            }
+                        )
+                    } : nil,
+                    onAppearRefresh: { await root.refreshTenants() },
                     settingsBuilder: {
                         SettingsView(
                             settings: AppSettings.shared,
