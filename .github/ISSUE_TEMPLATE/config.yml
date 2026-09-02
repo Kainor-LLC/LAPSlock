@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Kainor-LLC/LAPSlock/blob/main/SECURITY.md
+    about: If a credential ended up somewhere it should not be, do NOT open an issue. Email as described in SECURITY.md.
+  - name: Network behavior you expected to see
+    url: https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/NETWORK-TRANSPARENCY.md
+    about: The three hosts the app talks to, and how to verify that with a proxy in ten minutes.

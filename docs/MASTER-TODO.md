@@ -673,8 +673,8 @@ Decided *by* the contract, because the implementation needed an answer:
   curve equation. Vault version `ec4ca7dc7a284a19865eb9ea3a3806ec` — **pin it in Function
   config**, since a new version would otherwise take over signing while `kid` stayed the
   same and break every client in the field.
-- ⬜ **Remove Key Vault Crypto Officer from the human account** now that the key exists.
-  Nothing needs standing key-creation rights; re-granting for rotation takes seconds.
+- ✅ Key Vault Crypto Officer removed from the human account 2026-09-02. The vault has
+  exactly one assignment: the Function identity as Crypto User.
 - ✅ **Licenses table created 2026-09-02.** `licenses` in `kainorlapslockprodst`. Named with
   the American spelling to match `LICENSE`, `SECURITY.md`, the privacy policy, the terms, and
   the entitlement contract — Kainor LLC is a US company and every public-facing document
@@ -735,9 +735,9 @@ Decided *by* the contract, because the implementation needed an answer:
   Still to do on App Insights before the Function goes live: failures and platform metrics
   only, and confirm request/response body collection stays off. The cap bounds the cost; it
   does not stop a body containing a tenant ID being written, which section 8.2 forbids.
-- ⬜ Rate limiting per §8.3: source IP plus a keyed hash of the tid in cache with a sub-hour
-  TTL, never persisted. **No per-tenant request counters** — that history is exactly the
-  file the product promises not to build.
+- ✅ Rate limiting per §8.3 shipped in the Function 2026-09-02: source IP plus an HMAC of
+  the tid under a per-process random key, in memory, absolute expiry inside the window,
+  nothing persisted. Per-instance and therefore approximate, which is documented.
 - ✅ **Function written, tested and deployed 2026-09-02.** Live at
   `https://kainor-lapslock-prod-func.azurewebsites.net/entitlement`, .NET 10 isolated, 69
   tests verified to fail on injected defects. A live token verifies against the published
@@ -762,8 +762,7 @@ Decided *by* the contract, because the implementation needed an answer:
   keeps for a paying organization. The wording is true both before and after the client
   ships. **Pushing `docs/` publishes it with the new effective date**, so push it alongside
   the app release rather than ahead of it.
-- ⬜ Client: entitlement fetch + verification in `LicensingKit`, Activate/Remove license UI
-  in Settings, and `isPro` wired up (currently hardcoded false in `LAPSlockApp.swift`).
+- ✅ Client half built 2026-09-02 — see the entry above.
 - ⚠️ **Privacy policy says "exactly two hosts" and must say three in the same release that
   ships activation.** `docs/privacy/index.html`, "Network connections". The wording should
   keep the distinction the contract makes: two hosts always, a third only after a license is
@@ -842,7 +841,10 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   app registration, the site nav, and the in-app Settings screen
 - 🟡 "Not affiliated with Microsoft" disclaimer — in Settings and both legal pages;
   still needed on the marketing site
-- ⬜ One-page security/data-handling doc
+- ✅ **One-page security/data-handling doc written 2026-09-02** — `docs/SECURITY-ONE-PAGER.md`.
+  For the approver, not the engineer: auth model, the storage table, what Kainor receives on
+  each tier, transport, and a carefully worded regulatory paragraph that says plainly there
+  is no SOC 2 / ISO 27001 and why the controls are in published source instead.
 - ⬜ Enterprise license agreement draft (attorney pass before the first real deal)
 - ⬜ W-9 PDF ready
 - ⬜ Trademark filing — USPTO, Class 9, ~$350 (verify current fee). Owner = the LLC,
@@ -857,12 +859,17 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 
 - ⬜ Free app + IAP subscription products in App Store Connect, plus a 7 or 14 day StoreKit
   free trial. Free tier is metered (5 reveals / 30 days), not feature-crippled — see Pricing.
-- ⬜ Review-notes text explaining the meter, so a reviewer who exhausts it in demo mode
-  understands what they are seeing rather than filing it as a bug
+- 🟡 **Review notes drafted 2026-09-02** — `docs/APP-STORE-REVIEW-NOTES.md`, for your
+  approval. Covers demo mode, the meter as designed behavior, Activate-is-not-a-purchase,
+  Data Not Collected with the proxy link, Face ID before fetch, switcher behavior. **Flags a
+  gap:** a reviewer cannot exercise Pro features until IAP exists (sandbox) — your call
+  whether to accept that on first submission or add a compiled-out reviewer path.
 - ✅ Paid Apps agreement — accepted, bank and tax details in place
 - ⬜ Org purchasing on the website only, never linked in-app (verify current 3.1.3 text)
 - ⬜ 3.1.3(c) Enterprise Services documentation
-- ⬜ Listing copy leads with security posture
+- 🟡 **Listing copy drafted 2026-09-02** — `docs/APP-STORE-LISTING.md`, for your approval.
+  Name, subtitle, promo text, description leading with the four testable claims, keywords
+  at 96/100, macOS stated as a limitation up front.
 - ⬜ Privacy manifest + "Data Not Collected" nutrition label
 - ✅ SECURITY.md with a disclosure policy and the five testable design claims
 - ⬜ Tag a source release per App Store version
@@ -874,7 +881,12 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   (login.microsoftonline.com, graph.microsoft.com, your entitlement domain). Any admin can
   verify in ten minutes with a proxy. For this audience, observed behavior beats any badge.
   **This is your strongest trust artifact.**
-- ⬜ Contributions policy: issues on, pull requests off (sole copyright holder = you can
+- ✅ **Contributions policy written 2026-09-02.** `CONTRIBUTING.md`, issue forms for bugs and
+  features (each with a required "no credentials or identifiers" checkbox), blank issues
+  off, and a workflow that closes pull requests with a polite explanation. GitHub cannot
+  disable PRs on a public repo, so the workflow is the mechanism; it uses
+  `pull_request_target` with `pull-requests: write` only and never checks out PR code.
+- ~~⬜ Contributions policy: issues on, pull requests off~~ (sole copyright holder = you can
   relicense and enforce without hunting contributors)
 - 🔵 Launch posts: r/Intune, r/msp, Intune blog circuit
 - 🔵 File the Microsoft support case for the macOS 500 (request ID
