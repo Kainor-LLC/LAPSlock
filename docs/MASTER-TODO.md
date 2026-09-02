@@ -553,9 +553,18 @@ a delete and reinstall; (3) timestamps, as described.
 
 ## ✅ Infrastructure provisioned 2026-08-27, rebuilt under LAPSlock names 2026-08-28
 
-Subscription **Kainor-LAPSlock** `024f01b2-f4b2-459f-84b6-cf7ced419758`, pay-as-you-go,
-spending limit OFF (so credit exhaustion starts billing rather than deprovisioning
-resources), Kainor tenant, region `centralus`.
+Subscription `024f01b2-f4b2-459f-84b6-cf7ced419758`, pay-as-you-go, spending limit OFF (so
+credit exhaustion starts billing rather than deprovisioning resources), Kainor tenant,
+region `centralus`. **Select it by ID, never by name** — see the handoff for why the names
+in this repo were wrong until 2026-09-01.
+
+**Subscription cleanup, 2026-09-01.** The live subscription was still named `Kainor-PitLAPS`
+and was renamed to `Kainor-LAPSlock`. The two unused subscriptions, both verified empty,
+were cancelled: `19dd2b0e` (free trial) and `797ffeb5` (`PitLAPS`). Cancelled subscriptions
+remain visible for roughly 30 to 90 days before Azure removes them and can be restored with
+`az account subscription enable` inside that window, so their continued appearance in an
+`az login` list is expected. The soft-deleted `kainor-pitlaps-prod-kv` was unaffected — it
+lives in the live subscription, purge date 2026-11-27.
 
 | Resource | Name | Notes |
 |---|---|---|
@@ -635,7 +644,10 @@ Decided *by* the contract, because the implementation needed an answer:
 ## Remaining
 
 - ⬜ ES256 signing key in the vault (created in-vault, never exported). `kid`
-  `lapslock-ent-2026-09` per the contract.
+  `lapslock-ent-2026-09` per the contract. **Blocked on a data-plane role first:** Owner
+  does not grant Key Vault access on an RBAC vault, so the account needs Key Vault Crypto
+  Officer at the vault scope before `az keyvault key create` will work. Drop the role again
+  once the key and its public JWK are in hand.
 - ⬜ Licences table in `kainorlapslockprodst`. Schema is constrained by §8.1 of the
   contract and is four columns: tenant GUID, tier, term start/end, order reference. **No
   purchaser name or email** — the order reference resolves to those in Stripe, which holds

@@ -67,13 +67,23 @@ is the ES256 key in the vault, the licences table, the Function, then the client
 
 ## Entitlement backend — provisioned 2026-08-27
 
-Subscription **Kainor-LAPSlock** `024f01b2-f4b2-459f-84b6-cf7ced419758`, pay-as-you-go,
-spending limit OFF, Kainor tenant, `centralus`. Holds promotional credit; when it runs out
-billing simply starts rather than resources being deprovisioned.
+Subscription `024f01b2-f4b2-459f-84b6-cf7ced419758`, pay-as-you-go, spending limit OFF,
+Kainor tenant, `centralus`. Holds promotional credit; when it runs out billing simply starts
+rather than resources being deprovisioned.
 
-Two other empty subscriptions exist on the same tenant (`19dd2b0e` free trial, `797ffeb5`
-named "LAPSlock"). Neither is used. The one named "LAPSlock" is a trap — the live one is
-**Kainor-LAPSlock**.
+**Always select it by ID, never by name.** It was still called `Kainor-PitLAPS` until
+2026-09-01, was renamed to `Kainor-LAPSlock` that day, and ARM display-name propagation on
+this account is slow — a rename took well over ten minutes to appear in `az account list
+--refresh`. An earlier version of this file claimed the live one was already named
+`Kainor-LAPSlock` and that a *different* subscription named `LAPSlock` was a trap. Both
+were wrong. The ID is the only reliable handle.
+
+The two unused subscriptions were **cancelled 2026-09-01**: `19dd2b0e` (free trial) and
+`797ffeb5` (named `PitLAPS`). Both were verified empty first — zero resource groups, zero
+resources. Azure has no immediate delete: a cancelled subscription stays visible for roughly
+30 to 90 days and is then removed, and it can be brought back inside that window with
+`az account subscription enable`. So seeing them in an `az login` list is expected, not a
+failed cancellation.
 
 | Resource | Name |
 |---|---|
@@ -93,6 +103,24 @@ the name will never be reused.
 **`httpsOnly` is FALSE on creation** for a Flex Consumption function app and has to be set
 explicitly. Confirmed twice now, so it is the default rather than a one-off. Check it on
 anything created later.
+
+**Owner does NOT grant Key Vault data-plane access on an RBAC vault.** Verified 2026-09-01:
+the account is Owner on the subscription and User Access Administrator at root, and
+`az keyvault key list` still returns `ForbiddenByRbac`. Creating or reading a key needs an
+explicit data-plane role — **Key Vault Crypto Officer** at the vault scope. Grant it with
+`--assignee-object-id 536ebada-dfe7-40c7-8056-1233bb7ac812 --assignee-principal-type User`
+rather than a UPN; UPN resolution is the flaky part of that command. Remove the role once
+the key exists — nothing needs standing key-creation rights, and re-granting takes seconds.
+
+**The vault is `standard` SKU, so the signing key is software-protected, not HSM.**
+Deliberate. HSM needs Premium, and per contract section 9.2 the worst case for a stolen
+signing key is forged Pro features, never credential access.
+
+**Role assignment display names do not resolve.** `az role assignment list` shows the
+Function identity's `principalName` as `325318ed-5429-42f5-8d33-94580454a4a1`, which is its
+**appId**, while `principalId` is `e4c41c72-583a-4941-b822-73628fbba6df` and correct. Two
+different GUIDs for the same identity. Read `principalId`, not `principalName`, before
+concluding a role is assigned to the wrong principal.
 
 Still to do: ES256 key in the vault, licences table, Function code, client half. The API
 contract is done — `docs/ENTITLEMENT-API.md`. Full detail and the reasoning behind each
