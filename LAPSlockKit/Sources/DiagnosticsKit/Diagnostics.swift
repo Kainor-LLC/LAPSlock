@@ -39,6 +39,10 @@ public enum DiagnosticOperation: String, Sendable, Codable, CaseIterable {
     /// cannot be tested by the vendor — the first person to hit a failure is a customer, so
     /// the report has to carry enough to answer them.
     case tenantSwitch
+    /// Just-in-time PIM activation. Added 2026-09-02: the tenant policy that refuses one is
+    /// not reproducible by the vendor, so the Microsoft error code is the only explanation
+    /// a customer can hand over.
+    case roleActivation
 }
 
 /// Why it failed. Mirrors the error taxonomies without carrying their payloads.
