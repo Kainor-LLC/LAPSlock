@@ -674,11 +674,21 @@ Decided *by* the contract, because the implementation needed an answer:
   step before go-live, never alongside new Function code** — getting `AzureWebJobsStorage`
   wrong stops the app starting, and debugging that at the same time as new code is how a
   bad evening happens.
-- ⬜ **Turn Application Insights down before the Function goes live.** Failures and platform
-  metrics only, no body collection, minimum retention. The Flex Consumption template wires
-  it up at defaults with 90-day retention, and it is the one thing here that could cost real
-  money. The other is always-ready instances above zero. Neither is traffic-driven, so a
-  surprise bill would be configuration.
+- ✅ **Cost guards set 2026-09-02. The bill is now bounded by configuration, not by trust.**
+
+  | Guard | Value | Why that number |
+  |---|---|---|
+  | Log Analytics daily ingestion cap | **0.1 GB/day** | 0.1 x 31 = 3.1 GB/month, which sits UNDER the 5 GB/month free grant. The ingestion ceiling is therefore effectively zero, not merely small. Resets 14:00 UTC. |
+  | `maximumInstanceCount` | **20**, was 100 | The endpoint is anonymous by design, so a flood is possible. Rate limiting bounds the logic; this bounds the money. 20 is still far more than this workload can consume. |
+  | `alwaysReady` | **[]** — already zero | Always-ready instances stay provisioned and are billed continuously whether or not a request arrives. For a background call made monthly, paying to avoid a cold start is pure waste. |
+  | Subscription budget | **$10/month**, `lapslock-monthly-guard` | Alerts to connor@kainor.com at 50% actual, 90% actual, and 100% forecast. Expected spend is under $2, so 50% fires around $5 — early, and a false alarm is the point. |
+
+  The daily cap trades telemetry for money: when it is hit, ingestion stops until the reset.
+  That is the intended direction — fail to no-data rather than to a bill.
+
+  Still to do on App Insights before the Function goes live: failures and platform metrics
+  only, and confirm request/response body collection stays off. The cap bounds the cost; it
+  does not stop a body containing a tenant ID being written, which section 8.2 forbids.
 - ⬜ Rate limiting per §8.3: source IP plus a keyed hash of the tid in cache with a sub-hour
   TTL, never persisted. **No per-tenant request counters** — that history is exactly the
   file the product promises not to build.
