@@ -12,51 +12,95 @@ final class ActivationRequestTests: XCTestCase {
     private let principal = "aaaaaaaa-1111-2222-3333-444455556666"
     private let roleDef = "7698a772-787b-4ac8-901f-60d6b08affd2"   // Cloud Device Administrator
 
-    // MARK: - the request body
+    // MARK: - the request, for both PIM surfaces
 
-    private func body(ticket: String? = nil) -> [String: Any] {
-        ActivationRequest.selfActivateBody(
+    private var role: EligibleAccess {
+        EligibleAccess(
+            id: "sched-role",
+            kind: .directoryRole(roleDefinitionId: roleDef, directoryScopeId: "/"),
+            displayName: "Cloud Device Administrator",
+            eligibilityEndsAt: nil)
+    }
+
+    private var groupMembership: EligibleAccess {
+        EligibleAccess(
+            id: "sched-group",
+            kind: .group(groupId: "gggggggg-1111-2222-3333-444455556666", accessId: .member),
+            displayName: "LAPS Readers",
+            eligibilityEndsAt: nil)
+    }
+
+    private func prepared(_ access: EligibleAccess, ticket: String? = nil) -> ActivationRequest.Prepared {
+        ActivationRequest.selfActivate(
+            access,
             principalId: principal,
-            roleDefinitionId: roleDef,
-            directoryScopeId: "/",
             justification: "Retrieving a LAPS password for a helpdesk ticket",
             ticketNumber: ticket)
     }
 
-    func test_theBodyRequestsSelfActivationAndNothingElse() {
-        // `selfActivate` acts on the caller's own existing eligibility. Any other action
-        // would be managing somebody else's access, which this app must never do.
-        XCTAssertEqual(body()["action"] as? String, "selfActivate")
-        XCTAssertEqual(body()["principalId"] as? String, principal)
-        XCTAssertEqual(body()["roleDefinitionId"] as? String, roleDef)
-        XCTAssertEqual(body()["directoryScopeId"] as? String, "/")
+    func test_aRoleGoesToTheRoleManagementEndpoint() {
+        let p = prepared(role)
+        XCTAssertEqual(p.path, PrivilegedAccessGraph.roleActivationPath)
+        XCTAssertEqual(p.fields["roleDefinitionId"], roleDef)
+        XCTAssertEqual(p.fields["directoryScopeId"], "/")
+        XCTAssertNil(p.fields["groupId"], "a role body must not carry group fields")
+        XCTAssertNil(p.fields["accessId"])
+    }
+
+    func test_aGroupGoesToThePrivilegedAccessEndpoint() {
+        // PIM for Groups is a separate surface with a separate body. Posting one shape to
+        // the other endpoint is the mistake pairing path and body together prevents.
+        let p = prepared(groupMembership)
+        XCTAssertEqual(p.path, PrivilegedAccessGraph.groupActivationPath)
+        XCTAssertEqual(p.fields["groupId"], "gggggggg-1111-2222-3333-444455556666")
+        XCTAssertEqual(p.fields["accessId"], "member")
+        XCTAssertNil(p.fields["roleDefinitionId"], "a group body must not carry role fields")
+        XCTAssertNil(p.fields["directoryScopeId"])
+    }
+
+    func test_ownershipIsDistinctFromMembership() {
+        // Activating ownership when membership was eligible would be a larger grant than
+        // the user holds.
+        let owner = EligibleAccess(
+            id: "o", kind: .group(groupId: "g", accessId: .owner),
+            displayName: nil, eligibilityEndsAt: nil)
+        XCTAssertEqual(prepared(owner).fields["accessId"], "owner")
+    }
+
+    func test_bothSurfacesRequestSelfActivationOnly() {
+        // Any other action would be administering somebody else's access, which this app
+        // must never do.
+        for access in [role, groupMembership] {
+            XCTAssertEqual(prepared(access).fields["action"], "selfActivate")
+            XCTAssertEqual(prepared(access).fields["principalId"], principal)
+        }
     }
 
     func test_aJustificationIsAlwaysSent() {
-        // It lands in the customer's own audit log, which is the point: activation should be
-        // as traceable as the credential read it unblocks.
+        // It lands in the customer's own audit log: an activation should be as traceable as
+        // the credential read it unblocks.
         XCTAssertEqual(
-            body()["justification"] as? String,
+            prepared(role).fields["justification"],
             "Retrieving a LAPS password for a helpdesk ticket")
     }
 
-    func test_theDurationIsBoundedAndExpiresOnItsOwn() {
-        let schedule = body()["scheduleInfo"] as? [String: Any]
-        let expiration = schedule?["expiration"] as? [String: Any]
+    func test_theActivationIsBoundedAndExpiresOnItsOwn() {
+        let json = prepared(role).json
+        let expiration = (json["scheduleInfo"] as? [String: Any])?["expiration"] as? [String: Any]
         XCTAssertEqual(expiration?["type"] as? String, "afterDuration")
         XCTAssertEqual(expiration?["duration"] as? String, "PT5H")
-        XCTAssertNotNil(schedule?["startDateTime"] as? String)
     }
 
     func test_ticketInfoIsOmittedWhenThereIsNoTicket() {
-        // An empty ticketInfo is noise in an audit log.
-        XCTAssertNil(body()["ticketInfo"])
-        XCTAssertNil(body(ticket: "")["ticketInfo"])
-        XCTAssertNotNil(body(ticket: "INC-4471")["ticketInfo"])
+        XCTAssertNil(prepared(role).ticket)
+        XCTAssertNil(prepared(role, ticket: "").ticket)
+        let schedule = prepared(role).json["scheduleInfo"] as? [String: Any]
+        XCTAssertNil(schedule?["ticketInfo"], "an empty ticketInfo is noise in an audit log")
     }
 
     func test_aTicketIsPassedThroughWhenGiven() {
-        let info = body(ticket: "INC-4471")["ticketInfo"] as? [String: Any]
+        let schedule = prepared(role, ticket: "INC-4471").json["scheduleInfo"] as? [String: Any]
+        let info = schedule?["ticketInfo"] as? [String: Any]
         XCTAssertEqual(info?["ticketNumber"] as? String, "INC-4471")
     }
 
@@ -110,12 +154,12 @@ final class ActivationRequestTests: XCTestCase {
         }
     }
 
-    // MARK: - eligibility list
+    // MARK: - eligibility, both surfaces
 
-    private func schedules(_ items: [[String: Any]]) -> [String: Any] { ["value": items] }
+    private func page(_ items: [[String: Any]]) -> [String: Any] { ["value": items] }
 
     func test_eligibleRolesAreParsed() {
-        let roles = ActivationRequest.eligibleRoles(from: schedules([[
+        let roles = ActivationRequest.eligibleRoles(from: page([[
             "id": "sched-1",
             "roleDefinitionId": roleDef,
             "directoryScopeId": "/",
@@ -123,42 +167,85 @@ final class ActivationRequestTests: XCTestCase {
         ]]))
         XCTAssertEqual(roles.count, 1)
         XCTAssertEqual(roles.first?.label, "Cloud Device Administrator")
-        XCTAssertEqual(roles.first?.id, "sched-1")
         XCTAssertTrue(roles.first?.canReadLocalCredentials == true)
     }
 
-    func test_credentialReadingRolesSortFirst() {
-        // The list exists to unblock a reveal, so the role that unblocks it must not be
-        // third.
-        let roles = ActivationRequest.eligibleRoles(from: schedules([
+    func test_eligibleGroupsAreParsed() {
+        // PIM for Groups. Tenants that manage access most carefully often use this instead
+        // of direct role eligibility, so an implementation that only read roles would show
+        // them "no eligible access".
+        let groups = ActivationRequest.eligibleGroups(from: page([[
+            "id": "sched-g1",
+            "groupId": "gggggggg-1111-2222-3333-444455556666",
+            "accessId": "member",
+            "group": ["displayName": "LAPS Readers"],
+        ]]))
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.label, "LAPS Readers")
+        XCTAssertEqual(groups.first?.kind, .group(groupId: "gggggggg-1111-2222-3333-444455556666", accessId: .member))
+    }
+
+    func test_aGroupIsNeverClaimedToReadCredentials() {
+        // A group's id says nothing about which roles it carries. Claiming it grants
+        // credential access when it might not would be worse than staying quiet.
+        let groups = ActivationRequest.eligibleGroups(from: page([[
+            "groupId": "g", "accessId": "member", "group": ["displayName": "Global Administrators"],
+        ]]))
+        XCTAssertFalse(groups.first?.canReadLocalCredentials == true)
+    }
+
+    func test_anUnknownAccessIdIsSkippedRatherThanGuessed() {
+        // Guessing "member" for an unrecognised value could activate a different grant than
+        // the user is eligible for.
+        let groups = ActivationRequest.eligibleGroups(from: page([
+            ["groupId": "g1", "accessId": "somethingNew"],
+            ["groupId": "g2", "accessId": "OWNER"],
+        ]))
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertEqual(groups.first?.kind, .group(groupId: "g2", accessId: .owner))
+    }
+
+    func test_credentialReadingRolesSortFirstAcrossBothSurfaces() {
+        // The combined list exists to unblock a reveal, so the entry that unblocks it must
+        // not be third.
+        let roles = ActivationRequest.eligibleRoles(from: page([
             ["id": "a", "roleDefinitionId": "11111111-1111-1111-1111-111111111111",
              "roleDefinition": ["displayName": "Billing Administrator"]],
             ["id": "b", "roleDefinitionId": roleDef,
              "roleDefinition": ["displayName": "Cloud Device Administrator"]],
         ]))
-        XCTAssertEqual(roles.first?.label, "Cloud Device Administrator")
+        let groups = ActivationRequest.eligibleGroups(from: page([
+            ["groupId": "g", "accessId": "member", "group": ["displayName": "AAA First Alphabetically"]],
+        ]))
+        let combined = ActivationRequest.combined(roles: roles, groups: groups)
+        XCTAssertEqual(combined.first?.label, "Cloud Device Administrator")
+        XCTAssertEqual(combined.count, 3)
     }
 
-    func test_aRoleWithNoExpandedNameStillAppears() {
-        // Without $expand Graph returns only ids. Hiding the role would be worse than
-        // showing it with a generic label.
-        let roles = ActivationRequest.eligibleRoles(from: schedules([["id": "x", "roleDefinitionId": roleDef]]))
-        XCTAssertEqual(roles.count, 1)
+    func test_accessWithNoExpandedNameStillAppears() {
+        // Without $expand Graph returns only ids. Hiding the entry would be worse than a
+        // generic label.
+        let roles = ActivationRequest.eligibleRoles(from: page([["id": "x", "roleDefinitionId": roleDef]]))
         XCTAssertEqual(roles.first?.label, "Directory role")
-        XCTAssertEqual(roles.first?.directoryScopeId, "/", "scope defaults to tenant-wide")
+        XCTAssertEqual(roles.first?.kind, .directoryRole(roleDefinitionId: roleDef, directoryScopeId: "/"))
+
+        let owner = ActivationRequest.eligibleGroups(from: page([["groupId": "g", "accessId": "owner"]]))
+        XCTAssertEqual(owner.first?.label, "Group ownership")
     }
 
     func test_oneMalformedEntryDoesNotHideTheOthers() {
-        let roles = ActivationRequest.eligibleRoles(from: schedules([
-            ["id": "broken"],                                    // no roleDefinitionId
-            ["id": "empty", "roleDefinitionId": ""],
+        let roles = ActivationRequest.eligibleRoles(from: page([
+            ["id": "broken"],
+            ["id": "blank", "roleDefinitionId": "   "],
             ["id": "good", "roleDefinitionId": roleDef, "roleDefinition": ["displayName": "Cloud Device Administrator"]],
         ]))
         XCTAssertEqual(roles.map(\.id), ["good"])
     }
 
-    func test_junkYieldsNoRolesRatherThanThrowing() {
-        XCTAssertTrue(ActivationRequest.eligibleRoles(from: [:]).isEmpty)
-        XCTAssertTrue(ActivationRequest.eligibleRoles(from: ["value": "not an array"]).isEmpty)
+    func test_junkYieldsNothingRatherThanThrowing() {
+        for parser in [ActivationRequest.eligibleRoles, ActivationRequest.eligibleGroups] {
+            XCTAssertTrue(parser([:]).isEmpty)
+            XCTAssertTrue(parser(["value": "not an array"]).isEmpty)
+        }
     }
 }

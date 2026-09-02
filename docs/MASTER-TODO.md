@@ -343,6 +343,54 @@ macOS password retrieval.
   naturally with the `notAuthorized` error we already surface — "your role is not active,
   activate it here" instead of "you lack permission".
 
+  ### 🟡 Pure core built 2026-09-02, in `PrivilegedAccessKit`
+
+  Its own module because this is the one part of the app that requests a privilege
+  **escalation**, so being structurally unable to reach a credential is a link-graph property
+  rather than a comment. `isolation-check.sh` enforces it both ways and was verified to FAIL
+  on an injected `import CredentialKit`.
+
+  **BOTH PIM surfaces, not just roles.** Eligibility can be for a directory role or for
+  membership/ownership of a group that carries role assignments — PIM for Groups. Mature
+  tenants often prefer the group form because it is governed alongside every other group, so
+  an implementation covering only roles would show "no eligible access" to precisely the
+  tenants that manage access most carefully. `EligibleAccessKind` carries the distinction and
+  `selfActivate` returns path and body together, so a group body cannot be posted to the
+  roles endpoint.
+
+  **Scope names verified from Graph's own refusal**, which lists every scope it would have
+  accepted — a better source than documentation:
+  `RoleEligibilitySchedule.Read.Directory`, `RoleAssignmentSchedule.ReadWrite.Directory`,
+  `PrivilegedEligibilitySchedule.Read.AzureADGroup`,
+  `PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup`.
+
+  **On "a way to MFA": there is nothing separate to build, and building one would be wrong.**
+  The claims challenge IS the mechanism. Attempt activation → Graph refuses with a base64
+  claims blob in `WWW-Authenticate` → hand it to MSAL → MSAL re-authenticates interactively,
+  which triggers whatever MFA the tenant requires → retry. Reactive rather than proactive, so
+  a session that already satisfied MFA is not prompted again. **The Face ID gate on reveal
+  does not satisfy this**: it is a local device gate, not an identity assertion, and an
+  app-side "confirm to elevate" prompt would be security theatre that looks like MFA. Only
+  Entra can assert it.
+
+  27 tests. Verified to fail on the two defects that would matter: accepting any JSON as a
+  claims challenge (which would cause an infinite re-authentication loop on an ordinary 401),
+  and reporting pending approval as activated. One test also caught strictness being
+  loosened mid-session — whitespace trimming on the status field would have made a padded
+  `"Granted "` parse as success, and this function's job is to under-promise.
+
+  **Still to build:** the Graph client, threading a claims request through MSAL (needs an
+  optional method on `AuthManaging` with a default implementation so the two test doubles
+  keep compiling), and the UI — a Settings opt-in toggle with incremental consent, and an
+  activation sheet reachable from the `notAuthorized` error on a failed reveal.
+
+  ⚠️ **Needs an ELIGIBLE assignment to test against.** Permanent Global Admin is an *active*
+  assignment and never appears in `roleEligibilitySchedules`, so a permanently-privileged
+  account has nothing for PIM to activate. Create an eligible assignment for Cloud Device
+  Administrator in the Kainor tenant — an *additional* one, never by converting Global Admin
+  to eligible, which risks lockout. Note also that eligible members of a PIM group each need
+  a P2 license.
+
   **API (verified, v1.0 GA):**
   - List what the user is eligible for:
     `GET /v1.0/roleManagement/directory/roleEligibilitySchedules?$filter=principalId eq '{id}'`
