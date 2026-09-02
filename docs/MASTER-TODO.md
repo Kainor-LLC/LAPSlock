@@ -1111,9 +1111,15 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 - ✅ Business bank account (LLC, linked to Apple)
 - ✅ **Apple Developer Program** — enrolled as Kainor LLC, $99 paid. Team ID 72C7PQBP52.
 - ✅ **Partner Center verification** — Authorized
-- 🔵 **Employer/design-partner IP agreement in writing** ← still the highest-value item
-  on this list. A prospective customer who is also an employer needs the ownership
-  question documented before money moves.
+- ✅ **Employer/design-partner IP agreement — RESOLVED, confirmed by the founder 2026-09-02.**
+  This file had it as the highest-value open item, which was stale. The ownership question is
+  settled and the employer's tenant can be used for development and testing without
+  entangling it.
+
+  **Worth adding a pointer to where the agreement itself lives** — a path, a folder, whoever
+  holds the signed copy. Not the contents, just where to find it. Nothing in this repo
+  records that, and the next person to ask "are we clear on ownership?" will be reading this
+  file rather than remembering this conversation.
 - ✅ **Publisher verification** — MPN 7147713 associated, "Kainor LLC" shows with the verified badge
 - ✅ **Privacy + terms pages** — live at kainor.com/privacy/ and /terms/, linked from the
   app registration, the site nav, and the in-app Settings screen
@@ -1271,11 +1277,10 @@ Microsoft and here is what happened" is a stronger post than "this is broken".
    something to link that is not an advertisement.
 3. ⬜ **App Store keywords:** Intune, LAPS, Entra, BitLocker. Almost no competition.
 4. 🔵 **r/msp separately.** MSPs buy differently, and per-technician pricing targets them.
-5. ⚠️ **First reference customer.** "Used in production by an insurance company" is worth a
-   great deal to the next buyer. **But this is downstream of the employer/design-partner IP
-   agreement, which is still unsigned and is already flagged as the highest-value item on
-   the legal list.** Do not approach this as a marketing task until the ownership question
-   is documented. Reference permission is a second, separate written agreement, and note
+5. 🔵 **First reference customer.** "Used in production by an insurance company" is worth a
+   great deal to the next buyer. **No longer blocked** — the ownership question was resolved
+   2026-09-02, so this is now a marketing task rather than a legal one. Reference permission
+   is still a second, separate written agreement. Reference permission is a second, separate written agreement, and note
    that even naming the industry may be identifying — the pre-push scanner exists because
    employer data leaked into this repo once already.
 
