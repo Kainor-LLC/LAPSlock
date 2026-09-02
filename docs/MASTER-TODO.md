@@ -651,11 +651,29 @@ Decided *by* the contract, because the implementation needed an answer:
   same and break every client in the field.
 - ⬜ **Remove Key Vault Crypto Officer from the human account** now that the key exists.
   Nothing needs standing key-creation rights; re-granting for rotation takes seconds.
-- ⬜ Licences table in `kainorlapslockprodst`. Schema is constrained by §8.1 of the
-  contract and is four columns: tenant GUID, tier, term start/end, order reference. **No
-  purchaser name or email** — the order reference resolves to those in Stripe, which holds
-  them as a billing record anyway, so no personal data lands in Azure. A row exists only for
-  a PAYING tenant.
+- ✅ **Licences table created 2026-09-02.** `licences` in `kainorlapslockprodst`.
+  PartitionKey is the lowercase tenant GUID, RowKey is `current` (leaving room for dated
+  history rows later without changing the lookup), plus `Tier`, `TermStart`, `TermEnd`,
+  `OrderRef`. **No purchaser name or email** — the order reference resolves to those in
+  Stripe, which holds them as a billing record anyway, so no personal data lands in Azure.
+  A row exists only for a PAYING tenant.
+- ✅ **Table roles granted 2026-09-02, scoped to the TABLE and not the storage account.**
+  The human account has Storage Table Data Contributor, for inserting licence rows by hand
+  until Stripe exists. The Function identity has **Storage Table Data Reader** — read-only,
+  because the entitlement endpoint never writes a licence row. A compromise of the Function
+  can see who holds a licence; it cannot grant one. Same reasoning as Crypto User over
+  Crypto Officer. **When the Stripe webhook needs write, grant it separately and ideally to
+  a separate identity**, so the read path and the write path never share a credential.
+- ⚠️ **The storage account key is in the Function app settings.** `AzureWebJobsStorage` and
+  `DEPLOYMENT_STORAGE_CONNECTION_STRING` are both connection strings containing an account
+  key, which grants full read/write over the whole storage account — **including the
+  licences table**, bypassing the carefully scoped Reader role above. Inconsistent with
+  giving the identity Crypto User so it can sign but not exfiltrate the signing key. Fix is
+  identity-based storage (`AzureWebJobsStorage__accountName` plus blob roles; Flex
+  Consumption supports identity-based deployment storage). **Do it as its own deliberate
+  step before go-live, never alongside new Function code** — getting `AzureWebJobsStorage`
+  wrong stops the app starting, and debugging that at the same time as new code is how a
+  bad evening happens.
 - ⬜ **Turn Application Insights down before the Function goes live.** Failures and platform
   metrics only, no body collection, minimum retention. The Flex Consumption template wires
   it up at defaults with 90-day retention, and it is the one thing here that could cost real
@@ -676,8 +694,12 @@ Decided *by* the contract, because the implementation needed an answer:
 - ⬜ Custom domain for the API (~$10–15/yr; expect <$2/mo Azure spend). Note that App Service
   managed certificates may not be available on Flex Consumption — verify before committing
   to an approach.
-- ⬜ **Private repo** for the Function, JWT signing keys, Stripe webhook. Publish only the
-  API contract. Clones can't stand up a working entitlement backend.
+- ✅ **Private repo created 2026-09-02: `Kainor-LLC/LAPSlock-backend`**, verified private.
+  Scaffolded with a README that names the public contract as authoritative, a `.gitignore`
+  leading with `local.settings.json`, and its own `pre-push-scan.sh` tuned to what this repo
+  can leak — storage keys and connection strings, Stripe live and webhook secrets, JWTs, a
+  tracked `local.settings.json`, and files whose names suggest a customer data export.
+  Verified to FAIL on injected violations, not merely to pass. No Function code yet.
 
 ## Why App Attest is phase 2, not v1
 
