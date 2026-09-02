@@ -444,9 +444,32 @@ Others:
       `~/Developer/LAPSlock-backend`). Toolchain is ready: .NET SDK 10.0.400 and Azure
       Functions Core Tools 4.14.0 are installed, and `gh` is installed and authenticated as
       `kainorllc`. Deploy with `func azure functionapp publish kainor-lapslock-prod-func`.
-   4. **The client half**, in `LicensingKit`: fetch, verify per section 7.4, Keychain
-      storage, Activate and Remove license in Settings, and `isPro` wired up — it is
-      hardcoded false in `LAPSlockApp.swift` today.
+   4. **The client half, in `LicensingKit` — IN PROGRESS, security core done 2026-09-02.**
+
+      DONE: `EntitlementKeyring` (the compiled-in P-256 public key for
+      `lapslock-ent-2026-09`, transcribed from the vault JWK and checked against the curve
+      equation — the client NEVER fetches a key), `EntitlementToken` (tier and verified
+      claims types), and `EntitlementVerifier`, the section 7.4 algorithm in the contract's
+      exact order: three segments, `alg` compared to ES256 and never consulted to choose an
+      algorithm, `kid` looked up in the keyring, signature over the ASCII signing input,
+      then and only then `iss`, `aud`, time window with 120 seconds of skew, `sub` bound to
+      the activated tenant, unknown tier to free, unknown claims ignored. 24 tests, verified
+      to fail on injected defects (alg check loosened and sub binding removed: 7 failures).
+      Suite is 162.
+
+      REMAINING, in order: `EntitlementClient` (URLSession POST, ephemeral session, explicit
+      User-Agent because URLSession's default leaks bundle build and OS version, 4 KiB body,
+      ignore unknown response fields); `EntitlementStore` (Keychain, device-only, after first
+      unlock, never synced — model it on `KeychainRevealLedgerStore`); `EntitlementManager`
+      (the section 7.1 to 7.3, 7.5 and 7.7 rules: activation-gated so a free install never
+      calls, at most one automatic attempt per 24 hours, never in response to any user action
+      but Activate and Refresh, 7-day network-failure-only grace past `exp`, the `msp`
+      exemption from the signed-in tenant check, `isPro = storeKit || tier != free`);
+      Activate and Remove license in Settings; `isPro` wired in `LAPSlockApp.swift` where it
+      is hardcoded false. Then the privacy policy host list, in the SAME release.
+
+      The verifier tests build tokens at runtime with a throwaway key. Do not add a literal
+      token fixture: `pre-push-scan.sh` flags JWT-shaped strings, correctly.
 
    ⚠️ **The privacy policy must change in the same release as the client half.**
    `docs/privacy/index.html` says the app connects to "exactly two hosts". Once activation
