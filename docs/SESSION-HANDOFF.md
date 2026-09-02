@@ -3,7 +3,7 @@
 Paste or attach this at the start of a new chat. Attach `docs/MASTER-TODO.md` alongside it
 for the full backlog; this file is just enough to resume without re-explaining.
 
-Last updated: 2026-08-27.
+Last updated: 2026-09-01.
 
 ---
 
@@ -61,8 +61,9 @@ Also verified on device: Face ID gate fires before the Graph call (so an abandon
 generates no audit event in the customer's tenant), and app-switcher redaction genuinely
 hides a revealed credential in the switcher card.
 
-**Next action:** the entitlement backend. Azure infrastructure is provisioned (see below);
-the next piece is the API contract and the Function code.
+**Next action:** the entitlement backend. Azure infrastructure is provisioned (see below)
+and **the API contract is written and frozen: `docs/ENTITLEMENT-API.md`, 2026-09-01.** Next
+is the ES256 key in the vault, the licences table, the Function, then the client half.
 
 ## Entitlement backend — provisioned 2026-08-27
 
@@ -93,9 +94,10 @@ the name will never be reused.
 explicitly. Confirmed twice now, so it is the default rather than a one-off. Check it on
 anything created later.
 
-Still to do: ES256 key in the vault, licences table, API contract, Function code. Full
-detail and the reasoning behind each decision is in `MASTER-TODO.md` under "Backend
-(Azure)", including why App Attest is deliberately phase 2.
+Still to do: ES256 key in the vault, licences table, Function code, client half. The API
+contract is done — `docs/ENTITLEMENT-API.md`. Full detail and the reasoning behind each
+decision is in `MASTER-TODO.md` under "Backend (Azure)", including why App Attest is
+deliberately phase 2.
 
 **The load-bearing design decision:** the entitlement request carries a tenant ID and
 nothing else. No Graph token, no user identity, no device data. The product's positioning
@@ -314,43 +316,52 @@ Others:
    Keychain survival across app deletion is confirmed on hardware. What is left of the
    revenue path is the server half and the StoreKit products.
 
-   ### START HERE NEXT SESSION: the `/entitlement` API contract
+   ### The `/entitlement` API contract is DONE — `docs/ENTITLEMENT-API.md`
 
-   This is a design artifact, not code, and it is the piece every later billing and gating
-   decision hangs off. Publish the contract publicly while the implementation stays in a
-   private repo.
+   Version 1, written 2026-09-01, frozen for implementation and published in the public
+   repo while the Function stays private. **Read it before writing any Function or client
+   code.** Section 7 is normative for the client, not advisory: it is what makes the
+   privacy claims in section 1 true.
 
-   Already decided, do not relitigate:
+   Every previously decided item survived unchanged — tid and nothing else in the request,
+   `attestation`/`assertion` reserved for phase 2, ES256 signed through Key Vault with the
+   public key embedded, the eight claims, 30-day lifetime, and the written-out reasoning
+   for why a spoofable tid is acceptable.
 
-   * **The request carries a tenant ID and NOTHING else.** No Graph token, no user
-     identity, no device data. The product's whole positioning is that no vendor server
-     sits in the credential path, and an admin with a proxy must be able to confirm that
-     in ten minutes. Sending a customer's Graph token to a Kainor server would hand over
-     delegated access to their tenant, and no amount of "we do not log it" survives an
-     admin seeing it on the wire.
-   * **A bare tenant ID is spoofable, and that is acceptable.** The JWT is bound to
-     `sub = tid` and the app pins to the signed-in tenant, so a stolen entitlement is only
-     usable by somebody already inside that tenant and therefore already covered by the
-     licence. Write this reasoning into the contract: it is the first thing a security
-     reviewer will ask about, and having the answer written down turns an objection into
-     evidence you thought about it.
-   * **Claims:** `iss`, `aud` (bundle id), `sub` (tid), `tier`, `iat`, `nbf`, `exp`, `jti`.
-     30 day lifetime, so revocation lags 30 days. Acceptable at these price points.
-   * **ES256, signed through Key Vault**, private key never leaving the vault, public key
-     embedded in the app so verification works offline during the grace period.
-   * **Version the request body and define optional `attestation` / `assertion` fields
-     from day one**, so adding App Attest later is not a breaking change. App Attest itself
-     is deliberately phase 2 — see the Backend section for why.
+   The contract also settled things that had not been decided, all recorded with reasoning
+   in `MASTER-TODO.md` under "Backend (Azure)". The one worth knowing before reading
+   anything else: **a free-tier install never contacts the endpoint at all.** The call
+   happens on Activate licence, on the refresh schedule after that, and on a manual
+   refresh. So an admin with a proxy sees two Microsoft hosts and nothing else unless they
+   have activated an enterprise licence. This is a client-behaviour choice, not a wire
+   format one, and it is reversible without a version bump.
 
-   Infrastructure is already provisioned and waiting: resource group, storage, vault with
-   purge protection, Flex Consumption function app on .NET 10 isolated, and a managed
-   identity holding Key Vault Crypto User on the vault only.
+   ### START HERE NEXT SESSION: ES256 key, licences table, Function
 
-   Order after the contract: ES256 key in the vault, licences table, then the Function.
+   In that order, with the contract as the spec.
 
-1. **Entitlement backend — in progress.** Azure infrastructure is provisioned. Next is the
-   API contract (published publicly, implementation private), then the ES256 key, the
-   licences table, and the Function code. This is the whole revenue path.
+   1. **ES256 key in `kainor-lapslock-prod-kv`**, created in-vault and never exported.
+      `kid` `lapslock-ent-2026-09`. The managed identity already holds Key Vault Crypto
+      User scoped to that vault only.
+   2. **Licences table in `kainorlapslockprodst`.** Contract section 8 constrains the
+      schema: tenant GUID, tier, term start and end, order reference, purchase contact. A
+      row exists only for a PAYING tenant — nothing creates one for a free tenant. Request
+      logs get 30-day retention.
+   3. **The Function.** Contract sections 2 to 6 are the spec, including the error table
+      and the rule that an unlicensed tenant gets a 200 with a `free` token rather than a
+      404.
+   4. **The client half**, in `LicensingKit`: fetch, verify per section 7.4, Keychain
+      storage, Activate and Remove licence in Settings, and `isPro` wired up — it is
+      hardcoded false in `LAPSlockApp.swift` today.
+
+   ⚠️ **The privacy policy must change in the same release as the client half.**
+   `docs/privacy/index.html` says the app connects to "exactly two hosts". Once activation
+   ships that is three, and shipping without updating it makes a published policy false.
+   Keep the distinction: two always, a third only after a licence is activated.
+
+1. **Entitlement backend — in progress.** Infrastructure provisioned, contract written and
+   published. Next is the ES256 key, the licences table, the Function code, and the client
+   half. This is the whole revenue path.
 2. **Auth diagnostics in the support report** — MSAL/AAD error code, correlation ID, broker
    path flag, allowlisted so no authorization code can ride along in an error description.
    Promoted from nice-to-have to necessary by the broker bug: a customer hitting the same
