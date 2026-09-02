@@ -63,7 +63,7 @@ hides a revealed credential in the switcher card.
 
 **Next action:** the entitlement backend. Azure infrastructure is provisioned (see below)
 and **the API contract is written and frozen: `docs/ENTITLEMENT-API.md`, 2026-09-01.** Next
-is the ES256 key in the vault, the licences table, the Function, then the client half.
+is the ES256 key in the vault, the licenses table, the Function, then the client half.
 
 ## Entitlement backend — provisioned 2026-08-27
 
@@ -132,12 +132,12 @@ the 32-byte x then the 32-byte y, 65 bytes total.
 Creating a table with `az storage table create` succeeds, because that is a management-plane
 call. Reading or writing an *entity* then fails, because that is the data plane and needs
 Storage Table Data Reader or Contributor. So the table appearing to be created is not
-evidence that anything can use it. Both roles are now assigned, scoped to the `licences`
+evidence that anything can use it. Both roles are now assigned, scoped to the `licenses`
 table rather than the storage account.
 
 **⚠️ The storage account key is in the Function app settings.** `AzureWebJobsStorage` and
 `DEPLOYMENT_STORAGE_CONNECTION_STRING` both hold connection strings containing an account
-key, which grants full read/write over the entire storage account including the licences
+key, which grants full read/write over the entire storage account including the licenses
 table — bypassing the scoped Reader role entirely. Move to identity-based storage before
 go-live, as its own step, never alongside new Function code: getting `AzureWebJobsStorage`
 wrong stops the app starting.
@@ -152,7 +152,7 @@ Function identity's `principalName` as `325318ed-5429-42f5-8d33-94580454a4a1`, w
 different GUIDs for the same identity. Read `principalId`, not `principalName`, before
 concluding a role is assigned to the wrong principal.
 
-Still to do: ES256 key in the vault, licences table, Function code, client half. The API
+Still to do: ES256 key in the vault, licenses table, Function code, client half. The API
 contract is done — `docs/ENTITLEMENT-API.md`. Full detail and the reasoning behind each
 decision is in `MASTER-TODO.md` under "Backend (Azure)", including why App Attest is
 deliberately phase 2.
@@ -239,7 +239,7 @@ device build will not.
 - **macOS password reveal is impossible**, not pending. Verified empirically: no documented
   Graph endpoint returns it, and the documented beta function returns rotation metadata
   only and currently 500s. Shipping Windows reveal + macOS metadata with a portal handoff.
-- **Licence is PolyForm Strict 1.0.0 plus an additional permission** allowing commercial
+- **License is PolyForm Strict 1.0.0 plus an additional permission** allowing commercial
   organisations to copy and read the source for security review. Source-available, NOT open
   source.
 - **Free tier is METERED, not feature-crippled.** Five reveals per rolling 30 days, LAPS
@@ -389,12 +389,12 @@ Others:
    The contract also settled things that had not been decided, all recorded with reasoning
    in `MASTER-TODO.md` under "Backend (Azure)". The one worth knowing before reading
    anything else: **a free-tier install never contacts the endpoint at all.** The call
-   happens on Activate licence, on the refresh schedule after that, and on a manual
+   happens on Activate license, on the refresh schedule after that, and on a manual
    refresh. So an admin with a proxy sees two Microsoft hosts and nothing else unless they
-   have activated an enterprise licence. This is a client-behaviour choice, not a wire
+   have activated an enterprise license. This is a client-behaviour choice, not a wire
    format one, and it is reversible without a version bump.
 
-   ### START HERE NEXT SESSION: ES256 key, licences table, Function
+   ### START HERE NEXT SESSION: ES256 key, licenses table, Function
 
    In that order, with the contract as the spec.
 
@@ -404,16 +404,25 @@ Others:
       `docs/entitlement-jwks.json` and its point was verified to satisfy the P-256 curve
       equation, so it is not a transcription error. **Two traps came out of this, both
       recorded below.**
-   2. ~~**Licences table**~~ — DONE 2026-09-02. `licences` in `kainorlapslockprodst`.
+   2. ~~**Licenses table**~~ — DONE 2026-09-02. `licenses` in `kainorlapslockprodst`.
       PartitionKey is the lowercase tenant GUID, RowKey is `current`, plus `Tier`,
       `TermStart`, `TermEnd`, `OrderRef`. No purchaser name or email; those stay in Stripe,
       so no personal data lands in Azure. Roles are scoped to the TABLE, not the account:
       the human account has Table Data Contributor for inserting rows by hand, the Function
       identity has Table Data **Reader** because it never writes one.
-      **Still to do before going live:** turn Application Insights down (failures and
-      platform metrics only, minimum retention, no body collection — it ships at defaults
-      with 90-day retention), keep always-ready instances at zero, and move
-      `AzureWebJobsStorage` off its account key. Those three are the whole pre-live list.
+      **Cost guards are in place as of 2026-09-02** and the bill is now bounded by
+      configuration: Log Analytics daily ingestion cap 0.1 GB (3.1 GB/month, under the 5 GB
+      free grant, so the ceiling is effectively zero), `maximumInstanceCount` dropped from
+      100 to 20, `alwaysReady` already empty, a $10/month subscription budget
+      `lapslock-monthly-guard` emailing at 50/90/100 percent, and a daily alert
+      `lapslock-ingestion-cap-hit`. **That last one matters more than it looks:** the cap
+      holds the bill near zero, so a log flood would never trip the budget and nothing else
+      would tell you. It is the only signal.
+
+      **Still to do before going live:** App Insights to failures and platform metrics only
+      with no request or response body collection (the cap bounds the cost, it does not stop
+      a body containing a tenant ID being written, which contract section 8.2 forbids), and
+      move `AzureWebJobsStorage` off its account key.
    3. **The Function — this is where the next session starts.** Contract sections 2 to 6
       are the spec, including the error table and the rule that an unlicensed tenant gets a
       200 with a `free` token rather than a 404. Code goes in
@@ -422,16 +431,16 @@ Others:
       Functions Core Tools 4.14.0 are installed, and `gh` is installed and authenticated as
       `kainorllc`. Deploy with `func azure functionapp publish kainor-lapslock-prod-func`.
    4. **The client half**, in `LicensingKit`: fetch, verify per section 7.4, Keychain
-      storage, Activate and Remove licence in Settings, and `isPro` wired up — it is
+      storage, Activate and Remove license in Settings, and `isPro` wired up — it is
       hardcoded false in `LAPSlockApp.swift` today.
 
    ⚠️ **The privacy policy must change in the same release as the client half.**
    `docs/privacy/index.html` says the app connects to "exactly two hosts". Once activation
    ships that is three, and shipping without updating it makes a published policy false.
-   Keep the distinction: two always, a third only after a licence is activated.
+   Keep the distinction: two always, a third only after a license is activated.
 
 1. **Entitlement backend — in progress.** Infrastructure provisioned, contract written and
-   published. Next is the ES256 key, the licences table, the Function code, and the client
+   published. Next is the ES256 key, the licenses table, the Function code, and the client
    half. This is the whole revenue path.
 2. **Auth diagnostics in the support report** — MSAL/AAD error code, correlation ID, broker
    path flag, allowlisted so no authorization code can ride along in an error description.
@@ -443,6 +452,6 @@ Others:
    it. The fix belongs in `DeviceDetailModel`, not `ScreenPrivacy`.
 5. Windows LAPS password history, recents/favourites, biometric app lock
 6. PIM role activation from the app (the MFA claims-challenge handling makes it a project)
-7. Network transparency doc, trademark filing, attorney pass on the licence wording
+7. Network transparency doc, trademark filing, attorney pass on the license wording
 
 Nothing is blocked on Apple or Microsoft.
