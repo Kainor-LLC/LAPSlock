@@ -1418,7 +1418,7 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   because GitHub Pages prohibits sites primarily facilitating commercial transactions.
   Small lift: connect the repo, point DNS, done. Blocked until Apple finishes reviewing
   kainor.com, since a DNS change mid-review risks another rejection.
-- ⬜ Stripe account on the LLC + EIN + bank
+- ✅ Stripe account on the LLC + EIN + bank — founder, 2026-09-03
 - ⬜ Payment Link with a domain/tenant-ID custom field
 - ⬜ Stripe Invoicing (ACH, PO numbers, net-30) for enterprise/MSP
 - ⬜ Stripe Tax on
@@ -1455,9 +1455,38 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   is no SOC 2 / ISO 27001 and why the controls are in published source instead.
 - ⬜ Enterprise license agreement draft (attorney pass before the first real deal)
 - ⬜ W-9 PDF ready
-- ⬜ Trademark filing — USPTO, Class 9, ~$350 (verify current fee). Owner = the LLC,
-  intent-to-use basis, pick goods wording from the ID Manual to avoid the custom-text
-  surcharge.
+- ⬜ Trademark filing — USPTO, Class 9. Owner = the LLC, intent-to-use basis, pick goods
+  wording from the ID Manual to avoid the custom-text surcharge.
+
+  **Fees verified 2026-09-03 against uspto.gov** (schedule effective 2025-01-18, still
+  current): $350 per class base; $150 per class for the Statement of Use an intent-to-use
+  filing later needs; $125 per class per six-month extension if launch slips. Custom
+  goods wording carries a surcharge — use an ID Manual entry verbatim.
+
+  **What the filing needs, in order:**
+  1. A USPTO.gov account with identity verification (ID.me), in the founder's name, filing
+     on behalf of Kainor LLC. Owner is the LLC: legal name, state of formation, address.
+  2. The mark as a **standard character mark**, `LAPSLOCK`, one application. The icon is a
+     separate design-mark application at a second fee — not needed at launch; the word is
+     the asset.
+  3. **Class 009**, one ID Manual entry, e.g. downloadable mobile applications for
+     retrieving and managing administrator credentials / IT security software. Class 042
+     is NOT needed: the entitlement server is not customer-facing software.
+  4. **Basis.** Intent-to-use (1(b)) now locks the priority date and costs the $150 SOU
+     later; actual-use (1(a)) after App Store launch needs a specimen — the App Store
+     listing page showing the mark — and skips the SOU. If launch is inside ~2 months,
+     1(a) saves a step and $150. Either way the date the app is first downloadable is the
+     first-use date.
+  5. Wordmark clearance is already done (USPTO and App Store searches clear). A design
+     search for the icon is not, and only matters if the icon is filed.
+
+  **Why it still waits for the attorney pass**, as recorded below: the mark contains
+  `LAPS`, Microsoft's product name. Two questions an examiner or Microsoft could raise:
+  descriptiveness of the `LAPS` element (an examiner may require disclaiming it — harmless,
+  the composite still registers), and Microsoft's brand guidelines on incorporating their
+  names into product names (a policy matter, not a registrability bar). Neither blocks
+  filing; both are worth one attorney read alongside the license wording already queued.
+  Expect ~6–8 months to first examination at current USPTO backlog.
 - ✅ **License decision** — PolyForm Strict + security-review permission
 - 🔵 Attorney review of the additional-permission wording
 
