@@ -57,8 +57,37 @@ public final class SubscriptionStore: ObservableObject {
                 await self.loadOffers()
             }
         }
-        Task { await refreshEntitlement() }
-        Task { await loadOffers() }
+        Task {
+            // BEFORE anything else. StoreKit redelivers an unfinished transaction forever,
+            // and — the part that bites — an unfinished transaction can block a subsequent
+            // purchase attempt, which presents as `purchase()` never returning and a UI
+            // spinning with no way out. `Transaction.updates` carries only NEW activity, so
+            // leftovers from a previous launch have to be swept explicitly.
+            await finishUnfinishedTransactions()
+            await refreshEntitlement()
+            await loadOffers()
+        }
+    }
+
+    private func finishUnfinishedTransactions() async {
+        for await result in Transaction.unfinished {
+            guard case .verified(let transaction) = result else { continue }
+            await transaction.finish()
+        }
+    }
+
+    /// Stops waiting on a purchase without cancelling it.
+    ///
+    /// **Safe because the outcome is not lost.** Whatever StoreKit eventually decides arrives
+    /// through `Transaction.updates`, which runs independently of this call — so abandoning
+    /// the wait costs nothing and a purchase that completes later still grants access.
+    ///
+    /// This exists because `purchase()` can fail to return at all. Observed on a TestFlight
+    /// build: cancelling the App Store sheet left "Contacting the App Store…" spinning
+    /// permanently, because `isWorking` is only cleared by that function returning. A UI with
+    /// no escape from a third party's hang is a bug of ours, whatever the third party did.
+    public func stopWaiting() {
+        isWorking = false
     }
 
     deinit {
