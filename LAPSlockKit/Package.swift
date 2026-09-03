@@ -43,7 +43,8 @@ let package = Package(
         .library(name: "PlatformSecurity", targets: ["PlatformSecurity"]),
         .library(name: "DiagnosticsKit", targets: ["DiagnosticsKit"]),
         .library(name: "LicensingKit", targets: ["LicensingKit"]),
-        .library(name: "PrivilegedAccessKit", targets: ["PrivilegedAccessKit"])
+        .library(name: "PrivilegedAccessKit", targets: ["PrivilegedAccessKit"]),
+        .library(name: "SubscriptionKit", targets: ["SubscriptionKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -70,6 +71,15 @@ let package = Package(
 
         // ⚠ ISOLATION BOUNDARY (§3.1). Do NOT add dependencies to this target.
         .target(name: "CredentialKit", dependencies: ["AuthKit"]),
+
+        // Apple subscriptions. Foundation + StoreKit + LicensingKit, and it must NEVER
+        // import CredentialKit.
+        //
+        // Its own target rather than a folder in LicensingKit because LicensingKit is
+        // capped by isolation-check at Foundation + CryptoKit + Security — deliberately, so
+        // the module that verifies signed entitlements cannot grow a payments SDK. StoreKit
+        // lives out here instead, and LicensingKit stays the pure verifier it was.
+        .target(name: "SubscriptionKit", dependencies: ["LicensingKit"]),
 
         // PIM role activation. Foundation + AuthKit only, and it must NEVER import
         // CredentialKit.
@@ -103,6 +113,7 @@ let package = Package(
         .testTarget(name: "AuthKitTests", dependencies: ["AuthKit"]),
         .testTarget(name: "DiagnosticsKitTests", dependencies: ["DiagnosticsKit"]),
         .testTarget(name: "LicensingKitTests", dependencies: ["LicensingKit"]),
-        .testTarget(name: "PrivilegedAccessKitTests", dependencies: ["PrivilegedAccessKit", "AuthKit"])
+        .testTarget(name: "PrivilegedAccessKitTests", dependencies: ["PrivilegedAccessKit", "AuthKit"]),
+        .testTarget(name: "SubscriptionKitTests", dependencies: ["SubscriptionKit", "LicensingKit"])
     ]
 )
