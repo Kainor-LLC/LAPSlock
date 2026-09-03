@@ -118,24 +118,30 @@ final class DeviceDetailModel: ObservableObject {
 
         // The single wiring that matters most: when the window ends for ANY reason,
         // the bytes are overwritten and the clipboard is cleared.
-        self.session.onWipe = { [weak self] in
-            guard let self else { return }
-            self.secret?.wipe()
-            self.secret = nil
-            // The account name hides with the password. It is not secret in the way a
-            // password is, but it IS reconnaissance: knowing the LAPS account name tells
-            // an onlooker exactly which account to attack. It is also half the
-            // credential, so leaving it on screen after Hide undercuts the point of
-            // hiding. Both disappear together.
-            self.revealedAccountName = nil
-            self.bitLockerSecret?.wipe()
-            self.bitLockerSecret = nil
-            self.revealedKeyInfo = nil
-            self.revealedItem = .none
-            if let copied = self.lastCopiedValue {
-                SecureClipboard.clearIfHolding(copied)
-                self.lastCopiedValue = nil
-            }
+        self.session.onWipe = { [weak self] in self?.wipeHeldSecrets() }
+    }
+
+    /// Overwrites the held bytes and clears everything shown alongside them.
+    ///
+    /// Wired to `session.onWipe`, and called DIRECTLY when a reveal is abandoned before it
+    /// was ever published — that path has no visible window running, so `onWipe` would
+    /// never fire and nothing else would clean up after it.
+    private func wipeHeldSecrets() {
+        secret?.wipe()
+        secret = nil
+        // The account name hides with the password. It is not secret in the way a
+        // password is, but it IS reconnaissance: knowing the LAPS account name tells
+        // an onlooker exactly which account to attack. It is also half the
+        // credential, so leaving it on screen after Hide undercuts the point of
+        // hiding. Both disappear together.
+        revealedAccountName = nil
+        bitLockerSecret?.wipe()
+        bitLockerSecret = nil
+        revealedKeyInfo = nil
+        revealedItem = .none
+        if let copied = lastCopiedValue {
+            SecureClipboard.clearIfHolding(copied)
+            lastCopiedValue = nil
         }
     }
 
@@ -154,6 +160,80 @@ final class DeviceDetailModel: ObservableObject {
     private func clearForNewReveal() {
         if session.isVisible { session.mask() }
         syncSessionState()
+    }
+
+    // MARK: - publishing a reveal only once the screen can actually show it
+
+    /// Whether the scene is `.active`, pushed in by the view.
+    private var isSceneActive = true
+
+    /// True when a credential has been fetched but the scene is not `.active` yet.
+    private var revealAwaitingActiveScene = false
+
+    /// Starts the visible window, or holds it until the scene is active.
+    ///
+    /// **WHY THE WINDOW MUST NOT START AT FETCH TIME.** Face ID takes the scene to
+    /// `.inactive`, and it stays there for a beat after the Graph call returns. Starting
+    /// the window there did two bad things at once:
+    ///
+    ///  1. The privacy cover was *correct* to hide a credential published while inactive,
+    ///     so a reveal showed the "item is hidden" screen for about two seconds. An admin
+    ///     at a machine reads that as failure and taps again — and every extra tap is
+    ///     another audit event in the customer's tenant.
+    ///  2. The 60-second window began ticking while nothing was readable, so the user lost
+    ///     part of the time they were given.
+    ///
+    /// Deferring the START fixes both here, in the model, which is where the design note
+    /// above `PrivacyCoverModifier` says the fix belongs. **Two attempts inside
+    /// `ScreenPrivacy` failed on device in the dangerous direction** (the credential
+    /// appeared in the app-switcher card); do not try a third. With this, `isProtected` is
+    /// simply false during the inactive tail and the cover's condition needs no
+    /// qualification at all.
+    ///
+    /// The render-timing hazard that defeated those attempts does not apply here. Those
+    /// needed to be correct at the instant iOS photographs the screen; this only delays
+    /// publication, so a late `.onChange` shows the credential a render later and is never
+    /// unsafe.
+    private func beginVisibleWindow() {
+        guard isSceneActive else {
+            revealAwaitingActiveScene = true
+            return
+        }
+        session.reveal()
+        syncSessionState()
+    }
+
+    /// Scene phase, pushed in from the view.
+    func sceneChanged(to phase: ScenePhase) {
+        isSceneActive = (phase == .active)
+        switch phase {
+        case .active:
+            // The scene is active now, so `beginVisibleWindow` will start the window
+            // rather than defer it again. One place starts the countdown, whichever
+            // route got here.
+            guard revealAwaitingActiveScene else { return }
+            revealAwaitingActiveScene = false
+            beginVisibleWindow()
+        case .background:
+            abandonPendingReveal()
+        case .inactive:
+            // Face ID lives here, and so does a notification banner. Keep waiting: the
+            // credential has not been shown, so there is nothing exposed to protect.
+            break
+        @unknown default:
+            abandonPendingReveal()
+        }
+    }
+
+    /// Drops a fetched credential that was never shown.
+    ///
+    /// The user left before it appeared, so the safe answer is to destroy the bytes rather
+    /// than hold them with no window running to expire them. It costs the user nothing:
+    /// re-revealing the same device within an hour does not spend another credit.
+    private func abandonPendingReveal() {
+        guard revealAwaitingActiveScene else { return }
+        revealAwaitingActiveScene = false
+        wipeHeldSecrets()
     }
 
     // MARK: - metadata
@@ -249,8 +329,7 @@ final class DeviceDetailModel: ObservableObject {
                 )
             }
             revealedItem = .lapsPassword
-            session.reveal()
-            syncSessionState()
+            beginVisibleWindow()
             // Charge only now. A cancelled prompt, a permission error or a network
             // failure must never cost a credit — the user pays for reveals that actually
             // produced a password, and nothing else.
@@ -329,8 +408,7 @@ final class DeviceDetailModel: ObservableObject {
             bitLockerSecret = revealed.secret
             revealedKeyInfo = info
             revealedItem = .bitLockerKey(id: info.id)
-            session.reveal()
-            syncSessionState()
+            beginVisibleWindow()
             remainingReveals = meter.recordReveal(deviceIdentifier: device.id, isPro: isPro)
             await Self.record(.credentialReveal, .success,
                               endpoint: "/v1.0/informationProtection/bitlocker/recoveryKeys/{id}",
@@ -411,6 +489,9 @@ final class DeviceDetailModel: ObservableObject {
     }
 
     func leaveScreen() {
+        // Order matters: abandon first, because session.reset() only wipes when the window
+        // is VISIBLE, and a reveal still waiting for the scene never became visible.
+        abandonPendingReveal()
         session.reset()
         syncSessionState()
     }
@@ -611,6 +692,10 @@ struct DeviceDetailView: View {
             // Revoke on anything other than active. The snapshot is taken during the
             // transition, so waiting for .background is too late.
             if phase != .active { model.revoke(.appBackgrounded) }
+            // Then let the model know, so a credential fetched while Face ID had the
+            // scene inactive is published once the screen can actually show it. Second,
+            // so a revocation of something already visible still wins.
+            model.sceneChanged(to: phase)
         }
         .task {
             privacy.onUnsafeCondition = { reason in model.revoke(reason) }
