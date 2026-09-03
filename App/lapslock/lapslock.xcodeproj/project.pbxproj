@@ -13,6 +13,7 @@
 		8734CC64302FBA9E0056D699 /* AuthKitMSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 8734CC63302FBA9E0056D699 /* AuthKitMSAL */; };
 		8734CC69302FBB7D0056D699 /* CredentialKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8734CC68302FBB7D0056D699 /* CredentialKit */; };
 		8769AA963048CB430093ADD6 /* PrivilegedAccessKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8769AA953048CB430093ADD6 /* PrivilegedAccessKit */; };
+		8769AA9A304A023D0093ADD6 /* SubscriptionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8769AA99304A023D0093ADD6 /* SubscriptionKit */; };
 		87C94BB73042981F009D768F /* LicensingKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87C94BB63042981F009D768F /* LicensingKit */; };
 		87C94BB930429849009D768F /* AuthKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87C94BB830429849009D768F /* AuthKit */; };
 /* End PBXBuildFile section */
@@ -49,6 +50,7 @@
 			files = (
 				8769AA963048CB430093ADD6 /* PrivilegedAccessKit in Frameworks */,
 				87C94BB73042981F009D768F /* LicensingKit in Frameworks */,
+				8769AA9A304A023D0093ADD6 /* SubscriptionKit in Frameworks */,
 				87177D8C302FCD330009BB78 /* InventoryKit in Frameworks */,
 				87177D8E302FCD330009BB78 /* PlatformSecurity in Frameworks */,
 				87C94BB930429849009D768F /* AuthKit in Frameworks */,
@@ -113,6 +115,7 @@
 				87C94BB63042981F009D768F /* LicensingKit */,
 				87C94BB830429849009D768F /* AuthKit */,
 				8769AA953048CB430093ADD6 /* PrivilegedAccessKit */,
+				8769AA99304A023D0093ADD6 /* SubscriptionKit */,
 			);
 			productName = lapslock;
 			productReference = 8734CC50302FB6650056D699 /* lapslock.app */;
@@ -433,6 +436,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = PrivilegedAccessKit;
+		};
+		8769AA99304A023D0093ADD6 /* SubscriptionKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = SubscriptionKit;
 		};
 		87C94BB63042981F009D768F /* LicensingKit */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -5,6 +5,8 @@ import CredentialKit
 import DiagnosticsKit
 import LicensingKit
 import PrivilegedAccessKit
+import SubscriptionKit
+import StoreKit
 
 // Settings. Three toggles, each with a deliberate design decision behind it.
 //
@@ -125,6 +127,9 @@ struct SettingsView: View {
     var requestUserNamesConsent: (() async -> String?)? = nil
     /// Opens the activation sheet, injected so Settings need not know about Graph.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
+    /// Apple subscriptions. Nil in demo mode and while signed out — there is nothing to buy
+    /// on a screen that cannot reach a tenant.
+    var subscriptions: SubscriptionStore? = nil
     /// False when opened from the sign-in screen.
     ///
     /// **Settings must be reachable without signing in**, because the diagnostics report is
@@ -154,6 +159,8 @@ struct SettingsView: View {
     @State private var copiedTenantId = false
     @State private var isRequestingPrivilegedConsent = false
     @State private var privilegedConsentError: String?
+    @State private var showingManageSubscriptions = false
+    @State private var purchaseMessage: String?
     @State private var isRequestingNamesConsent = false
     @State private var namesConsentError: String?
     @State private var showingPrivilegedSheet = false
@@ -176,6 +183,7 @@ struct SettingsView: View {
                     macOSSection
                 }
                 freeTierSection
+                subscriptionSection
                 licenseSection
                 diagnosticsSection
                 aboutSection
@@ -195,6 +203,10 @@ struct SettingsView: View {
             .sheet(isPresented: $showingPrivilegedSheet) {
                 if let privilegedSheet { privilegedSheet() }
             }
+            // On the NavigationStack for the same reason as the two above: a Section
+            // re-renders on every form state change, which dismissed a sheet the instant it
+            // opened once before.
+            .manageSubscriptionsSheet(isPresented: $showingManageSubscriptions)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -487,6 +499,121 @@ struct SettingsView: View {
                     """)
             }
         }
+    }
+
+    // MARK: - Apple subscription
+
+    /// In-app purchase of Pro or MSP.
+    ///
+    /// **This section shows prices and the organization licence section does not, which looks
+    /// inconsistent and is not.** Guideline 3.1.3 forbids pointing at outside purchasing from
+    /// inside the app, which is why the licence section is a bare status readout with no price
+    /// and no link — see `docs/APP-STORE-3-1-3.md`. Apple's own in-app purchase is the one
+    /// place selling is permitted, and Apple in fact requires the price to be shown. So the
+    /// two sections follow opposite rules on purpose. Do not "harmonise" them.
+    @ViewBuilder
+    private var subscriptionSection: some View {
+        if let subscriptions, !isDemo, hasSession {
+            Section {
+                if subscriptions.entitlement.isActive {
+                    LabeledContent("Plan", value: activePlanName(subscriptions))
+                    Button("Manage subscription") { showingManageSubscriptions = true }
+                } else {
+                    ForEach(subscriptions.offers) { offer in
+                        Button {
+                            Task { await buy(offer.plan, from: subscriptions) }
+                        } label: {
+                            HStack(alignment: .firstTextBaseline) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(offer.displayName)
+                                    if let intro = offer.introductoryOffer {
+                                        Text(intro).font(.footnote).foregroundStyle(Brand.accent)
+                                    }
+                                }
+                                Spacer(minLength: 8)
+                                Text(offer.periodLabel.isEmpty
+                                     ? offer.displayPrice
+                                     : "\(offer.displayPrice) / \(offer.periodLabel)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .disabled(subscriptions.isWorking)
+                    }
+
+                    if subscriptions.offers.isEmpty {
+                        // Never a scary error: the app is fully usable unpaid, so a plan list
+                        // that will not load is an inconvenience rather than a failure.
+                        Text(subscriptions.loadFailed
+                             ? "Plans aren't available right now. Check your connection and try again later."
+                             : "Loading plans…")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    // Apple requires this, and it earns its place: entitlements belong to an
+                    // Apple ID, so somebody who reinstalled or switched devices otherwise has
+                    // no explanation for where their subscription went.
+                    Button("Restore purchases") {
+                        Task { await restore(subscriptions) }
+                    }
+                    .disabled(subscriptions.isWorking)
+                }
+
+                if subscriptions.isWorking {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Contacting the App Store…").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+
+                if let purchaseMessage {
+                    Text(purchaseMessage).font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Subscription")
+            } footer: {
+                Text("""
+                    Removes the monthly reveal limit. Billed by Apple through your Apple \
+                    Account; cancel any time in the App Store. The MSP plan adds switching \
+                    between customer organizations.
+                    """)
+            }
+        }
+    }
+
+    private func activePlanName(_ store: SubscriptionStore) -> String {
+        switch store.entitlement.tier {
+        case .msp:  return "LAPSlock MSP"
+        case .pro:  return "LAPSlock Pro"
+        default:    return "Active"
+        }
+    }
+
+    private func buy(_ plan: SubscriptionProduct, from store: SubscriptionStore) async {
+        purchaseMessage = nil
+        switch await store.purchase(plan) {
+        case .purchased:
+            entitlementDidChange?()
+        case .cancelled:
+            // Silent. The user chose not to buy, and a message about it is nagging.
+            break
+        case .pending:
+            // NOT success. Ask to Buy or a bank step is outstanding, nothing is owned yet,
+            // and claiming otherwise sends somebody looking for a feature they do not have.
+            purchaseMessage = "Waiting for approval. Your subscription starts once it's approved, and this screen will update on its own."
+        case .failed(let message):
+            purchaseMessage = message
+        }
+    }
+
+    private func restore(_ store: SubscriptionStore) async {
+        purchaseMessage = nil
+        let restored = await store.restore()
+        entitlementDidChange?()
+        purchaseMessage = restored
+            ? nil
+            : "No subscription was found for this Apple Account. If you bought one with a different Apple ID, sign into that one in the App Store."
     }
 
     // MARK: - organization license
