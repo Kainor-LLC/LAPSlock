@@ -35,15 +35,39 @@ public enum SubscriptionProduct: String, CaseIterable, Sendable {
         }
     }
 
-    /// Apple subscription group. Products in ONE group are mutually exclusive and a customer
-    /// can move between them freely, so monthly and yearly individual plans belong together —
-    /// otherwise somebody switching from monthly to yearly would hold both and pay twice.
+    /// **All three products share ONE Apple subscription group, and that is deliberate.**
     ///
-    /// MSP is its own group precisely because it is not an upgrade path from individual Pro.
-    public var groupIdentifier: String {
+    /// A customer may hold only one subscription per group, and Apple grants exactly one
+    /// introductory offer per group per customer, ever. Both of those matter here:
+    ///
+    ///   * MSP is a strict SUPERSET of Pro — everything Pro grants plus tenant switching. In
+    ///     separate groups a customer could hold Pro *and* MSP simultaneously and pay
+    ///     $19.99 + $49.99 for overlapping benefits. One group makes that impossible
+    ///     structurally rather than relying on anyone noticing.
+    ///   * Separate groups would also mean a **second 30-day free trial** — 60 days free by
+    ///     taking the Pro trial, cancelling, then taking the MSP one.
+    ///   * And a Pro subscriber who becomes an MSP gets an immediate, prorated upgrade
+    ///     instead of having to cancel and rebuy with no credit for unused time.
+    ///
+    /// Service level within the group, highest first: MSP Yearly, Pro Yearly, Pro Monthly.
+    /// Yearly sits above monthly so monthly-to-yearly is an upgrade that applies at once.
+    ///
+    /// An earlier version of this file put MSP in its own group on the theory that it is "a
+    /// different capability, not a bigger Pro". That was wrong: the tier LATTICE in
+    /// `merge` concerns the organization licence, where Enterprise is paid but cannot switch
+    /// tenants. Between the two things Apple sells, MSP strictly dominates Pro.
+    public static let subscriptionGroup = "lapslock.pro"
+
+    public var groupIdentifier: String { Self.subscriptionGroup }
+
+    /// Where this sits in the group, 1 being the highest level of service. Mirrors the order
+    /// configured in App Store Connect, which is what drives Apple's upgrade and downgrade
+    /// behaviour — so a mismatch here and there is a billing surprise, not a cosmetic bug.
+    public var serviceLevel: Int {
         switch self {
-        case .proMonthly, .proYearly: return "lapslock.pro"
-        case .mspYearly:              return "lapslock.msp"
+        case .mspYearly:  return 1
+        case .proYearly:  return 2
+        case .proMonthly: return 3
         }
     }
 

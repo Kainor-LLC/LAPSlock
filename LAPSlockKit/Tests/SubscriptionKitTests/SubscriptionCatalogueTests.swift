@@ -17,14 +17,25 @@ final class SubscriptionCatalogueTests: XCTestCase {
         XCTAssertEqual(SubscriptionProduct.allIdentifiers.count, 3)
     }
 
-    func test_individualPlansShareOneGroupAndMSPDoesNot() {
-        // Products in one Apple subscription group are mutually exclusive. Monthly and
-        // yearly MUST share a group or somebody switching plans holds both and pays twice.
-        XCTAssertEqual(SubscriptionProduct.proMonthly.groupIdentifier,
-                       SubscriptionProduct.proYearly.groupIdentifier)
-        // MSP is a different capability, not a bigger Pro, so it is its own group.
-        XCTAssertNotEqual(SubscriptionProduct.mspYearly.groupIdentifier,
-                          SubscriptionProduct.proMonthly.groupIdentifier)
+    func test_everyProductSharesOneSubscriptionGroup() {
+        // A customer may hold only ONE subscription per group, and Apple grants exactly one
+        // introductory offer per group per customer. Both matter: MSP is a strict superset
+        // of Pro, so separate groups would let somebody hold both and pay $19.99 + $49.99
+        // for overlapping benefits — and would hand out a second 30-day trial, 60 days free.
+        XCTAssertEqual(Set(SubscriptionProduct.allCases.map(\.groupIdentifier)).count, 1)
+    }
+
+    func test_serviceLevelsRankMSPHighestAndYearlyAboveMonthly() {
+        // This order must match App Store Connect, because it is what drives Apple's
+        // upgrade and downgrade behaviour. MSP top, so Pro-to-MSP is an immediate prorated
+        // upgrade; yearly above monthly, so monthly-to-yearly applies at once rather than
+        // waiting for the next renewal.
+        XCTAssertEqual(SubscriptionProduct.mspYearly.serviceLevel, 1)
+        XCTAssertEqual(SubscriptionProduct.proYearly.serviceLevel, 2)
+        XCTAssertEqual(SubscriptionProduct.proMonthly.serviceLevel, 3)
+        XCTAssertEqual(Set(SubscriptionProduct.allCases.map(\.serviceLevel)).count,
+                       SubscriptionProduct.allCases.count,
+                       "no two products may share a level, or the order is ambiguous")
     }
 
     func test_anUnknownIdentifierGrantsNothing() {
