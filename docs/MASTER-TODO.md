@@ -67,7 +67,8 @@ from this session is committed (not pushed) with all three checks green.
   supplies on its own**, which means that field was wrong before this feature existed. Fixed;
   the UPN now follows on its own "Sign-in name" line whenever a name is shown above it, since
   the UPN is what an admin pastes into a ticket. `primaryUserLabel`'s precedence is now pinned
-  by a test, because two screens depend on it and they disagreed once.
+  by a test, because two screens depend on it and they disagreed once. ✅ **Re-verified on
+  device 2026-09-03**: display names show correctly on both the row and the detail screen.
 
   Background: `userDisplayName` is in the `$select` and is decoded. The Kainor tenant simply
   returns it empty, which is common depending on how the primary user was assigned. The
@@ -802,7 +803,34 @@ macOS password retrieval.
   this covers the auth failures that happen before any Graph call. Same report, same
   Settings screen, same no-credentials guarantee.
 
-- ⬜ **Reveal shows a privacy placeholder first** ← observed on device 2026-08-27
+- ✅ **Reveal shows a privacy placeholder first — FIXED 2026-09-03, third attempt, and this
+  one held.** Verified on device: the credential appears immediately with no hidden-state
+  flash, for both LAPS passwords and BitLocker keys.
+
+  ⚠️ **The app-switcher check is NOT yet re-confirmed.** The design note's order below makes
+  it blocking, and it is the exact test both earlier attempts failed — reveal a credential,
+  swipe to the switcher, the card must read "Hidden". Confirm before any release build.
+
+  The fix went where the design note said: `DeviceDetailModel` holds the fetched credential
+  and starts the visible window only once `scenePhase` is `.active`. `isProtected` is
+  therefore false throughout the inactive tail, so the cover's condition needed no
+  qualification and **nothing inside `ScreenPrivacy` was touched.** The render-timing hazard
+  that defeated the earlier attempts does not apply: those had to be correct at the instant
+  iOS photographs the screen, whereas this only delays publication — a late `.onChange`
+  shows the credential a render later and is never unsafe.
+
+  It also fixed the second bug named below: the 60-second window no longer starts while the
+  credential is behind a cover.
+
+  **Abandonment is explicit**, and was the one new hazard the change introduced: a reveal
+  that never became visible has no window running, so `session.onWipe` would never fire. The
+  wipe body is now a named method that both `onWipe` and the abandon path call, and
+  backgrounding or leaving the screen mid-reveal destroys the bytes. It costs the user
+  nothing — re-revealing the same device within an hour spends no further credit.
+
+  Not unit-testable: `DeviceDetailModel` is in the app target, not the package.
+
+  Original report, kept for the reasoning:
 
   Tapping reveal on either a LAPS password or a BitLocker key shows the "item is hidden"
   privacy screen for roughly two seconds, then replaces it with the credential. Both
@@ -924,8 +952,13 @@ macOS password retrieval.
 - ⬜ Blocked-state copy currently says "Pro removes the limit" with no price. Deliberate:
   App Store pricing is per-storefront and must come from StoreKit at runtime, never a
   hardcoded string. Add the upgrade action once IAP products exist.
-- ⬜ `isPro` is hardcoded false with a TODO pointing at `/entitlement`. Everyone is metered
-  until entitlement exists, which is the safe direction — nobody is accidentally given Pro.
+- ✅ **`isPro` is wired** — stale entry, corrected 2026-09-03. `AppRootModel.recomputeEntitlement()`
+  reads `Entitlements.live.isPro(signedInTenantId:storeKitEntitlementActive:)`, and it was
+  verified on device 2026-09-02 (activating a Kainor license showed Enterprise; signing into
+  the work tenant correctly reverted to free). **One genuine gap remains:**
+  `storeKitEntitlementActive` is passed `false` unconditionally, so an individual StoreKit
+  subscription cannot grant Pro yet — only an organization license can. That is blocked on
+  the StoreKit products existing, not on app code, and it fails in the safe direction.
 - ⬜ StoreKit subscription products and free trial (7 or 14 days) configuration
 - ⬜ Gate copy-to-clipboard, BitLocker rotation, favourites, and app lock behind Pro
 - ⬜ Recents / favorites
