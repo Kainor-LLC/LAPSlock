@@ -16,6 +16,8 @@
 #                  of the link graph rather than a claim in a comment.
 #
 #   LicensingKit   must import Foundation + CryptoKit + Security only.
+#   SubscriptionKit must import Foundation + StoreKit + LicensingKit only, and must
+#                  never reach a credential — it handles money, not secrets.
 #                  The free-tier meter counts EVENTS. If it ever imports CredentialKit it
 #                  gains the ability to hold a credential, and the guarantee that the meter
 #                  cannot see passwords stops being structural and becomes a matter of
@@ -111,6 +113,15 @@ check_module "LicensingKit" "Foundation|CryptoKit|Security" \
   "CredentialKit" \
   "InventoryKit" \
   "DiagnosticsKit" \
+  "PrivilegedAccessKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
+# SubscriptionKit handles MONEY. It must never be able to see a credential: an Apple
+# receipt and a local administrator password have no business in the same link graph, and
+# a payments SDK is exactly the kind of dependency that grows telemetry over time.
+check_module "SubscriptionKit" "Foundation|StoreKit|LicensingKit" \
+  "CredentialKit" \
+  "InventoryKit" \
   "PrivilegedAccessKit" \
   "${COMMON_FORBIDDEN[@]}"
 
