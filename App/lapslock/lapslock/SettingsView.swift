@@ -192,7 +192,13 @@ struct SettingsView: View {
                 debugSection
                 #endif
             }
-            .task { refreshMeter(); refreshLicense() }
+            .task {
+                refreshMeter()
+                refreshLicense()
+                // Defensive: if a previous visit left the purchase spinner up because
+                // StoreKit never answered, reopening Settings must not inherit it.
+                subscriptions?.stopWaiting()
+            }
             .navigationTitle("Settings")
             .toolbarBackground(.visible, for: .navigationBar)
             // Attached to the NavigationStack, not to the Section. A Section re-renders
@@ -573,6 +579,13 @@ struct SettingsView: View {
                     HStack(spacing: 8) {
                         ProgressView()
                         Text("Contacting the App Store…").font(.footnote).foregroundStyle(.secondary)
+                        Spacer(minLength: 8)
+                        // An escape hatch, because the App Store sheet can be dismissed
+                        // without `purchase()` ever returning. Abandoning the wait loses
+                        // nothing: if the purchase does complete, the updates listener
+                        // grants it anyway.
+                        Button("Stop waiting") { subscriptions.stopWaiting() }
+                            .font(.footnote)
                     }
                 }
 
