@@ -45,6 +45,15 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(userNamesEnabled, forKey: Keys.userNames) }
     }
 
+    /// Whether the whole app is held behind Face ID, separate from the per-reveal gate.
+    ///
+    /// What it protects is NOT a credential — those already have their own gate. It is the
+    /// device inventory: hostnames, primary users, compliance state. That is reconnaissance
+    /// for an entire tenant, and a borrowed unlocked phone should not hand it over.
+    @Published var appLockEnabled: Bool {
+        didSet { UserDefaults.standard.set(appLockEnabled, forKey: Keys.appLock) }
+    }
+
     @Published var appearance: AppearancePreference {
         didSet { UserDefaults.standard.set(appearance.rawValue, forKey: Keys.appearance) }
     }
@@ -53,6 +62,7 @@ final class AppSettings: ObservableObject {
         static let rotation = "settings.bitLockerRotationEnabled"
         static let privilegedActivation = "settings.privilegedActivationEnabled"
         static let userNames = "settings.userNamesEnabled"
+        static let appLock = "settings.appLockEnabled"
         static let appearance = "settings.appearance"
     }
 
@@ -60,6 +70,7 @@ final class AppSettings: ObservableObject {
         self.bitLockerRotationEnabled = UserDefaults.standard.bool(forKey: Keys.rotation)
         self.privilegedActivationEnabled = UserDefaults.standard.bool(forKey: Keys.privilegedActivation)
         self.userNamesEnabled = UserDefaults.standard.bool(forKey: Keys.userNames)
+        self.appLockEnabled = UserDefaults.standard.bool(forKey: Keys.appLock)
         let raw = UserDefaults.standard.string(forKey: Keys.appearance) ?? AppearancePreference.system.rawValue
         self.appearance = AppearancePreference(rawValue: raw) ?? .system
     }
@@ -176,6 +187,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 appearanceSection
+                appLockSection
                 if hasSession {
                     userNamesSection
                     rotationSection
@@ -231,6 +243,30 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
+        }
+    }
+
+    // MARK: - app lock
+
+    /// Holds the whole app behind Face ID.
+    ///
+    /// Unlike the other toggles this asks Microsoft for nothing — it is entirely local, so
+    /// there is no consent prompt and no new permission on anybody's consent screen.
+    private var appLockSection: some View {
+        Section {
+            Toggle("Require Face ID to open LAPSlock", isOn: $settings.appLockEnabled)
+        } header: {
+            Text("App lock")
+        } footer: {
+            Text("""
+                Off by default. Separate from the check before each password reveal, which \
+                always runs. This one protects the device list itself — hostnames, primary \
+                users and compliance state are worth something to an attacker even with no \
+                password on screen.
+
+                LAPSlock re-locks after a few minutes in the background, not instantly, so \
+                switching to Microsoft Authenticator and back does not ask twice.
+                """)
         }
     }
 

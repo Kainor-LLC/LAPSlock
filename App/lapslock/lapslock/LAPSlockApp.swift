@@ -665,16 +665,38 @@ final class AppRootModel: ObservableObject {
 
 struct AppRootView: View {
     @StateObject private var root = AppRootModel()
+    @StateObject private var appLock = AppLockModel()
+    @ObservedObject private var settings = AppSettings.shared
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showingSignedOutSettings = false
 
     var body: some View {
         content
+            // A full cover rather than a conditional branch, so the app underneath keeps its
+            // state — an admin who unlocks lands back exactly where they were rather than on
+            // a freshly reloaded device list.
+            .overlay {
+                if appLock.isLocked {
+                    AppLockScreen(model: appLock)
+                        .transition(.opacity)
+                }
+            }
             .task {
+                appLock.armAtLaunch(enabled: settings.appLockEnabled)
                 root.prepare()
                 // Before the entitlement refresh: restoring is what decides which screen is
                 // shown, and the entitlement read does not depend on it.
                 await root.restoreSession()
                 await root.refreshEntitlementIfDue()
+            }
+            .onChange(of: scenePhase) { _, phase in
+                // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
+                // grace period, waiting on an Authenticator push, must not return to a lock
+                // screen sitting on top of MSAL's flow.
+                appLock.sceneChanged(
+                    to: phase,
+                    enabled: settings.appLockEnabled,
+                    isSigningIn: root.isSigningIn)
             }
     }
 
