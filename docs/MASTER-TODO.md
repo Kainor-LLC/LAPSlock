@@ -807,9 +807,10 @@ macOS password retrieval.
   one held.** Verified on device: the credential appears immediately with no hidden-state
   flash, for both LAPS passwords and BitLocker keys.
 
-  ⚠️ **The app-switcher check is NOT yet re-confirmed.** The design note's order below makes
-  it blocking, and it is the exact test both earlier attempts failed — reveal a credential,
-  swipe to the switcher, the card must read "Hidden". Confirm before any release build.
+  ✅ **App-switcher check re-confirmed on device 2026-09-03, for BOTH credential types.** The
+  card reads "Hidden". This was the blocking test and the exact one both earlier attempts
+  failed, so the fix is now verified in both directions: no flash on reveal, and no
+  credential in the switcher snapshot.
 
   The fix went where the design note said: `DeviceDetailModel` holds the fetched credential
   and starts the visible window only once `scenePhase` is `.active`. `isProtected` is
