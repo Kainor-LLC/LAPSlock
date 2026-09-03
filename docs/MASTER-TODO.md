@@ -1157,7 +1157,30 @@ macOS password retrieval.
   subscription cannot grant Pro yet — only an organization license can. That is blocked on
   the StoreKit products existing, not on app code, and it fails in the safe direction.
 - ⬜ StoreKit subscription products and free trial (7 or 14 days) configuration
-- ⬜ Gate copy-to-clipboard, BitLocker rotation, favourites, and app lock behind Pro
+- ✅ **DECIDED 2026-09-03: copy-to-clipboard and BitLocker rotation are NOT gated. Pro means
+  unmetered reveals.** Copy was gated for one commit and reverted the same day on the
+  founder's challenge — "the limit is the bigger catch for subscriptions", which is right.
+
+  **The deciding argument is security, not generosity.** A free user who cannot copy a
+  48-digit BitLocker recovery key will get it out of the app another way: photograph the
+  screen with a second phone, transcribe it into Notes, read it aloud on a call. Every one of
+  those is worse handling than the clipboard this app already hardened — the entry expires,
+  is cleared when the reveal window ends, and is kept out of Universal Clipboard. A
+  hand-copied key has none of that and never expires. Gating copy would push users toward
+  exactly the behaviour that the reveal window, screenshot revocation and clipboard expiry
+  exist to prevent. Bad trade in a credential tool.
+
+  **BitLocker rotation stays free** for a related reason: it is a security-IMPROVING action,
+  and charging for it in a security product is indefensible.
+
+  **The meter is the whole free-tier limit, and it is enough.** Five reveals per 30 days binds
+  a working administrator quickly, which is where Pro earns its $1.99. This also restores the
+  principle already in CLAUDE.md — *metered, not crippled* — which the copy gate quietly
+  contradicted.
+
+  ⬜ Still open as candidate Pro features: **favourites and app lock**, neither of which
+  exists yet. The test to apply: gate a convenience only if it does not make credential
+  HANDLING worse.
 - ⬜ Recents / favorites
 - ⬜ Biometric app lock (distinct from the per-reveal gate)
 - 🟡 **Tenant switcher — AUTH LAYER DONE 2026-09-02, UI still to build.**
