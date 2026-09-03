@@ -8,6 +8,7 @@ import DiagnosticsKit
 import InventoryKit
 import LicensingKit
 import PrivilegedAccessKit
+import SubscriptionKit
 
 // App root. Owns the one decision the rest of the app depends on: which data source
 // is in play — a live tenant, or demo mode.
@@ -206,11 +207,30 @@ final class AppRootModel: ObservableObject {
     /// second operand is a literal false. When it lands, it goes here and nowhere else.
     @Published private(set) var isPro = false
 
+    /// True when the MSP tenant switcher is available. **Stored rather than computed**, and
+    /// that is not a style choice: it now depends on the Apple subscription, which changes
+    /// asynchronously when a renewal or refund lands, and a computed property would give
+    /// SwiftUI nothing to observe.
+    @Published private(set) var canSwitchTenants = false
+
+    /// Apple's side of the entitlement. Owned here, at the root, so one listener serves the
+    /// whole app.
+    let subscriptions = SubscriptionStore()
+
+    private var cancellables = Set<AnyCancellable>()
+
+    /// Recomputes both capabilities from the organization licence AND the Apple subscription.
+    ///
+    /// Merged per capability rather than by picking a winning tier — see
+    /// `SubscriptionEntitlement.merge`. An Enterprise organization licence is paid but cannot
+    /// switch tenants, while an MSP subscription can, so somebody holding both must end up
+    /// with unmetered reveals *and* switching. Any single-tier answer drops one of them.
     func recomputeEntitlement() {
-        isPro = Entitlements.live.isPro(
-            signedInTenantId: signedInTenantId,
-            storeKitEntitlementActive: false
-        )
+        let merged = SubscriptionEntitlement.merge(
+            subscription: subscriptions.entitlement,
+            organizationTier: Entitlements.live.state(signedInTenantId: signedInTenantId).tier)
+        isPro = merged.isPro
+        canSwitchTenants = merged.allowsTenantSwitching
     }
 
     /// Customer organizations, most recently used first.
@@ -220,9 +240,6 @@ final class AppRootModel: ObservableObject {
 
     /// True only for the msp tier. Enterprise and Pro are single-organization by design, so
     /// the switcher does not appear for them at all rather than appearing and refusing.
-    var canSwitchTenants: Bool {
-        Entitlements.live.state(signedInTenantId: signedInTenantId).tier.allowsTenantSwitching
-    }
 
     /// Label for the tenant banner. Prefers a name a human recognises, falling back to the
     /// GUID only when nothing better exists.
@@ -298,6 +315,15 @@ final class AppRootModel: ObservableObject {
     }
 
     func prepare() {
+        // Apple subscriptions, started ONCE at launch rather than from a purchase screen.
+        // Renewals, cancellations, refunds and Ask-to-Buy approvals arrive through
+        // Transaction.updates while no paywall is open, and a listener owned by a screen
+        // would miss every one of them.
+        subscriptions.start()
+        subscriptions.$entitlement
+            .sink { [weak self] _ in self?.recomputeEntitlement() }
+            .store(in: &cancellables)
+
         guard auth == nil else { return }
         do {
             auth = try MSALAuthManager(config: .vendorDefault)
@@ -701,7 +727,8 @@ struct AppRootView: View {
                                         await root.recheckPrivilegedRequest(requestId, for: access)
                                     }
                                 )
-                            }
+                            },
+                            subscriptions: root.subscriptions
                         )
                     },
                     detailBuilder: { device in
