@@ -108,12 +108,28 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
         guard let secret = SensitiveValue(base64: Data(fake.utf8).base64EncodedString(), encoding: .utf8) else {
             throw CredentialError.decodeFailure
         }
+        // Two older versions, so the history picker is exercised in demo mode and by App
+        // Store review — a reviewer cannot sign into a tenant, so anything absent from the
+        // demo is effectively untested by them. Tenants that keep no history are the
+        // default in production, and the picker hides itself for those.
+        let history: [CredentialVersion] = [1, 2].compactMap { generation in
+            let older = "DEMO-Previous-Password-\(generation)-\(String(format: "%04d", suffix))"
+            guard let olderSecret = SensitiveValue(
+                base64: Data(older.utf8).base64EncodedString(), encoding: .utf8)
+            else { return nil }
+            return CredentialVersion(
+                accountName: "LapsAdmin",
+                backupDateTime: Date().addingTimeInterval(-Double(generation) * 30 * 86_400),
+                secret: olderSecret)
+        }
+
         return RevealedCredential(
             // Deliberately not "Administrator": LAPS account names vary by policy, and
             // the UI must not train anyone to expect a particular one.
             accountName: "LapsAdmin",
             backupDateTime: Date().addingTimeInterval(-6 * 3600),
-            secret: secret
+            secret: secret,
+            previousVersions: history
         )
     }
 

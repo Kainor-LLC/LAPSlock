@@ -72,8 +72,30 @@ final class DeviceDetailModel: ObservableObject {
     /// Mirrors the Settings toggle. When false, rotation is neither offered nor possible.
     @Published var rotationEnabled: Bool
 
-    /// The live credential. Held only while visible; wiped by the session's onWipe.
-    private var secret: SensitiveValue?
+    /// Every version of the LAPS password from the current reveal, newest first.
+    ///
+    /// Index 0 is the current password. The rest are history, which Graph returned in the
+    /// SAME response — so they cost no extra request, no extra audit event and no extra
+    /// metered reveal. They are all live bytes and are all wiped together.
+    private var lapsVersions: [CredentialVersion] = []
+
+    /// Which version is on screen. **The one-at-a-time rule holds across versions too**:
+    /// showing four passwords at once would quadruple exposure to earn nothing, since at a
+    /// machine you type one of them.
+    @Published private(set) var visibleLapsVersion = 0
+
+    /// The version list for the UI. Dates and account names only — **no secrets**, so the
+    /// list can be rendered without any view holding a credential.
+    @Published private(set) var lapsVersionSummaries: [LapsVersionSummary] = []
+
+    /// One row in the version list.
+    struct LapsVersionSummary: Identifiable, Equatable {
+        /// Index into `lapsVersions`.
+        let id: Int
+        let backupDateTime: Date?
+        let accountName: String?
+        var isCurrent: Bool { id == 0 }
+    }
     /// Kept solely so the clipboard can be cleared if it still holds this value.
     private var lastCopiedValue: String?
     /// Currently revealed BitLocker key, if any.
@@ -127,8 +149,14 @@ final class DeviceDetailModel: ObservableObject {
     /// was ever published — that path has no visible window running, so `onWipe` would
     /// never fire and nothing else would clean up after it.
     private func wipeHeldSecrets() {
-        secret?.wipe()
-        secret = nil
+        // EVERY version, not just the visible one. History arrives with the current
+        // password and is held for the same window, so it must die with it — a version
+        // left un-wiped because it was never on screen is the worst kind of leak, the
+        // invisible kind.
+        for version in lapsVersions { version.secret.wipe() }
+        lapsVersions = []
+        lapsVersionSummaries = []
+        visibleLapsVersion = 0
         // The account name hides with the password. It is not secret in the way a
         // password is, but it IS reconnaissance: knowing the LAPS account name tells
         // an onlooker exactly which account to attack. It is also half the
@@ -146,8 +174,37 @@ final class DeviceDetailModel: ObservableObject {
     }
 
     var revealedSecret: SensitiveValue? {
-        guard session.isVisible, revealedItem == .lapsPassword else { return nil }
-        return secret
+        guard session.isVisible, revealedItem == .lapsPassword,
+              lapsVersions.indices.contains(visibleLapsVersion)
+        else { return nil }
+        return lapsVersions[visibleLapsVersion].secret
+    }
+
+    /// Switches which stored version is on screen.
+    ///
+    /// Not a new reveal: the gate has already passed for this window and every version is
+    /// already in memory, so this asks for no biometrics, makes no Graph call and spends no
+    /// credit — the same reasoning that lets Copy work without re-gating.
+    ///
+    /// The window is deliberately NOT extended. Sixty seconds is the exposure budget for
+    /// one reveal, and letting a tap on a history row top it up would make the budget
+    /// unbounded for anyone who keeps tapping.
+    func showLapsVersion(_ index: Int) {
+        guard session.isVisible, revealedItem == .lapsPassword,
+              lapsVersions.indices.contains(index), index != visibleLapsVersion
+        else { return }
+
+        // Clear the clipboard if it still holds the version being swapped away. Otherwise
+        // the screen and the clipboard disagree, and pasting the wrong password into a
+        // console is a failed login or a lockout — whereas an empty paste is obvious
+        // immediately and costs one more tap.
+        if let copied = lastCopiedValue {
+            SecureClipboard.clearIfHolding(copied)
+            lastCopiedValue = nil
+        }
+        visibleLapsVersion = index
+        revealedAccountName = lapsVersions[index].accountName
+        statusNote = nil
     }
 
     var revealedBitLockerSecret: SensitiveValue? {
@@ -317,7 +374,18 @@ final class DeviceDetailModel: ObservableObject {
         let fetchStarted = Date()
         do {
             let credential = try await provider.reveal(for: device.credentialTarget)
-            secret = credential.secret
+            // Current first, then history. One response, so one credit covers all of them.
+            lapsVersions = [CredentialVersion(
+                accountName: credential.accountName,
+                backupDateTime: credential.backupDateTime,
+                secret: credential.secret)] + credential.previousVersions
+            visibleLapsVersion = 0
+            lapsVersionSummaries = lapsVersions.enumerated().map { index, version in
+                LapsVersionSummary(
+                    id: index,
+                    backupDateTime: version.backupDateTime,
+                    accountName: version.accountName)
+            }
             revealedAccountName = credential.accountName
             if metadata == nil {
                 // Note: accountName is deliberately NOT stored in metadata, which
@@ -513,7 +581,7 @@ final class DeviceDetailModel: ObservableObject {
     }
 
     func copyPassword() {
-        guard let secret, session.isVisible else { return }
+        guard let secret = revealedSecret else { return }
         secret.withValue { value in
             SecureClipboard.copyCredential(value)
             lastCopiedValue = value
@@ -716,6 +784,47 @@ struct DeviceDetailView: View {
         }
     }
 
+    // MARK: - password history
+
+    /// Switches between the password versions the tenant keeps.
+    ///
+    /// **Why this is here at all.** A device that has not checked in since its last
+    /// rotation is still using an older password — and a device that stopped checking in is
+    /// exactly the one an admin ends up standing at. Without history the app confidently
+    /// shows the one password that will not work.
+    ///
+    /// Absent entirely unless the tenant's LAPS policy keeps history, which is not the
+    /// default. Only the SELECTED version is ever rendered; these rows carry dates, never
+    /// secrets.
+    @ViewBuilder
+    private var versionPicker: some View {
+        if model.lapsVersionSummaries.count > 1 {
+            ForEach(model.lapsVersionSummaries) { version in
+                Button {
+                    model.showLapsVersion(version.id)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: version.id == model.visibleLapsVersion
+                              ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(version.id == model.visibleLapsVersion
+                                             ? Brand.accent : .secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(version.isCurrent ? "Current password" : "Previous password")
+                                .font(.subheadline)
+                            if let backed = version.backupDateTime {
+                                Text("Backed up " + (relative(backed) ?? ""))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     // MARK: - credential
 
     @ViewBuilder
@@ -733,6 +842,7 @@ struct DeviceDetailView: View {
                 )
                 .listRowInsets(EdgeInsets())
                 .listRowBackground(Color.clear)
+                versionPicker
             } else {
                 maskedCard
             }
