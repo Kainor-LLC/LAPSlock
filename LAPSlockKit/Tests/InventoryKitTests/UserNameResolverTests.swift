@@ -104,6 +104,30 @@ final class UserNameResolverTests: XCTestCase {
         XCTAssertEqual(DeviceSearch.filter(devices, query: "marquez").count, 1)
     }
 
+    func test_primaryUserLabelPrefersTheNameThenTheUPNThenTheMail() {
+        // Pinned because BOTH the device row and the detail screen's "Primary user" field
+        // read this one property. They disagreed once — the detail screen read
+        // userPrincipalName directly and kept showing an address after the row had a name.
+        let named = ManagedDeviceSummary(
+            id: "1", entraDeviceId: "e", deviceName: "WS-1", platform: .windows,
+            userPrincipalName: "a@example.com", userDisplayName: "Alice", emailAddress: "alias@example.com")
+        XCTAssertEqual(named.primaryUserLabel, "Alice")
+
+        let upnOnly = ManagedDeviceSummary(
+            id: "2", entraDeviceId: "e", deviceName: "WS-2", platform: .windows,
+            userPrincipalName: "b@example.com", emailAddress: "alias@example.com")
+        XCTAssertEqual(upnOnly.primaryUserLabel, "b@example.com")
+
+        let mailOnly = ManagedDeviceSummary(
+            id: "3", entraDeviceId: "e", deviceName: "WS-3", platform: .windows,
+            emailAddress: "alias@example.com")
+        XCTAssertEqual(mailOnly.primaryUserLabel, "alias@example.com")
+
+        let nobody = ManagedDeviceSummary(
+            id: "4", entraDeviceId: "e", deviceName: "WS-4", platform: .windows)
+        XCTAssertNil(nobody.primaryUserLabel, "shared and kiosk devices have no primary user")
+    }
+
     func test_theScopeIsTheLeastThatResolvesAName() {
         // Pinned: a change here is a consent-screen change for every customer who opts in.
         XCTAssertEqual(UserNameResolver.scope, "User.ReadBasic.All")

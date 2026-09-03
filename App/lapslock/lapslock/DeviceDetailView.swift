@@ -895,7 +895,22 @@ struct DeviceDetailView: View {
             DataRow(label: "Name", value: model.device.deviceName)
             DataRow(label: "Platform", value: platformText, monospaced: false)
             osVersionRow
-            DataRow(label: "Primary user", value: model.device.userPrincipalName)
+            // `primaryUserLabel`, the same field the device row shows, so a name that
+            // appears in the list does not turn back into an address one tap later. This
+            // row read `userPrincipalName` directly and so ignored display names entirely
+            // — found on device 2026-09-03.
+            //
+            // The UPN then follows on its own line whenever a name is displayed above it.
+            // It is the sign-in identifier an admin pastes into a ticket, so showing the
+            // friendlier label must not cost them the address; when there is no display
+            // name the label IS the UPN and the second row omits itself.
+            DataRow(
+                label: "Primary user",
+                value: model.device.primaryUserLabel,
+                monospaced: model.device.userDisplayName == nil)
+            if model.device.userDisplayName != nil {
+                DataRow(label: "Sign-in name", value: model.device.userPrincipalName)
+            }
             DataRow(label: "Model", value: model.device.model, monospaced: false)
             DataRow(label: "Serial", value: model.device.serialNumber)
             DataRow(label: "Compliance", value: model.device.complianceState?.capitalized, monospaced: false)
