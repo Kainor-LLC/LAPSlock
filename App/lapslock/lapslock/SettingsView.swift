@@ -113,6 +113,15 @@ struct SettingsView: View {
     var requestPrivilegedConsent: (() async -> String?)? = nil
     /// Opens the activation sheet, injected so Settings need not know about Graph.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
+    /// False when opened from the sign-in screen.
+    ///
+    /// **Settings must be reachable without signing in**, because the diagnostics report is
+    /// in here and a failed sign-in is exactly when somebody needs it. Found on device: after
+    /// a sign-in failure the only route to the report was through demo mode, which is not a
+    /// route anyone would guess. Signed out, the sections that need a tenant — rotation,
+    /// role activation, the macOS toggle, the license, sign-out — are simply absent rather
+    /// than present and broken.
+    var hasSession: Bool = true
 
     @Environment(\.dismiss) private var dismiss
     @State private var isRequestingConsent = false
@@ -146,9 +155,11 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 appearanceSection
-                rotationSection
-                privilegedAccessSection
-                macOSSection
+                if hasSession {
+                    rotationSection
+                    privilegedAccessSection
+                    macOSSection
+                }
                 freeTierSection
                 licenseSection
                 diagnosticsSection

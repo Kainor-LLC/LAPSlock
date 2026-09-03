@@ -570,6 +570,7 @@ final class AppRootModel: ObservableObject {
 
 struct AppRootView: View {
     @StateObject private var root = AppRootModel()
+    @State private var showingSignedOutSettings = false
 
     var body: some View {
         content
@@ -722,9 +723,25 @@ struct AppRootView: View {
             SignInView(
                 consentState: root.consentState,
                 consentURL: root.consentURL,
-                isBusy: root.isSigningIn
+                isBusy: root.isSigningIn,
+                onOpenSettings: { showingSignedOutSettings = true }
             ) {
                 Task { await root.signIn() }
+            }
+            .sheet(isPresented: $showingSignedOutSettings) {
+                // No tenant, so nothing tenant-scoped is offered: no consent requests, no
+                // license, no sign-out. What IS here is the diagnostics report, with the
+                // most recent sign-in failure attached — the reason this sheet exists.
+                SettingsView(
+                    settings: AppSettings.shared,
+                    requestRotationConsent: { "Sign in first." },
+                    isDemo: false,
+                    tenantId: nil,
+                    meter: RevealMeters.live,
+                    isPro: root.isPro,
+                    lastAuthFailure: { await root.auth?.lastAuthFailure },
+                    hasSession: false
+                )
             }
 
             if let error = root.signInError {
