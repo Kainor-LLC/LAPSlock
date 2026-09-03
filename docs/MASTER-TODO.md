@@ -12,6 +12,28 @@ Legend: ✅ done · 🟡 partial · ⬜ not started · 🔵 not-code · ⚠️ n
 Items below either need a decision, a device, or an account only you hold. Everything else
 from this session is committed (not pushed) with all three checks green.
 
+## Memory — WATCH, unresolved 2026-09-03
+
+- 🔵 **Xcode reported the app killed for memory pressure on device.** `IDEDebugSessionErrorDomain`
+  code 11, "Terminated due to memory issue", after `operation_duration_ms = 1262506` — **21
+  minutes** attached to LLDB with `param_diag_viewDebugging_insertDylibOnLaunch = 1` and queue
+  debugging on, during a session of repeated interactive MSAL sign-ins.
+
+  **Not diagnosed. Do not assume either way.** What was ruled out by inspection: the
+  diagnostics buffer is capped at 200 events; the name cache is bounded by tenant users; the
+  device set is capped at 5,000 by `InventoryFill` — and both available tenants are a single
+  page, so 2026-09-03's additions hold kilobytes.
+
+  **Cheapest next test: the TestFlight archive.** A Release build carries none of that
+  instrumentation, so if it does not reproduce there it was the debug session. If it does,
+  hunt it with Instruments → Allocations, and watch the Xcode memory gauge while the app sits
+  IDLE — steady growth with no interaction is the signal that it is ours.
+
+  Found while looking, unrelated to memory but real: **`DeviceListModel(...)` is constructed
+  on every parent body evaluation** and discarded by `@StateObject`. Pre-existing and
+  wasteful, and it now does more work per construction because of the Combine subscriptions
+  added for name lookups. Worth fixing regardless of the memory question.
+
 ## Found during the 2026-09-02 device test
 - ✅ **Cross-tenant license state was wrong, fixed on the spot.** `isActivated` meant only
   "a record exists", so activating in one organization and then signing into another showed
@@ -751,8 +773,40 @@ macOS password retrieval.
   **Priority: after real-tenant verification and the entitlement backend.** High value, but
   the MFA claims-challenge work makes it a genuine project rather than an afternoon.
 
-- ⬜ Windows LAPS password history (`credentials` returns multiple; we take newest.
-  History matters when a device hasn't checked in and still has an older password)
+- ✅ **Windows LAPS password history — BUILT 2026-09-03.** The estimate in this entry was
+  wrong in the cheap direction: the reveal already fetched `$select=credentials`, which
+  returns EVERY version, then called `credentials.max` and discarded the rest. **No new Graph
+  call, no new scope, no new audit event.**
+
+  That also settled the metering question the founder was asked. Viewing an older version
+  spends no further credit, because the credit was already paid for the response containing
+  all of them; charging twice for bytes already in hand would be indefensible.
+
+  Parsing is now a static, pure `WindowsLapsProvider.credential(from:)` — 8 tests, because
+  this function decides *which* password an admin is shown. Newest first; an undated entry
+  sorts LAST rather than winning by accident; an undecodable entry is dropped rather than
+  shown as a blank row an admin would try; the account name travels with each version, since
+  policy can change the managed account. Held versions capped at 10 — our ceiling, not
+  Microsoft's, since each is another live secret.
+
+  **The one-at-a-time rule holds across versions**, which was the one design tension: the
+  picker shows dates only, never a secret, and one password renders at a time. Switching asks
+  for no biometrics and makes no Graph call (the gate passed for this window, same reasoning
+  as Copy) and deliberately does **not** extend the window, or tapping history would make the
+  exposure budget unbounded.
+
+  Two safety details worth keeping: `wipeHeldSecrets` wipes EVERY version, because one left
+  un-wiped for never being on screen is the invisible kind of leak; and switching clears the
+  clipboard if it still holds the version being swapped away, since screen and clipboard
+  disagreeing means pasting the wrong password into a console.
+
+  Demo mode has two older versions so App Store review, which cannot sign into a tenant,
+  exercises the picker.
+
+  ⬜ **Unverified on device, and unverifiable in either available tenant** — neither keeps
+  LAPS history, so the picker will not appear. Demo mode is the only way to see it here.
+  Test: demo → reveal → expect "Current password" plus two previous, switch between them,
+  confirm only one shows and the countdown does not reset.
 - ✅ **Auth diagnostics in the support report — DONE and VERIFIED ON DEVICE 2026-09-02.**
   Abandoning an Authenticator sign-in produced `signIn unknown` with an MSAL code and no URL
   or error text anywhere in the report. The allowlist holds.
