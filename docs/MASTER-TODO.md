@@ -1418,7 +1418,8 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   because GitHub Pages prohibits sites primarily facilitating commercial transactions.
   Small lift: connect the repo, point DNS, done. Blocked until Apple finishes reviewing
   kainor.com, since a DNS change mid-review risks another rejection.
-- ✅ Stripe account on the LLC + EIN + bank — founder, 2026-09-03
+- ✅ Stripe account on the LLC + EIN + bank — founder, 2026-09-03. **Account only.** Nothing
+  below is connected: no checkout on the site, no payment-to-license link into Azure.
 - ⬜ Payment Link with a domain/tenant-ID custom field
 - ⬜ Stripe Invoicing (ACH, PO numbers, net-30) for enterprise/MSP
 - ⬜ Stripe Tax on
@@ -1455,8 +1456,22 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   is no SOC 2 / ISO 27001 and why the controls are in published source instead.
 - ⬜ Enterprise license agreement draft (attorney pass before the first real deal)
 - ⬜ W-9 PDF ready
-- ⬜ Trademark filing — USPTO, Class 9. Owner = the LLC, intent-to-use basis, pick goods
-  wording from the ID Manual to avoid the custom-text surcharge.
+- 🔵 **Trademark filing — DEFERRED by founder decision 2026-09-03.** Not required: US rights
+  come from use in commerce, so the App Store launch itself creates common-law rights and the
+  ™ symbol is available from day one. Registration buys nationwide priority, presumption of
+  validity, ® and cheaper enforcement — worth $350 once there is revenue to protect, not
+  before. Revisit at the first paying customer. The Apache-era reasoning that made trademark
+  load-bearing no longer applies under PolyForm Strict.
+
+  **The `LAPS` concern is smaller than first recorded.** Founder's point, and correct: the
+  term began as Microsoft's product name but is now used generically across the category
+  (Jamf, Kandji, Addigy and others call their Mac features "LAPS"), and it describes the
+  function. A generic term is not Microsoft's to enforce against a composite. The remaining
+  question is the ordinary one — an examiner may require disclaiming the `LAPS` element as
+  descriptive, which costs nothing and does not stop `LAPSLOCK` registering.
+
+  When it is time, the checklist below applies. Owner = the LLC, pick goods wording from the
+  ID Manual to avoid the custom-text surcharge.
 
   **Fees verified 2026-09-03 against uspto.gov** (schedule effective 2025-01-18, still
   current): $350 per class base; $150 per class for the Statement of Use an intent-to-use
