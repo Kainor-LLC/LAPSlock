@@ -63,6 +63,38 @@ credit.
 Demo data already includes an old operating-system-volume key at -190 days alongside a -14
 day one, so the multi-key case is exercisable without a tenant.
 
+## ⬜ "How it works" page on kainor.com — founder idea 2026-09-03
+
+Founder floated an in-app coach-mark tour ("tap here and here"), then landed on a website
+page with screenshots instead. The second is the better instrument and the first was
+declined, for the record:
+
+* A tap-here overlay reads as condescending to somebody who administers Entra for a living.
+* It is machinery that ages badly — every layout change breaks the anchors.
+* It duplicates three discovery surfaces that already exist and work: the sign-in screen
+  lists capabilities before you commit, demo mode explores the whole app with no tenant, and
+  errors explain themselves in place (the "Activate your role" button on a failed reveal is
+  discovery at the exact moment it is needed, which beats a tour).
+
+What WAS a real gap, and is fixed: a purchase silently changed the toolbar. A successful
+purchase now names the capability and where it lives, once.
+
+⚠️ **3.1.3 constraint to design around before writing it.** `docs/APP-STORE-3-1-3.md` commits
+to keeping purchasing entirely off the in-app surface. If the app is ever to link to this
+page, the page must carry **no pricing and no purchase links** — Apple has objected to
+in-app links that lead even indirectly to outside purchasing. Two shapes work:
+
+* **Purchase-free help page**, linkable from inside the app. Screenshots, what each screen
+  does, what permissions are requested and why.
+* **Marketing page with pricing**, reachable only from the App Store listing and search,
+  never linked in-app.
+
+Do not build one page that tries to be both. Recommendation: the help page first, since it
+also becomes the App Store listing's support URL, which Apple requires anyway.
+
+Natural home for material already written: `SECURITY-ONE-PAGER.md` and
+`NETWORK-TRANSPARENCY.md` are both stronger as web pages than as repo markdown.
+
 ## Memory — WATCH, unresolved 2026-09-03
 
 - 🔵 **Xcode reported the app killed for memory pressure on device.** `IDEDebugSessionErrorDomain`
