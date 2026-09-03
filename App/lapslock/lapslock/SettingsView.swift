@@ -531,11 +531,20 @@ struct SettingsView: View {
                                     }
                                 }
                                 Spacer(minLength: 8)
-                                Text(offer.periodLabel.isEmpty
-                                     ? offer.displayPrice
-                                     : "\(offer.displayPrice) / \(offer.periodLabel)")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                                // The price is the most important fact in the row, so it is
+                                // NOT secondary — faded grey on a dark background made the
+                                // numbers hard to read on device. The billing period stays
+                                // quiet underneath, which is the part that can be small.
+                                VStack(alignment: .trailing, spacing: 0) {
+                                    Text(offer.displayPrice)
+                                        .font(.subheadline.weight(.semibold))
+                                        .monospacedDigit()
+                                    if !offer.periodLabel.isEmpty {
+                                        Text("per " + offer.periodLabel)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                             }
                         }
                         .disabled(subscriptions.isWorking)

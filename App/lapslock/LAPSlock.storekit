@@ -1,16 +1,32 @@
 {
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
   "identifier" : "A1B2C3D4-1111-2222-3333-444455556666",
   "nonRenewingSubscriptions" : [
+
   ],
   "products" : [
+
   ],
   "settings" : {
-    "_askToBuyEnabled" : false,
+    "_askToBuyEnabled" : true,
+    "_billingGracePeriodEnabled" : false,
     "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
     "_failTransactionsEnabled" : false,
     "_locale" : "en_US",
+    "_renewalBillingIssuesEnabled" : false,
     "_storefront" : "USA",
     "_storeKitErrors" : [
+
     ],
     "_timeRate" : 0
   },
@@ -28,18 +44,40 @@
       "subscriptions" : [
         {
           "adHocOffers" : [
+
+          ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "49.99",
+              "displayPrice" : "49.99",
+              "internalID" : "5C826D46",
+              "isEnabled" : true
+            }
           ],
           "codeOffers" : [
+
           ],
           "displayPrice" : "49.99",
           "familyShareable" : false,
           "groupNumber" : 1,
           "internalID" : "6808339530",
           "introductoryOffer" : {
+            "billingPlanType" : "BILLED_UPFRONT",
             "internalID" : "7000000001",
+            "numberOfPeriods" : 1,
             "paymentMode" : "free",
             "subscriptionPeriod" : "P1M"
           },
+          "introductoryOffers" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "internalID" : "7000000001",
+              "numberOfPeriods" : 1,
+              "paymentMode" : "free",
+              "subscriptionPeriod" : "P1M"
+            }
+          ],
           "localizations" : [
             {
               "description" : "Everything in Pro, plus tenant switching",
@@ -53,22 +91,45 @@
           "subscriptionGroupID" : "22357230",
           "type" : "RecurringSubscription",
           "winbackOffers" : [
+
           ]
         },
         {
           "adHocOffers" : [
+
+          ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "19.99",
+              "displayPrice" : "19.99",
+              "internalID" : "57507521",
+              "isEnabled" : true
+            }
           ],
           "codeOffers" : [
+
           ],
           "displayPrice" : "19.99",
           "familyShareable" : false,
           "groupNumber" : 2,
           "internalID" : "6808339528",
           "introductoryOffer" : {
+            "billingPlanType" : "BILLED_UPFRONT",
             "internalID" : "7000000002",
+            "numberOfPeriods" : 1,
             "paymentMode" : "free",
             "subscriptionPeriod" : "P1M"
           },
+          "introductoryOffers" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "internalID" : "7000000002",
+              "numberOfPeriods" : 1,
+              "paymentMode" : "free",
+              "subscriptionPeriod" : "P1M"
+            }
+          ],
           "localizations" : [
             {
               "description" : "Unlimited password and BitLocker key reveals",
@@ -82,22 +143,45 @@
           "subscriptionGroupID" : "22357230",
           "type" : "RecurringSubscription",
           "winbackOffers" : [
+
           ]
         },
         {
           "adHocOffers" : [
+
+          ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "1.99",
+              "displayPrice" : "1.99",
+              "internalID" : "39281329",
+              "isEnabled" : true
+            }
           ],
           "codeOffers" : [
+
           ],
           "displayPrice" : "1.99",
           "familyShareable" : false,
           "groupNumber" : 3,
           "internalID" : "6808339529",
           "introductoryOffer" : {
+            "billingPlanType" : "BILLED_UPFRONT",
             "internalID" : "7000000003",
+            "numberOfPeriods" : 1,
             "paymentMode" : "free",
             "subscriptionPeriod" : "P1M"
           },
+          "introductoryOffers" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "internalID" : "7000000003",
+              "numberOfPeriods" : 1,
+              "paymentMode" : "free",
+              "subscriptionPeriod" : "P1M"
+            }
+          ],
           "localizations" : [
             {
               "description" : "Unlimited password and BitLocker key reveals",
@@ -111,13 +195,14 @@
           "subscriptionGroupID" : "22357230",
           "type" : "RecurringSubscription",
           "winbackOffers" : [
+
           ]
         }
       ]
     }
   ],
   "version" : {
-    "major" : 4,
+    "major" : 5,
     "minor" : 0
   }
 }
