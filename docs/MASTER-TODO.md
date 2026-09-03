@@ -39,12 +39,31 @@ from this session is committed (not pushed) with all three checks green.
   demo in demo, both calling the same method, which already handled either state. The
   license is deliberately kept — it is tenant-bound and re-verified, so returning to the
   same organization keeps it and a different one shows "Free here".
-- ⬜ **Device rows show the UPN because Intune returns no `userDisplayName`.** Not a code
-  bug: `userDisplayName` is in the `$select` and is decoded, and `primaryUserLabel` prefers
-  it. The Kainor tenant simply returns it empty, which is common depending on how the
-  primary user was assigned.
+- ✅ **DECIDED AND BUILT 2026-09-03: UPN by default, names behind an opt-in toggle.** Founder:
+  "UPN should be enough. Though I wonder if we can make it optional in the settings with a
+  toggle that says it adds another permission." Built as the third instance of the pattern
+  rotation and role activation already use: **Settings → Device list → Show user names**, off
+  by default, requests `User.ReadBasic.All` at the moment the toggle is flipped, footer says
+  exactly what it adds. A customer who never turns it on never sees the permission.
 
-  **FOUNDER DECISION NEEDED, framed 2026-09-03.** Checked: no user-read scope is consented
+  How it works: `UserNameResolver` (InventoryKit) looks names up **by UPN**, which the device
+  record already carries — so the inventory `$select` is untouched, and that matters because
+  one bad field there 400s the whole list. Fifteen UPNs per `$filter=userPrincipalName in
+  (…)`, the most Graph's `in` takes; apostrophes doubled per OData. In-memory cache for the
+  session, **misses cached as well as hits** so a user with no display name is not looked up
+  again on every page the fill delivers. Never interactive: consent is the toggle's job.
+  Intune's own `userDisplayName` always wins; the lookup fills gaps only. A looked-up name
+  becomes searchable, since `DeviceSearch` already matches on the field.
+
+  Silent on failure — a row falling back to the UPN is the default experience, not an error,
+  so a toggle left on in a tenant that has not consented degrades to that rather than
+  complaining on every page. Privacy policy and the security one-pager updated to name the
+  optional read. 10 tests. **Eyeball on device**: toggle on in Settings, expect the consent
+  prompt, then names in rows where Intune had none.
+
+  Background: `userDisplayName` is in the `$select` and is decoded. The Kainor tenant simply
+  returns it empty, which is common depending on how the primary user was assigned. The
+  framing that led to the decision: Checked: no user-read scope is consented
   today, so this is not just Graph calls — it is a NEW permission on every customer's consent
   screen, `User.ReadBasic.All`, so a password app can read the directory's user list. A
   security reviewer will ask why. Then the calls: `GET /users?$filter=id in (…)` takes 15 ids

@@ -35,6 +35,14 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(privilegedActivationEnabled, forKey: Keys.privilegedActivation) }
     }
 
+    /// Whether to look up primary users' display names in Entra when Intune leaves the
+    /// field empty. Founder decision 2026-09-03: the UPN is the default and is enough;
+    /// names are optional because they cost a permission — `User.ReadBasic.All` on the
+    /// consent screen — that a customer should choose, not inherit.
+    @Published var userNamesEnabled: Bool {
+        didSet { UserDefaults.standard.set(userNamesEnabled, forKey: Keys.userNames) }
+    }
+
     @Published var appearance: AppearancePreference {
         didSet { UserDefaults.standard.set(appearance.rawValue, forKey: Keys.appearance) }
     }
@@ -42,12 +50,14 @@ final class AppSettings: ObservableObject {
     private enum Keys {
         static let rotation = "settings.bitLockerRotationEnabled"
         static let privilegedActivation = "settings.privilegedActivationEnabled"
+        static let userNames = "settings.userNamesEnabled"
         static let appearance = "settings.appearance"
     }
 
     private init() {
         self.bitLockerRotationEnabled = UserDefaults.standard.bool(forKey: Keys.rotation)
         self.privilegedActivationEnabled = UserDefaults.standard.bool(forKey: Keys.privilegedActivation)
+        self.userNamesEnabled = UserDefaults.standard.bool(forKey: Keys.userNames)
         let raw = UserDefaults.standard.string(forKey: Keys.appearance) ?? AppearancePreference.system.rawValue
         self.appearance = AppearancePreference(rawValue: raw) ?? .system
     }
@@ -111,6 +121,8 @@ struct SettingsView: View {
     var endSession: (() async -> Void)? = nil
     /// Requests consent for the PIM activation scopes. Nil in demo.
     var requestPrivilegedConsent: (() async -> String?)? = nil
+    /// Requests consent to read users' display names. Nil in demo.
+    var requestUserNamesConsent: (() async -> String?)? = nil
     /// Opens the activation sheet, injected so Settings need not know about Graph.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
     /// False when opened from the sign-in screen.
@@ -142,6 +154,8 @@ struct SettingsView: View {
     @State private var copiedTenantId = false
     @State private var isRequestingPrivilegedConsent = false
     @State private var privilegedConsentError: String?
+    @State private var isRequestingNamesConsent = false
+    @State private var namesConsentError: String?
     @State private var showingPrivilegedSheet = false
 
     // Organization license
@@ -156,6 +170,7 @@ struct SettingsView: View {
             Form {
                 appearanceSection
                 if hasSession {
+                    userNamesSection
                     rotationSection
                     privilegedAccessSection
                     macOSSection
@@ -198,6 +213,76 @@ struct SettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
+        }
+    }
+
+    // MARK: - user names
+
+    /// Display names for device rows, behind an opt-in toggle.
+    ///
+    /// Intune often leaves `userDisplayName` empty, so rows show the UPN. Filling the gap
+    /// means reading user objects from Entra, which puts `User.ReadBasic.All` on the
+    /// customer's consent screen — a password app asking to read the user list. That is a
+    /// choice for the customer, so it has the same shape as rotation: off by default, consent
+    /// requested at the moment of the decision, and the footer says exactly what it adds.
+    private var userNamesSection: some View {
+        Section {
+            Toggle("Show user names", isOn: Binding(
+                get: { settings.userNamesEnabled },
+                set: { newValue in
+                    if newValue {
+                        Task { await enableUserNames() }
+                    } else {
+                        settings.userNamesEnabled = false
+                        namesConsentError = nil
+                    }
+                }
+            ))
+            .disabled(isRequestingNamesConsent)
+
+            if isRequestingNamesConsent {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Requesting permission…").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+
+            if let namesConsentError {
+                Text(namesConsentError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("Device list")
+        } footer: {
+            Text("""
+                Off by default. Intune often leaves a device's primary user as a sign-in \
+                address rather than a name. Turning this on looks the name up in Microsoft \
+                Entra ID, which adds one permission to what LAPSlock requests from your \
+                organization: reading basic user profiles (User.ReadBasic.All). Names are \
+                kept in memory for this session and never stored.
+
+                Leaving it off means LAPSlock never reads your user directory.
+                """)
+        }
+    }
+
+    private func enableUserNames() async {
+        namesConsentError = nil
+        if isDemo {
+            settings.userNamesEnabled = true
+            namesConsentError = "Demo mode: no permission was actually requested."
+            return
+        }
+        guard let requestUserNamesConsent else { return }
+        isRequestingNamesConsent = true
+        defer { isRequestingNamesConsent = false }
+
+        if let error = await requestUserNamesConsent() {
+            settings.userNamesEnabled = false
+            namesConsentError = error
+        } else {
+            settings.userNamesEnabled = true
         }
     }
 

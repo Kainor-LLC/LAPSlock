@@ -17,7 +17,9 @@ database of your devices, and no Kainor server between the administrator and the
   sign-in, including Conditional Access, MFA and PIM. The app has no permissions of its own.
 - **Least-privilege by default.** Read-only Graph scopes at sign-in; the credential-read
   scope is requested at the first reveal; the one write scope (BitLocker key rotation) is
-  requested only if the administrator turns rotation on in Settings.
+  requested only if the administrator turns rotation on in Settings. The same opt-in rule
+  covers role activation and reading user display names (`User.ReadBasic.All`): off by
+  default, requested at the moment the toggle is turned on, never at sign-in.
 - **Your audit log, not ours.** Every credential read is a Graph call by the signed-in user
   and appears in your Entra audit log exactly as a read from the admin center would.
 - **Face ID or Touch ID gates every reveal**, and the gate runs *before* the Graph call, so

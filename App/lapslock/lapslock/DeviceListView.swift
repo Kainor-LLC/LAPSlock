@@ -66,6 +66,14 @@ final class DeviceListModel: ObservableObject {
 
     private let inventory: any DeviceInventoryProviding
 
+    /// Looks up primary users' display names when Intune left them empty. Nil in demo, and
+    /// consulted only while the Settings toggle is on — it is the only thing in this model
+    /// that can touch the user directory, and the toggle is the customer's consent to that.
+    private let nameResolver: (any UserNameResolving)?
+    private let settings: AppSettings?
+    private var enrichTask: Task<Void, Never>?
+    private var cancellables = Set<AnyCancellable>()
+
     /// Free-tier meter, shared with the detail screen so both read one ledger.
     private let meter: RevealMeter
     private let isPro: Bool
@@ -80,13 +88,32 @@ final class DeviceListModel: ObservableObject {
         // Nil rather than a constructed default: a default argument expression is
         // evaluated in a nonisolated context and RevealMeter.init is @MainActor.
         meter: RevealMeter? = nil,
-        isPro: Bool = false
+        isPro: Bool = false,
+        nameResolver: (any UserNameResolving)? = nil,
+        settings: AppSettings? = nil
     ) {
         self.inventory = inventory
+        self.nameResolver = nameResolver
+        self.settings = settings
         let resolvedMeter = meter ?? RevealMeter(store: InMemoryRevealLedgerStore())
         self.meter = resolvedMeter
         self.isPro = isPro
         self.remainingReveals = resolvedMeter.remaining(isPro: isPro)
+
+        // Names are filled in whenever the device set changes — first page, each page the
+        // fill delivers, a manual page — and when the toggle flips on mid-session. The
+        // resolver caches misses as well as hits, so this settles after one round: devices
+        // that gained a name no longer need one, and devices whose user has none stay
+        // exactly as they were, which reassigns nothing and so does not re-trigger.
+        $devices
+            .dropFirst()
+            .sink { [weak self] _ in self?.enrichNames() }
+            .store(in: &cancellables)
+        settings?.$userNamesEnabled
+            .dropFirst()
+            .filter { $0 }
+            .sink { [weak self] _ in self?.enrichNames() }
+            .store(in: &cancellables)
 
         // Only the query is debounced. Device changes (first page, paging, refresh) flow
         // through immediately, because those are not user-typing bursts and delaying them
@@ -172,8 +199,29 @@ final class DeviceListModel: ObservableObject {
         }
     }
 
+    /// Fills in display names Intune left empty, if the customer has opted in.
+    ///
+    /// Silent on failure. Names are a nicety; a row falling back to the UPN is the
+    /// default experience, not an error, and a toggle left on in a tenant that has not
+    /// consented should degrade to that rather than complain on every page.
+    private func enrichNames() {
+        guard let nameResolver, settings?.userNamesEnabled == true else { return }
+        let needed = UserNameResolver.upnsNeedingNames(in: devices)
+        guard !needed.isEmpty else { return }
+
+        enrichTask?.cancel()
+        enrichTask = Task { [weak self] in
+            guard let names = try? await nameResolver.displayNames(forUserPrincipalNames: needed),
+                  !names.isEmpty, !Task.isCancelled, let self
+            else { return }
+            let enriched = UserNameResolver.enrich(devices, names: names)
+            if enriched != devices { devices = enriched }
+        }
+    }
+
     deinit {
         fillTask?.cancel()
+        enrichTask?.cancel()
     }
 
     func loadMore() async {

@@ -135,6 +135,9 @@ final class AppRootModel: ObservableObject {
     struct LiveSession {
         let auth: MSALAuthManager
         let inventory: DeviceInventoryService
+        /// Display-name lookups, in memory for the session. Only consulted when the
+        /// Settings toggle is on; constructing it costs nothing and requests nothing.
+        let names: UserNameResolver
 
         /// Live credential provider for one platform, sharing the authenticated session.
         func provider(for platform: DevicePlatform) -> any LocalAdminCredentialProviding {
@@ -314,7 +317,8 @@ final class AppRootModel: ObservableObject {
             let account = try await auth.signIn()
             liveSession = LiveSession(
                 auth: auth,
-                inventory: DeviceInventoryService(auth: auth)
+                inventory: DeviceInventoryService(auth: auth),
+                names: UserNameResolver(auth: auth)
             )
             mode = .live(account)
             recomputeEntitlement()
@@ -433,6 +437,23 @@ final class AppRootModel: ObservableObject {
         } catch let error as AuthError {
             if ConsentDiagnostics.state(from: error) != nil {
                 return "Your organization hasn't approved permission for LAPSlock to request role activation. An Entra administrator needs to grant it."
+            }
+            if case .userCancelled = error { return "Permission wasn't granted." }
+            return "Couldn't request permission. Check your connection and try again."
+        } catch {
+            return "Couldn't request permission. Check your connection and try again."
+        }
+    }
+
+    /// Requests consent to read users' display names. Same opt-in shape as the other two.
+    func requestUserNamesConsent() async -> String? {
+        guard let auth else { return "Sign in first." }
+        do {
+            _ = try await auth.token(scopes: [UserNameResolver.scope], allowInteractive: true)
+            return nil
+        } catch let error as AuthError {
+            if ConsentDiagnostics.state(from: error) != nil {
+                return "Your organization hasn't approved permission for LAPSlock to read user names. An Entra administrator needs to grant it."
             }
             if case .userCancelled = error { return "Permission wasn't granted." }
             return "Couldn't request permission. Check your connection and try again."
@@ -623,7 +644,9 @@ struct AppRootView: View {
                     model: DeviceListModel(
                         inventory: session.inventory,
                         meter: RevealMeters.live,
-                        isPro: root.isPro
+                        isPro: root.isPro,
+                        nameResolver: session.names,
+                        settings: AppSettings.shared
                     ),
                     isDemo: false,
                     tenantSwitcher: root.canSwitchTenants ? {
@@ -662,6 +685,7 @@ struct AppRootView: View {
                             signedInDomain: root.signedInDomain,
                             endSession: { await root.signOut() },
                             requestPrivilegedConsent: { await root.requestPrivilegedActivationConsent() },
+                            requestUserNamesConsent: { await root.requestUserNamesConsent() },
                             privilegedSheet: {
                                 PrivilegedAccessView(
                                     deviceName: nil,
