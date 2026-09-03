@@ -84,6 +84,28 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
         self.lastSyncDateTime = lastSyncDateTime
     }
 
+    /// The same device with the primary user's display name filled in. Used when the name
+    /// was looked up in Entra because Intune left the field empty; every other field is
+    /// carried across unchanged.
+    public func withUserDisplayName(_ name: String) -> ManagedDeviceSummary {
+        ManagedDeviceSummary(
+            id: id,
+            entraDeviceId: entraDeviceId,
+            deviceName: deviceName,
+            platform: platform,
+            operatingSystemRaw: operatingSystemRaw,
+            osVersion: osVersion,
+            userPrincipalName: userPrincipalName,
+            userDisplayName: name,
+            emailAddress: emailAddress,
+            managedDeviceName: managedDeviceName,
+            serialNumber: serialNumber,
+            model: model,
+            manufacturer: manufacturer,
+            complianceState: complianceState,
+            lastSyncDateTime: lastSyncDateTime)
+    }
+
     /// The all-zeros GUID Graph sometimes returns instead of null.
     static let placeholderGuid = "00000000-0000-0000-0000-000000000000"
 

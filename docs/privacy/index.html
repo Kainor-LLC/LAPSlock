@@ -112,8 +112,11 @@
 
     <h2 class="sec">What LAPSlock does with your organization's data</h2>
     <p>LAPSlock reads device inventory, local administrator passwords, and BitLocker recovery keys from
-    Microsoft Entra ID and Microsoft Intune. All of that is your organization's data, held in your
-    organization's Microsoft tenant.</p>
+    Microsoft Entra ID and Microsoft Intune. If you turn on <em>Show user names</em> in Settings, it
+    also reads the display names of devices' primary users; that option is off by default, adds one
+    read-only permission when enabled, and the names it retrieves are held in memory for the session
+    and never stored. All of that is your organization's data, held in your organization's Microsoft
+    tenant.</p>
     <p>The app requests it using <strong>delegated access</strong>: it acts as the person signed in,
     using their existing Microsoft permissions. It has no independent access of its own. If your
     account cannot read a password in the Microsoft admin center, LAPSlock cannot read it either.</p>
