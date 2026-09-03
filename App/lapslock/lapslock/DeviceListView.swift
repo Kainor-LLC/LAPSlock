@@ -24,6 +24,29 @@ final class DeviceListModel: ObservableObject {
     @Published var hasMore = false
     @Published var errorMessage: String?
 
+    /// Where the background fill has got to. Drives every "still loading" indicator, and
+    /// the search empty state reads it to avoid the lie this exists to fix — "no devices
+    /// match" while half the tenant has not arrived yet.
+    enum FillState: Equatable {
+        case idle
+        case filling(loaded: Int)
+        /// Every page loaded. Search results are the whole tenant.
+        case complete
+        /// Stopped at the cap or on an error, with pages remaining. Manual load-more
+        /// still works, and search must say it is incomplete.
+        case incomplete(loaded: Int)
+    }
+    @Published private(set) var fill: FillState = .idle
+    private var fillTask: Task<Void, Never>?
+
+    /// True while the background fill is paging. Manual paging is a no-op meanwhile: two
+    /// concurrent pagers read the same next link across the fetch suspension and append the
+    /// same page twice.
+    var isFilling: Bool {
+        if case .filling = fill { return true }
+        return false
+    }
+
     /// Filtered view of what's loaded. Search is client-side because Graph's
     /// managedDevices has no dependable server-side name search (§5).
     ///
@@ -96,6 +119,9 @@ final class DeviceListModel: ObservableObject {
     }
 
     func load() async {
+        // A refresh replaces the cache underneath any running fill, so stop it first.
+        fillTask?.cancel()
+        fill = .idle
         isLoading = true
         errorMessage = nil
         let started = Date()
@@ -105,14 +131,53 @@ final class DeviceListModel: ObservableObject {
             devices = try await inventory.cachedDevices()
             hasMore = try await inventory.hasMore()
             await Self.record(.deviceListFirstPage, .success, since: started)
+            if hasMore { startFill() } else { fill = .complete }
         } catch {
             errorMessage = Self.describe(error)
             await Self.record(.deviceListFirstPage, Self.outcome(for: error), since: started)
         }
     }
 
+    /// Pages the rest of the tenant in the background so search covers all of it.
+    ///
+    /// Starts right after the first page rather than only once somebody types, because the
+    /// working set should already be full by the time they do — a few seconds of background
+    /// paging against a search that lies until then is not a close call.
+    private func startFill() {
+        fillTask?.cancel()
+        fill = .filling(loaded: devices.count)
+        fillTask = Task { [weak self] in
+            guard let self else { return }
+            let outcome = await InventoryFill.run(inventory) { @MainActor [weak self] loaded in
+                guard let self else { return }
+                self.devices = loaded
+                self.fill = .filling(loaded: loaded.count)
+            }
+            guard !Task.isCancelled else { return }
+            hasMore = (try? await inventory.hasMore()) ?? hasMore
+            switch outcome {
+            case .complete:
+                fill = .complete
+            case .capped:
+                fill = .incomplete(loaded: devices.count)
+            case .cancelled:
+                return
+            case .failed(let error):
+                // Not surfaced as the list's error: the first page is on screen and usable,
+                // and the manual load-more row remains. Recorded, because a fill that keeps
+                // failing on one tenant is worth seeing in a diagnostics report.
+                fill = .incomplete(loaded: devices.count)
+                await Self.record(.deviceListNextPage, Self.outcome(for: error), since: Date())
+            }
+        }
+    }
+
+    deinit {
+        fillTask?.cancel()
+    }
+
     func loadMore() async {
-        guard hasMore, !isLoadingMore else { return }
+        guard hasMore, !isLoadingMore, !isFilling else { return }
         isLoadingMore = true
         defer { isLoadingMore = false }
         let started = Date()
@@ -120,6 +185,8 @@ final class DeviceListModel: ObservableObject {
             _ = try await inventory.loadNextPage()
             devices = try await inventory.cachedDevices()
             hasMore = try await inventory.hasMore()
+            // A manual page after the fill stopped keeps the indicator honest.
+            fill = hasMore ? .incomplete(loaded: devices.count) : .complete
             await Self.record(.deviceListNextPage, .success, since: started)
         } catch {
             errorMessage = Self.describe(error)
@@ -316,6 +383,15 @@ struct DeviceListView: View {
 
             if !model.query.isEmpty && model.visibleDevices.isEmpty {
                 noSearchResults
+            } else if !model.query.isEmpty, let note = partialSearchNote {
+                // Results exist but may not be all of them. Said beneath the results rather
+                // than not at all: a list that looks complete and is not is the same lie as
+                // an empty one, just harder to notice.
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .listRowSeparator(.hidden)
             }
 
             if model.hasMore && model.query.isEmpty {
@@ -325,36 +401,82 @@ struct DeviceListView: View {
         .listStyle(.plain)
     }
 
-    private var loadMoreRow: some View {
-        HStack {
-            Spacer()
-            if model.isLoadingMore {
-                ProgressView()
-            } else {
-                Button("Load more devices") {
-                    Task { await model.loadMore() }
-                }
-                .font(.subheadline)
-            }
-            Spacer()
+    /// While the fill is running or after it stopped short, one line saying so.
+    private var partialSearchNote: String? {
+        switch model.fill {
+        case .filling(let loaded):
+            return "Still loading devices — \(loaded) so far. Results update as they arrive."
+        case .incomplete(let loaded):
+            return "Not every device is loaded (\(loaded) so far). Clear the search and load more to widen it."
+        case .idle, .complete:
+            return nil
         }
-        .padding(.vertical, 8)
-        .task {
-            // Auto-page when this row appears. Keeps scrolling continuous without an
-            // explicit tap, while the button stays for anyone who prefers it.
-            await model.loadMore()
+    }
+
+    @ViewBuilder
+    private var loadMoreRow: some View {
+        if model.isFilling {
+            // The fill is paging; a manual load would only duplicate a page. Show progress
+            // instead of a button that does nothing.
+            HStack(spacing: 8) {
+                Spacer()
+                ProgressView()
+                if case .filling(let loaded) = model.fill {
+                    Text("Loading all devices — \(loaded) so far")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 8)
+        } else {
+            HStack {
+                Spacer()
+                if model.isLoadingMore {
+                    ProgressView()
+                } else {
+                    Button("Load more devices") {
+                        Task { await model.loadMore() }
+                    }
+                    .font(.subheadline)
+                }
+                Spacer()
+            }
+            .padding(.vertical, 8)
+            .task {
+                // Auto-page when this row appears. Only reached once the fill has stopped
+                // short — at the cap or on an error — so scrolling still continues past it.
+                await model.loadMore()
+            }
         }
     }
 
     private var noSearchResults: some View {
         VStack(spacing: 6) {
-            Text("No devices match \"\(model.query)\"")
-                .font(.subheadline.weight(.medium))
-            if model.hasMore {
-                Text("Not all devices are loaded yet. Load more and search again.")
+            switch model.fill {
+            case .filling(let loaded):
+                // NOT "no devices match". Nothing has been ruled out yet, and saying so
+                // was the bug: an empty state during a partial load read as "this app
+                // cannot find my machine".
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Still looking — \(loaded) devices loaded so far")
+                        .font(.subheadline.weight(.medium))
+                }
+                Text("Results appear as the rest of the tenant loads.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
+            case .incomplete(let loaded):
+                Text("No match among the \(loaded) devices loaded")
+                    .font(.subheadline.weight(.medium))
+                Text("Not every device is loaded yet. Clear the search and load more, then search again.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            case .idle, .complete:
+                Text("No devices match \"\(model.query)\"")
+                    .font(.subheadline.weight(.medium))
             }
         }
         .frame(maxWidth: .infinity)
