@@ -20,6 +20,7 @@
 
 /* Begin PBXFileReference section */
 		8734CC50302FB6650056D699 /* lapslock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = lapslock.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8769AA9B304A08C70093ADD6 /* LAPSlock.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = LAPSlock.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -66,6 +67,7 @@
 		8734CC47302FB6650056D699 = {
 			isa = PBXGroup;
 			children = (
+				8769AA9B304A08C70093ADD6 /* LAPSlock.storekit */,
 				8734CC52302FB6650056D699 /* lapslock */,
 				8734CC62302FBA9E0056D699 /* Frameworks */,
 				8734CC51302FB6650056D699 /* Products */,
