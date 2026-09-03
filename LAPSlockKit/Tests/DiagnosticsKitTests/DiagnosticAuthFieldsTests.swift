@@ -30,7 +30,11 @@ final class DiagnosticAuthFieldsTests: XCTestCase {
         XCTAssertTrue(line.contains("msal=-50002"))
         XCTAssertTrue(line.contains("aad=AADSTS65001"))
         XCTAssertTrue(line.contains("oauth=interaction_required"))
-        XCTAssertTrue(line.contains("broker=no"))
+        // "responded", not "involved" or "opened": the flag is only ever set on a broker
+        // RESPONSE, so an abandoned Authenticator launch reads as no. The label must not
+        // promise more than that.
+        XCTAssertTrue(line.contains("broker-responded=no"))
+        XCTAssertFalse(line.contains("broker=no"), "the old label overstated what was known")
         XCTAssertTrue(line.contains("correlation-id=1f2e3d4c-1111-2222-3333-444455556666"))
     }
 

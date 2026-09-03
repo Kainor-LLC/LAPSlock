@@ -37,8 +37,13 @@ public struct AuthFailureDetail: Sendable, Equatable, Codable {
     public let correlationId: String?
     /// HTTP status of the token endpoint response, when there was one.
     public let httpStatus: Int?
-    /// Whether the Microsoft Authenticator broker handled the request. The 2026-08-26
+    /// Whether the Microsoft Authenticator broker ANSWERED the request. The 2026-08-26
     /// failure was a broker-path bug, and knowing which path was taken is half the diagnosis.
+    ///
+    /// Answered, not opened. MSAL sets `MSALBrokerVersionKey` only on a response that came
+    /// back through the broker, so launching Authenticator and abandoning it reads as
+    /// `false` — observed on device 2026-09-02. There is no signal for "opened", and the
+    /// report label says `broker-responded` so nobody reads more into it than it knows.
     public let brokerInvolved: Bool?
 
     public init(
@@ -99,7 +104,7 @@ public struct AuthFailureDetail: Sendable, Equatable, Codable {
         if let aadErrorCode { parts.append("aad=\(aadErrorCode)") }
         if let oauthError { parts.append("oauth=\(oauthError)") }
         if let httpStatus { parts.append("http=\(httpStatus)") }
-        if let brokerInvolved { parts.append("broker=\(brokerInvolved ? "yes" : "no")") }
+        if let brokerInvolved { parts.append("broker-responded=\(brokerInvolved ? "yes" : "no")") }
         if let correlationId { parts.append("correlation-id=\(correlationId)") }
         return parts.joined(separator: "  ")
     }

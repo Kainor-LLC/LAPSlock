@@ -57,7 +57,7 @@ final class AuthFailureDetailTests: XCTestCase {
             httpStatus: 400, brokerInvolved: true)
         XCTAssertEqual(
             d.reportFragment,
-            "auth=signIn  msal=-50005  aad=AADSTS50076  oauth=interaction_required  http=400  broker=yes  correlation-id=1f2e3d4c-1111-2222-3333-444455556666")
+            "auth=signIn  msal=-50005  aad=AADSTS50076  oauth=interaction_required  http=400  broker-responded=yes  correlation-id=1f2e3d4c-1111-2222-3333-444455556666")
     }
 
     func test_thereIsNoWayToPutFreeTextInTheFragment() {

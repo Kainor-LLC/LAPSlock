@@ -25,6 +25,9 @@ public struct SignInView: View {
     /// Shareable admin-approval link, when we have one to offer.
     let consentURL: URL?
     let isBusy: Bool
+    /// Opens Settings without a session. Diagnostics live there, and a failed sign-in is
+    /// exactly when somebody needs them — so the gear cannot be behind the sign-in.
+    let onOpenSettings: (() -> Void)?
 
     @State private var showingApprovalSheet = false
 
@@ -32,11 +35,13 @@ public struct SignInView: View {
         consentState: ConsentState? = nil,
         consentURL: URL? = nil,
         isBusy: Bool = false,
+        onOpenSettings: (() -> Void)? = nil,
         onSignIn: @escaping () -> Void
     ) {
         self.consentState = consentState
         self.consentURL = consentURL
         self.isBusy = isBusy
+        self.onOpenSettings = onOpenSettings
         self.onSignIn = onSignIn
     }
 
@@ -83,8 +88,18 @@ public struct SignInView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("LAPSlock")
-                .font(.largeTitle.bold())
+            HStack(alignment: .firstTextBaseline) {
+                Text("LAPSlock")
+                    .font(.largeTitle.bold())
+                Spacer()
+                if let onOpenSettings {
+                    Button(action: onOpenSettings) {
+                        Image(systemName: "gearshape")
+                            .font(.title3)
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
             Text("Local administrator passwords from Microsoft Entra ID and Intune, on the device you actually carry.")
                 .font(.body)
                 .foregroundStyle(.secondary)

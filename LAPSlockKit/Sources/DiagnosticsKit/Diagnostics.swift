@@ -104,7 +104,8 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     public let oauthError: String?
     /// Entra correlation ID. A GUID identifying a request, not a person.
     public let correlationId: String?
-    /// Whether the Authenticator broker handled the request.
+    /// Whether the Authenticator broker ANSWERED the request. Not whether it was opened —
+    /// there is no signal for that, and the label says `broker-responded` accordingly.
     public let brokerInvolved: Bool?
 
     /// Microsoft Graph's own error code — `InvalidRequest`, `RoleAssignmentExists` and so
@@ -180,7 +181,7 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
         if let msalErrorCode { parts.append("msal=\(msalErrorCode)") }
         if let aadErrorCode { parts.append("aad=\(aadErrorCode)") }
         if let oauthError { parts.append("oauth=\(oauthError)") }
-        if let brokerInvolved { parts.append("broker=\(brokerInvolved ? "yes" : "no")") }
+        if let brokerInvolved { parts.append("broker-responded=\(brokerInvolved ? "yes" : "no")") }
         if let correlationId { parts.append("correlation-id=\(correlationId)") }
         if let graphErrorCode { parts.append("graph-error=\(graphErrorCode)") }
         return parts.joined(separator: "  ")
