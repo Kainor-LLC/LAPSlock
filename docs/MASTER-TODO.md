@@ -1230,8 +1230,49 @@ macOS password retrieval.
   ⬜ Still open as candidate Pro features: **favourites and app lock**, neither of which
   exists yet. The test to apply: gate a convenience only if it does not make credential
   HANDLING worse.
-- ⬜ Recents / favorites
-- ⬜ Biometric app lock (distinct from the per-reveal gate)
+- ✅ **Recents / favourites — BUILT AND VERIFIED 2026-09-03.** Free, not Pro; the meter does
+  the monetising. Swipe-to-pin on a row, recents recorded when a detail screen is dismissed,
+  both sections hidden when empty and while searching. **Tenant-scoped**, keyed by the tenant
+  being OPERATED in, so an MSP's favourites follow the customer rather than the account.
+  Device IDs and nothing else on disk — a stored hostname would be tenant data held for no
+  reason. 11 tests.
+- ✅ **Session restore at launch — BUILT AND VERIFIED 2026-09-03.** MSAL already held the
+  account and refresh token; nothing asked for them, so every launch showed the sign-in
+  screen and made the user tap a button that then succeeded silently. Silent-only, so Entra
+  still decides: expiry, revocation or a Conditional Access reauth demand all produce the
+  sign-in screen.
+
+  ⛔ **DECLINED, with founder agreement: an app-imposed 8-hour session expiry.** Proposed
+  from PIM's default. PIM's 8 hours is an *elevation* window, not a session. An app-invented
+  expiry would sit on top of the tenant's own Conditional Access while contradicting the
+  product's central claim that the tenant is in control, and it would bite at the worst
+  moment — at a broken machine, needing a password, asked to sign in again. App lock covers
+  the local risk instead.
+- ✅ **Biometric app lock — BUILT AND VERIFIED 2026-09-03.** Opt-in, off by default. Protects
+  the DEVICE LIST, not credentials: hostnames, primary users and compliance state are
+  reconnaissance for a whole tenant, and the per-reveal gate already covers credentials and
+  runs regardless of this setting.
+
+  **Built around the broker hazard.** Locking on return from background would drop a Face ID
+  prompt into the middle of a sign-in, over the flow that has already cost two failed fixes
+  ("broker redirects never handled"). Two independent guards: a five-minute grace period that
+  a broker round trip never approaches, and outright suppression while `isSigningIn`. Only
+  `.background` starts the clock — `.inactive` covers notification banners, Control Centre
+  and the reveal's own Face ID prompt, and counting those would also fight the reveal
+  publishing fix made earlier the same day.
+
+  Biometrics becoming unavailable after the toggle was set unlocks rather than stranding
+  somebody out of their own app; every other failure stays locked.
+
+  **Device results 2026-09-03:** phone passed everything — sign in with Authenticator and no
+  double prompt, long background re-locks, short background does not. Simulator's
+  "non-matching face → Try Again does nothing" is a SIMULATOR artifact, not a defect: iOS
+  shows Try Again inside the still-running `evaluatePolicy`, and the simulator has no camera,
+  so it waits for Features → Face ID → Matching Face.
+
+  ✅ **Also closed the no-Authenticator gap**: sign-in was exercised on the simulator, which
+  has no broker and therefore uses `ASWebAuthenticationSession` — the path a first-time user
+  without Authenticator hits. Worked.
 - 🟡 **Tenant switcher — AUTH LAYER DONE 2026-09-02, UI still to build.**
 
   The §3.3 tenant guard was the obstacle, and it was re-pointed rather than removed. It used
