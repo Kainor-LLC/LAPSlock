@@ -815,12 +815,32 @@ macOS password retrieval.
   ### History and the Entra backup path — checked 2026-09-03, founder challenge
 
   Founder asked whether history is an Active-Directory-only feature, given this app is
-  cloud-only. **It is not.** Verified against learn.microsoft.com:
+  cloud-only, and pressed a second time when the first answer rested on a search summary
+  rather than the docs. **Re-checked against the primary pages. History IS supported on the
+  Entra path**, and the proof is specific:
 
-  * `Get-LapsAADPassword` takes **`-IncludeHistory`**, documented as displaying older LAPS
-    credentials on the **Entra** device object.
-  * Graph's own `deviceLocalCredentialInfo` example returns a `credentials` array with
-    **three** entries at different `backupDateTime` values.
+  * `Get-LapsAADPassword` — the **AAD** cmdlet, not the AD one — takes `[-IncludeHistory]` in
+    its documented syntax. Its description: *"allows administrators to retrieve LAPS passwords
+    and password history for a Microsoft Entra joined device. **This is implemented by sending
+    queries to Microsoft Graph over the deviceLocalCredentials collection.**"* That is the
+    exact collection LAPSlock reads.
+  * `-IncludeHistory` is defined as *"any older LAPS credentials on the device object should
+    also be displayed."*
+  * Its **Example 4** prints three passwords for one Entra device, all account `LapsAdmin`, at
+    `PasswordUpdateTime` 8:55:21, 8:55:16 and 8:45:29 — and only the newest carries a
+    `PasswordExpirationTime`, the older two are blank.
+
+  **Where the "AD only" belief comes from, and it is a fair reading:** the LAPS overview lists
+  *"back up passwords to Microsoft Entra ID, encrypt passwords in Windows Server Active
+  Directory, and store your password history"* in one sentence, so history reads as bundled
+  with AD encryption — and the AD-side history *policy setting* genuinely is AD-only, as is
+  the encrypted-history attribute. What is not true is that the Entra path returns only the
+  current password.
+
+  ⚠️ **Honest unknown:** nothing found documents how many versions Entra retains, or any
+  setting that controls it. So a given tenant may well return a single entry, and the picker
+  hides itself when it does. Do not promise history in marketing copy — describe it as shown
+  when the tenant has it.
 
   What IS Active-Directory-only is the *policy setting* that governs history size, along with
   the encrypted-history attribute. Microsoft's wording: the Windows Server AD-specific policy
@@ -835,11 +855,16 @@ macOS password retrieval.
   Graph API exposes AD-stored LAPS. Hybrid is fine; AD-backup is not, and no amount of app
   work changes that.
 
-  ⚠️ **Consequence for the UI, fixed 2026-09-03.** Because the collection can hold entries for
-  DIFFERENT managed accounts — LAPS policy can change `AdministratorAccountName` — "Previous
-  password" was a wrong label in that case, and the wrong one to be wrong about: an admin
-  would skip the entry that actually works. A row whose account differs from the newest
-  entry's is now named by its **account** rather than its age.
+  **Account-aware row labels — kept, but DEFENSIVE rather than demonstrated.** A row whose
+  account differs from the newest entry's is named by its account rather than "Previous
+  password", on the theory that LAPS policy can change `AdministratorAccountName` and mixing
+  accounts would make an admin skip the entry that works.
+
+  Correcting the record: that was justified from a search summary claiming the collection
+  holds "different accounts and different time periods". **The actual `Get-LapsAADPassword`
+  example shows all three entries on the SAME account**, so the multi-account case is
+  unproven. The label logic is harmless and fails safe either way, so it stays — but it should
+  not be described as fixing an observed bug.
 - ✅ **Auth diagnostics in the support report — DONE and VERIFIED ON DEVICE 2026-09-02.**
   Abandoning an Authenticator sign-in produced `signIn unknown` with an MSAL code and no URL
   or error text anywhere in the report. The allowlist holds.
