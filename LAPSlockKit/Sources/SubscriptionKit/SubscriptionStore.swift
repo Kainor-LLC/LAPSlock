@@ -86,9 +86,21 @@ public final class SubscriptionStore: ObservableObject {
     public func loadOffers() async {
         do {
             let products = try await Product.products(for: SubscriptionProduct.allIdentifiers)
-            offers = products
-                .compactMap(SubscriptionOffer.init(product:))
-                .sorted { $0.plan.serviceLevel < $1.plan.serviceLevel }
+            var resolved: [SubscriptionOffer] = []
+            for product in products {
+                guard var offer = SubscriptionOffer(product: product) else { continue }
+                // Eligibility is asked of StoreKit rather than assumed, and it accounts for
+                // the whole subscription group: somebody who already used their trial on the
+                // monthly plan must not be shown "first month free" on the yearly one.
+                if let subscription = product.subscription,
+                   let intro = subscription.introductoryOffer,
+                   await subscription.isEligibleForIntroOffer,
+                   let description = SubscriptionOffer.introductoryDescription(intro) {
+                    offer = offer.withIntroductoryOffer(description)
+                }
+                resolved.append(offer)
+            }
+            offers = resolved.sorted { $0.plan.serviceLevel < $1.plan.serviceLevel }
             // An EMPTY list after a successful call is the App Store Connect symptom, not a
             // network one: products stuck at "Missing Metadata" simply are not returned.
             loadFailed = offers.isEmpty
@@ -208,6 +220,16 @@ public struct SubscriptionOffer: Identifiable, Sendable {
         self.periodLabel = periodLabel
         self.introductoryOffer = introductoryOffer
         self.storeProduct = storeProduct
+    }
+
+    /// Copy for an introductory offer, or nil if it is not something to advertise.
+    ///
+    /// Only a FREE TRIAL is described. Apple's other introductory modes — pay-as-you-go and
+    /// pay-up-front — are discounts rather than free access, and calling one of those "free"
+    /// on a purchase button is the kind of wrong that gets an app rejected.
+    static func introductoryDescription(_ offer: Product.SubscriptionOffer) -> String? {
+        guard offer.paymentMode == .freeTrial else { return nil }
+        return "Free for the first " + periodLabel(offer.period)
     }
 
     static func periodLabel(_ period: Product.SubscriptionPeriod?) -> String {

@@ -1,0 +1,123 @@
+{
+  "identifier" : "A1B2C3D4-1111-2222-3333-444455556666",
+  "nonRenewingSubscriptions" : [
+  ],
+  "products" : [
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "22357230",
+      "localizations" : [
+        {
+          "description" : "",
+          "displayName" : "LAPSlock",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "LAPSlock",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+          ],
+          "codeOffers" : [
+          ],
+          "displayPrice" : "49.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6808339530",
+          "introductoryOffer" : {
+            "internalID" : "7000000001",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1M"
+          },
+          "localizations" : [
+            {
+              "description" : "Everything in Pro, plus tenant switching",
+              "displayName" : "LAPSlock MSP",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.kainor.lapslock.msp.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "MSP Yearly",
+          "subscriptionGroupID" : "22357230",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+          ]
+        },
+        {
+          "adHocOffers" : [
+          ],
+          "codeOffers" : [
+          ],
+          "displayPrice" : "19.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6808339528",
+          "introductoryOffer" : {
+            "internalID" : "7000000002",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1M"
+          },
+          "localizations" : [
+            {
+              "description" : "Unlimited password and BitLocker key reveals",
+              "displayName" : "LAPSlock Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.kainor.lapslock.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro Yearly",
+          "subscriptionGroupID" : "22357230",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+          ]
+        },
+        {
+          "adHocOffers" : [
+          ],
+          "codeOffers" : [
+          ],
+          "displayPrice" : "1.99",
+          "familyShareable" : false,
+          "groupNumber" : 3,
+          "internalID" : "6808339529",
+          "introductoryOffer" : {
+            "internalID" : "7000000003",
+            "paymentMode" : "free",
+            "subscriptionPeriod" : "P1M"
+          },
+          "localizations" : [
+            {
+              "description" : "Unlimited password and BitLocker key reveals",
+              "displayName" : "LAPSlock Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.kainor.lapslock.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "22357230",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
