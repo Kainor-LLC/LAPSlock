@@ -67,6 +67,12 @@ enum InventoryHTTP {
 
     static func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw InventoryError.transport(status: -1) }
+        // Capture Graph's request-id before throwing. It is the first thing Microsoft support
+        // asks for, and the typed errors below deliberately do not carry it — see
+        // GraphResponseTracer for why this is a side channel rather than an error payload.
+        if !(200...299).contains(http.statusCode) {
+            GraphResponseTracer.shared.recordFailure(http)
+        }
         switch http.statusCode {
         case 200...299: return
         case 401: throw InventoryError.consentRequired

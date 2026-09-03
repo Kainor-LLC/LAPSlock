@@ -331,6 +331,11 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     /// wrong is the difference between activation working and activation reporting "not
     /// authorized" forever.
     private func decode(_ data: Data, _ response: HTTPURLResponse) throws -> [String: Any] {
+        // Before any branching: a PIM failure is exactly the kind Microsoft support has to
+        // trace, and the claims-challenge path below returns early.
+        if !(200...299).contains(response.statusCode) {
+            GraphResponseTracer.shared.recordFailure(response)
+        }
         if response.statusCode == 401 || response.statusCode == 403 {
             let header = response.value(forHTTPHeaderField: "WWW-Authenticate") ?? ""
             if let challenge = ClaimsChallenge.parse(wwwAuthenticate: header) {

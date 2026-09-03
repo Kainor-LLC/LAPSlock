@@ -1,4 +1,5 @@
 import Foundation
+import AuthKit
 
 // Build Spec §2.5, §5.2, §6, §8 — the platform seam.
 //
@@ -241,6 +242,11 @@ enum GraphHTTP {
 
     static func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw CredentialError.transport(status: -1) }
+        // Graph's request-id, captured before the throw. The typed errors below carry no
+        // diagnostics payload on purpose — see GraphResponseTracer.
+        if !(200...299).contains(http.statusCode) {
+            GraphResponseTracer.shared.recordFailure(http)
+        }
         switch http.statusCode {
         case 200...299:
             return

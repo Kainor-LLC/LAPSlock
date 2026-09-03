@@ -247,9 +247,9 @@ final class DeviceListModel: ObservableObject {
     /// Records an operation outcome. Typed fields only — no device names, no URLs, no
     /// response bodies, because DiagnosticEvent cannot carry them.
     ///
-    /// TODO: Graph's `request-id` header is the single most useful field for a Microsoft
-    /// support case, and it is NOT captured yet — the services don't surface it on their
-    /// typed errors. Threading it through is a small refactor worth doing before launch.
+    /// Graph's `request-id` is filled in by `DiagnosticsRecorder` rather than passed here:
+    /// this call site does not hold the HTTP response, and the typed errors deliberately
+    /// carry no diagnostics payload. See `GraphResponseTracer`.
     static func record(
         _ op: DiagnosticOperation,
         _ outcome: DiagnosticOutcome,
