@@ -203,6 +203,14 @@ final class PrivilegedAccessServiceTests: XCTestCase {
             eligibilityEndsAt: nil)
     }
 
+    private var group: EligibleAccess {
+        EligibleAccess(
+            id: "g",
+            kind: .group(groupId: "gggggggg-1111-2222-3333-444455556666", accessId: .member),
+            displayName: "LAPS Readers",
+            eligibilityEndsAt: nil)
+    }
+
     func test_activationPostsToTheRoleEndpoint() async throws {
         StubProtocol.replies = ["roleAssignmentScheduleRequests": [
             .init(status: 201, body: #"{"id":"r1","status":"Provisioned"}"#)]]
@@ -322,14 +330,74 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         XCTAssertEqual(id, "r9")
     }
 
+    // MARK: - checking a request again
+
+    func test_checkingAgainReadsTheRequestBackAndReportsTheChange()  async throws {
+        // The whole point of the button: a provisioning request that has since become active.
+        StubProtocol.replies = ["assignmentschedulerequests": [
+            .init(status: 200, body: #"{"id":"g4","status":"Provisioned","scheduleInfo":{"expiration":{"endDateTime":"2026-09-03T20:00:00Z"}}}"#)]]
+        let outcome = try await service.status(ofRequest: "g4", for: group)
+        guard case .activated(let until) = outcome else { return XCTFail("expected activated, got \(outcome)") }
+        XCTAssertNotNil(until)
+    }
+
+    func test_checkingAgainNeverPromptsForSignIn() async throws {
+        // A sign-in prompt is not an acceptable answer to "has it finished yet?". The token
+        // is seconds old in the case this exists for.
+        StubProtocol.replies = ["assignmentschedulerequests": [
+            .init(status: 200, body: #"{"id":"g4","status":"PendingProvisioning"}"#)]]
+        _ = try await service.status(ofRequest: "g4", for: group)
+        XCTAssertTrue(auth.calls.allSatisfy { $0.interactive == false }, "re-checking must be silent")
+        XCTAssertTrue(auth.calls.allSatisfy { $0.claims == nil }, "no claims needed to read a request")
+    }
+
+    func test_checkingAgainAsksOnlyForTheScopeItAlreadyHas() async throws {
+        // The reason this button is free: a GET on the path the activation was POSTed to
+        // needs the activation scope and nothing more, so no new consent prompt appears.
+        StubProtocol.replies = ["assignmentschedulerequests": [
+            .init(status: 200, body: #"{"id":"g4","status":"PendingProvisioning"}"#)]]
+        _ = try await service.status(ofRequest: "g4", for: group)
+        XCTAssertEqual(auth.calls.map(\.scopes), [[PrivilegedAccessGraph.groupActivateScope]])
+    }
+
+    func test_theRequestIdLandsInThePathWithItsHyphensIntact() async throws {
+        // Percent-encoding a GUID against the wrong character set turns every hyphen into
+        // %2D, which is a different URL and a support call nobody would enjoy diagnosing.
+        StubProtocol.replies = ["assignmentschedulerequests": [
+            .init(status: 200, body: #"{"id":"x","status":"Provisioned"}"#)]]
+        let id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        _ = try await service.status(ofRequest: id, for: group)
+        let path = StubProtocol.requests.last?.path ?? ""
+        XCTAssertTrue(path.hasSuffix("/" + id), "expected the raw id at the end of \(path)")
+    }
+
+    func test_aRoleRequestIsReadFromTheRoleEndpoint() async throws {
+        // The surface switch has one home now. Reading a role request from the group
+        // endpoint would 404 and read as "the request vanished".
+        StubProtocol.replies = ["roleassignmentschedulerequests": [
+            .init(status: 200, body: #"{"id":"r9","status":"Provisioned"}"#)]]
+        _ = try await service.status(ofRequest: "r9", for: role)
+        XCTAssertEqual(auth.calls.map(\.scopes), [[PrivilegedAccessGraph.roleActivateScope]])
+        XCTAssertTrue(
+            (StubProtocol.requests.last?.path ?? "").contains("roleManagement/directory"),
+            "a role request must be read from the role endpoint")
+    }
+
+    func test_aVanishedRequestIsAnErrorRatherThanAnInventedOutcome() async {
+        StubProtocol.replies = ["assignmentschedulerequests": [.init(status: 404, body: "{}")]]
+        do {
+            _ = try await service.status(ofRequest: "gone", for: group)
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? PrivilegedAccessError, .serviceError(status: 404, code: nil))
+        }
+    }
+
     func test_aProvisioningStatusDoesNotAskForAnApprover() async throws {
         // The device report that produced this: activation worked, the tenant requires no
         // approval, and the app showed "waiting for approval" anyway.
         StubProtocol.replies = ["assignmentScheduleRequests": [
             .init(status: 201, body: #"{"id":"g4","status":"PendingProvisioning"}"#)]]
-        let group = EligibleAccess(
-            id: "g", kind: .group(groupId: "gggggggg-1111-2222-3333-444455556666", accessId: .member),
-            displayName: "LAPS Readers", eligibilityEndsAt: nil)
         let outcome = try await service.activate(group, justification: "j", ticketNumber: nil, duration: "PT1H")
         guard case .provisioning = outcome else { return XCTFail("expected provisioning, got \(outcome)") }
     }

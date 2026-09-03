@@ -24,6 +24,8 @@ public protocol PrivilegedAccessProviding: Sendable {
         ticketNumber: String?,
         duration: String
     ) async throws -> ActivationOutcome
+    /// Re-reads a request already created, to see whether it has become active.
+    func status(ofRequest requestId: String, for access: EligibleAccess) async throws -> ActivationOutcome
 }
 
 public struct PrivilegedAccessService: PrivilegedAccessProviding {
@@ -228,6 +230,26 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         }
     }
 
+    /// Re-reads one activation request, so a user waiting on it can find out where it got to.
+    ///
+    /// **A GET on the path the request was POSTed to**, which is why this costs no new scope
+    /// and no new consent prompt — the activation scope already covers it. The response has
+    /// the same shape as the creation response, so `outcome(from:)` classifies it identically
+    /// and a re-check cannot disagree with the original for any reason but a genuine change.
+    ///
+    /// Never interactive. This runs from a button somebody taps while waiting, and a sign-in
+    /// prompt is not an acceptable answer to "has it finished yet?" — the token is seconds
+    /// old in the case this exists for.
+    public func status(ofRequest requestId: String, for access: EligibleAccess) async throws -> ActivationOutcome {
+        let token = try await auth.token(scopes: [access.activateScope], allowInteractive: false)
+        // Percent-encoded against the RFC 3986 unreserved set, so a GUID's hyphens survive
+        // intact. The id comes from Graph and is always a GUID, but building a URL path by
+        // concatenation is worth doing safely once rather than trusting that forever.
+        let encoded = requestId.addingPercentEncoding(withAllowedCharacters: Self.unreserved) ?? requestId
+        let (data, response) = try await send(.get(url(access.activationPath + "/" + encoded, []), token: token))
+        return ActivationRequest.outcome(from: try decode(data, response))
+    }
+
     private func post(_ prepared: ActivationRequest.Prepared, claims: String?) async throws -> ActivationOutcome {
         // Interactive: activation is an explicit user action, and the consent prompt for the
         // activation scope belongs here rather than at app launch.
@@ -241,6 +263,9 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         let json = try decode(data, response)
         return ActivationRequest.outcome(from: json)
     }
+
+    /// RFC 3986 unreserved characters, which need no escaping in a path segment.
+    static let unreserved = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
 
     /// Builds the claims request for an `acrs` value, matching the shape Graph asks for when
     /// it refuses: `{"access_token":{"acrs":{"essential":true,"value":"c1"}}}`.

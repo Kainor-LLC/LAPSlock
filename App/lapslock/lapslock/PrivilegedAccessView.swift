@@ -36,6 +36,9 @@ struct PrivilegedAccessView: View {
     /// The tenant's activation rules for one piece of access. Never fails — an unreadable
     /// policy returns `.unknown` and the sheet behaves as it did before policies were read.
     let policy: (EligibleAccess) async -> ActivationPolicy
+    /// Re-reads a request PIM already created, for the "Check again" button. Optional so a
+    /// preview or a caller that cannot re-check simply does not offer one.
+    var recheck: ((String, EligibleAccess) async -> Result<ActivationOutcome, PrivilegedAccessError>)?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -50,6 +53,8 @@ struct PrivilegedAccessView: View {
     @State private var duration = ActivationRequest.defaultDuration
     @State private var activePolicy: ActivationPolicy = .unknown
     @State private var isLoadingPolicy = false
+    @State private var isChecking = false
+    @State private var lastCheckFailed = false
 
     private enum Phase: Equatable {
         case loading
@@ -223,7 +228,7 @@ struct PrivilegedAccessView: View {
                     apply a new role, so if it still refuses, wait a moment and retry.
                     """)
             }
-        case .provisioning(let until):
+        case .provisioning(let requestId, let until):
             // Accepted, nobody to chase. Not dressed as finished either: it is not usable
             // for a few seconds yet, and the reveal will still refuse until it is.
             Section {
@@ -232,16 +237,17 @@ struct PrivilegedAccessView: View {
                 if let until {
                     LabeledContent("Expires", value: SettingsView.relative(until))
                 }
+                checkAgainButton(requestId)
             } header: {
                 Text("Accepted — no approval needed")
             } footer: {
                 Text("""
                     Microsoft accepted the activation and is applying it now. Nobody has to \
-                    approve anything. This usually takes a few seconds. Go back and try the \
-                    reveal again — if it is still refused, wait a moment and retry.
+                    approve anything. This usually takes a few seconds — check again, or go \
+                    back and try the reveal.
                     """)
             }
-        case .pendingApproval:
+        case .pendingApproval(let requestId):
             // Deliberately NOT dressed as success. No checkmark, no accent colour. And
             // reached ONLY for the two statuses that genuinely mean a person must decide —
             // this screen once appeared for ordinary provisioning delays, which sent
@@ -249,6 +255,7 @@ struct PrivilegedAccessView: View {
             Section {
                 Label("Waiting for approval", systemImage: "clock")
                     .foregroundStyle(.secondary)
+                checkAgainButton(requestId)
             } header: {
                 Text("Requested, not yet active")
             } footer: {
@@ -258,7 +265,7 @@ struct PrivilegedAccessView: View {
                     approved. Approvers are usually notified by email straight away.
                     """)
             }
-        case .requested(let status):
+        case .requested(let requestId, let status):
             // Honest about not knowing. Blaming an approver would be a guess, and so would
             // promising it is on its way.
             Section {
@@ -267,13 +274,14 @@ struct PrivilegedAccessView: View {
                 if let detail = Self.statusDetail(status) {
                     Text(detail).font(.footnote).foregroundStyle(.secondary)
                 }
+                checkAgainButton(requestId)
             } header: {
                 Text("Requested, not yet active")
             } footer: {
                 Text("""
                     Microsoft created the request but has not reported it as active. If your \
                     organization requires approval, an approver has been notified. If it does \
-                    not, this should become active shortly — go back and try the reveal again.
+                    not, this should become active shortly — check again below.
                     """)
             }
         case .refused(let status):
@@ -294,6 +302,50 @@ struct PrivilegedAccessView: View {
             }
         case nil:
             if let failure { failureSection(failure) }
+        }
+    }
+
+    /// Re-reads the request PIM already created, for somebody watching a screen that says
+    /// "not yet".
+    ///
+    /// **A button rather than polling.** The wait is usually seconds, and a timer firing
+    /// Graph calls at a screen nobody is looking at spends a customer's throttling budget to
+    /// save a tap. This costs one request, only when asked for, and no new permission — it is
+    /// a GET on the path the activation was POSTed to.
+    ///
+    /// Absent when there is no request id to read, which is also how the two settled outcomes
+    /// avoid offering it: an active grant has nothing to check and a refusal will never change.
+    @ViewBuilder
+    private func checkAgainButton(_ requestId: String?) -> some View {
+        if let requestId, let recheck, let access = selected {
+            Button {
+                Task {
+                    isChecking = true
+                    lastCheckFailed = false
+                    switch await recheck(requestId, access) {
+                    case .success(let updated):
+                        outcome = updated
+                    case .failure:
+                        // Deliberately NOT the failure section: the activation itself did
+                        // not fail, a status read did, and replacing the outcome with an
+                        // error would throw away what we already know about the request.
+                        lastCheckFailed = true
+                    }
+                    isChecking = false
+                }
+            } label: {
+                HStack {
+                    if isChecking { ProgressView().padding(.trailing, 6) }
+                    Text(isChecking ? "Checking…" : "Check again")
+                }
+            }
+            .disabled(isChecking)
+
+            if lastCheckFailed {
+                Text("Couldn't reach Microsoft to check. The activation itself is unaffected.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

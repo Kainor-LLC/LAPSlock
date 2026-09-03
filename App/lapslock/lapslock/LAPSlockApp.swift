@@ -480,6 +480,28 @@ final class AppRootModel: ObservableObject {
         }
     }
 
+    /// Re-reads an activation request PIM already created, for the "Check again" button.
+    ///
+    /// **Not recorded in diagnostics, and that is deliberate.** A failed status read says
+    /// nothing about the activation, which either succeeded or did not on its own; recording
+    /// it would put a scary-looking entry in a support report for an operation that changed
+    /// nothing. The failed activations that need explaining are already captured above.
+    func recheckPrivilegedRequest(
+        _ requestId: String,
+        for access: EligibleAccess
+    ) async -> Result<ActivationOutcome, PrivilegedAccessError> {
+        guard let session = liveSession else { return .failure(.notAuthorized) }
+        do {
+            let outcome = try await PrivilegedAccessService(auth: session.auth)
+                .status(ofRequest: requestId, for: access)
+            return .success(outcome)
+        } catch let error as PrivilegedAccessError {
+            return .failure(error)
+        } catch {
+            return .failure(.transport)
+        }
+    }
+
     /// A failed activation reaches the support report, for the same reason a failed tenant
     /// switch does: the tenant policy that refused it is not reproducible here, so the
     /// Microsoft error code is the only thing that explains it.
@@ -519,10 +541,7 @@ final class AppRootModel: ObservableObject {
             httpStatus: graphStatus ?? detail?.httpStatus,
             // Which endpoint, so role and group failures are told apart at a glance. A
             // template, so no group or tenant identifier rides along.
-            endpointTemplate: {
-                if case .group = access.kind { return PrivilegedAccessGraph.groupActivationPath }
-                return PrivilegedAccessGraph.roleActivationPath
-            }(),
+            endpointTemplate: access.activationPath,
             msalErrorCode: detail?.msalErrorCode,
             aadErrorCode: detail?.aadErrorCode,
             oauthError: detail?.oauthError,
@@ -652,7 +671,10 @@ struct AppRootView: View {
                                             ticketNumber: ticket, duration: duration)
                                     },
                                     requestConsent: { await root.requestPrivilegedActivationConsent() },
-                                    policy: { await root.privilegedPolicy(for: $0) }
+                                    policy: { await root.privilegedPolicy(for: $0) },
+                                    recheck: { requestId, access in
+                                        await root.recheckPrivilegedRequest(requestId, for: access)
+                                    }
                                 )
                             }
                         )
@@ -678,7 +700,10 @@ struct AppRootView: View {
                                             ticketNumber: ticket, duration: duration)
                                     },
                                     requestConsent: { await root.requestPrivilegedActivationConsent() },
-                                    policy: { await root.privilegedPolicy(for: $0) }
+                                    policy: { await root.privilegedPolicy(for: $0) },
+                                    recheck: { requestId, access in
+                                        await root.recheckPrivilegedRequest(requestId, for: access)
+                                    }
                                 )
                             }
                         )

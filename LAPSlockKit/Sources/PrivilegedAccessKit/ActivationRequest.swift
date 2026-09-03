@@ -98,14 +98,11 @@ public enum ActivationRequest {
             "justification": justification,
         ]
 
-        let path: String
         switch access.kind {
         case .directoryRole(let roleDefinitionId, let directoryScopeId):
-            path = PrivilegedAccessGraph.roleActivationPath
             body["roleDefinitionId"] = roleDefinitionId
             body["directoryScopeId"] = directoryScopeId
         case .group(let groupId, let accessId):
-            path = PrivilegedAccessGraph.groupActivationPath
             body["groupId"] = groupId
             body["accessId"] = accessId.rawValue
         }
@@ -116,7 +113,7 @@ public enum ActivationRequest {
             : nil
 
         return Prepared(
-            path: path,
+            path: access.activationPath,
             fields: body,
             startDateTime: ISO8601DateFormatter.graphNoFraction.string(from: Date()),
             duration: duration,
@@ -188,9 +185,9 @@ public enum ActivationRequest {
 
         if grantedStatuses.contains(status) { return .activated(until: expiry) }
         if approvalStatuses.contains(status) { return .pendingApproval(requestId: requestId) }
-        if provisioningStatuses.contains(status) { return .provisioning(until: expiry) }
+        if provisioningStatuses.contains(status) { return .provisioning(requestId: requestId, until: expiry) }
         if refusedStatuses.contains(status) { return .refused(status: raw) }
-        return .requested(status: raw)
+        return .requested(requestId: requestId, status: raw)
     }
 
     // MARK: - parsing eligibility

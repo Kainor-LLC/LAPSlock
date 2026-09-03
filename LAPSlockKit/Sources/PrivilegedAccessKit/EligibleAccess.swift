@@ -90,6 +90,28 @@ public struct EligibleAccess: Sendable, Equatable, Identifiable, Hashable {
         return Self.credentialReadingRoles.contains(roleDefinitionId.lowercased())
     }
 
+    /// The endpoint that activates this access, and reads a request back afterwards.
+    ///
+    /// A single place for the surface switch, which was written out separately in the request
+    /// builder, the service and the diagnostics recorder. Three copies of "role or group?" is
+    /// three chances for one of them to answer differently.
+    public var activationPath: String {
+        switch kind {
+        case .directoryRole: return PrivilegedAccessGraph.roleActivationPath
+        case .group:         return PrivilegedAccessGraph.groupActivationPath
+        }
+    }
+
+    /// The scope that endpoint needs. Reading a request back is a GET on the path it was
+    /// POSTed to, so re-checking an activation costs **no additional scope and no further
+    /// consent** — which is what makes a "Check again" button free.
+    public var activateScope: String {
+        switch kind {
+        case .directoryRole: return PrivilegedAccessGraph.roleActivateScope
+        case .group:         return PrivilegedAccessGraph.groupActivateScope
+        }
+    }
+
     /// Well-known role template GUIDs, which are identical in every tenant. Matched on id
     /// rather than display name because display names are localised.
     static let credentialReadingRoles: Set<String> = [
@@ -177,14 +199,28 @@ public enum ActivationOutcome: Sendable, Equatable {
     /// Active now.
     case activated(until: Date?)
     /// Accepted and being applied. Nobody has to act; it becomes active on its own.
-    case provisioning(until: Date?)
+    case provisioning(requestId: String?, until: Date?)
     /// An approver must act before anything happens.
     case pendingApproval(requestId: String?)
     /// Created, and PIM reported a state this app does not recognise. Neither promised as
     /// active nor blamed on an approver who may not be involved.
-    case requested(status: String)
+    case requested(requestId: String?, status: String)
     /// PIM created the request and then refused it. Waiting will not help.
     case refused(status: String)
+
+    /// The request to re-read to find out whether anything changed.
+    ///
+    /// Nil for the two settled outcomes, and that is the point: `activated` needs no
+    /// checking and `refused` will never change, so a UI driven by this property cannot
+    /// offer to re-check something that is already finished.
+    public var recheckableRequestId: String? {
+        switch self {
+        case .provisioning(let id, _), .pendingApproval(let id), .requested(let id, _):
+            return id
+        case .activated, .refused:
+            return nil
+        }
+    }
 }
 
 public enum PrivilegedAccessError: Error, Sendable, Equatable {
