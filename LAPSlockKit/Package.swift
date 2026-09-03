@@ -96,7 +96,10 @@ let package = Package(
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
         // the credential path. The isolation guard enforces this.
-        .target(name: "DiagnosticsKit"),
+        // Depends on AuthKit ONLY for GraphResponseTracer, which lives there because
+        // CredentialKit is capped at Foundation + AuthKit and so cannot report
+        // anything to DiagnosticsKit directly.
+        .target(name: "DiagnosticsKit", dependencies: ["AuthKit"]),
 
         // Free-tier reveal metering. Foundation + CryptoKit only.
         //

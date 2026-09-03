@@ -1,4 +1,5 @@
 import Foundation
+import AuthKit
 
 // Diagnostics for support: enough to debug a customer's failure, structurally incapable
 // of capturing a credential.
@@ -80,7 +81,10 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     public let httpStatus: Int?
     /// Microsoft Graph's `request-id` header. This is the single most useful field for a
     /// Microsoft support case, and it identifies a REQUEST, not a person or a secret.
-    public let graphRequestId: String?
+    ///
+    /// `private(set)` only so `withGraphRequestId` can fill it in at record time — the
+    /// recording call sites do not hold the HTTP response. Still sanitised on the way in.
+    public private(set) var graphRequestId: String?
     /// Endpoint TEMPLATE, not the real URL — "/directory/deviceLocalCredentials/{id}".
     /// Identifiers are never interpolated in, so a device ID can't leak through here.
     public let endpointTemplate: String?
@@ -151,6 +155,16 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
         // An identifier, never a sentence: letters, digits and underscores only. Graph puts
         // a prose message next to the code and that message must not ride along.
         self.graphErrorCode = Self.sanitizedShape(graphErrorCode, "^[A-Za-z][A-Za-z0-9_]{2,60}$")
+    }
+
+    /// A copy carrying a Graph request id, with `id` and `timestamp` preserved.
+    ///
+    /// Sanitised again here rather than trusted: this type does not rely on its callers
+    /// having checked, and the tracer reads a value straight off an HTTP header.
+    func withGraphRequestId(_ requestId: String) -> DiagnosticEvent {
+        var copy = self
+        copy.graphRequestId = Self.sanitizedRequestId(requestId)
+        return copy
     }
 
     /// Keeps a value only if it matches the given shape exactly. Anything else becomes nil.
@@ -226,10 +240,29 @@ public actor DiagnosticsRecorder {
     }
 
     public func record(_ event: DiagnosticEvent) {
-        events.append(event)
+        events.append(Self.withGraphRequestId(event))
         if events.count > capacity {
             events.removeFirst(events.count - capacity)
         }
+    }
+
+    /// Attaches Graph's `request-id` to a failure that did not carry one.
+    ///
+    /// **Filled here rather than at every call site**, because there are a dozen of them and
+    /// none of them holds the HTTP response by the time it records anything — the typed
+    /// errors deliberately do not carry a diagnostics payload. `GraphResponseTracer` explains
+    /// the side channel.
+    ///
+    /// Attribution is conservative on purpose. A last-seen box cannot PROVE the id belongs to
+    /// this event, so the trace must be recent and its status must agree; anything less
+    /// certain is dropped. Putting a misleading request id in front of Microsoft support is
+    /// worse than putting none, because they will go and look it up.
+    static func withGraphRequestId(_ event: DiagnosticEvent) -> DiagnosticEvent {
+        guard event.graphRequestId == nil, event.outcome != .success,
+              let requestId = GraphResponseTracer.shared
+                  .attributableRequestId(httpStatus: event.httpStatus)
+        else { return event }
+        return event.withGraphRequestId(requestId)
     }
 
     /// Convenience for the common call site.
