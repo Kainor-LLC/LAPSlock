@@ -42,18 +42,29 @@ from this session is committed (not pushed) with all three checks green.
 - ⬜ **Device rows show the UPN because Intune returns no `userDisplayName`.** Not a code
   bug: `userDisplayName` is in the `$select` and is decoded, and `primaryUserLabel` prefers
   it. The Kainor tenant simply returns it empty, which is common depending on how the
-  primary user was assigned. **This is the 🟡 "per-device enrichment" item**, and it costs a
-  Graph call per device or a directory lookup per user, which is why it was deferred. Decide
-  whether display names are worth that.
-- ⬜ **`broker=yes` means the broker ANSWERED, not that it was opened.** Observed on device:
-  launching Authenticator and abandoning it reported `broker=no`, because
-  `MSALBrokerVersionKey` is only set on a broker response. Defensible, but it could mislead
-  during exactly the diagnosis the flag exists for. Consider a three-state value, or rename
-  it to `broker-responded`.
-- ⬜ **Settings is unreachable while signed out.** Found on device: after a failed sign-in
-  the only route to the diagnostics report is via demo mode. `rotationSection` and
-  `macOSSection` are not conditional, so this is not a matter of passing nils — the sections
-  need gating before a signed-out Settings can exist. Small, worth doing.
+  primary user was assigned.
+
+  **FOUNDER DECISION NEEDED, framed 2026-09-03.** Checked: no user-read scope is consented
+  today, so this is not just Graph calls — it is a NEW permission on every customer's consent
+  screen, `User.ReadBasic.All`, so a password app can read the directory's user list. A
+  security reviewer will ask why. Then the calls: `GET /users?$filter=id in (…)` takes 15 ids
+  per request, in-memory only, for the rows on screen.
+
+  **Recommendation: leave it.** The UPN is what an admin types anyway, it is what Intune's
+  own console shows when the field is empty, and it matches the stated stance — minimal
+  collection, and an extra API call is not worth a nicety. If wanted, build it behind the
+  same request-permission-when-first-needed pattern as BitLocker rotation, so customers who
+  do not care never see the scope.
+- ✅ **`broker=yes` renamed `broker-responded` — 2026-09-03.** It meant the broker ANSWERED,
+  not that it was opened: `MSALBrokerVersionKey` is only set on a broker response, so
+  launching Authenticator and abandoning it reported `broker=no`. There is no signal for
+  "opened", so a three-state value would claim knowledge MSAL does not give. The label now
+  says precisely what is known. The pinned-format test caught the rename, as intended.
+- ✅ **Settings reachable while signed out — 2026-09-03.** Gear on the sign-in screen;
+  `SettingsView` takes `hasSession`. Signed out, rotation, role activation, the macOS toggle,
+  the license and sign-out are absent rather than present and broken. What remains is
+  appearance, the reveal count, the diagnostics report with the most recent sign-in failure
+  attached — the reason this exists — and about. Eyeball on device.
 - ✅ **Accent color fixed 2026-09-02, and measuring it changed the answer.** Steel `#4A6E96`
   from the mark was the obvious replacement for the orange and **it fails**: 2.97:1 against
   the navy credential card, below WCAG's 3.0 floor for a UI component, and that card is where
@@ -128,23 +139,8 @@ proof.
   actual business mail — which raises the bar on anything that touches it.
 
 ## Needs a decision
-- **Search only covers loaded pages** (the #3 item in the decided order). This is a design
-  call, so I did not touch it. Three shapes, with a recommendation:
-  1. *Fetch every page first, then search locally.* Simplest; correct; Graph pages are 1000
-     devices, so a 10k-device tenant is ten calls at sign-in. Cost is the initial wait and
-     memory on the largest tenants. Search stays instant and diacritic-insensitive as today.
-  2. *Server-side `$filter` on `deviceName` / user fields per keystroke.* No wait at
-     sign-in, but Intune's `managedDevices` `$filter` support is narrow (startswith on a
-     few properties, no `$search`), so it would REGRESS the current matching on display
-     name, email and diacritics — the thing that was just fixed.
-  3. *Hybrid.* Local search over loaded pages as now, plus paging continues in the
-     background after the first page so the working set fills within seconds, with a
-     "still loading N of M" indicator until it does. Search results are complete once
-     loading finishes and are labelled honestly until then.
-  **Recommendation: 3**, with 1 as the fallback if background paging proves awkward. It
-  keeps today's matching, removes the phantom-miss without a per-keystroke network call,
-  and the indicator turns "search found nothing" into "search is still filling" — the
-  actual bug is that the empty state lies.
+- ✅ **Search only covers loaded pages** — founder approved the hybrid (option 3) on
+  2026-09-02, built 2026-09-03. See the entry under "Next up — code" for what was decided.
 - **Guideline 3.1.3 stance** — please read `docs/APP-STORE-3-1-3.md` once. It records why
   the Settings license section must never grow a price or a link, and the blocked-reveal
   message must never mention the website. Those are now compliance constraints, not copy.
@@ -814,25 +810,36 @@ macOS password retrieval.
   ever been checked in the simulator where scenePhase timing differs. It holds, which
   matters because the sign-in screen makes this claim to users directly.
 
-- ⬜ **Search only covers loaded pages** ← correctness bug, not a feature gap
+- ✅ **Search only covers loaded pages — FIXED 2026-09-03.** The approved hybrid, built as
+  `InventoryFill` in InventoryKit so the paging loop is tested without a tenant. The first
+  page renders as before; the fill pages onward in the background and the list re-filters as
+  each page lands. Every indicator says "still loading — N so far" while it runs, because the
+  actual defect was that an empty result during a partial load was a lie.
 
-  `DeviceSearch.filter` runs over `cachedDevices()`, which is the pages fetched so far.
-  On a tenant large enough that the admin has not scrolled to the end, searching for a
-  device that exists returns nothing. That does not read as "still loading", it reads as
-  "this app cannot find my machine", and it gets worse the bigger the customer is.
+  Decisions made in the build:
+  * **Cap: 50 pages, 5,000 devices**, one named constant (`InventoryFill.defaultMaxPages`).
+    Past it the outcome is `.capped`, not `.complete`, and the search UI says "not every
+    device is loaded" off that distinction. A tenant of EXACTLY the cap reports complete.
+  * **Throttling honoured once**, then the fill stops and keeps what it has. A background
+    job that keeps hammering a throttled tenant competes with the user's own taps.
+  * **One pager at a time.** `DeviceInventoryService` is an actor, but `loadNextPage` reads
+    the next link, suspends on the fetch, then appends — two concurrent callers append the
+    same page twice. Manual load-more is a no-op while the fill runs; the row shows progress.
+  * Refresh cancels the fill before replacing the cache; `deinit` cancels on sign-out.
+  * A failed fill is NOT the list's error. The first page is on screen and usable.
 
+  **Not attempted: "N of M" with a real total.** That needs `$count=true` on the first page,
+  which is untested against Intune from here, and a nicety must not be able to break the
+  first page. "N so far" is honest without the risk. Revisit with a phone and a large tenant.
+
+  ⚠️ **Unverified on a large tenant** — neither available tenant has more than one page. The
+  demo provider pages at 8 and exercises every state; the 9 InventoryKit tests cover cap,
+  throttle, failure, cancellation and exhaustion. A customer with thousands of devices is
+  the real test, and the cap is one line if they need more.
+
+  Original note: `DeviceSearch.filter` ran over `cachedDevices()`, the pages fetched so far.
   Graph will not solve this: `managedDevices` supports `$filter` with `eq` and some
-  `startswith`, but not substring `contains`, and `$search` is not supported on the
-  resource at all. So the answer is client-side over a complete set, not a server query.
-
-  `loadAll(maxPages:)` already exists and nothing calls it. Suggested shape: filter
-  locally for instant feedback, and when the query is non-empty and `hasMore()` is true,
-  page to completion in the background and re-filter as results arrive. Show that it is
-  still loading rather than showing an empty state, since an empty state during a partial
-  load is exactly the lie being fixed.
-
-  Worth measuring before choosing a design: 100 devices per page against a few thousand
-  devices is tens of requests, which is fine once but wasteful on every keystroke.
+  `startswith`, but not substring `contains`, and `$search` is not supported on the resource.
 
 - ✅ Device row shows the raw UPN — **fixed 2026-09-02**, `DeviceRow` now uses
   `primaryUserLabel` (display name, then UPN, then email). Build verified; eyeball on device.
