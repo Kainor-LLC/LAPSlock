@@ -58,8 +58,16 @@ from this session is committed (not pushed) with all three checks green.
   Silent on failure — a row falling back to the UPN is the default experience, not an error,
   so a toggle left on in a tenant that has not consented degrades to that rather than
   complaining on every page. Privacy policy and the security one-pager updated to name the
-  optional read. 10 tests. **Eyeball on device**: toggle on in Settings, expect the consent
-  prompt, then names in rows where Intune had none.
+  optional read. 11 tests.
+
+  ✅ **VERIFIED ON DEVICE 2026-09-03**, and it surfaced a second, older bug. The consent
+  prompt appeared and rows showed real names, but the DETAIL screen's "Primary user" field
+  still showed the UPN one tap later: it read `device.userPrincipalName` directly rather than
+  `primaryUserLabel`, so it ignored display names entirely — **including the ones Intune
+  supplies on its own**, which means that field was wrong before this feature existed. Fixed;
+  the UPN now follows on its own "Sign-in name" line whenever a name is shown above it, since
+  the UPN is what an admin pastes into a ticket. `primaryUserLabel`'s precedence is now pinned
+  by a test, because two screens depend on it and they disagreed once.
 
   Background: `userDisplayName` is in the `$select` and is decoded. The Kainor tenant simply
   returns it empty, which is common depending on how the primary user was assigned. The
@@ -83,7 +91,8 @@ from this session is committed (not pushed) with all three checks green.
   `SettingsView` takes `hasSession`. Signed out, rotation, role activation, the macOS toggle,
   the license and sign-out are absent rather than present and broken. What remains is
   appearance, the reveal count, the diagnostics report with the most recent sign-in failure
-  attached — the reason this exists — and about. Eyeball on device.
+  attached — the reason this exists — and about. ✅ **Verified on device 2026-09-03**,
+  including that the report reads `broker-responded=no` for an abandoned sign-in.
 - ✅ **Accent color fixed 2026-09-02, and measuring it changed the answer.** Steel `#4A6E96`
   from the mark was the obvious replacement for the orange and **it fails**: 2.97:1 against
   the navy credential card, below WCAG's 3.0 floor for a UI component, and that card is where
@@ -693,8 +702,13 @@ macOS password retrieval.
     scary-looking diagnostics entry for an operation that changed nothing is noise.
 
   6 tests. Verified by injection: making the re-check interactive fails the test forbidding
-  it. Still unseen on device — the provisioning path itself is only reachable in a tenant
-  where PIM takes long enough to report one.
+  it.
+
+  ✅ **VERIFIED ON DEVICE 2026-09-03.** Group activation reported "Accepted — no approval
+  needed / Activating now" rather than "Waiting for approval", the policy-derived duration
+  options appeared, and Check again resolved it to active with no sign-in prompt. The whole
+  PIM path — both surfaces, the ACRS claims challenge, the policy read, the outcome
+  classification and the re-check — is now confirmed against a real tenant.
 
   ⚠️ **Needs an ELIGIBLE assignment to test against.** Permanent Global Admin is an *active*
   assignment and never appears in `roleEligibilitySchedules`, so a permanently-privileged
@@ -851,7 +865,11 @@ macOS password retrieval.
   which is untested against Intune from here, and a nicety must not be able to break the
   first page. "N so far" is honest without the risk. Revisit with a phone and a large tenant.
 
-  ⚠️ **Unverified on a large tenant** — neither available tenant has more than one page. The
+  ✅ **VERIFIED ON DEVICE 2026-09-03** in demo mode: a device on page 2 was found by search
+  without scrolling or tapping "Load more", which is the exact case that used to return
+  nothing. The "no devices match" state was also correct once loading finished.
+
+  ⚠️ **Still unverified on a large tenant** — neither available tenant has more than one page. The
   demo provider pages at 8 and exercises every state; the 9 InventoryKit tests cover cap,
   throttle, failure, cancellation and exhaustion. A customer with thousands of devices is
   the real test, and the cap is one line if they need more.
