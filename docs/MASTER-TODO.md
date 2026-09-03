@@ -1156,7 +1156,56 @@ macOS password retrieval.
   `storeKitEntitlementActive` is passed `false` unconditionally, so an individual StoreKit
   subscription cannot grant Pro yet — only an organization license can. That is blocked on
   the StoreKit products existing, not on app code, and it fails in the safe direction.
-- ⬜ StoreKit subscription products and free trial (7 or 14 days) configuration
+- ✅ **StoreKit subscriptions — BUILT AND VERIFIED END TO END 2026-09-03.**
+
+  `storeKitEntitlementActive` had been hardcoded `false` since the entitlement client
+  shipped, so an individual could not buy Pro at all — only an organization licence worked.
+  `SubscriptionKit` now feeds it for real.
+
+  **Trial: 30 days (Apple's "1 Month").** Not generosity — LAPSlock is used episodically, and
+  a 7 or 14 day trial can expire before the admin ever hits the incident the app exists for.
+  It also matches the meter's own 30-day window, and at $1.99/mo a month of trial costs cents.
+
+  **Verified against real App Store Connect products with a sandbox Apple Account**, using
+  sandbox's accelerated clock:
+  * Products, prices and the introductory offer all load live from App Store Connect.
+  * Purchase grants immediately; the section collapses to the plan name and the Reveals
+    section disappears.
+  * MSP grants the tenant switcher **without a relaunch**.
+  * "Manage subscription" opens Apple's sheet and cancelling works.
+  * **Revocation is reactive**: one period after cancelling, the reveal limit and the offer
+    list came back on their own. That was the mirror-image risk — a grant path that reacts
+    while the revoke path does not means a lapsed customer keeps Pro indefinitely, which is a
+    revenue leak invisible until somebody notices the card was never charged.
+
+  Four real bugs found by device testing, all fixed:
+  1. **`@Published` emits in `willSet`.** The sink recomputed by re-reading
+     `subscriptions.entitlement` and therefore read the PREVIOUS value, so buying MSP left
+     `canSwitchTenants` false until the next launch. Combine hands the new value to the
+     closure; use it, never re-read the source.
+  2. **Offers were loaded once at launch.** Trial eligibility is part of an offer and changes
+     the moment a subscription is bought or refunded, so the list advertised a trial to
+     somebody who had just used theirs. The updates listener now reloads offers too.
+  3. **Unfinished transactions were never swept.** StoreKit redelivers them forever and a
+     leftover can block a later purchase, which presents as `purchase()` never returning.
+     `Transaction.updates` carries only new activity, so leftovers are finished at start.
+  4. **No escape from a stuck spinner.** `isWorking` was only cleared by `purchase()`
+     returning, so a third party failing to answer left the UI spinning permanently. There is
+     a "Stop waiting" button now, and reopening Settings clears a stale one. Safe because the
+     outcome still arrives through the listener.
+
+  ⬜ **Still unproven in a shipped build**: bugs 3 and 4 were fixed after the last TestFlight
+  upload. Build 6 needs to exercise cancel-mid-purchase against a real store.
+
+  Notes for later, learned the hard way:
+  * **TestFlight uses the real Apple ID**, not the Sandbox Apple Account slot. That slot is
+    only read by Xcode-installed builds with StoreKit Configuration set to `None`.
+  * **Introductory eligibility is lost by subscribing at all**, not by taking a trial. The
+    founder's Apple ID consumed it via a pre-offer TestFlight purchase and can never see the
+    trial flow again in sandbox — hence the throwaway account. Sandbox and production are
+    separate, so no customer is affected.
+  * Apple rejects `icloud.com`/`me.com`/`mac.com` for sandbox accounts, and rejected
+    `kainor.com` for reasons never established. `outlook.com` worked.
 - ✅ **DECIDED 2026-09-03: copy-to-clipboard and BitLocker rotation are NOT gated. Pro means
   unmetered reveals.** Copy was gated for one commit and reverted the same day on the
   founder's challenge — "the limit is the bigger catch for subscriptions", which is right.
