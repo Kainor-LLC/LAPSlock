@@ -33,6 +33,36 @@ from this session is committed (not pushed) with all three checks green.
   already carries the MSAL error code, AAD error code and correlation ID — which is the
   information a symbolicated MSAL frame would not provide anyway.
 
+## BitLocker key history — ALREADY SUPPORTED, checked 2026-09-03
+
+Founder asked whether BitLocker keys have a history option like LAPS now does. **They do,
+and it has been in the app all along**, because the two are shaped differently at the API.
+
+LAPS returns every version inside ONE `deviceLocalCredentialInfo` object, which is why
+history had to be built — the code was discarding the extra entries. BitLocker instead
+returns each key as **its own `bitlockerRecoveryKey` object** with its own `id`,
+`createdDateTime` ("when the key was originally backed up to Microsoft Entra ID") and
+`volumeType`. Rotation escrows a new object and the old ones remain, so the collection *is*
+the history. `BitLockerService` already lists them all, sorted OS-volume-first then
+newest-first within a volume, each independently revealable, each row showing the volume
+name, an 8-character key-ID prefix and its backup date.
+
+**Deliberately NOT adding a "Current" badge to match the LAPS picker.** For LAPS the newest
+version is almost always the one you want. For BitLocker it is not: the recovery screen on
+the locked machine *tells you which key ID it wants*, so an older key is frequently the
+correct one. Privileging the newest would push an admin away from the key that actually
+unlocks the disk. The `shortIdentifier` prefix exists precisely so they match the on-screen
+prompt instead — that is the right discriminator here, and it is already rendered.
+
+Metering note, since the asymmetry with LAPS is fair to ask about: an older LAPS version
+costs nothing because it arrived in the same response, whereas each BitLocker key is a
+genuinely separate Graph call and audit event. But the meter is keyed per DEVICE per hour, so
+pulling the OS-volume key and a data-volume key from one device inside an hour is still one
+credit.
+
+Demo data already includes an old operating-system-volume key at -190 days alongside a -14
+day one, so the multi-key case is exercisable without a tenant.
+
 ## Memory — WATCH, unresolved 2026-09-03
 
 - 🔵 **Xcode reported the app killed for memory pressure on device.** `IDEDebugSessionErrorDomain`
@@ -824,10 +854,11 @@ macOS password retrieval.
   Demo mode has two older versions so App Store review, which cannot sign into a tenant,
   exercises the picker.
 
-  ⬜ **Unverified on device.** Demo mode always shows it (two seeded older versions). Whether
-  a REAL tenant shows it depends on that tenant's rotation history — see the note below;
-  an earlier draft of this entry claimed neither available tenant keeps history, which was
-  asserted without evidence and is retracted.
+  ✅ **VERIFIED IN A LIVE TENANT via TestFlight build 4, 2026-09-03.** Founder: "devices do
+  have a password history." So the Entra backup path does accumulate versions in practice,
+  not just in the docs, and the picker appears on real devices. The earlier draft of this
+  entry claimed neither available tenant keeps history — asserted without evidence, and now
+  disproved as well as retracted.
 
   Test: demo → reveal → expect "Current password" plus two previous, switch between them,
   confirm only one renders at a time and the countdown does not reset. Then try a real
