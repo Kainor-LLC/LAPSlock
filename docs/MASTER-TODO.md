@@ -803,10 +803,43 @@ macOS password retrieval.
   Demo mode has two older versions so App Store review, which cannot sign into a tenant,
   exercises the picker.
 
-  ⬜ **Unverified on device, and unverifiable in either available tenant** — neither keeps
-  LAPS history, so the picker will not appear. Demo mode is the only way to see it here.
+  ⬜ **Unverified on device.** Demo mode always shows it (two seeded older versions). Whether
+  a REAL tenant shows it depends on that tenant's rotation history — see the note below;
+  an earlier draft of this entry claimed neither available tenant keeps history, which was
+  asserted without evidence and is retracted.
+
   Test: demo → reveal → expect "Current password" plus two previous, switch between them,
-  confirm only one shows and the countdown does not reset.
+  confirm only one renders at a time and the countdown does not reset. Then try a real
+  Windows device that has rotated at least once.
+
+  ### History and the Entra backup path — checked 2026-09-03, founder challenge
+
+  Founder asked whether history is an Active-Directory-only feature, given this app is
+  cloud-only. **It is not.** Verified against learn.microsoft.com:
+
+  * `Get-LapsAADPassword` takes **`-IncludeHistory`**, documented as displaying older LAPS
+    credentials on the **Entra** device object.
+  * Graph's own `deviceLocalCredentialInfo` example returns a `credentials` array with
+    **three** entries at different `backupDateTime` values.
+
+  What IS Active-Directory-only is the *policy setting* that governs history size, along with
+  the encrypted-history attribute. Microsoft's wording: the Windows Server AD-specific policy
+  settings "don't make sense, and aren't supported, when backing the password up to Microsoft
+  Entra ID." So on the Entra path history is whatever Entra has accumulated across backups,
+  not something an admin sizes.
+
+  **The scope limit this app really has**, worth stating plainly because it is not the one the
+  question assumed: LAPSlock reads Entra-backed LAPS only. That covers Entra-joined **and
+  hybrid-joined** devices whose policy backs up to Entra ID — but a device whose LAPS policy
+  backs up to **Windows Server AD instead** is invisible to this app entirely, because no
+  Graph API exposes AD-stored LAPS. Hybrid is fine; AD-backup is not, and no amount of app
+  work changes that.
+
+  ⚠️ **Consequence for the UI, fixed 2026-09-03.** Because the collection can hold entries for
+  DIFFERENT managed accounts — LAPS policy can change `AdministratorAccountName` — "Previous
+  password" was a wrong label in that case, and the wrong one to be wrong about: an admin
+  would skip the entry that actually works. A row whose account differs from the newest
+  entry's is now named by its **account** rather than its age.
 - ✅ **Auth diagnostics in the support report — DONE and VERIFIED ON DEVICE 2026-09-02.**
   Abandoning an Authenticator sign-in produced `signIn unknown` with an MSAL code and no URL
   or error text anywhere in the report. The allowlist holds.

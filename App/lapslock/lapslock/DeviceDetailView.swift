@@ -796,6 +796,22 @@ struct DeviceDetailView: View {
     /// Absent entirely unless the tenant's LAPS policy keeps history, which is not the
     /// default. Only the SELECTED version is ever rendered; these rows carry dates, never
     /// secrets.
+    /// What a version row is called.
+    ///
+    /// **Not every extra entry is an older password.** Graph's `credentials` collection can
+    /// carry entries for DIFFERENT managed accounts — LAPS policy can change
+    /// `AdministratorAccountName`, and each account's backups appear in the same collection.
+    /// Calling another account's current password "Previous password" would be wrong in a way
+    /// that matters: an admin would skip the entry that actually works. So when the account
+    /// differs from the newest entry's, the row is named by its ACCOUNT instead of its age.
+    private func versionLabel(_ version: DeviceDetailModel.LapsVersionSummary) -> String {
+        let currentAccount = model.lapsVersionSummaries.first?.accountName
+        if let account = version.accountName, account != currentAccount, !account.isEmpty {
+            return account
+        }
+        return version.isCurrent ? "Current password" : "Previous password"
+    }
+
     @ViewBuilder
     private var versionPicker: some View {
         if model.lapsVersionSummaries.count > 1 {
@@ -809,7 +825,7 @@ struct DeviceDetailView: View {
                             .foregroundStyle(version.id == model.visibleLapsVersion
                                              ? Brand.accent : .secondary)
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(version.isCurrent ? "Current password" : "Previous password")
+                            Text(versionLabel(version))
                                 .font(.subheadline)
                             if let backed = version.backupDateTime {
                                 Text("Backed up " + (relative(backed) ?? ""))
