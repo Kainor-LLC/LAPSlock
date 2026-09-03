@@ -1777,8 +1777,28 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 - ✅ Business bank account (LLC, linked to Apple)
 - ⬜ **Move the marketing site to Cloudflare Pages** — required before adding checkout,
   because GitHub Pages prohibits sites primarily facilitating commercial transactions.
-  Small lift: connect the repo, point DNS, done. Blocked until Apple finishes reviewing
-  kainor.com, since a DNS change mid-review risks another rejection.
+  Connect the repo, **no build command, output directory `docs`**, add `kainor.com` and `www`
+  as custom domains.
+
+  **SEQUENCING CORRECTED 2026-09-03 on the founder's challenge, and they were right.** The
+  old note said this was blocked until Apple finished reviewing kainor.com. The actual risk
+  is a DNS change *mid-review* — so doing it BEFORE submitting is not merely allowed, it is
+  the better order: DNS settles, every URL gets verified, and 1.0 is then submitted against a
+  stable domain. Doing it after approval would mean changing a live app's support URL, where
+  a future version review could catch it in flight.
+
+  ⚠️ **The real risk in this migration is EMAIL, not Apple.** Adding the domain to Cloudflare
+  delegates the nameservers, which moves all DNS including the Microsoft 365 records for
+  connor@kainor.com. Cloudflare's import is not always complete, and an incomplete import
+  stops mail arriving without an obvious signal. Before flipping nameservers at the
+  registrar, confirm every record from M365 admin center → Settings → Domains → kainor.com is
+  present in Cloudflare: MX to `*.mail.protection.outlook.com`, the SPF TXT, `autodiscover`
+  CNAME, both DKIM selector CNAMEs, `_dmarc` if present, and the `MS=ms...` verification TXT
+  — removing that last one can eventually un-verify the domain in M365.
+
+  **Verify before submitting 1.0**: `/`, `/how-it-works/`, `/privacy/` and `/terms/` all load
+  over HTTPS, and mail to connor@kainor.com still arrives. A 404 on the support or privacy
+  URL is an App Store rejection.
 - ✅ Stripe account on the LLC + EIN + bank — founder, 2026-09-03. **Account only.** Nothing
   below is connected: no checkout on the site, no payment-to-license link into Azure.
 - ⬜ Payment Link with a domain/tenant-ID custom field
