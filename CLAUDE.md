@@ -114,6 +114,15 @@ Cable the phone, ⌘R from Xcode, read the console. A DEBUG-only MSAL logger is 
   when verifying.
 - **`httpsOnly` is false when a Flex Consumption function app is created.** Set it
   explicitly and verify. Seen on two separate apps, so it is the default.
+- **"Upload Symbols Failed ... did not include a dSYM for MSAL.framework" on every
+  TestFlight upload is EXPECTED and not actionable.** The dialog title says "Upload
+  completed with warnings" — the build uploaded fine. MSAL arrives as a `.binaryTarget`
+  (checksum-pinned, code-signed `MSAL.zip` from Microsoft) and the XCFramework ships no
+  `.dSYM` in any slice, so there is nothing to include. Do not "fix" it by vendoring MSAL
+  from source: that trades a signed, checksum-verified binary for symbol names in a crash
+  log. Cost is that crash frames INSIDE MSAL show addresses; LAPSlock's own frames
+  symbolicate normally, and the diagnostics report already captures MSAL/AAD error codes
+  and the correlation ID, which is what a symbolicated MSAL frame would not give anyway.
 
 ## Decisions not to relitigate
 
