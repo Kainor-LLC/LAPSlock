@@ -208,8 +208,9 @@ final class ActivationRequestTests: XCTestCase {
         // it is honest and useful.
         let outcome = ActivationRequest.outcome(
             from: response(status: "PendingProvisioning", endDateTime: "2026-09-02T20:00:00Z"))
-        guard case .provisioning(let until) = outcome else { return XCTFail("expected provisioning") }
+        guard case .provisioning(let requestId, let until) = outcome else { return XCTFail("expected provisioning") }
         XCTAssertEqual(until, ISO8601DateFormatter.graphNoFraction.date(from: "2026-09-02T20:00:00Z"))
+        XCTAssertEqual(requestId, "req-1", "the id is what the Check again button re-reads")
     }
 
     func test_aRefusalIsNotSomethingToWaitFor() {
@@ -225,12 +226,13 @@ final class ActivationRequestTests: XCTestCase {
         // Not active, and not blamed on an approver who may not exist. The status rides
         // along so it can be read off the screen.
         let outcome = ActivationRequest.outcome(from: ["id": "req-2", "status": "SomethingNew"])
-        guard case .requested(let status) = outcome else { return XCTFail("expected requested") }
+        guard case .requested(let requestId, let status) = outcome else { return XCTFail("expected requested") }
         XCTAssertEqual(status, "SomethingNew")
+        XCTAssertEqual(requestId, "req-2")
     }
 
     func test_aResponseWithNoStatusIsNotActive() {
-        guard case .requested(let status) = ActivationRequest.outcome(from: [:]) else {
+        guard case .requested(_, let status) = ActivationRequest.outcome(from: [:]) else {
             return XCTFail("a statusless response must not read as activated")
         }
         XCTAssertEqual(status, "", "nothing to show the user when Graph sent no status")
