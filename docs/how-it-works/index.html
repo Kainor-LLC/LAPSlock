@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How LAPSlock works · Kainor LLC</title>
+<meta name="description" content="What LAPSlock does, which Microsoft permissions it asks for and why, what stays on your device, and how to verify every claim yourself.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131E2E'/%3E%3Ctext x='32' y='45' font-family='Arial Narrow, Arial, sans-serif' font-size='38' font-weight='700' fill='%23D9480F' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F4F7; --card:#FFFFFF; --ink:#131E2E; --ink-soft:#22314A;
+    --steel:#51617A; --mist:#A9B6C6; --signal:#D9480F; --line:#C9D2DD; --line-dark:#2C3C58;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);
+    font-family:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:0 24px}
+  a{color:var(--signal)}
+  a:hover{color:#BF3E0C}
+  a:focus-visible{outline:3px solid var(--signal);outline-offset:3px;border-radius:2px}
+  .display{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;
+    line-height:1.05;letter-spacing:.2px;text-transform:uppercase}
+  .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--signal);font-weight:500}
+
+  header.top{background:var(--ink);color:#F4F7FB}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:22px 0;border-bottom:1px solid var(--line-dark)}
+  .brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
+  .brand .k{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;
+    letter-spacing:.06em;text-transform:uppercase}
+  .brand .llc{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:var(--mist)}
+  nav a{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;text-decoration:none;color:var(--mist);margin-left:22px}
+  nav a:hover{color:#fff}
+  .head-main{padding:56px 0 44px}
+  h1{font-size:clamp(36px,6vw,60px)}
+  .updated{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+    letter-spacing:.1em;color:var(--mist)}
+
+  main{padding:48px 0 24px}
+  .summary{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--signal);
+    border-radius:8px;padding:22px 24px;margin-bottom:40px}
+  .summary h2{font-size:19px;margin-bottom:10px}
+  .summary p{color:var(--ink-soft)}
+  .summary p + p{margin-top:10px}
+  h2.sec{font-size:clamp(24px,3.4vw,32px);margin:40px 0 14px}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin-bottom:14px;color:var(--ink-soft)}
+  ul,ol{margin:0 0 16px 22px;color:var(--ink-soft)}
+  li{margin-bottom:8px}
+  code{font-family:'IBM Plex Mono',monospace;font-size:14px;background:rgba(0,0,0,.05);
+    padding:2px 5px;border-radius:3px;overflow-wrap:anywhere}
+  .note{background:rgba(217,72,15,.07);border-radius:8px;padding:16px 18px;margin:22px 0;
+    font-size:15.5px;color:var(--ink-soft)}
+  .table-scroll{overflow-x:auto;margin:16px 0 24px}
+  table{width:100%;border-collapse:collapse;font-size:15.5px;min-width:520px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--steel);font-weight:500}
+  .steps{list-style:none;margin-left:0;counter-reset:step}
+  .steps > li{counter-increment:step;position:relative;padding-left:46px;margin-bottom:22px}
+  .steps > li::before{content:counter(step,decimal-leading-zero);position:absolute;left:0;top:2px;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--signal);font-weight:500;
+    letter-spacing:.08em}
+  .steps h3{margin:0 0 4px}
+
+  footer{background:var(--ink);color:var(--mist);margin-top:64px}
+  .foot-inner{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+    padding:32px 0;font-size:14px}
+  .foot-inner a{color:var(--mist);text-decoration:none}
+  .foot-inner a:hover{color:#fff}
+  .foot-links a{margin-left:22px}
+  @media (max-width:640px){ .foot-links a{margin:0 22px 0 0} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="/"><span class="k">Kainor</span><span class="llc">LLC</span></a>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+      </nav>
+    </div>
+    <div class="head-main">
+      <span class="eyebrow">LAPSlock</span>
+      <h1 class="display">How it works</h1>
+      <p class="updated">Updated 3 September 2026</p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="summary">
+      <h2>The short version</h2>
+      <p><strong>LAPSlock retrieves Windows LAPS local administrator passwords and BitLocker recovery
+      keys from Microsoft Entra ID and Microsoft Intune, on the phone in your pocket.</strong> It signs
+      you in with your own Microsoft account and acts as you — if you cannot read a password in the
+      Microsoft admin center, LAPSlock cannot read it either.</p>
+      <p>There is no Kainor server in that path. Your device data and credentials travel between your
+      iPhone and Microsoft, and nowhere else. Everything below explains exactly which permissions are
+      requested, when, and why — and how to verify all of it yourself rather than take our word.</p>
+    </div>
+
+    <h2 class="sec">What you need</h2>
+    <ul>
+      <li><strong>Microsoft Entra ID and Microsoft Intune.</strong> LAPSlock reads device inventory
+      from Intune and credentials from Entra.</li>
+      <li><strong>Windows LAPS configured to back up to Microsoft Entra ID.</strong> This is the part
+      most worth checking first — see the limits section below.</li>
+      <li><strong>An Entra role that can read local administrator passwords.</strong> Cloud Device
+      Administrator is the least-privileged one that can. Intune Administrator, Security
+      Administrator, Security Reader and Global Administrator also work.</li>
+      <li><strong>An iPhone running iOS 17 or later</strong>, with Face ID, Touch ID or a passcode set.</li>
+    </ul>
+
+    <h2 class="sec">Using it</h2>
+    <ol class="steps">
+      <li>
+        <h3>Sign in with Microsoft</h3>
+        <p>The normal sign-in for your organization, including Conditional Access, MFA and anything
+        else your tenant enforces. LAPSlock has no account system and no password of its own. The first
+        sign-in requests read-only permissions and nothing more; anything heavier is asked for later,
+        only if you use the feature that needs it.</p>
+      </li>
+      <li>
+        <h3>Find the device</h3>
+        <p>Search by device name, the person who uses it, serial number or model. Searching matches on
+        the primary user's name and email address as well as the hostname, because a ticket usually
+        names a person rather than a machine. Pin the devices you return to often, and the last few you
+        opened appear on their own.</p>
+      </li>
+      <li>
+        <h3>Reveal the password</h3>
+        <p>Face ID or Touch ID runs <em>before</em> the request goes to Microsoft, so an abandoned
+        reveal creates no audit event in your tenant. The password appears for sixty seconds and is
+        then wiped from memory. It never appears in the app switcher, a screenshot revokes it
+        immediately, and copying it puts a self-expiring entry on the clipboard that is kept off
+        Universal Clipboard.</p>
+      </li>
+      <li>
+        <h3>BitLocker recovery keys, and older passwords</h3>
+        <p>Recovery keys for a device are listed by volume with the first characters of each key
+        identifier, so you can match the key the locked machine is asking for rather than guessing.
+        Where your tenant has kept previous LAPS passwords, those are available too — which matters
+        when a device stopped checking in and is still using an older one.</p>
+      </li>
+      <li>
+        <h3>Activate a role, if you need one</h3>
+        <p>If your access is PIM-eligible rather than active, LAPSlock can request activation without
+        you leaving the bench. It reads your organization's own PIM policy first, so it offers only
+        the durations your policy permits and tells you up front if a ticket number or additional
+        verification is required.</p>
+      </li>
+      <li>
+        <h3>Work across organizations</h3>
+        <p>Managed service providers can switch between customer tenants inside the app. Each switch
+        is an explicit choice, the organization you are operating in is shown on screen at all times,
+        and each customer's pinned devices stay with that customer.</p>
+      </li>
+    </ol>
+
+    <h2 class="sec">Permissions, and when each one is requested</h2>
+    <p>LAPSlock uses <strong>delegated</strong> permissions only. It never holds application
+    permissions, so it has no standing access to your tenant and no ability to act while nobody is
+    signed in. Permissions are requested in stages, so a first consent screen reads "reads device
+    inventory" rather than "reads every password in your tenant".</p>
+
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Permission</th><th>Requested</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>DeviceManagementManagedDevices.Read.All</code></td>
+          <td>At sign-in</td>
+          <td>The device list itself.</td>
+        </tr>
+        <tr>
+          <td><code>Device.Read.All</code></td>
+          <td>At sign-in</td>
+          <td>Entra device objects, which is how a machine in Intune is matched to its LAPS record.</td>
+        </tr>
+        <tr>
+          <td><code>DeviceLocalCredential.ReadBasic.All</code></td>
+          <td>At sign-in</td>
+          <td>Rotation and backup dates. Deliberately the variant that cannot return a password.</td>
+        </tr>
+        <tr>
+          <td><code>BitLockerKey.ReadBasic.All</code></td>
+          <td>At sign-in</td>
+          <td>Which recovery keys exist, without their values.</td>
+        </tr>
+        <tr>
+          <td><code>DeviceLocalCredential.Read.All</code></td>
+          <td>First password reveal</td>
+          <td>The password value. Never requested at sign-in.</td>
+        </tr>
+        <tr>
+          <td><code>BitLockerKey.Read.All</code></td>
+          <td>First key reveal</td>
+          <td>The recovery key value. Never requested at sign-in.</td>
+        </tr>
+        <tr>
+          <td><code>DeviceManagementManagedDevices.ReadWrite.All</code></td>
+          <td>Only if you enable BitLocker key rotation</td>
+          <td>The one write permission. Off by default — leave it off and LAPSlock only ever asks
+          for read access.</td>
+        </tr>
+        <tr>
+          <td><code>User.ReadBasic.All</code></td>
+          <td>Only if you enable user names</td>
+          <td>Shows a person's name where Intune stored only a sign-in address. Off by default.</td>
+        </tr>
+        <tr>
+          <td>PIM role and group scopes</td>
+          <td>Only if you enable role activation</td>
+          <td>Reading what you are eligible for and requesting activation. Off by default.</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="note">
+      <strong>Every credential read appears in your own audit log.</strong> Because LAPSlock acts as
+      the signed-in administrator, a reveal shows up in Entra exactly as it would if the same person
+      had used the Microsoft admin center. Your existing monitoring keeps working, unchanged.
+    </div>
+
+    <h2 class="sec">What stays on your device</h2>
+    <p>Passwords and recovery keys are held in memory only, for the length of the reveal window, and
+    are overwritten when it ends. They are never written to disk, never included in an iPhone or
+    iCloud backup, and never sent anywhere except between your device and Microsoft.</p>
+    <p>What LAPSlock does keep locally: your preferences, the device list for the current session,
+    the identifiers of devices you pinned, and a count of how many free reveals you have used. That
+    count lives on your device and on no server — a server-side counter would mean recording how often
+    each organization retrieves passwords, which is exactly the thing this app is built not to do.</p>
+    <p>Optionally, you can lock the whole app behind Face ID. That protects the device list itself,
+    which is worth something to an attacker even with no password on screen.</p>
+
+    <h2 class="sec">Verify it rather than trust it</h2>
+    <p>Three claims above are the ones that matter, and all three are checkable without taking our
+    word for anything:</p>
+    <ul>
+      <li><strong>LAPSlock talks to three hosts.</strong> Microsoft for sign-in, Microsoft Graph for
+      your data, and — only after you activate an organization license — a Kainor endpoint that
+      returns a licence token and receives no device data. Point a proxy at your phone and watch;
+      the <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/NETWORK-TRANSPARENCY.md">network
+      transparency document</a> walks through it in about ten minutes.</li>
+      <li><strong>The source is available to read.</strong> The
+      <a href="https://github.com/Kainor-LLC/LAPSlock">repository is public</a>, including the code
+      that handles credentials. You are welcome to review it, and security teams are explicitly
+      permitted to copy it for that purpose.</li>
+      <li><strong>The credential path is structurally isolated.</strong> The module that handles
+      passwords cannot import the licensing code, the analytics code — there is none — or anything
+      else. A build script enforces it, so it is a property of the code rather than a promise in a
+      document.</li>
+    </ul>
+
+    <h2 class="sec">What LAPSlock cannot do</h2>
+    <p>Stated plainly, because finding out later is worse:</p>
+    <ul>
+      <li><strong>Windows LAPS backed up to Active Directory is invisible to it.</strong> LAPSlock
+      reads Entra-backed LAPS. Entra-joined and hybrid-joined devices are both fine <em>provided the
+      policy backs up to Entra ID</em> — but a device whose policy targets Windows Server Active
+      Directory instead cannot be read, because Microsoft exposes no API for it.</li>
+      <li><strong>macOS local administrator passwords cannot be revealed.</strong> Microsoft does not
+      currently offer an API that returns them; Intune keeps them encrypted on its own service and
+      only the admin center can display one. LAPSlock shows what metadata exists and hands off to the
+      portal. If Microsoft ships an API, the app will use it.</li>
+      <li><strong>It cannot grant you access you do not have.</strong> No permission LAPSlock requests
+      escalates your privileges. If your account cannot read a password, the answer is a role
+      assignment in your tenant, not a setting in the app.</li>
+      <li><strong>It is not a Microsoft product</strong> and is not affiliated with, endorsed by, or
+      sponsored by Microsoft Corporation.</li>
+    </ul>
+
+    <h2 class="sec">Free use and subscriptions</h2>
+    <p>LAPSlock is free to download and free to use, with a limit on how many credentials you can
+    reveal in a rolling thirty-day period. Everything else — searching, BitLocker keys, password
+    history, copying, PIM activation, app lock — works on the free tier without restriction.</p>
+    <p>Subscriptions that remove the reveal limit are available inside the app, on the Settings screen.
+    Organizations that would rather license the whole tenant can email us.</p>
+
+    <h2 class="sec">Getting help</h2>
+    <p>Email <a href="mailto:connor@kainor.com">connor@kainor.com</a>. If something failed, Settings
+    includes a diagnostics report you can send with it — it carries Microsoft error codes and request
+    identifiers and is structurally incapable of containing a password, a recovery key, a device name
+    or a user name. You can read the whole thing before you send it.</p>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <span>© 2026 Kainor LLC · Spring Hill, Kansas · LAPSlock&trade; is a trademark of Kainor LLC.</span>
+      <span class="foot-links">
+        <a href="/">Home</a><a href="/how-it-works/">How it works</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="mailto:connor@kainor.com">Contact</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
