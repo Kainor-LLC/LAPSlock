@@ -78,27 +78,62 @@ public struct WindowsLapsProvider: LocalAdminCredentialProviding {
         try GraphHTTP.validate(response)
 
         // JSONSerialization on purpose: no Codable model ever holds the password.
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CredentialError.decodeFailure
+        }
+        return try Self.credential(from: obj)
+    }
+
+    /// Most versions of one device's password to return.
+    ///
+    /// **A defensive ceiling of ours, not a Microsoft limit.** Each version returned is
+    /// another live secret held in memory for the reveal window, so a pathological response
+    /// must not be able to multiply that without bound. Newest-first ordering means the cap
+    /// drops the least useful end.
+    static let maxVersions = 10
+
+    /// Parses the `credentials` payload into the current password and its history.
+    ///
+    /// Static and pure so every branch is covered without a tenant — ordering, entries
+    /// missing a date, entries missing a password. That matters more here than almost
+    /// anywhere else in the app: **this function decides which password an admin is shown**,
+    /// and showing the wrong one sends them to a console with a credential that fails.
+    ///
+    /// Graph returns the whole `credentials` collection in one response. The previous
+    /// version discarded everything but the newest, which is why history looked like a
+    /// feature needing new requests when it needed none.
+    static func credential(from obj: [String: Any]) throws -> RevealedCredential {
         guard
-            let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
             let credentials = obj["credentials"] as? [[String: Any]],
             !credentials.isEmpty
         else { throw CredentialError.emptyCredentialSet }
 
-        // Password history can contain several entries; newest backupDateTime wins (§2.3).
-        let newest = credentials.max {
-            (GraphHTTP.date($0["backupDateTime"]) ?? .distantPast)
-                < (GraphHTTP.date($1["backupDateTime"]) ?? .distantPast)
+        // An entry whose password will not decode is DROPPED rather than surfaced as a
+        // blank row: a version an admin cannot read is worse than one they cannot see,
+        // because they would try it.
+        let versions = credentials.compactMap { entry -> CredentialVersion? in
+            guard
+                let b64 = entry["passwordBase64"] as? String,
+                let secret = SensitiveValue(base64AutoDetect: b64)
+            else { return nil }
+            return CredentialVersion(
+                accountName: entry["accountName"] as? String,
+                backupDateTime: GraphHTTP.date(entry["backupDateTime"]),
+                secret: secret)
         }
-        guard
-            let entry = newest,
-            let b64 = entry["passwordBase64"] as? String,
-            let secret = SensitiveValue(base64AutoDetect: b64)
-        else { throw CredentialError.decodeFailure }
+        // Newest first. An entry with no date sorts last rather than winning by accident —
+        // `.distantPast` is deliberate, because treating an undated entry as newest would
+        // put an unknown password in front of a known-current one.
+        .sorted { ($0.backupDateTime ?? .distantPast) > ($1.backupDateTime ?? .distantPast) }
+        .prefix(maxVersions)
+
+        guard let current = versions.first else { throw CredentialError.decodeFailure }
 
         return RevealedCredential(
-            accountName: entry["accountName"] as? String,
-            backupDateTime: GraphHTTP.date(entry["backupDateTime"]),
-            secret: secret
+            accountName: current.accountName,
+            backupDateTime: current.backupDateTime,
+            secret: current.secret,
+            previousVersions: Array(versions.dropFirst())
         )
     }
 

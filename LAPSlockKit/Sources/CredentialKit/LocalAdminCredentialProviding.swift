@@ -138,7 +138,13 @@ public struct CredentialMetadata: Sendable, Equatable {
 }
 
 /// A revealed password. The value exists only inside `secret` (§3.2).
-public struct RevealedCredential {
+/// One backed-up version of a local administrator password.
+///
+/// **Why history matters, and it is not nostalgia.** A device that has not checked in
+/// since its last rotation is still using an OLDER password. The admin standing at exactly
+/// that machine — the one that stopped checking in, which is why they are standing at it —
+/// needs the previous value, and the current one will not work.
+public struct CredentialVersion {
     public let accountName: String?
     public let backupDateTime: Date?
     public let secret: SensitiveValue
@@ -147,6 +153,34 @@ public struct RevealedCredential {
         self.accountName = accountName
         self.backupDateTime = backupDateTime
         self.secret = secret
+    }
+}
+
+public struct RevealedCredential {
+    public let accountName: String?
+    public let backupDateTime: Date?
+    public let secret: SensitiveValue
+    /// Older passwords for the same device, newest first, and **empty unless the tenant's
+    /// LAPS policy keeps history** — which is not the default.
+    ///
+    /// These arrive in the same Graph response as the current password: one request, one
+    /// audit event, one metered reveal. Nothing here costs an extra call, which is why
+    /// viewing an older version spends no further credit.
+    ///
+    /// Every one of these holds live bytes. Whoever owns a `RevealedCredential` must wipe
+    /// `previousVersions` as well as `secret`.
+    public let previousVersions: [CredentialVersion]
+
+    public init(
+        accountName: String?,
+        backupDateTime: Date?,
+        secret: SensitiveValue,
+        previousVersions: [CredentialVersion] = []
+    ) {
+        self.accountName = accountName
+        self.backupDateTime = backupDateTime
+        self.secret = secret
+        self.previousVersions = previousVersions
     }
 }
 
