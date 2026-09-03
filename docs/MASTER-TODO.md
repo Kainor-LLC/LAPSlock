@@ -655,11 +655,31 @@ macOS password retrieval.
   padded `"Granted "` cannot parse as a grant. Verified by injection: deleting the
   provisioning branch fails three tests.
 
-  ⬜ **Not done, and deliberately not:** the app does not poll to watch `provisioning` turn
-  into active. The screen tells the user to retry the reveal, which is what they were going
-  to do anyway, and polling would spend Graph calls on something that resolves in seconds. If
-  device use shows the delay is longer than "a few seconds", a single user-initiated "Check
-  again" button reading one request is the cheap next step.
+  ### ✅ "Check again" button, added 2026-09-03 at founder request
+
+  A button, still not polling. The wait is usually seconds, and a timer firing Graph calls at
+  a screen nobody is looking at spends a customer's throttling budget to save a tap.
+
+  **It is free, which is what made it worth building.** Reading a request back is a GET on
+  the path it was POSTed to, so the activation scope already covers it: no new scope, no new
+  consent prompt, one request only when tapped. `EligibleAccess.activateScope` and
+  `.activationPath` now hold the role-or-group switch that had been written out separately in
+  the request builder, the service and the diagnostics recorder.
+
+  Three details worth keeping:
+  * `ActivationOutcome.recheckableRequestId` is nil for `activated` and `refused`, so the UI
+    cannot offer to re-check something settled — an active grant has nothing to check and a
+    refusal will never change.
+  * **Never interactive.** A sign-in prompt is not an acceptable answer to "has it finished
+    yet?", and the token is seconds old in the case this exists for.
+  * A failed re-check does not replace the outcome with an error, and is not recorded in
+    diagnostics. The activation did not fail, a status read did; discarding what we know
+    about the request to show a network error would lose more than it explains, and a
+    scary-looking diagnostics entry for an operation that changed nothing is noise.
+
+  6 tests. Verified by injection: making the re-check interactive fails the test forbidding
+  it. Still unseen on device — the provisioning path itself is only reachable in a tenant
+  where PIM takes long enough to report one.
 
   ⚠️ **Needs an ELIGIBLE assignment to test against.** Permanent Global Admin is an *active*
   assignment and never appears in `roleEligibilitySchedules`, so a permanently-privileged
