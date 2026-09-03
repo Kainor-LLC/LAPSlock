@@ -108,6 +108,12 @@ enum TenantStores {
     static let live = KeychainTenantStore()
 }
 
+/// Favourites and recents. Live path only — demo mode has no tenant to key them by, and
+/// giving it one would mean an unsigned-in install held a list of device identifiers.
+enum DeviceShortcutStores {
+    static let live = DeviceShortcutStore()
+}
+
 enum Entitlements {
     static let live = EntitlementManager(
         store: KeychainEntitlementStore(),
@@ -690,7 +696,11 @@ struct AppRootView: View {
                         meter: RevealMeters.live,
                         isPro: root.isPro,
                         nameResolver: session.names,
-                        settings: AppSettings.shared
+                        settings: AppSettings.shared,
+                        shortcutStore: DeviceShortcutStores.live,
+                        // Keyed by the tenant being OPERATED in, not the signed-in one, so an
+                        // MSP's favourites follow the customer they switched to.
+                        tenantId: root.operatingTenantId ?? root.signedInTenantId
                     ),
                     isDemo: false,
                     tenantSwitcher: root.canSwitchTenants ? {
