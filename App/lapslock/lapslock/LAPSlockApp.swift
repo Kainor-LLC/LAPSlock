@@ -226,8 +226,22 @@ final class AppRootModel: ObservableObject {
     /// switch tenants, while an MSP subscription can, so somebody holding both must end up
     /// with unmetered reveals *and* switching. Any single-tier answer drops one of them.
     func recomputeEntitlement() {
+        apply(subscription: subscriptions.entitlement)
+    }
+
+    /// **Takes the subscription as an argument rather than reading it, and that is the whole
+    /// point of this method existing separately.**
+    ///
+    /// `@Published` emits in `willSet` — the publisher fires BEFORE the stored property is
+    /// updated. So a sink that reacted by reading `subscriptions.entitlement` read the
+    /// PREVIOUS value, and buying MSP left `canSwitchTenants` false until the next launch
+    /// recomputed it from scratch. Observed on device 2026-09-03: the tenant switcher only
+    /// appeared after force-quitting the app.
+    ///
+    /// Combine hands the new value to the closure. Use that; never re-read the source.
+    private func apply(subscription: SubscriptionEntitlement) {
         let merged = SubscriptionEntitlement.merge(
-            subscription: subscriptions.entitlement,
+            subscription: subscription,
             organizationTier: Entitlements.live.state(signedInTenantId: signedInTenantId).tier)
         isPro = merged.isPro
         canSwitchTenants = merged.allowsTenantSwitching
@@ -319,10 +333,14 @@ final class AppRootModel: ObservableObject {
         // Renewals, cancellations, refunds and Ask-to-Buy approvals arrive through
         // Transaction.updates while no paywall is open, and a listener owned by a screen
         // would miss every one of them.
-        subscriptions.start()
-        subscriptions.$entitlement
-            .sink { [weak self] _ in self?.recomputeEntitlement() }
-            .store(in: &cancellables)
+        // Guarded: `prepare()` runs from a .task that can fire more than once, and a second
+        // subscription would recompute twice for every change.
+        if cancellables.isEmpty {
+            subscriptions.start()
+            subscriptions.$entitlement
+                .sink { [weak self] entitlement in self?.apply(subscription: entitlement) }
+                .store(in: &cancellables)
+        }
 
         guard auth == nil else { return }
         do {

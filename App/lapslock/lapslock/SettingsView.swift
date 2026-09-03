@@ -582,6 +582,21 @@ struct SettingsView: View {
         }
     }
 
+    /// What just changed, and where to find it.
+    ///
+    /// Founder bought MSP on device and the tenant switcher appeared with nothing to explain
+    /// it — a purchase that silently alters the toolbar reads as either broken or magic. This
+    /// is deliberately NOT a tutorial: it names the capability and the one place it lives,
+    /// once, at the moment it becomes true.
+    static func unlockedMessage(for plan: SubscriptionProduct) -> String {
+        switch plan {
+        case .mspYearly:
+            return "MSP is active. Reveals are unlimited, and the building icon in the device list toolbar now switches between customer organizations."
+        case .proMonthly, .proYearly:
+            return "Pro is active. Reveals are unlimited — the monthly count is gone."
+        }
+    }
+
     private func activePlanName(_ store: SubscriptionStore) -> String {
         switch store.entitlement.tier {
         case .msp:  return "LAPSlock MSP"
@@ -595,6 +610,7 @@ struct SettingsView: View {
         switch await store.purchase(plan) {
         case .purchased:
             entitlementDidChange?()
+            purchaseMessage = Self.unlockedMessage(for: plan)
         case .cancelled:
             // Silent. The user chose not to buy, and a message about it is nagging.
             break
