@@ -49,6 +49,12 @@ public final class SubscriptionStore: ObservableObject {
                     await transaction.finish()
                 }
                 await self.refreshEntitlement()
+                // Offers are reloaded too, not just the entitlement. TRIAL ELIGIBILITY IS
+                // PART OF AN OFFER, and it changes the moment a subscription is bought or
+                // refunded — so a list loaded once at launch advertises "free for the first
+                // month" to somebody who has just used theirs, and keeps hiding it from
+                // somebody whose purchase was refunded. Prices can move under us too.
+                await self.loadOffers()
             }
         }
         Task { await refreshEntitlement() }
