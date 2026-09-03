@@ -512,10 +512,6 @@ final class DeviceDetailModel: ObservableObject {
 
     func copyBitLockerKey() {
         guard let bitLockerSecret, session.isVisible else { return }
-        if copyIsGated {
-            statusNote = Self.copyRequiresProNote
-            return
-        }
         bitLockerSecret.withValue { value in
             SecureClipboard.copyCredential(value)
             lastCopiedValue = value
@@ -584,31 +580,30 @@ final class DeviceDetailModel: ObservableObject {
         statusNote = "Username copied."
     }
 
-    /// Copy is a Pro convenience, and this is where that is enforced.
-    ///
-    /// **Reveal stays free; copying does not.** The free tier is metered rather than
-    /// crippled — a sceptical administrator has to be able to prove the product works
-    /// against their own tenant, which means reading a real password. Copying is the
-    /// convenience on top, and it is the one that scales with how much you use the app.
-    ///
-    /// The button is deliberately still SHOWN and still tappable. A hidden control is
-    /// indistinguishable from a missing feature, and somebody who taps it learns what Pro
-    /// is at the moment they wanted it — which is a better time than a launch screen.
-    ///
-    /// No price and no link here: contract 3.1.3, same rule as the licence section. Pointing
-    /// at Settings is fine, because that is Apple's own in-app purchase.
-    static let copyRequiresProNote =
-        "Copying is part of Pro. The value above is fully readable, and Pro is available in Settings."
-
-    /// True when a copy attempt should be refused. Free tier only.
-    private var copyIsGated: Bool { !isPro }
+    // COPY IS NOT GATED, AND THAT IS A DECISION RATHER THAN AN OMISSION.
+    //
+    // It was gated behind Pro for one commit on 2026-09-03 and reverted the same day. The
+    // reason is a security argument, not a generosity one: **a free user who cannot copy a
+    // 48-digit BitLocker recovery key will get it out of the app another way.** They will
+    // photograph the screen with a second phone, or transcribe it into Notes, or read it
+    // aloud on a call. Every one of those is worse handling than the clipboard this app
+    // already hardened — the clipboard entry expires, is cleared when the reveal window
+    // ends, and is excluded from Universal Clipboard. A hand-copied key has none of that
+    // and never expires.
+    //
+    // So gating copy would push users toward exactly the behaviour the reveal window,
+    // screenshot revocation and clipboard expiry exist to prevent. In a credential tool that
+    // is a bad trade for marginal conversion pressure.
+    //
+    // The metered reveal count is the free-tier limit, and it is enough: five reveals per 30
+    // days is genuinely binding for a working administrator, which is where Pro earns its
+    // money. Founder's read, and correct — "the limit is the bigger catch".
+    //
+    // Pro therefore means unmetered reveals. Future conveniences may be gated (favourites,
+    // app lock) as long as they do not make credential HANDLING worse.
 
     func copyPassword() {
         guard let secret = revealedSecret else { return }
-        if copyIsGated {
-            statusNote = Self.copyRequiresProNote
-            return
-        }
         secret.withValue { value in
             SecureClipboard.copyCredential(value)
             lastCopiedValue = value
