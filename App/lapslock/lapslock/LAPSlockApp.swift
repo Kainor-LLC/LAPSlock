@@ -168,6 +168,9 @@ final class AppRootModel: ObservableObject {
 
     @Published var mode: Mode = .signedOut
     @Published var isSigningIn = false
+    /// True while the launch restore is running, so the sign-in screen does not flash up for
+    /// a moment before the device list replaces it.
+    @Published private(set) var isRestoringSession = false
     @Published var consentState: ConsentState?
     @Published var signInError: String?
 
@@ -354,6 +357,27 @@ final class AppRootModel: ObservableObject {
         } catch {
             signInError = "LAPSlock couldn't start its sign-in system. Reinstalling the app usually fixes this."
         }
+    }
+
+    /// Puts a previously signed-in admin straight back into the app.
+    ///
+    /// Silent only — see `MSALAuthManager.restoreSession`. Nothing here overrides Entra: a
+    /// revoked or expired refresh token, or a Conditional Access policy demanding
+    /// reauthentication, simply produces nil and the sign-in screen.
+    func restoreSession() async {
+        guard case .signedOut = mode, let auth else { return }
+        isRestoringSession = true
+        defer { isRestoringSession = false }
+
+        guard let account = await auth.restoreSession() else { return }
+        liveSession = LiveSession(
+            auth: auth,
+            inventory: DeviceInventoryService(auth: auth),
+            names: UserNameResolver(auth: auth)
+        )
+        mode = .live(account)
+        recomputeEntitlement()
+        await refreshTenants()
     }
 
     func signIn() async {
@@ -647,6 +671,9 @@ struct AppRootView: View {
         content
             .task {
                 root.prepare()
+                // Before the entitlement refresh: restoring is what decides which screen is
+                // shown, and the entitlement read does not depend on it.
+                await root.restoreSession()
                 await root.refreshEntitlementIfDue()
             }
     }
@@ -797,7 +824,25 @@ struct AppRootView: View {
         }
     }
 
+    @ViewBuilder
     private var signedOut: some View {
+        if root.isRestoringSession {
+            // A brief, quiet placeholder rather than the sign-in screen. Flashing "Sign in
+            // with Microsoft" at somebody who is already signed in reads as having been
+            // logged out, which is alarming for no reason.
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Restoring your session…")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            signInScreen
+        }
+    }
+
+    private var signInScreen: some View {
         VStack(spacing: 0) {
             SignInView(
                 consentState: root.consentState,

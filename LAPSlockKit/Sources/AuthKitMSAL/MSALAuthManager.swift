@@ -152,6 +152,61 @@ public actor MSALAuthManager: AuthManaging {
         return account
     }
 
+    /// Restores a previous session without prompting, or returns nil.
+    ///
+    /// **Why this exists.** MSAL already holds the account and a refresh token in its
+    /// keychain-backed cache, and nothing was asking for them — so every launch showed the
+    /// sign-in screen and made the user tap a button that then succeeded silently. That is
+    /// friction with no security value: the tokens were already on the device.
+    ///
+    /// **Entra still decides.** This only ever acquires silently. If the refresh token has
+    /// expired, been revoked, or Conditional Access now demands reauthentication, the silent
+    /// attempt fails and nil comes back — and the sign-in screen appears, which is exactly
+    /// right. The app deliberately does NOT impose a session lifetime of its own: that is the
+    /// tenant's policy to set, and second-guessing it would contradict the whole delegated
+    /// model.
+    ///
+    /// **A token is acquired to prove it, not merely assumed.** Restoring on the presence of
+    /// a cached account alone would show the device list and then fail on the first Graph
+    /// call, which is worse than showing the sign-in screen.
+    public func restoreSession() async -> AdminAccount? {
+        guard let msalAccount = (try? application.allAccounts())?.first,
+              let account = Self.account(from: msalAccount)
+        else { return nil }
+
+        pinnedAccount = account
+        // A restored session starts in the account's own tenant. An MSP's customer selection
+        // is deliberately not carried across a launch — operating in someone else's tenant
+        // should be a decision made now, not one inherited from last week.
+        activeTenant = nil
+
+        do {
+            _ = try await token(scopes: Self.baseScopes, allowInteractive: false)
+            return account
+        } catch {
+            pinnedAccount = nil
+            activeTenant = nil
+            return nil
+        }
+    }
+
+    /// Builds an `AdminAccount` from a cached MSAL account.
+    ///
+    /// Separate from the `MSALResult` version because a restore has no result to read — only
+    /// what the cache kept. Returns nil rather than throwing: a cache entry too incomplete to
+    /// use is a reason to show the sign-in screen, not an error to surface.
+    private static func account(from msalAccount: MSALAccount) -> AdminAccount? {
+        let claims = msalAccount.accountClaims
+        guard let tenantId = (claims?["tid"] as? String) ?? msalAccount.homeAccountId?.tenantId,
+              let identifier = msalAccount.identifier, !identifier.isEmpty
+        else { return nil }
+        return AdminAccount(
+            id: identifier,
+            tenantId: tenantId,
+            username: msalAccount.username ?? "",
+            objectId: claims?["oid"] as? String)
+    }
+
     /// Runs an MSAL call, and on failure reduces the raw error to `AuthFailureDetail`
     /// before mapping it to the public `AuthError`. The raw error never leaves this actor.
     private func recording<T>(_ step: AuthStep, _ body: () async throws -> T) async throws -> T {
