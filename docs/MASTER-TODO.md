@@ -12,6 +12,27 @@ Legend: ✅ done · 🟡 partial · ⬜ not started · 🔵 not-code · ⚠️ n
 Items below either need a decision, a device, or an account only you hold. Everything else
 from this session is committed (not pushed) with all three checks green.
 
+## TestFlight — build 4 uploaded 2026-09-03
+
+- ✅ **Build 1.0 (4) archived and uploaded.** Founder bumped `CURRENT_PROJECT_VERSION` to 4.
+- ✅ **The "Upload Symbols Failed / no dSYM for MSAL.framework" warning is expected.**
+  Investigated 2026-09-03 and closed as not-actionable. The dialog title is "Upload completed
+  **with warnings**" and the archive status read "Uploaded to Apple" — the build went up.
+
+  MSAL is a `.binaryTarget` in its own `Package.swift`
+  (`.../releases/download/1.9.0/MSAL.zip`, checksum-pinned), and every slice of the resolved
+  `MSAL.xcframework` — `ios-arm64`, `ios-arm64_x86_64-simulator`, `macos-arm64_x86_64` —
+  contains `MSAL.framework` and **no `.dSYM` at all**. Microsoft does not ship debug symbols
+  in the SPM binary distribution, so there is no dSYM to include and no project setting that
+  changes it. `DEBUG_INFORMATION_FORMAT` is already `dwarf-with-dsym` for Release.
+
+  **Do not vendor MSAL from source to silence it.** That would trade a code-signed,
+  checksum-verified Microsoft binary for symbol names in a crash log — a bad security trade
+  for a cosmetic gain. What it actually costs: crash frames *inside MSAL* show addresses
+  rather than names. LAPSlock's own frames symbolicate normally, and the diagnostics report
+  already carries the MSAL error code, AAD error code and correlation ID — which is the
+  information a symbolicated MSAL frame would not provide anyway.
+
 ## Memory — WATCH, unresolved 2026-09-03
 
 - 🔵 **Xcode reported the app killed for memory pressure on device.** `IDEDebugSessionErrorDomain`
