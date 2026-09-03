@@ -71,6 +71,15 @@ final class DeviceListModel: ObservableObject {
     /// that can touch the user directory, and the toggle is the customer's consent to that.
     private let nameResolver: (any UserNameResolving)?
     private let settings: AppSettings?
+
+    /// Favourites and recents, keyed by the tenant being operated in. Nil in demo, where
+    /// there is no tenant to key by and nothing worth remembering between launches.
+    private let shortcutStore: (any DeviceShortcutStoring)?
+    private let tenantId: String?
+
+    /// The stored IDs. Devices are resolved from `devices` at render time, so a favourite
+    /// pointing at a machine that has left the tenant simply stops appearing.
+    @Published private(set) var shortcuts: DeviceShortcuts = .empty
     private var enrichTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
@@ -90,11 +99,18 @@ final class DeviceListModel: ObservableObject {
         meter: RevealMeter? = nil,
         isPro: Bool = false,
         nameResolver: (any UserNameResolving)? = nil,
-        settings: AppSettings? = nil
+        settings: AppSettings? = nil,
+        shortcutStore: (any DeviceShortcutStoring)? = nil,
+        tenantId: String? = nil
     ) {
         self.inventory = inventory
         self.nameResolver = nameResolver
         self.settings = settings
+        self.shortcutStore = shortcutStore
+        self.tenantId = tenantId
+        if let shortcutStore, let tenantId {
+            self.shortcuts = shortcutStore.shortcuts(tenantId: tenantId)
+        }
         let resolvedMeter = meter ?? RevealMeter(store: InMemoryRevealLedgerStore())
         self.meter = resolvedMeter
         self.isPro = isPro
@@ -127,6 +143,44 @@ final class DeviceListModel: ObservableObject {
                 DeviceSearch.filter(devices, query: query)
             }
             .assign(to: &$visibleDevices)
+    }
+
+    // MARK: - favourites and recents
+
+    /// Pinned devices, in pin order, resolved against what is loaded.
+    var favouriteDevices: [ManagedDeviceSummary] {
+        resolve(shortcuts.favourites)
+    }
+
+    /// Recently opened devices, excluding anything already pinned — a device in both lists
+    /// twice is noise, and the favourite is the more deliberate of the two.
+    var recentDevices: [ManagedDeviceSummary] {
+        resolve(shortcuts.recents.filter { !shortcuts.favourites.contains($0) })
+    }
+
+    /// Looks IDs up in the loaded set, preserving the stored order.
+    ///
+    /// An ID with no match is dropped rather than shown as a placeholder: a device that has
+    /// left the tenant, or has not been paged in yet, is not something to render a row for.
+    private func resolve(_ ids: [String]) -> [ManagedDeviceSummary] {
+        let byId = Dictionary(devices.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ids.compactMap { byId[$0] }
+    }
+
+    func isFavourite(_ device: ManagedDeviceSummary) -> Bool {
+        shortcuts.isFavourite(device.id)
+    }
+
+    func toggleFavourite(_ device: ManagedDeviceSummary) {
+        guard let shortcutStore, let tenantId else { return }
+        shortcuts = shortcutStore.toggleFavourite(device.id, tenantId: tenantId)
+    }
+
+    /// Records that a device was opened. Called from the detail screen's disappearance,
+    /// alongside the meter refresh, so one hook covers both.
+    func recordVisit(_ device: ManagedDeviceSummary) {
+        guard let shortcutStore, let tenantId else { return }
+        shortcuts = shortcutStore.recordVisit(device.id, tenantId: tenantId)
     }
 
     /// Re-reads the meter. Called when the list appears, which includes popping back
@@ -415,6 +469,13 @@ struct DeviceListView: View {
                     .listRowBackground(Color.clear)
             }
 
+            // Only when NOT searching. A search is a deliberate request for one device, and
+            // pinned rows above the results would compete with the thing just asked for.
+            if model.query.isEmpty {
+                shortcutSection("Favourites", model.favouriteDevices, systemImage: "star.fill")
+                shortcutSection("Recent", model.recentDevices, systemImage: "clock")
+            }
+
             ForEach(model.visibleDevices) { device in
                 NavigationLink {
                     // Refresh on the way BACK, not on the list's onAppear. A
@@ -423,9 +484,21 @@ struct DeviceListView: View {
                     // The detail view's disappearance is the actual moment a reveal may
                     // have been spent.
                     detailBuilder(device)
-                        .onDisappear { model.refreshRemaining() }
+                        .onDisappear {
+                            model.refreshRemaining()
+                            model.recordVisit(device)
+                        }
                 } label: {
                     DeviceRow(device: device)
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button {
+                        model.toggleFavourite(device)
+                    } label: {
+                        Label(model.isFavourite(device) ? "Unpin" : "Pin",
+                              systemImage: model.isFavourite(device) ? "star.slash" : "star")
+                    }
+                    .tint(Brand.accent)
                 }
             }
 
@@ -458,6 +531,34 @@ struct DeviceListView: View {
             return "Not every device is loaded (\(loaded) so far). Clear the search and load more to widen it."
         case .idle, .complete:
             return nil
+        }
+    }
+
+    /// A pinned or recent group. Renders nothing when empty, so a fresh install shows no
+    /// scaffolding for lists that do not exist yet.
+    @ViewBuilder
+    private func shortcutSection(
+        _ title: String,
+        _ devices: [ManagedDeviceSummary],
+        systemImage: String
+    ) -> some View {
+        if !devices.isEmpty {
+            Section {
+                ForEach(devices) { device in
+                    NavigationLink {
+                        detailBuilder(device)
+                            .onDisappear {
+                                model.refreshRemaining()
+                                model.recordVisit(device)
+                            }
+                    } label: {
+                        DeviceRow(device: device)
+                    }
+                }
+            } header: {
+                Label(title, systemImage: systemImage)
+                    .font(.footnote)
+            }
         }
     }
 
