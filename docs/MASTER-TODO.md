@@ -1695,9 +1695,36 @@ Decided *by* the contract, because the implementation needed an answer:
   The daily cap trades telemetry for money: when it is hit, ingestion stops until the reset.
   That is the intended direction — fail to no-data rather than to a bill.
 
-  Still to do on App Insights before the Function goes live: failures and platform metrics
-  only, and confirm request/response body collection stays off. The cap bounds the cost; it
-  does not stop a body containing a tenant ID being written, which section 8.2 forbids.
+  ✅ **App Insights verified against contract §8.2 on 2026-09-03 — this item was already
+  done and merely unticked.** Checked because the App Store "Data Collection" declaration
+  depends on it, and answering wrongly there is a false statement to Apple.
+
+  | Check | State |
+  |---|---|
+  | `DisableIpMasking` | `None` → masking ON, client IP stored as `0.0.0.0` |
+  | Retention | 30 days, already the minimum |
+  | `Host.Results` | `Error` → only FAILED requests recorded |
+  | Default log level | `Warning` → no per-invocation trace |
+  | `Azure.Core` / `Azure.Identity` | `Warning` → no line per Key Vault sign or table read |
+  | Tenant ID in logs | Never. All four log calls are literal strings, nothing interpolated |
+  | Request bodies | Not logged — which is why §3.1 puts the tenant ID in the body |
+
+  `LOGGING.md` in the backend repo already documents each setting and why, including that
+  the resolved TIER is never logged either: doing so would leak the customer list one line
+  at a time, defeating the uniform-200 design.
+
+  ⬜ **One residual worth a look, not a blocker.** The three `LogError(ex, …)` calls pass the
+  exception object. An Azure SDK exception could in principle carry a row key — i.e. a tenant
+  ID — in its message. Only reachable on genuine infrastructure failure, never on the
+  unlicensed path, which returns free without throwing. Worth confirming against a real
+  failure some day, or narrowing to `ex.GetType().Name` if diagnostics allow.
+
+  **Consequence: the App Store App Privacy answer is "No, we do not collect data from this
+  app."** No analytics, no telemetry, no crash reporting; MSAL telemetry is opt-in and not
+  wired; free installs never contact the server at all; the licence table is created by a
+  purchase rather than by the app; and what remains is platform HTTP logging with masked
+  IPs, which is not what App Privacy means by collection. The nutrition label will read
+  **Data Not Collected**, which is rare in this category.
 - ✅ Rate limiting per §8.3 shipped in the Function 2026-09-02: source IP plus an HMAC of
   the tid under a per-process random key, in memory, absolute expiry inside the window,
   nothing persisted. Per-instance and therefore approximate, which is documented.
