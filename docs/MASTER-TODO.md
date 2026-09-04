@@ -95,6 +95,55 @@ also becomes the App Store listing's support URL, which Apple requires anyway.
 Natural home for material already written: `SECURITY-ONE-PAGER.md` and
 `NETWORK-TRANSPARENCY.md` are both stronger as web pages than as repo markdown.
 
+## ⬜ iPad support — the natural 1.1, deliberately NOT in 1.0
+
+**Decided 2026-09-03 while assembling the App Store listing.** App Store Connect demanded
+iPad screenshots, which surfaced that the target still had iPad, Mac (Designed for iPad) and
+Apple Vision enabled — none ever tested. All three were removed from **Supported
+Destinations** and 1.0 shipped iPhone-only.
+
+**Why removing them was the right call rather than the lazy one.** Every one of those
+destinations runs the credential reveal path, and the controls protecting it are
+platform-specific behaviours verified only on iPhone: screenshot revocation relies on iOS
+screenshot notifications; app-switcher redaction relies on how iOS snapshots a backgrounded
+app, which a resizable Mac window and a visionOS volume do differently or not at all; the
+privacy cover keys off `scenePhase`; the biometric gate becomes Touch ID on Mac and Optic ID
+on Vision. This project already shipped four bugs that were unreachable in the simulator —
+enabling three untested device classes is that mistake at larger scale, on the screen that
+shows passwords. A reviewer backgrounding a Mac build with a credential visible and finding
+no cover would have been a deserved rejection.
+
+⚠️ **visionOS needs a second switch.** It can run iPhone apps in compatibility mode, so
+removing the Xcode destination is not enough — there is a separate availability toggle under
+**Pricing and Availability** that defaults ON.
+
+### What a good iPad version actually takes
+
+The app suits iPad unusually well: a device list beside a detail pane is exactly what
+`NavigationSplitView` is for. The layout swap is half a day. **The hard parts are all in the
+code that has bitten this project hardest**, and neither is optional:
+
+1. **`.onDisappear` stops firing.** The meter refresh AND the recents recording both hang
+   off the detail view disappearing. In a split view the detail pane is always present and
+   never disappears, so both break — silently, which is the worst kind. CLAUDE.md already
+   records one bug from this exact pattern on `NavigationStack`; split view changes the
+   rules a second time. Needs a different trigger, probably selection change.
+2. **`scenePhase` behaves differently under multitasking.** In Slide Over and Split View an
+   iPad app can be visible but `.inactive`. That interacts directly with the reveal
+   publishing deferral in `DeviceDetailModel` and with `PrivacyCoverModifier` — the two
+   things whose interaction took three attempts to get right on iPhone. The app-switcher
+   redaction needs re-verifying on iPad hardware, and that test is blocking, not optional.
+
+Also needed: iPad screenshots at 2064 × 2752, and both orientations tested.
+
+**Estimate: a full session plus a device-test pass, and it requires an actual iPad.** Do not
+start without one — shipping the credential path untested on a device class is the specific
+mistake this project keeps paying for.
+
+**Do not half-do it.** A stretched iPhone app on iPad earns one-star reviews from iPad users
+and is sometimes rejected outright. Done properly it is also a "now on iPad" post, which is
+worth more than having quietly half-supported it since launch.
+
 ## Memory — WATCH, unresolved 2026-09-03
 
 - 🔵 **Xcode reported the app killed for memory pressure on device.** `IDEDebugSessionErrorDomain`
