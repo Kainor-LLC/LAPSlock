@@ -720,7 +720,10 @@ struct AppRootView: View {
                         isDemo: true,
                         tenantId: nil,
                         meter: RevealMeters.demo,
-                        endSession: { await root.signOut() }
+                        endSession: { await root.signOut() },
+                        // App Review evaluates in demo mode and must be able to reach the
+                        // purchase screen. StoreKit talks to Apple, not to us.
+                        subscriptions: root.subscriptions
                     )
                 },
                 detailBuilder: { device in

@@ -1,0 +1,104 @@
+APP STORE CONNECT — PASTE-READY FIELD VALUES
+Generated 2026-09-03. Copy each block verbatim.
+
+Line breaks matter: App Store Connect preserves them. The description below is
+UNWRAPPED — one line per bullet, one line per paragraph. Do not paste from
+APP-STORE-LISTING.md, which is hard-wrapped for reading in a repo and would put
+stray line breaks and indents into the listing.
+
+═══════════════════════════════════════════════════════════════════════════
+NAME (30 max)
+═══════════════════════════════════════════════════════════════════════════
+LAPSlock
+
+═══════════════════════════════════════════════════════════════════════════
+SUBTITLE (30 max)
+═══════════════════════════════════════════════════════════════════════════
+LAPS & BitLocker on your phone
+
+═══════════════════════════════════════════════════════════════════════════
+PROMOTIONAL TEXT (170 max) — editable later without a new build
+═══════════════════════════════════════════════════════════════════════════
+Retrieve Windows LAPS passwords and BitLocker recovery keys from Entra ID and Intune. Your sign-in, your tenant's audit log, no vendor server in the path.
+
+═══════════════════════════════════════════════════════════════════════════
+DESCRIPTION (4000 max)
+═══════════════════════════════════════════════════════════════════════════
+LAPSlock retrieves Windows LAPS local administrator passwords and BitLocker recovery keys from Microsoft Entra ID and Intune — at the helpdesk bench, in the server room, and everywhere the admin center is not.
+
+BUILT FOR PEOPLE WHO ARE PAID TO BE SUSPICIOUS
+
+• Your sign-in, not ours. LAPSlock uses Microsoft delegated authentication. It can only read what your account can already read, and every retrieval lands in your own tenant's audit log exactly as it would from the admin center.
+• No vendor server in the credential path. Passwords travel from Microsoft Graph to your device over TLS. Kainor never sees them and has no way to.
+• Nothing collected. No analytics, no telemetry, no crash reporting, no account to create. The app talks to Microsoft and, only if your organization activates a license, to one license endpoint that receives your tenant ID and nothing else.
+• Verifiable, not just promised. The source is published for security review, and a ten-minute proxy check confirms every claim above. We would rather you looked than trusted.
+
+WHAT IT DOES
+
+• Search your fleet by device name, serial, model, or the person using it — matching real names and email addresses, because a ticket names a person more often than a machine.
+• Reveal a Windows LAPS password behind Face ID or Touch ID, with the managed account name and the backup date.
+• See previous LAPS passwords where your tenant kept them. A device that stopped checking in is still using an older one, and that is usually the machine you are standing at.
+• Reveal BitLocker recovery keys per volume, each labelled with the key identifier the locked machine is asking for, so you pick the right one instead of guessing.
+• Activate a PIM-eligible role without leaving the bench. LAPSlock reads your organization's own policy first, offers only the durations it permits, and tells you up front if a ticket number or extra verification is required.
+• Switch between customer organizations, for managed service providers. Which organization you are working in is on screen at all times.
+• Pin the devices you keep coming back to, and see the last few you opened.
+• Lock the whole app behind Face ID, separately from the check before each reveal.
+
+WHAT IT DELIBERATELY DOES NOT DO
+
+• Store credentials. A revealed value lives in memory and is destroyed when hidden, on timeout, when the app leaves the foreground, or if a screenshot is detected.
+• Show credentials in the app switcher.
+• Ask for write access unless you turn it on. BitLocker key rotation and role activation are opt-in switches; leave them off and LAPSlock only ever requests read permissions.
+• Read Windows LAPS backed up to Active Directory. LAPSlock reads Entra-backed LAPS. Entra-joined and hybrid-joined devices both work when the policy backs up to Entra ID — a policy targeting Windows Server AD is not readable by any Graph API.
+• Retrieve macOS local admin passwords. Microsoft does not expose them through any working API; LAPSlock shows the metadata and links you to the portal rather than pretending.
+
+FREE AND PAID
+
+Free includes unlimited search and browsing, all metadata, password history, BitLocker keys, copying, role activation, app lock, and five credential reveals per rolling 30 days — enough to prove it works against your own tenant and watch the reads appear in your audit log. A subscription removes the reveal limit. The MSP plan adds switching between customer organizations. Organizations can license by tenant directly from Kainor.
+
+Requires a Microsoft Entra ID account with a directory role permitted to read Windows LAPS passwords or BitLocker keys, and devices managed in Intune or joined to Entra ID.
+
+LAPSlock is an independent product of Kainor LLC and is not affiliated with, endorsed by, or sponsored by Microsoft Corporation. Microsoft, Microsoft Entra, Microsoft Intune, Windows, and BitLocker are trademarks of Microsoft Corporation.
+
+═══════════════════════════════════════════════════════════════════════════
+KEYWORDS (100 max, commas, no spaces)
+═══════════════════════════════════════════════════════════════════════════
+intune,entra,laps,bitlocker,recovery key,local admin,password,azure ad,helpdesk,msp,pim
+
+═══════════════════════════════════════════════════════════════════════════
+URLS
+═══════════════════════════════════════════════════════════════════════════
+Support URL:        https://kainor.com/how-it-works/
+Marketing URL:      https://kainor.com/
+Privacy Policy URL: https://kainor.com/privacy/
+
+═══════════════════════════════════════════════════════════════════════════
+APP REVIEW INFORMATION — Notes
+═══════════════════════════════════════════════════════════════════════════
+LAPSlock is an administrator tool for Microsoft Entra ID and Microsoft Intune. It signs in with the reviewer's own Microsoft work account and can only read what that account is already permitted to read.
+
+HOW TO EVALUATE WITHOUT AN ACCOUNT
+
+You do not need to sign in, and you should not try to. The app requires a Microsoft Entra ID tenant with managed Windows devices and a privileged directory role — we cannot provide one, because it would mean handing out administrative access to a real organization.
+
+Instead, tap "Explore with demo data" on the sign-in screen. That is the full app running against fabricated data, with every screen reachable and a persistent banner marking it as demo. No account, no network access to any tenant.
+
+WHERE TO FIND THE IN-APP PURCHASES
+
+In demo mode, tap the gear icon at the top right of the device list, then scroll to "Subscription". All plans, prices and the free trial are shown there, and the purchase flow works normally in the sandbox.
+
+WHAT THE SUBSCRIPTIONS UNLOCK
+
+The app is fully functional for free. Every feature works — search, BitLocker keys, password history, copying, role activation, app lock — with a limit of five credential reveals per rolling 30 days. A subscription removes that limit. The MSP plan additionally allows switching between customer organizations, which is only meaningful for managed service providers who administer multiple tenants.
+
+The reveal count is stored on the device and on no server. There is deliberately no server-side record of how often any organization retrieves credentials.
+
+ABOUT THE PERMISSIONS
+
+All Microsoft Graph permissions are delegated, never application permissions, so the app has no standing access to any tenant and can do nothing while nobody is signed in. Permissions are requested in stages: reading device inventory at sign-in, credential-reading permission only at the first reveal, and write permissions only if the administrator enables an optional feature in Settings.
+
+There is no Kainor server in the credential path. Passwords travel between the device and Microsoft. The only endpoint we operate returns a licence token for organizations that buy directly, receives a tenant ID and nothing else, and is never contacted at all unless an administrator activates a licence.
+
+NOT AFFILIATED WITH MICROSOFT
+
+LAPSlock is an independent product of Kainor LLC and is not affiliated with, endorsed by, or sponsored by Microsoft Corporation. This is stated in the app, in the App Store description, and on kainor.com.
