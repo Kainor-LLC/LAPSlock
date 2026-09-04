@@ -107,10 +107,13 @@ Natural home for material already written: `SECURITY-ONE-PAGER.md` and
   device set is capped at 5,000 by `InventoryFill` — and both available tenants are a single
   page, so 2026-09-03's additions hold kilobytes.
 
-  **Cheapest next test: the TestFlight archive.** A Release build carries none of that
-  instrumentation, so if it does not reproduce there it was the debug session. If it does,
-  hunt it with Instruments → Allocations, and watch the Xcode memory gauge while the app sits
-  IDLE — steady growth with no interaction is the signal that it is ours.
+  ✅ **RESOLVED 2026-09-03 — it was the debug session.** Build 6 on TestFlight is a Release
+  build with none of that instrumentation, and normal use did not reproduce the crash. The
+  21-minute LLDB session with view debugging injected was the cause, not the app.
+
+  Keep the diagnostic in mind rather than the conclusion: for a memory report, check whether
+  it reproduces on a Release build BEFORE hunting it in code. A debug session long enough to
+  be worth reporting is also long enough to have caused it.
 
   Found while looking, unrelated to memory but real: **`DeviceListModel(...)` is constructed
   on every parent body evaluation** and discarded by `@StateObject`. Pre-existing and
@@ -1194,8 +1197,9 @@ macOS password retrieval.
      a "Stop waiting" button now, and reopening Settings clears a stale one. Safe because the
      outcome still arrives through the listener.
 
-  ⬜ **Still unproven in a shipped build**: bugs 3 and 4 were fixed after the last TestFlight
-  upload. Build 6 needs to exercise cancel-mid-purchase against a real store.
+  ✅ **Verified in a shipped build 2026-09-03.** Build 6 exercised cancel-mid-purchase
+  against the real store; the spinner clears and the unfinished-transaction sweep is in
+  place. Every part of the subscription path is now confirmed on hardware.
 
   Notes for later, learned the hard way:
   * **TestFlight uses the real Apple ID**, not the Sandbox Apple Account slot. That slot is
