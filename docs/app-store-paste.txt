@@ -51,12 +51,12 @@ WHAT IT DELIBERATELY DOES NOT DO
 • Store credentials. A revealed value lives in memory and is destroyed when hidden, on timeout, when the app leaves the foreground, or if a screenshot is detected.
 • Show credentials in the app switcher.
 • Ask for write access unless you turn it on. BitLocker key rotation and role activation are opt-in switches; leave them off and LAPSlock only ever requests read permissions.
-• Read Windows LAPS backed up to Active Directory. LAPSlock reads Entra-backed LAPS. Entra-joined and hybrid-joined devices both work when the policy backs up to Entra ID — a policy targeting Windows Server AD is not readable by any Graph API.
+• Read Windows LAPS backed up to Active Directory. LAPSlock reads Entra-backed LAPS. Entra-joined and hybrid-joined devices both work when the policy backs up to Entra ID — a policy targeting Windows Server AD is not readable via Graph.
 • Retrieve macOS local admin passwords. Microsoft does not expose them through any working API; LAPSlock shows the metadata and links you to the portal rather than pretending.
 
 FREE AND PAID
 
-Free includes unlimited search and browsing, all metadata, password history, BitLocker keys, copying, role activation, app lock, and five credential reveals per rolling 30 days — enough to prove it works against your own tenant and watch the reads appear in your audit log. A subscription removes the reveal limit. The MSP plan adds switching between customer organizations. Organizations can license by tenant directly from Kainor.
+Free includes unlimited search and browsing, all metadata, password history, BitLocker keys, copying, role activation, app lock, and five credential reveals per rolling 30 days — enough to prove it works against your own tenant and see the reads in your audit log. A subscription removes the reveal limit. The MSP plan adds switching between customer organizations. Organizations can license by tenant directly from Kainor.
 
 Requires an Entra ID account with a role permitted to read Windows LAPS passwords or BitLocker keys, and devices in Intune or Entra ID.
 
