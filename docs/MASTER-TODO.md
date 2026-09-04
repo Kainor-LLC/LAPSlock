@@ -2338,3 +2338,103 @@ Neither is on the critical path, both are small:
 - **Register nothing else.** `lapslock.com` and `.app` are done, USPTO and App Store
   searches are clear, and the trademark filing waits for the attorney pass so name
   clearance and the "LAPS is Microsoft's product name" question get handled together.
+
+---
+
+# Android — assessment, 2026-09-04
+
+Founder asked how hard a port would be, noting there is no Android device to test on. This
+is the honest answer, written before any of the prerequisites below exist, so nobody reads a
+bare "Android" line item later and underestimates it.
+
+## The one-sentence version
+
+**Nothing ports as code; everything ports as design. It is a second product, not a port.**
+
+Swift and SwiftUI have no path to Android. Kotlin Multiplatform shares *Kotlin*, so it only
+helps if the core were rewritten in Kotlin — which is rewriting the iOS app too. Flutter or
+React Native mean rewriting both. Swift's own cross-platform efforts are not something to
+ship a credential app on. So the realistic route is a **native Kotlin / Jetpack Compose app**
+built from the same documents: the contracts, the module isolation rules, the reveal
+ordering, the threat model. That design work is the expensive part of what exists today, and
+it is fully reusable. Every line of code is new.
+
+## What ports as design, unchanged
+
+- `ENTITLEMENT-API.md` and the ES256 verification — `java.security` handles P-256/SHA-256.
+- The Graph surface: inventory, LAPS, BitLocker, PIM. Pure HTTP and JSON.
+- The reveal ordering (meter → gate → fetch → publish → charge) and the reasons for it.
+- The entitlement merge lattice (`SubscriptionEntitlement.merge`) — Play Billing supplies the
+  subscription side instead of StoreKit; the logic is identical.
+- Module isolation as a *rule*: Gradle modules with a Konsist or ArchUnit test standing in
+  for `isolation-check.sh`. The guarantee is portable; the script is not.
+- Demo mode, for exactly the same Play review reason.
+
+## Where Android is genuinely BETTER
+
+- **`FLAG_SECURE`** blocks screenshots and screen recording at the OS level and blanks the app
+  in the recents switcher. iOS can only *detect* a screenshot after the pixels have left; the
+  two failed `ScreenPrivacy` fixes on this project would not have needed to exist. This is the
+  single strongest argument for the port: the credential screen's hardest problem is solved
+  by one window flag.
+- **MSAL for Android** is mature, and the broker (Authenticator or Company Portal) installs
+  on Play-Store emulator images, so the broker path is testable without hardware in a way the
+  iOS simulator never allowed.
+
+## Where Android is genuinely WORSE, and these are design problems
+
+1. **The reveal meter relies on the Keychain surviving reinstall.** That is the whole reason
+   it is in the Keychain and not UserDefaults — deleting and reinstalling must not reset the
+   free tier. Android has no equivalent: app data, Keystore entries included, is wiped on
+   uninstall. So on Android **the free tier resets on reinstall.** The fix that respects
+   "count locally, never on a server" does not exist; anything else (Play Integrity plus a
+   server-side count) contradicts the privacy policy's central claim. Honest answer: accept
+   that the Android free tier is gameable by reinstall, treat the meter as a nudge rather than
+   a wall there, and say so nowhere in marketing.
+2. **`SensitiveValue` cannot be reproduced faithfully on the JVM.** Kotlin `String` is
+   immutable and garbage-collected; you cannot wipe it. The discipline is `CharArray` /
+   `ByteArray` end to end with explicit zeroing and never a `String` on the credential path —
+   and the JVM will fight that at every API boundary (`TextView` wants a `CharSequence`). It
+   is achievable, but it is a discipline maintained against the platform rather than with it,
+   and it is the kind that erodes.
+3. **Clipboard.** Android 13+ hides sensitive-content previews (`EXTRA_IS_SENSITIVE`) and
+   there is no Universal Clipboard, but some OEMs sync clipboards to their own clouds and
+   there is no API to opt out. Expiry is app-implemented as on iOS.
+4. **Fragmentation.** Biometric behaviour, background-restriction policies and clipboard
+   handling vary by OEM in ways iOS does not. "Works on a Pixel" is not "works".
+
+## Testing without a device — and why that is not good enough
+
+The emulator covers more than the iOS simulator does: broker sign-in, `FLAG_SECURE`, Play
+Billing test tracks, simulated biometrics. **It is enough to build against, not to ship
+from.** This project's most expensive lesson (CLAUDE.md) is four bugs that were unreachable
+off-device. A credential app shipped to a platform it has never run on would be repeating
+that with the stakes raised. A used Pixel a-series is roughly $150–200 and is the actual
+prerequisite, not a nice-to-have.
+
+Play Console note: the 14-day / 12-tester closed-testing requirement applies to *personal*
+developer accounts created after late 2023. Kainor LLC registering as an organization is not
+subject to it. Google's revenue share is 15% on the first $1M, matching Apple's small
+business rate.
+
+## Effort, honestly
+
+The iOS app took weeks of work and roughly a dozen bugs found only on hardware. Feature
+parity on Android is **several weeks minimum**, plus a device-test cycle, plus Play review.
+And the initial build is the smaller cost: **two codebases double every future change.**
+Every feature, every fix, every contract revision, twice — for one person. That ongoing tax
+is the real decision, and it should be made knowingly.
+
+## Prerequisites — do not start before all of these
+
+1. iOS 1.0 is live and has real users.
+2. The public roadmap / feedback mechanism exists and **Android demand has been measured,
+   not assumed.** IT admins are a mixed-platform population; some organizations are
+   Android-heavy. The number matters and it is currently unknown.
+3. An Android device is in hand.
+4. iPad and Stripe are done — both are smaller, both are already committed to.
+
+If the demand is there, the design documents make this a well-specified build rather than a
+research project, and `FLAG_SECURE` makes the hardest screen easier than it was on iOS. If
+the demand is not there, the ongoing two-codebase tax is not worth paying for a platform
+nobody asked for.
