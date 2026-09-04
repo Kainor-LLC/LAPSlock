@@ -144,6 +144,26 @@ mistake this project keeps paying for.
 and is sometimes rejected outright. Done properly it is also a "now on iPad" post, which is
 worth more than having quietly half-supported it since launch.
 
+## App Review — first submission REJECTED 2026-09-04 (automated, metadata only)
+
+**Reason:** *"The submission offers auto-renewable subscriptions but does not include a
+functional link to the Terms of Use (EULA) in the app metadata."* Guideline 3.1.2. Not a
+build problem — the binary is untouched and the same build resubmits.
+
+**Fix applied:** the standard Apple EULA
+(`https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`) is now the last line of
+the description in `docs/app-store-paste.txt`. The requirements sentence was tightened by ~40
+characters to make room, because the description was at 3,957 of 4,000.
+
+**Why standard rather than our own `/terms/`, which IS a real EULA:** a custom EULA must
+carry Apple's Schedule 2 minimum terms or is itself rejected, and the attorney pass on our
+terms has not happened. Standard for launch; ⬜ **revisit `/terms/` as a custom EULA** during
+the attorney review already queued — upload it under App Information → License Agreement.
+
+⬜ **Next build:** add Terms of Use and Privacy Policy links to the in-app Subscription
+section footer. Not what this rejection cited, but 3.1.2 also expects them near the purchase
+UI and the next reviewer may look. Metadata fix now, in-app links with 1.0.1.
+
 ## Memory — WATCH, unresolved 2026-09-03
 
 - 🔵 **Xcode reported the app killed for memory pressure on device.** `IDEDebugSessionErrorDomain`
