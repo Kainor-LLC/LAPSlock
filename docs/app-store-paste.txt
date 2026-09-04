@@ -1,5 +1,7 @@
 APP STORE CONNECT — PASTE-READY FIELD VALUES
-Generated 2026-09-03. Copy each block verbatim.
+Generated 2026-09-03, revised 2026-09-04 after App Review's automated rejection: apps with
+auto-renewable subscriptions must link a Terms of Use (EULA) in the product-page metadata.
+The standard Apple EULA is linked at the end of the description. Copy each block verbatim.
 
 Line breaks matter: App Store Connect preserves them. The description below is
 UNWRAPPED — one line per bullet, one line per paragraph. Do not paste from
@@ -56,9 +58,11 @@ FREE AND PAID
 
 Free includes unlimited search and browsing, all metadata, password history, BitLocker keys, copying, role activation, app lock, and five credential reveals per rolling 30 days — enough to prove it works against your own tenant and watch the reads appear in your audit log. A subscription removes the reveal limit. The MSP plan adds switching between customer organizations. Organizations can license by tenant directly from Kainor.
 
-Requires a Microsoft Entra ID account with a directory role permitted to read Windows LAPS passwords or BitLocker keys, and devices managed in Intune or joined to Entra ID.
+Requires an Entra ID account with a role permitted to read Windows LAPS passwords or BitLocker keys, and devices in Intune or Entra ID.
 
 LAPSlock is an independent product of Kainor LLC and is not affiliated with, endorsed by, or sponsored by Microsoft Corporation. Microsoft, Microsoft Entra, Microsoft Intune, Windows, and BitLocker are trademarks of Microsoft Corporation.
+
+Terms of Use: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 
 ═══════════════════════════════════════════════════════════════════════════
 KEYWORDS (100 max, commas, no spaces)
