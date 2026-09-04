@@ -555,7 +555,18 @@ struct SettingsView: View {
     /// two sections follow opposite rules on purpose. Do not "harmonise" them.
     @ViewBuilder
     private var subscriptionSection: some View {
-        if let subscriptions, !isDemo, hasSession {
+        // VISIBLE IN DEMO MODE, and that is deliberate rather than an oversight.
+        //
+        // App Review cannot sign into a customer's Entra tenant — that is the whole reason
+        // demo mode exists (Guideline 2.1). If the purchase screen were reachable only after
+        // signing in, a reviewer could never see it, and "in-app purchase not functional" is
+        // a routine rejection. Hidden only while signed OUT, where there is no Settings sheet
+        // to speak of anyway.
+        //
+        // Nothing about this reaches Kainor: StoreKit talks to Apple. The rule that a demo
+        // install must have no path to our server is about the entitlement client, which is
+        // still nil here.
+        if let subscriptions, hasSession || isDemo {
             Section {
                 if subscriptions.entitlement.isActive {
                     LabeledContent("Plan", value: activePlanName(subscriptions))
