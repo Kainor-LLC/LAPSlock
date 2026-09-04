@@ -1548,14 +1548,15 @@ deals.
 | Individual Pro (IAP) | $1.99/mo or $19.99/yr | |
 | MSP Pro (IAP, per technician) | $49.99/yr | adds tenant switching |
 | Enterprise (direct, tenant-keyed) | $299/yr ≤500 devices · $599/yr unlimited | |
-| MSP org (direct) | $999/yr | ⚠️ see below |
+| MSP org (direct) | $899/yr | decided 2026-09-03, see below |
 
 $299 and $599 sit deliberately below the procurement line. Above roughly $1,000 an
 enterprise purchase triggers vendor onboarding, security questionnaires, and a PO. Below it,
 a manager expenses it. Staying under that line is worth more than the extra revenue.
 
-- ⚠️ **MSP org at $999 crosses back over that line.** Either drop to $899 to stay under, or
-  accept that MSPs are less bureaucratic about it. Founder's call, still open.
+- ✅ **MSP org: $899/yr — DECIDED 2026-09-03.** Founder chose to stay under the procurement
+  line rather than bet on MSPs being less bureaucratic about it. The pricing table above
+  should be read with this figure, not $999.
 - ✅ Apple Small Business Program — enrolled, 15% commission on IAP
 
 ## Two UX rules
@@ -1781,8 +1782,9 @@ Decided *by* the contract, because the implementation needed an answer:
   Azure failure its HTTP `Status` and `ErrorCode` — fixed enumerations that keep the
   diagnostics a support case needs and cannot carry an identifier. Never the message. Five
   tests, including one that builds a realistic Table exception with the tenant GUID in its
-  URI and asserts it does not survive. **Needs deploying**:
-  `func azure functionapp publish kainor-lapslock-prod-func` from the backend repo.
+  URI and asserts it does not survive. **Deployed 2026-09-03** with
+  `func azure functionapp publish kainor-lapslock-prod-func`; host reported Running and the
+  single `Entitlement` trigger at the expected URL.
 
   **Consequence: the App Store App Privacy answer is "No, we do not collect data from this
   app."** No analytics, no telemetry, no crash reporting; MSAL telemetry is opt-in and not
