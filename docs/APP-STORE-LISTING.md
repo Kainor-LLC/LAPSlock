@@ -42,27 +42,42 @@ BUILT FOR PEOPLE WHO ARE PAID TO BE SUSPICIOUS
 
 WHAT IT DOES
 
-• Search your device inventory by name, serial, or the assigned user.
-• Reveal a Windows LAPS password behind Face ID or Touch ID, with the account name and
-  the next rotation date.
-• Reveal BitLocker recovery keys per volume, with backup dates, so you pick the right one.
-• See rotation and expiry so you know what you are looking at.
-• Copy with a clipboard that expires and never syncs to other devices.
+• Search your fleet by device name, serial, model, or the person using it — matching real
+  names and email addresses, because a ticket names a person more often than a machine.
+• Reveal a Windows LAPS password behind Face ID or Touch ID, with the managed account name
+  and the backup date.
+• See previous LAPS passwords where your tenant kept them. A device that stopped checking
+  in is still using an older one, and that is usually the machine you are standing at.
+• Reveal BitLocker recovery keys per volume, each labelled with the key identifier the
+  locked machine is asking for, so you pick the right one instead of guessing.
+• Activate a PIM-eligible role without leaving the bench. LAPSlock reads your
+  organization's own policy first, offers only the durations it permits, and tells you up
+  front if a ticket number or extra verification is required.
+• Switch between customer organizations, for managed service providers. Which organization
+  you are working in is on screen at all times.
+• Pin the devices you keep coming back to, and see the last few you opened.
+• Lock the whole app behind Face ID, separately from the check before each reveal.
 
 WHAT IT DELIBERATELY DOES NOT DO
 
 • Store credentials. A revealed value lives in memory and is destroyed when hidden, on
   timeout, when the app leaves the foreground, or if a screenshot is detected.
 • Show credentials in the app switcher.
+• Ask for write access unless you turn it on. BitLocker key rotation and role activation
+  are opt-in switches; leave them off and LAPSlock only ever requests read permissions.
+• Read Windows LAPS backed up to Active Directory. LAPSlock reads Entra-backed LAPS.
+  Entra-joined and hybrid-joined devices both work when the policy backs up to Entra ID —
+  a policy targeting Windows Server AD is not readable by any Graph API.
 • Retrieve macOS local admin passwords. Microsoft does not expose them through any working
   API; LAPSlock shows the metadata and links you to the portal rather than pretending.
 
-FREE AND PRO
+FREE AND PAID
 
-Free includes unlimited search and browsing, all metadata, and five credential reveals per
-rolling 30 days — enough to prove it works against your own tenant and watch the reads
-appear in your audit log. Pro removes the limit and adds copy to clipboard and BitLocker
-key rotation. Organizations can license by tenant directly from Kainor.
+Free includes unlimited search and browsing, all metadata, password history, BitLocker
+keys, copying, role activation, app lock, and five credential reveals per rolling 30 days —
+enough to prove it works against your own tenant and watch the reads appear in your audit
+log. A subscription removes the reveal limit. The MSP plan adds switching between customer
+organizations. Organizations can license by tenant directly from Kainor.
 
 Requires a Microsoft Entra ID account with a directory role permitted to read Windows LAPS
 passwords or BitLocker keys, and devices managed in Intune or joined to Entra ID.
@@ -73,10 +88,13 @@ Windows, and BitLocker are trademarks of Microsoft Corporation.
 
 ## Keywords (100)
 
-intune,entra,laps,bitlocker,recovery key,local admin,password,azure ad,helpdesk,sysadmin
+intune,entra,laps,bitlocker,recovery key,local admin,password,azure ad,helpdesk,msp,pim
 
-*(96 characters. "LAPS" is already in the name and is indexed from there; it is repeated
-because keyword matching on the name is not guaranteed to be exact.)*
+*(87 characters.) Changes from the first draft: dropped `sysadmin`, which overlaps
+`helpdesk` and is a word people describe themselves with rather than search with. Added
+`msp`, which is how that whole buyer segment self-identifies and is now a real tier, and
+`pim`, which nothing else in this category does from a phone. "LAPS" is repeated from the
+name because matching on the name is not guaranteed to be exact.*
 
 ## Notes on choices
 
@@ -89,3 +107,12 @@ because keyword matching on the name is not guaranteed to be exact.)*
 - **No prices in the description.** They change; the IAP sheet shows them.
 - **The disclaimer is in the description**, not only in Settings, because Apple has
   rejected apps for implied affiliation and because the same sentence is on the website.
+- **Two limitations are stated in the listing, not buried.** macOS reveal is impossible,
+  and AD-backed LAPS is unreadable. Both cost a few installs from people the app cannot
+  help — and save the one-star review from someone who bought first and found out after.
+  The AD one was added 2026-09-03 after checking the Graph surface properly.
+- **Revised 2026-09-03** for everything that landed after the first draft: password
+  history, PIM activation, tenant switching, favourites and app lock. The Free/Paid
+  section was also rewritten — copy to clipboard and BitLocker rotation are NOT gated any
+  more, so claiming them as paid features would have been false advertising in the
+  listing itself.
