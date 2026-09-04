@@ -3,9 +3,50 @@
 Paste or attach this at the start of a new chat. Attach `docs/MASTER-TODO.md` alongside it
 for the full backlog; this file is just enough to resume without re-explaining.
 
-Last updated: 2026-09-02, end of an autonomous session. **Start at the "For Connor when
-back" block at the top of `MASTER-TODO.md`** — it lists what needs a phone, what needs a
-decision, and what was deliberately not attempted.
+Last updated: **2026-09-03 — 1.0 SUBMITTED TO THE APP STORE, awaiting review.**
+
+---
+
+## WHERE THINGS ACTUALLY STAND, 2026-09-03
+
+**Version 1.0 is with App Review**, together with the three subscriptions (a first
+subscription group must be submitted alongside an app version). Nothing is blocked and
+nothing is half-finished. Read this before opening `MASTER-TODO.md`, which is long.
+
+**Shipped in 1.0:** device search over the whole tenant, LAPS reveal with password history,
+BitLocker keys per volume, just-in-time PIM role activation reading the tenant's own policy,
+MSP tenant switching, favourites and recents, optional app lock, optional user-name lookup,
+silent session restore, and Apple subscriptions — all verified on hardware.
+
+**Everything supporting it is live:** kainor.com moved to Cloudflare Pages with mail intact,
+`/how-it-works/` written as the App Store support URL, App Privacy published as **Data Not
+Collected**, and the entitlement Function verified against contract §8.2.
+
+### If Apple comes back with a question
+
+The review notes in `docs/app-store-paste.txt` already answer the two likely ones: how to
+evaluate without an Entra tenant (demo mode), and why the Graph permissions are what they
+are. `docs/APP-STORE-3-1-3.md` covers anything about purchasing.
+
+### When it is approved
+
+1. **Marketing.** r/Intune and r/msp first — r/sysadmin removes most self-promotion. Lead
+   with the source-available code and the proxy-verifiable network claims, not a feature
+   list; that is the thing competitors cannot copy quickly.
+2. **Stripe checkout**, then the `/stripe-webhook` that turns a payment into a licence row.
+   Deliberately later: inserting the first few rows by hand is fine, and those conversations
+   are where you learn what enterprises actually need.
+3. **iPad**, as a real 1.1 with `NavigationSplitView`. iPhone-only shipped on purpose —
+   see the note in `MASTER-TODO.md` about `.onDisappear` and `scenePhase` under
+   multitasking, both of which break the reveal path if iPad is bolted on carelessly.
+4. **Trademark**, if there is revenue. Not required: rights come from use in commerce.
+
+### Two open threads worth remembering
+
+- **`LogError(ex, …)` in the entitlement Function** passes the exception object, which could
+  in principle carry a tenant ID from an Azure SDK message. Failure paths only.
+- **Search is unverified on a large tenant.** Neither available tenant has more than one
+  page of devices. The fill caps at 50 pages / 5,000 devices, and that cap is one line.
 
 ---
 
