@@ -1146,7 +1146,15 @@ macOS password retrieval.
   without scrolling or tapping "Load more", which is the exact case that used to return
   nothing. The "no devices match" state was also correct once loading finished.
 
-  ⚠️ **Still unverified on a large tenant** — neither available tenant has more than one page. The
+  ✅ **CORRECTION 2026-09-03 — verified on a six-page tenant, and the earlier claim was wrong.**
+  The work tenant holds ~600 devices at 100 per page, so the fill has paged five extra pages
+  on every launch since it was built, across many sessions of PIM, favourites and
+  subscription testing, and search located the device asked for. "Neither tenant has more
+  than one page" was asserted without ever checking and then repeated in three places. The
+  founder caught it. What remains genuinely untested is only the **50-page cap itself**,
+  which is a ceiling, not a path — and is one line to raise.
+
+  Original caveat, now superseded: neither available tenant has more than one page. The
   demo provider pages at 8 and exercises every state; the 9 InventoryKit tests cover cap,
   throttle, failure, cancellation and exhaustion. A customer with thousands of devices is
   the real test, and the cap is one line if they need more.
@@ -1762,11 +1770,19 @@ Decided *by* the contract, because the implementation needed an answer:
   the resolved TIER is never logged either: doing so would leak the customer list one line
   at a time, defeating the uniform-200 design.
 
-  ⬜ **One residual worth a look, not a blocker.** The three `LogError(ex, …)` calls pass the
-  exception object. An Azure SDK exception could in principle carry a row key — i.e. a tenant
-  ID — in its message. Only reachable on genuine infrastructure failure, never on the
-  unlicensed path, which returns free without throwing. Worth confirming against a real
-  failure some day, or narrowing to `ex.GetType().Name` if diagnostics allow.
+  ✅ **Residual closed 2026-09-03.** The three `LogError(ex, …)` calls passed the exception
+  object, and `ILogger` serialises the whole chain including `InnerException.Message`. Both
+  wrapper exceptions carry Azure's `RequestFailedException` inside, and an Azure Table
+  exception message contains the request URI, which contains the row key, which IS the tenant
+  ID. So a table outage would have logged the one identifier §8.2 forbids — on the failure
+  path, when nobody is reading the logs for content.
+
+  Replaced with `EntitlementFunction.SafeDetail(ex)`: the inner exception's type, plus for an
+  Azure failure its HTTP `Status` and `ErrorCode` — fixed enumerations that keep the
+  diagnostics a support case needs and cannot carry an identifier. Never the message. Five
+  tests, including one that builds a realistic Table exception with the tenant GUID in its
+  URI and asserts it does not survive. **Needs deploying**:
+  `func azure functionapp publish kainor-lapslock-prod-func` from the backend repo.
 
   **Consequence: the App Store App Privacy answer is "No, we do not collect data from this
   app."** No analytics, no telemetry, no crash reporting; MSAL telemetry is opt-in and not
@@ -2039,7 +2055,13 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   `pull_request_target` with `pull-requests: write` only and never checks out PR code.
 - ~~⬜ Contributions policy: issues on, pull requests off~~ (sole copyright holder = you can
   relicense and enforce without hunting contributors)
-- 🔵 Launch posts: r/Intune, r/msp, Intune blog circuit
+- ✅ **Launch posts DRAFTED 2026-09-03 — `docs/LAUNCH-POSTS.md`.** Three posts: r/Intune (leads
+  with how to verify the network claims, states limits plainly), r/msp (the consent model is
+  the body, because that is the MSP buyer's real question), and the macOS LAPS 500 technical
+  write-up, which is the one that gets shared and the way into r/sysadmin. Sequenced with
+  days between them; blocked on App Review approval, and Post 3 on the Microsoft support
+  case. Two hard rules in the file: never name or hint at the employer, and disclose the
+  commercial interest in the first paragraph every time.
 - 🔵 File the Microsoft support case for the macOS 500 (request ID
   `d4576653-30f5-44ae-8790-06fff930667f`) — the only path to macOS ever working
 
