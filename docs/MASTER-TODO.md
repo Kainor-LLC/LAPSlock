@@ -1775,7 +1775,36 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 # Payments
 
 - ✅ Business bank account (LLC, linked to Apple)
-- ⬜ **Move the marketing site to Cloudflare Pages** — required before adding checkout,
+- ✅ **Marketing site moved to Cloudflare Pages — DONE 2026-09-03.** Zone on Cloudflare,
+  Pages project `kainor-site` building from `docs` with no build command, `kainor.com` and
+  `www` as custom domains, SSL mode Full. Email verified working throughout; the site never
+  went down, because every record was replicated before the nameserver switch so both zones
+  answered equivalently during propagation.
+
+  Things worth remembering from it:
+  * **The email was iCloud, not Microsoft 365** — MX to `mx01/mx02.mail.icloud.com`, SPF
+    `include:icloud.com`, DKIM at `sig1._domainkey`. An earlier assumption of M365 was wrong.
+  * **Cloudflare's import missed three records**: the `ddns` A record, the `synology` CNAME,
+    and the `_github-pages-challenge` TXT. Its own scan warning was right — always diff
+    against the registrar's panel, not against `dig`, which only finds what you ask for.
+  * **Cloudflare defaulted every CNAME to Proxied**, including DKIM. Proxying a
+    `_domainkey` CNAME breaks mail signing. All mail records must be DNS-only/grey.
+  * **Dynamic DNS had to be rebuilt.** The UniFi Dream Machine was updating `ddns` through
+    Namecheap's API; after delegation that writes to a zone nobody reads, silently. Moved to
+    UniFi's native `cloudflare` provider — service `cloudflare`, hostname `ddns.kainor.com`,
+    **username is the ZONE (`kainor.com`), not an email**, password a scoped API token
+    (Zone → DNS → Edit, kainor.com only). Verified by pointing the record at 192.0.2.1 and
+    watching it correct itself. Note `inadyn` compares against its own cache, not DNS, so
+    forcing a write means deleting and recreating the entry rather than re-saving it.
+  * **`.com` delegation has a 48-hour TTL**, so `dig @1.1.1.1 ... NS` kept reporting Namecheap
+    long after the change took. `dig @a.gtld-servers.net kainor.com NS +short` reads the
+    registry directly and is the honest check.
+  * `media` and `synology` resolve to private addresses on the LAN — that is the Dream
+    Machine's split-horizon DNS, not a fault. Verify those publicly with `dig @1.1.1.1`.
+
+  Old note, retained: required before adding checkout, because GitHub Pages prohibits sites
+  primarily facilitating commercial transactions. Original text follows.
+- ⬜ ~~Move the marketing site to Cloudflare Pages~~ — required before adding checkout,
   because GitHub Pages prohibits sites primarily facilitating commercial transactions.
   Connect the repo, **no build command, output directory `docs`**, add `kainor.com` and `www`
   as custom domains.
