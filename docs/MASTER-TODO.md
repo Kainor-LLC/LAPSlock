@@ -1951,7 +1951,14 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 - ⬜ Payment Link with a domain/tenant-ID custom field
 - ⬜ Stripe Invoicing (ACH, PO numbers, net-30) for enterprise/MSP
 - ⬜ Stripe Tax on
-- ⬜ Domain → tenant GUID resolution via OIDC discovery
+- ✅ **Domain → tenant GUID resolution — DONE 2026-09-04** as `scripts/new-licence.sh` in the
+  backend repo. Reads Microsoft's public OIDC discovery document for the domain the customer
+  typed at checkout; the `issuer` field carries the tenant GUID, no sign-in or permission
+  involved. Verified against kainor.com; an unknown domain returns `invalid_tenant` and the
+  script says so instead of guessing. It computes the one-year term and PRINTS the insert
+  command with the `Edm.DateTime` annotations — never runs it. A human reviews the GUID before
+  the production licence table is touched. This is the manual fulfilment path until the
+  webhook exists, and the same resolution the webhook will use.
 - ⬜ Revisit Paddle/Lemon Squeezy as merchant of record if international orders appear
 
 ---
