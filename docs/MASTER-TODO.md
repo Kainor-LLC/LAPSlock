@@ -1965,8 +1965,10 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   Payments off, text custom field whose label contains "tenant", metadata `tier` =
   `enterprise` on BOTH Enterprise links / `msp` on the MSP link, and `plan` =
   `enterprise500` / `enterprise` / `msp`.
-- ⬜ `/pricing/` page on the site — **after the new link URLs exist.** Separate from
-  `/how-it-works/`, never linked from inside the app (3.1.3).
+- ✅ `/pricing/` page — **built 2026-09-04** at `docs/pricing/index.html` against the three
+  recreated Payment Links. Linked from the home page nav and footer ONLY. `/how-it-works/`
+  is the in-app support URL and deliberately does not link to it (3.1.3); neither do
+  `/privacy/` or `/terms/`. Keep it that way.
 - ⬜ Stripe Invoicing (ACH, PO numbers, net-30) for enterprise/MSP — per deal, nothing to
   configure up front. Confirm US bank account is On in the payment method configuration now
   that Managed Payments is off.

@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LAPSlock pricing · Kainor LLC</title>
+<meta name="description" content="LAPSlock is free to evaluate with five credential reveals a month. Pro is in the app. Enterprise and MSP organisation licences are bought here, keyed to your Entra tenant, with no per-user setup.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131E2E'/%3E%3Ctext x='32' y='45' font-family='Arial Narrow, Arial, sans-serif' font-size='38' font-weight='700' fill='%23D9480F' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F4F7; --card:#FFFFFF; --ink:#131E2E; --ink-soft:#22314A;
+    --steel:#51617A; --mist:#A9B6C6; --signal:#D9480F; --line:#C9D2DD; --line-dark:#2C3C58;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);
+    font-family:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px}
+  .narrow{max-width:760px}
+  a{color:var(--signal)}
+  a:hover{color:#BF3E0C}
+  a:focus-visible{outline:3px solid var(--signal);outline-offset:3px;border-radius:2px}
+  .display{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;
+    line-height:1.05;letter-spacing:.2px;text-transform:uppercase}
+  .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--signal);font-weight:500}
+
+  header.top{background:var(--ink);color:#F4F7FB}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:22px 0;border-bottom:1px solid var(--line-dark)}
+  .brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
+  .brand .k{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;
+    letter-spacing:.06em;text-transform:uppercase}
+  .brand .llc{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:var(--mist)}
+  nav a{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;text-decoration:none;color:var(--mist);margin-left:22px}
+  nav a:hover{color:#fff}
+  nav a[aria-current]{color:#fff}
+  .head-main{padding:56px 0 44px}
+  h1{font-size:clamp(36px,6vw,60px)}
+  .lede{margin-top:18px;max-width:640px;font-size:19px;color:#D5DDE8}
+  .updated{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+    letter-spacing:.1em;color:var(--mist)}
+
+  main{padding:48px 0 24px}
+  h2.sec{font-size:clamp(24px,3.4vw,32px);margin:48px 0 8px}
+  .sec-sub{color:var(--steel);margin-bottom:22px;max-width:640px}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin-bottom:14px;color:var(--ink-soft)}
+  ul,ol{margin:0 0 16px 22px;color:var(--ink-soft)}
+  li{margin-bottom:8px}
+  code{font-family:'IBM Plex Mono',monospace;font-size:14px;background:rgba(0,0,0,.05);
+    padding:2px 5px;border-radius:3px;overflow-wrap:anywhere}
+
+  /* Direct-purchase cards */
+  .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:8px 0 12px}
+  @media (max-width:820px){ .plans{grid-template-columns:1fr} }
+  .plan{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:26px 24px 24px;display:flex;flex-direction:column}
+  .plan.featured{border-color:var(--ink);box-shadow:0 8px 28px rgba(19,30,46,.08)}
+  .plan .eyebrow{margin-bottom:10px}
+  .plan h3{margin:0 0 6px;font-size:22px}
+  .plan .who{color:var(--steel);font-size:15.5px;min-height:3.2em;margin-bottom:18px}
+  .price{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;font-variant-numeric:tabular-nums}
+  .price .amt{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:48px;line-height:1;letter-spacing:.2px}
+  .price .per{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--steel)}
+  .price-note{font-size:14px;color:var(--steel);margin-bottom:20px}
+  .plan ul{list-style:none;margin:0 0 24px 0;font-size:15.5px}
+  .plan li{padding-left:22px;position:relative;margin-bottom:8px}
+  .plan li::before{content:"";position:absolute;left:0;top:.62em;width:10px;height:2px;background:var(--signal)}
+  .plan .spacer{flex:1}
+  .buy{display:block;text-align:center;text-decoration:none;font-weight:600;font-size:16px;
+    padding:13px 18px;border-radius:7px;background:var(--ink);color:#fff;border:2px solid var(--ink)}
+  .buy:hover{background:#0B1320;color:#fff}
+  .plan.featured .buy{background:var(--signal);border-color:var(--signal)}
+  .plan.featured .buy:hover{background:#BF3E0C;border-color:#BF3E0C}
+  .fine{font-size:14px;color:var(--steel);margin-top:10px}
+
+  /* In-app table */
+  .table-scroll{overflow-x:auto;margin:16px 0 8px}
+  table{width:100%;border-collapse:collapse;font-size:15.5px;min-width:560px;background:var(--card);
+    border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  th{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--steel);font-weight:500;background:rgba(0,0,0,.02)}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600;color:var(--ink)}
+
+  .steps{list-style:none;margin-left:0;counter-reset:step}
+  .steps > li{counter-increment:step;position:relative;padding-left:46px;margin-bottom:18px}
+  .steps > li::before{content:counter(step,decimal-leading-zero);position:absolute;left:0;top:2px;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--signal);font-weight:500;
+    letter-spacing:.08em}
+  .steps h3{margin:0 0 4px}
+
+  .note{background:rgba(217,72,15,.07);border-radius:8px;padding:16px 18px;margin:22px 0;
+    font-size:15.5px;color:var(--ink-soft)}
+  .faq h3{margin-top:28px}
+
+  footer{background:var(--ink);color:var(--mist);margin-top:64px}
+  .foot-inner{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+    padding:32px 0;font-size:14px}
+  .foot-inner a{color:var(--mist);text-decoration:none}
+  .foot-inner a:hover{color:#fff}
+  .foot-links a{margin-left:22px}
+  @media (max-width:640px){ .foot-links a{margin:0 22px 0 0} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="/"><span class="k">Kainor</span><span class="llc">LLC</span></a>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/pricing/" aria-current="page">Pricing</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+      </nav>
+    </div>
+    <div class="head-main">
+      <span class="eyebrow">LAPSlock</span>
+      <h1 class="display">Pricing</h1>
+      <p class="lede">Free to evaluate against your own tenant, with five credential reveals a month. Pay when it is doing real work. Organisation licences are keyed to your Entra tenant, so there is nothing to roll out to each admin.</p>
+      <p class="updated">Prices in USD · Updated 4 September 2026</p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <h2 class="sec">For organisations</h2>
+    <p class="sec-sub">One licence covers everyone who signs in from your tenant. Bought here, not in the app. Enter your Entra tenant domain at checkout and the licence is active the moment an admin taps <strong>Activate license</strong> in Settings.</p>
+
+    <div class="plans">
+
+      <section class="plan" aria-labelledby="plan-e500">
+        <span class="eyebrow">Enterprise</span>
+        <h3 id="plan-e500">Up to 500 devices</h3>
+        <p class="who">One Entra tenant with 500 or fewer Windows devices in Intune.</p>
+        <div class="price"><span class="amt">$299</span><span class="per">/ year</span></div>
+        <p class="price-note">Billed annually · applicable sales tax added at checkout</p>
+        <ul>
+          <li>Unlimited LAPS and BitLocker reveals</li>
+          <li>Every admin in the tenant, no seat count</li>
+          <li>Copy to clipboard, recents and favourites, app lock</li>
+          <li>Nothing to install or configure server-side</li>
+        </ul>
+        <div class="spacer"></div>
+        <a class="buy" href="https://buy.stripe.com/7sY14m5Qg18L7II7FY1VK05">Buy Enterprise · 500 devices</a>
+      </section>
+
+      <section class="plan featured" aria-labelledby="plan-ent">
+        <span class="eyebrow">Enterprise</span>
+        <h3 id="plan-ent">Unlimited devices</h3>
+        <p class="who">One Entra tenant, any number of devices.</p>
+        <div class="price"><span class="amt">$599</span><span class="per">/ year</span></div>
+        <p class="price-note">Billed annually · applicable sales tax added at checkout</p>
+        <ul>
+          <li>Everything in Enterprise 500</li>
+          <li>No device ceiling to track or true up</li>
+          <li>Every admin in the tenant, no seat count</li>
+          <li>Nothing to install or configure server-side</li>
+        </ul>
+        <div class="spacer"></div>
+        <a class="buy" href="https://buy.stripe.com/dRmcN40vWg3F8MM0dw1VK04">Buy Enterprise · unlimited</a>
+      </section>
+
+      <section class="plan" aria-labelledby="plan-msp">
+        <span class="eyebrow">Managed service provider</span>
+        <h3 id="plan-msp">MSP organisation</h3>
+        <p class="who">All technicians at one MSP, across any number of customer tenants.</p>
+        <div class="price"><span class="amt">$899</span><span class="per">/ year</span></div>
+        <p class="price-note">Billed annually · applicable sales tax added at checkout</p>
+        <ul>
+          <li>Everything in Enterprise, for every technician</li>
+          <li>Switch between customer tenants in the app</li>
+          <li>Keyed to your MSP's own tenant, not each customer's</li>
+          <li>Add technicians and customers without telling us</li>
+        </ul>
+        <div class="spacer"></div>
+        <a class="buy" href="https://buy.stripe.com/4gMbJ03I8cRt2oo0dw1VK03">Buy MSP organisation</a>
+      </section>
+
+    </div>
+    <p class="fine">Checkout is hosted by Stripe. Kainor never sees your card number. Need an invoice, a purchase order number, ACH or net-30 terms instead? Email <a href="mailto:connor@kainor.com">connor@kainor.com</a> and we will invoice you directly.</p>
+
+    <h2 class="sec">For individuals</h2>
+    <p class="sec-sub">Free covers evaluation and light use. Pro is a subscription bought inside the app through the App Store, with a free trial.</p>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th scope="col">Plan</th><th scope="col">Price</th><th scope="col">What you get</th><th scope="col">Where</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Free</strong></td>
+            <td class="num">$0</td>
+            <td>Unlimited device search and detail, rotation dates, BitLocker key metadata, and <strong>5 credential reveals per rolling 30 days</strong>, LAPS and BitLocker combined. Enough to prove it works against your tenant and watch the reads appear in your own audit log.</td>
+            <td>App Store</td>
+          </tr>
+          <tr>
+            <td><strong>Pro</strong></td>
+            <td class="num">$1.99 / mo<br>$19.99 / yr</td>
+            <td>Unlimited reveals, copy to clipboard, BitLocker key rotation, recents and favourites, biometric app lock. For one admin, on their own devices.</td>
+            <td>In the app</td>
+          </tr>
+          <tr>
+            <td><strong>MSP Pro</strong></td>
+            <td class="num">$49.99 / yr</td>
+            <td>Everything in Pro plus switching between customer tenants. For an individual technician; per technician.</td>
+            <td>In the app</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="fine">Individual subscriptions are managed entirely by Apple: billing, cancellation and refunds go through your App Store account.</p>
+
+    <div class="narrow">
+      <h2 class="sec">What happens after you buy an organisation licence</h2>
+      <ol class="steps">
+        <li>
+          <h3>You enter your tenant at checkout</h3>
+          <p>The checkout form asks for your Microsoft Entra tenant domain (for example <code>contoso.com</code>) or the tenant ID. We resolve it to your tenant's GUID using Microsoft's public discovery document. No sign-in, no permission in your tenant.</p>
+        </li>
+        <li>
+          <h3>Your licence row is written automatically</h3>
+          <p>When Stripe confirms payment, the licence is recorded against your tenant GUID: the tier, the term, and the Stripe subscription reference. That is the entire record. Your name, email and billing details stay in Stripe, where they have to live anyway; none of it is copied to us.</p>
+        </li>
+        <li>
+          <h3>Any admin activates it in the app</h3>
+          <p>In LAPSlock, Settings → <strong>Activate license</strong>. The app sends only your tenant GUID and receives a signed entitlement. Every admin who signs in from your tenant gets the same result. There are no licence keys to distribute and no accounts to create.</p>
+        </li>
+      </ol>
+      <div class="note">
+        The app never carries a price, a checkout link or a "buy" button. Purchasing for organisations lives on this page and nowhere else. If you arrived here from the app, something is wrong and we would like to know.
+      </div>
+
+      <h2 class="sec">Questions</h2>
+      <div class="faq">
+        <h3>Why is the licence keyed to a tenant instead of to users?</h3>
+        <p>Because it is the only key that requires nothing from you. The app already knows which tenant it is signed into. Keying on that means no seats to count, no user list to send us, and no personal data on our side. A tenant GUID identifies an organisation, not a person.</p>
+
+        <h3>We have 520 devices. Which Enterprise band?</h3>
+        <p>Unlimited. The 500-device band is on the honour system: nothing in the app counts your devices, and nothing reports the count to us. If you outgrow it, email us and we will move you to unlimited for the difference.</p>
+
+        <h3>What does the licence check actually send?</h3>
+        <p>Your tenant GUID, roughly once a month, over HTTPS, to a single Azure Function that returns a signed tier. Not device names, not user names, not how often anyone revealed a password. The full request and response contract is published as <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/ENTITLEMENT-API.md">ENTITLEMENT-API.md</a>, and the <a href="/how-it-works/">how it works</a> page explains how to verify it yourself.</p>
+
+        <h3>Can we pay by invoice, purchase order or ACH?</h3>
+        <p>Yes. Email <a href="mailto:connor@kainor.com">connor@kainor.com</a> with the tier and your tenant domain. You will receive a Stripe invoice that accepts ACH and card, with your PO number on it and net-30 if you need it. Vendor forms and security questionnaires are answered by the same address.</p>
+
+        <h3>What if we cancel?</h3>
+        <p>The licence runs to the end of the paid year and then the tenant returns to the free tier. Nothing is deleted, nobody is locked out of the app, and the reveal meter simply applies again.</p>
+
+        <h3>Does the free tier really stay free?</h3>
+        <p>Yes. Five reveals a month is the permanent floor, not a trial that expires. It exists so a sceptical admin can verify every claim we make before paying for anything.</p>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <span>© 2026 Kainor LLC. All rights reserved. LAPSlock™ is a trademark of Kainor LLC. Kainor LLC is not affiliated with, endorsed by, or sponsored by Microsoft Corporation; Microsoft, Microsoft Entra, Microsoft Intune, Windows, and BitLocker are trademarks of Microsoft Corporation.</span>
+      <span class="foot-links">
+        <a href="/">Home</a><a href="/how-it-works/">How it works</a><a href="/pricing/">Pricing</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="mailto:connor@kainor.com">Contact</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
