@@ -582,6 +582,26 @@ checked and knowing how the tool is used, and it is the line the product refuses
 
 ---
 
+### 8.4 How rows get there
+
+Since 2026-09-04 a second endpoint on the same Function, `/stripe-webhook`, writes the
+licence table when Stripe reports a payment. It changes nothing in §8.1: the row it writes has
+the same four fields, and the purchaser's name, email and address stay in Stripe as a
+billing record — the webhook reads a tenant domain from a checkout custom field, resolves it
+to a GUID through Microsoft's public OIDC discovery document, and stores the GUID, the tier,
+the term and the Stripe subscription reference. Nothing else is retained.
+
+Three properties worth a reviewer's attention:
+
+- **Receive-only.** The Function holds the webhook signing secret and no Stripe API key. A
+  forged event could grant a tier to a tenant the forger names — visible in the table,
+  bounded, recoverable. It could not refund, charge, or read a customer record.
+- **Signature-verified, closed-vocabulary tier.** Every event's signature is checked, and
+  the tier comes from Payment Link metadata validated against `pro | msp | enterprise`;
+  anything else grants nothing rather than defaulting to a paid tier.
+- **§8.2 applies unchanged.** The webhook logs the Stripe event type, event ID and an outcome
+  word. Never the tenant, the domain, or any customer detail.
+
 ## 9. Threat model
 
 ### 9.1 A tenant ID is not a secret, and this design accepts that
