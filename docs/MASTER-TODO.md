@@ -1974,9 +1974,11 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   refund after 48h silence) and its method table has **no ACH at all**. Founder turned the
   account default off 2026-09-04; the per-link flag cannot be changed, so **the three links
   must be deleted and recreated**, and their URLs will change. Each new link: Managed
-  Payments off, text custom field whose label contains "tenant", metadata `tier` =
-  `enterprise` on BOTH Enterprise links / `msp` on the MSP link, and `plan` =
-  `enterprise500` / `enterprise` / `msp`.
+  Payments off, text custom field whose label contains "tenant", and metadata `tier` =
+  `enterprise500` / `enterprise` / `msp`. (`plan` is optional since 2026-09-05: the first
+  real test purchase was refused because the link said `tier=enterprise500` and the
+  webhook's vocabulary did not include our own price-band name. The code now accepts it as
+  Tier `enterprise` with Plan `enterprise500`, and matches keys case-insensitively.)
 - ✅ `/pricing/` page — **built 2026-09-04** at `docs/pricing/index.html` against the three
   recreated Payment Links. Linked from the home page nav and footer ONLY. `/how-it-works/`
   is the in-app support URL and deliberately does not link to it (3.1.3); neither do
