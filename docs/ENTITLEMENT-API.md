@@ -598,7 +598,8 @@ Three properties worth a reviewer's attention:
   forged event could grant a tier to a tenant the forger names — visible in the table,
   bounded, recoverable. It could not refund, charge, or read a customer record.
 - **Signature-verified, closed-vocabulary tier.** Every event's signature is checked, and
-  the tier comes from Payment Link metadata validated against `pro | msp | enterprise`;
+  the tier comes from Payment Link metadata validated against a closed list — `pro`, `msp`,
+  `enterprise`, and the price-band name `enterprise500`, which maps to `enterprise`;
   anything else grants nothing rather than defaulting to a paid tier.
 - **§8.2 applies unchanged.** The webhook logs the Stripe event type, event ID and an outcome
   word. Never the tenant, the domain, or any customer detail.
