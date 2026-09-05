@@ -41,9 +41,14 @@ are. `docs/APP-STORE-3-1-3.md` covers anything about purchasing.
    writes `Tier`, `Plan`, term and `OrderRef` from Payment Link metadata plus a tenant
    custom field; see the backend README. **One step was still open at handoff:** the
    Function identity needs Storage Table Data Contributor on the `licenses` table (command
-   in the backend README, founder runs it) and then **Send test webhook** in Stripe should
-   log `MissingOrInvalidTier` or `AwaitingSettlement`. Until the grant exists a real
-   purchase returns 500 and Stripe retries for three days, so nothing is lost. Managed
+   in the backend README, founder runs it — **done 2026-09-05**) and then an end-to-end
+   test. **There is no test button for a live Stripe destination**; Stripe only fabricates
+   events in a sandbox. So the webhook holds an optional second secret,
+   `StripeWebhookSecretSandbox`, and the README's "Zero-cost end-to-end test" walks through
+   a sandbox purchase with card 4242 that writes a real row to the one table, then deletes
+   the row and the sandbox setting. Log lines carry `live` or `sandbox` for that reason.
+   Until a grant exists a real purchase returns 500 and Stripe retries for three days,
+   so nothing is lost. Managed
    Payments (Stripe as merchant of record, no ACH) was on by default and had to be turned
    off and the links recreated; the trap is recorded in `MASTER-TODO.md`.
 3. **iPad**, as a real 1.1 with `NavigationSplitView`. iPhone-only shipped on purpose —

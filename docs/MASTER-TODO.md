@@ -1858,7 +1858,10 @@ Decided *by* the contract, because the implementation needed an answer:
   `async_payment_succeeded` (ACH cleared), extends on `invoice.paid` renewals, records
   `tier` and `plan` from Payment Link metadata. Deploy is gated on four founder steps, in
   the backend README: Contributor grant, metadata on the links, endpoint created in Stripe,
-  `StripeWebhookSecret` set. Then **Send test webhook** should log `MissingOrInvalidTier`.
+  `StripeWebhookSecret` set — **all four done and deployed 2026-09-05**, verified from
+  outside by an unsigned POST answering 400. Stripe has no test button for a live
+  destination, so the end-to-end proof is the README's sandbox purchase, which uses the
+  optional `StripeWebhookSecretSandbox` setting and is then removed. ⬜ Founder to run it.
 - ⬜ Custom domain for the API (~$10–15/yr; expect <$2/mo Azure spend). Note that App Service
   managed certificates may not be available on Flex Consumption — verify before committing
   to an approach.
