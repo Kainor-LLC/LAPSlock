@@ -33,9 +33,19 @@ are. `docs/APP-STORE-3-1-3.md` covers anything about purchasing.
 1. **Marketing.** r/Intune and r/msp first — r/sysadmin removes most self-promotion. Lead
    with the source-available code and the proxy-verifiable network claims, not a feature
    list; that is the thing competitors cannot copy quickly.
-2. **Stripe checkout**, then the `/stripe-webhook` that turns a payment into a licence row.
-   Deliberately later: inserting the first few rows by hand is fine, and those conversations
-   are where you learn what enterprises actually need.
+2. ~~**Stripe checkout** and the `/stripe-webhook`~~ — **DONE 2026-09-05.** Three Payment
+   Links (Enterprise 500 $299, Enterprise unlimited $599, MSP org $899) are live on
+   `/pricing/`, which is linked from the home page only, never from `/how-it-works/`
+   (3.1.3). The webhook is deployed and its signing secret is set — verified from outside
+   by an unsigned POST answering 400, not 503. It is receive-only (no Stripe API key) and
+   writes `Tier`, `Plan`, term and `OrderRef` from Payment Link metadata plus a tenant
+   custom field; see the backend README. **One step was still open at handoff:** the
+   Function identity needs Storage Table Data Contributor on the `licenses` table (command
+   in the backend README, founder runs it) and then **Send test webhook** in Stripe should
+   log `MissingOrInvalidTier` or `AwaitingSettlement`. Until the grant exists a real
+   purchase returns 500 and Stripe retries for three days, so nothing is lost. Managed
+   Payments (Stripe as merchant of record, no ACH) was on by default and had to be turned
+   off and the links recreated; the trap is recorded in `MASTER-TODO.md`.
 3. **iPad**, as a real 1.1 with `NavigationSplitView`. iPhone-only shipped on purpose —
    see the note in `MASTER-TODO.md` about `.onDisappear` and `scenePhase` under
    multitasking, both of which break the reveal path if iPad is bolted on carelessly.
@@ -454,10 +464,12 @@ Others:
       recorded below.**
    2. ~~**Licenses table**~~ — DONE 2026-09-02. `licenses` in `kainorlapslockprodst`.
       PartitionKey is the lowercase tenant GUID, RowKey is `current`, plus `Tier`,
-      `TermStart`, `TermEnd`, `OrderRef`. No purchaser name or email; those stay in Stripe,
-      so no personal data lands in Azure. Roles are scoped to the TABLE, not the account:
-      the human account has Table Data Contributor for inserting rows by hand, the Function
-      identity has Table Data **Reader** because it never writes one.
+      `Plan`, `TermStart`, `TermEnd`, `OrderRef`. No purchaser name or email; those stay in
+      Stripe, so no personal data lands in Azure. Roles are scoped to the TABLE, not the
+      account: the human account has Table Data Contributor. The Function identity had
+      Table Data **Reader** until the webhook; since 2026-09-05 it needs **Contributor** on
+      this one table, through the same identity — the trade is recorded in
+      `LicenseStore.cs` and `MASTER-TODO.md`, and the grant was the founder's to run.
       **Cost guards are in place as of 2026-09-02** and the bill is now bounded by
       configuration: Log Analytics daily ingestion cap 0.1 GB (3.1 GB/month, under the 5 GB
       free grant, so the ceiling is effectively zero), `maximumInstanceCount` dropped from
