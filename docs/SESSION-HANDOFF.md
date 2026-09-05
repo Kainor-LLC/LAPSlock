@@ -48,7 +48,13 @@ are. `docs/APP-STORE-3-1-3.md` covers anything about purchasing.
    table write are all proven on a real event. **There is no test button for a live Stripe
    destination**; Stripe only fabricates events in a sandbox, so the webhook also holds an
    optional `StripeWebhookSecretSandbox` for a card-4242 test, and log lines carry `live`
-   or `sandbox`. Read outcomes with the KQL in the backend README.
+   or `sandbox`. Read outcomes with the KQL in the backend README. **Renewal alert added the
+   same day:** `invoice.upcoming` logs `RenewalUpcoming plan=…` and an Azure Monitor rule
+   emails the founder, who writes to Enterprise 500 customers to ask about growth. The
+   500-device band is honour-based on purpose; the founder's idea of the app reporting a
+   "non-compliant" bit is an OPEN decision in `MASTER-TODO.md` — it would put a tenant
+   identifier in logs and make the privacy policy false, so do not build it without the
+   policy change being made first.
    Until a grant exists a real purchase returns 500 and Stripe retries for three days,
    so nothing is lost. Managed
    Payments (Stripe as merchant of record, no ACH) was on by default and had to be turned
