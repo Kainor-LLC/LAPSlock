@@ -1746,7 +1746,8 @@ Decided *by* the contract, because the implementation needed an answer:
   Stripe API key, every event signature-verified, tier from a closed vocabulary. The grant
   command is in the backend README; **it awaits the founder's explicit go before anyone runs
   it.** Same Crypto User over Crypto Officer reasoning still governs the vault.
-- ⬜ **Worker-side Information traces are being ingested despite host.json.** Seen
+- ✅ **Worker-side Information traces were being ingested despite host.json — fixed 2026-09-05
+  in `Program.cs`** (worker floor Warning, webhook category Information). Original note: seen
   2026-09-05: `Microsoft.AspNetCore.*` lines at Information reach App Insights for every
   request. In OpenTelemetry mode the isolated worker exports its own logs and host.json's
   `logLevel` does not filter them; a `Function.*` category line does nothing either, because
