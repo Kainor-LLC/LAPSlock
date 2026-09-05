@@ -1746,6 +1746,15 @@ Decided *by* the contract, because the implementation needed an answer:
   Stripe API key, every event signature-verified, tier from a closed vocabulary. The grant
   command is in the backend README; **it awaits the founder's explicit go before anyone runs
   it.** Same Crypto User over Crypto Officer reasoning still governs the vault.
+- ⬜ **Worker-side Information traces are being ingested despite host.json.** Seen
+  2026-09-05: `Microsoft.AspNetCore.*` lines at Information reach App Insights for every
+  request. In OpenTelemetry mode the isolated worker exports its own logs and host.json's
+  `logLevel` does not filter them; a `Function.*` category line does nothing either, because
+  injected `ILogger<T>` logs under the type's full name. The fix is worker-side in
+  `Program.cs` (`builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning)` and a
+  default of Warning with `Kainor.LAPSlock.Entitlement.StripeWebhookFunction` at
+  Information). Cost, not correctness — the daily cap bounds it — but it is the noise the
+  cost guards were meant to remove.
 - ⚠️ **The storage account key is in the Function app settings.** `AzureWebJobsStorage` and
   `DEPLOYMENT_STORAGE_CONNECTION_STRING` are both connection strings containing an account
   key, which grants full read/write over the whole storage account — **including the
