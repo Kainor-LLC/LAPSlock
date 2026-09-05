@@ -501,6 +501,7 @@ One row per paying customer, in Azure Table Storage:
 | Tier | What was sold. |
 | Term start and end | When it lapses. |
 | Order reference | The payment processor's identifier for the sale. |
+| Plan | Which price band was sold when two bands grant one tier (Enterprise 500 devices vs unlimited). Informational; the entitlement never reads it. |
 
 That is the entire schema. Specifically **not** in it:
 
@@ -582,14 +583,14 @@ checked and knowing how the tool is used, and it is the line the product refuses
 
 ---
 
-### 8.4 How rows get there
+### 8.7 How rows get there
 
 Since 2026-09-04 a second endpoint on the same Function, `/stripe-webhook`, writes the
 licence table when Stripe reports a payment. It changes nothing in §8.1: the row it writes has
-the same four fields, and the purchaser's name, email and address stay in Stripe as a
-billing record — the webhook reads a tenant domain from a checkout custom field, resolves it
-to a GUID through Microsoft's public OIDC discovery document, and stores the GUID, the tier,
-the term and the Stripe subscription reference. Nothing else is retained.
+the fields listed there and no others, and the purchaser's name, email and address stay in
+Stripe as a billing record — the webhook reads a tenant domain from a checkout custom field,
+resolves it to a GUID through Microsoft's public OIDC discovery document, and stores the GUID,
+the tier, the plan, the term and the Stripe subscription reference. Nothing else is retained.
 
 Three properties worth a reviewer's attention:
 
