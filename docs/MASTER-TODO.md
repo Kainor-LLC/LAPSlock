@@ -1735,12 +1735,17 @@ Decided *by* the contract, because the implementation needed an answer:
   deleted resources.** They do not error and they do not clean themselves up, so they sit in
   an access review looking legitimate and would silently take effect again if anything ever
   recreated a table by that name. Check for orphans after deleting any scoped resource.
-  The human account has Storage Table Data Contributor, for inserting license rows by hand
-  until Stripe exists. The Function identity has **Storage Table Data Reader** — read-only,
-  because the entitlement endpoint never writes a license row. A compromise of the Function
-  can see who holds a license; it cannot grant one. Same reasoning as Crypto User over
-  Crypto Officer. **When the Stripe webhook needs write, grant it separately and ideally to
-  a separate identity**, so the read path and the write path never share a credential.
+  The human account has Storage Table Data Contributor, for inserting license rows by hand.
+  The Function identity has **Storage Table Data Reader** today. An earlier version of this
+  note said the Stripe webhook should write through a separate identity; **decided otherwise
+  on 2026-09-04**, recorded in `LicenseStore.cs`: the webhook writes through the same
+  identity, which needs **Storage Table Data Contributor scoped to the one table**. A second
+  identity would mean a second Function app to deploy, monitor and pay for, to defend
+  against a Function compromise that could grant a licence to a tenant the attacker names —
+  real, but bounded and visible in the table. Compensating controls live in the webhook: no
+  Stripe API key, every event signature-verified, tier from a closed vocabulary. The grant
+  command is in the backend README; **it awaits the founder's explicit go before anyone runs
+  it.** Same Crypto User over Crypto Officer reasoning still governs the vault.
 - ⚠️ **The storage account key is in the Function app settings.** `AzureWebJobsStorage` and
   `DEPLOYMENT_STORAGE_CONNECTION_STRING` are both connection strings containing an account
   key, which grants full read/write over the whole storage account — **including the
@@ -1848,7 +1853,12 @@ Decided *by* the contract, because the implementation needed an answer:
   keep the distinction the contract makes: two hosts always, a third only after a license is
   activated. Shipping the endpoint without this makes a published policy false.
 - ⬜ App Attest verification — **phase 2, deliberately.** See the reasoning below.
-- ⬜ Later: `/stripe-webhook` to auto-insert license rows
+- ✅ `/stripe-webhook` — **built and tested 2026-09-04 (113 tests), not yet deployed.**
+  Receive-only: signing secret, no API key. Grants on `checkout.session.completed` (paid) or
+  `async_payment_succeeded` (ACH cleared), extends on `invoice.paid` renewals, records
+  `tier` and `plan` from Payment Link metadata. Deploy is gated on four founder steps, in
+  the backend README: Contributor grant, metadata on the links, endpoint created in Stripe,
+  `StripeWebhookSecret` set. Then **Send test webhook** should log `MissingOrInvalidTier`.
 - ⬜ Custom domain for the API (~$10–15/yr; expect <$2/mo Azure spend). Note that App Service
   managed certificates may not be available on Flex Consumption — verify before committing
   to an approach.
@@ -1946,11 +1956,22 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   **Verify before submitting 1.0**: `/`, `/how-it-works/`, `/privacy/` and `/terms/` all load
   over HTTPS, and mail to connor@kainor.com still arrives. A 404 on the support or privacy
   URL is an App Store rejection.
-- ✅ Stripe account on the LLC + EIN + bank — founder, 2026-09-03. **Account only.** Nothing
-  below is connected: no checkout on the site, no payment-to-license link into Azure.
-- ⬜ Payment Link with a domain/tenant-ID custom field
-- ⬜ Stripe Invoicing (ACH, PO numbers, net-30) for enterprise/MSP
-- ⬜ Stripe Tax on
+- ✅ Stripe account on the LLC + EIN + bank — founder, 2026-09-03.
+- ⚠️ **Managed Payments was on by default** and the first three Payment Links carry it. It
+  makes Link the merchant of record (Link receipts, `LINK.COM*` on statements, Stripe may
+  refund after 48h silence) and its method table has **no ACH at all**. Founder turned the
+  account default off 2026-09-04; the per-link flag cannot be changed, so **the three links
+  must be deleted and recreated**, and their URLs will change. Each new link: Managed
+  Payments off, text custom field whose label contains "tenant", metadata `tier` =
+  `enterprise` on BOTH Enterprise links / `msp` on the MSP link, and `plan` =
+  `enterprise500` / `enterprise` / `msp`.
+- ⬜ `/pricing/` page on the site — **after the new link URLs exist.** Separate from
+  `/how-it-works/`, never linked from inside the app (3.1.3).
+- ⬜ Stripe Invoicing (ACH, PO numbers, net-30) for enterprise/MSP — per deal, nothing to
+  configure up front. Confirm US bank account is On in the payment method configuration now
+  that Managed Payments is off.
+- ⬜ Stripe Tax on — calculation only. Registration and remittance in the home state are the
+  founder's; most other US states have a $100k economic-nexus threshold.
 - ✅ **Domain → tenant GUID resolution — DONE 2026-09-04** as `scripts/new-licence.sh` in the
   backend repo. Reads Microsoft's public OIDC discovery document for the domain the customer
   typed at checkout; the `issuer` field carries the tenant GUID, no sign-in or permission
