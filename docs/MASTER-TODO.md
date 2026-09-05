@@ -1870,7 +1870,11 @@ Decided *by* the contract, because the implementation needed an answer:
   `StripeWebhookSecret` set — **all four done and deployed 2026-09-05**, verified from
   outside by an unsigned POST answering 400. Stripe has no test button for a live
   destination, so the end-to-end proof is the README's sandbox purchase, which uses the
-  optional `StripeWebhookSecretSandbox` setting and is then removed. ⬜ Founder to run it.
+  optional `StripeWebhookSecretSandbox` setting and is then removed. **✅ Proven in live
+  mode 2026-09-05** instead: a real coupon purchase on the Enterprise 500 link was refused
+  (`tier=enterprise500` was not in the vocabulary), the vocabulary was widened, and a
+  **Resend** of the same event logged `Granted` and wrote Tier `enterprise` / Plan
+  `enterprise500` / OrderRef `sub_…`. The founder's internal row was then restored.
 - ⬜ Custom domain for the API (~$10–15/yr; expect <$2/mo Azure spend). Note that App Service
   managed certificates may not be available on Flex Consumption — verify before committing
   to an approach.
