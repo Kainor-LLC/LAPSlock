@@ -1875,6 +1875,24 @@ Decided *by* the contract, because the implementation needed an answer:
   (`tier=enterprise500` was not in the vocabulary), the vocabulary was widened, and a
   **Resend** of the same event logged `Granted` and wrote Tier `enterprise` / Plan
   `enterprise500` / OrderRef `sub_…`. The founder's internal row was then restored.
+- ✅ **Renewal alert — built 2026-09-05.** Stripe's `invoice.upcoming` (about a week before
+  renewal) logs `RenewalUpcoming plan=enterprise500|enterprise|msp`; an Azure Monitor log
+  alert (`lapslock-renewal-upcoming`, hourly, action group `lapslock-founder`) emails the
+  founder, who writes to the customer. For the 500-device band that email asks whether they
+  have grown past it. ⬜ Founder: add `invoice.upcoming` to the Stripe destination's events.
+- ⬜ **1.1: show the device count against the plan, on the phone only.** Settings line:
+  "Enterprise, up to 500 devices · N Windows devices in this tenant." N comes from the
+  inventory the app already pages; it is computed on the device and never sent. Needs a
+  `plan` claim in the entitlement token — a small contract addendum (old clients ignore
+  unknown claims by design) — and the server to sign it from the row's `Plan`.
+- ❓ **DECISION OPEN — the app reporting a "non-compliant" bit to the server.** Founder
+  floated it 2026-09-05 so Azure logs could show which tenants are over 500 devices.
+  Assistant declined to build it as asked: the bit is only useful attached to a tenant, which
+  puts a tenant identifier in logs (§8.2 forbids) tied to a fact derived from their device
+  inventory (§8.1, "no device data of any kind"), and makes the privacy policy's "Kainor
+  holds nothing about your devices" false. If wanted anyway it is a deliberate policy change:
+  rewrite the privacy page and §8 first, then build. Recommendation stands: renewal email +
+  on-phone count, keep the sentence.
 - ⬜ Custom domain for the API (~$10–15/yr; expect <$2/mo Azure spend). Note that App Service
   managed certificates may not be available on Flex Consumption — verify before committing
   to an approach.
