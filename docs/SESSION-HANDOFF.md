@@ -41,12 +41,14 @@ are. `docs/APP-STORE-3-1-3.md` covers anything about purchasing.
    writes `Tier`, `Plan`, term and `OrderRef` from Payment Link metadata plus a tenant
    custom field; see the backend README. **One step was still open at handoff:** the
    Function identity needs Storage Table Data Contributor on the `licenses` table (command
-   in the backend README, founder runs it — **done 2026-09-05**) and then an end-to-end
-   test. **There is no test button for a live Stripe destination**; Stripe only fabricates
-   events in a sandbox. So the webhook holds an optional second secret,
-   `StripeWebhookSecretSandbox`, and the README's "Zero-cost end-to-end test" walks through
-   a sandbox purchase with card 4242 that writes a real row to the one table, then deletes
-   the row and the sandbox setting. Log lines carry `live` or `sandbox` for that reason.
+   in the backend README, founder runs it — **done 2026-09-05**) and an end-to-end test —
+   **also done 2026-09-05, in live mode**: a real purchase, first refused because the link
+   said `tier=enterprise500`, then granted on **Resend** after the vocabulary was widened
+   to the names we actually sell under. Signature, metadata, OIDC domain resolution and the
+   table write are all proven on a real event. **There is no test button for a live Stripe
+   destination**; Stripe only fabricates events in a sandbox, so the webhook also holds an
+   optional `StripeWebhookSecretSandbox` for a card-4242 test, and log lines carry `live`
+   or `sandbox`. Read outcomes with the KQL in the backend README.
    Until a grant exists a real purchase returns 500 and Stripe retries for three days,
    so nothing is lost. Managed
    Payments (Stripe as merchant of record, no ACH) was on by default and had to be turned
