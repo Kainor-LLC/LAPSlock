@@ -4,7 +4,7 @@ import Foundation
 //
 // Pure: it builds and parses JSON and knows nothing about the network, so every response
 // branch is covered by tests without a tenant. That matters most for the branch that must
-// never be got wrong — a pending approval reported as success — which is otherwise only
+// never be got wrong, a pending approval reported as success, which is otherwise only
 // reachable in a tenant configured to require approval.
 
 public enum ActivationRequest {
@@ -15,7 +15,7 @@ public enum ActivationRequest {
     /// than a security preference.** Every PIM policy caps how long access may be activated
     /// for, the cap is per-tenant and often per-group, and asking for longer than the policy
     /// allows is rejected with a bare 400 that names no reason. A hardcoded five hours
-    /// therefore failed outright in a tenant whose policy allowed less — the request was not
+    /// therefore failed outright in a tenant whose policy allowed less, the request was not
     /// merely generous, it was invalid.
     ///
     /// One hour clears almost any policy and is enough to finish a job at a bench. Anyone
@@ -53,7 +53,7 @@ public enum ActivationRequest {
                 "expiration": ["type": "afterDuration", "duration": duration],
             ]
             // TOP LEVEL, beside scheduleInfo rather than inside it. It was nested at first,
-            // which makes the whole request invalid — Graph rejects an unknown property on
+            // which makes the whole request invalid, Graph rejects an unknown property on
             // scheduleInfo with a 400 that says nothing about which property.
             if let ticket {
                 body["ticketInfo"] = [
@@ -145,7 +145,7 @@ public enum ActivationRequest {
     ]
 
     /// Refused after the request existed. Distinct from a rejected POST, which never gets
-    /// this far, and distinct from waiting — waiting will not help.
+    /// this far, and distinct from waiting, waiting will not help.
     static let refusedStatuses: Set<String> = [
         "denied",
         "admindenied",
@@ -162,8 +162,8 @@ public enum ActivationRequest {
     /// is being applied, or is waiting on an approver, and only `status` distinguishes them.
     /// Two separate mistakes are possible here and both have shipped:
     ///
-    /// * Reporting a pending approval as active — somebody walks back to a broken machine.
-    /// * Reporting an ordinary provisioning delay as a pending approval — somebody goes
+    /// * Reporting a pending approval as active, somebody walks back to a broken machine.
+    /// * Reporting an ordinary provisioning delay as a pending approval, somebody goes
     ///   hunting for an approver in a tenant that requires none.
     ///
     /// So success is matched exactly, and everything else is classified rather than lumped.
@@ -172,7 +172,7 @@ public enum ActivationRequest {
     public static func outcome(from json: [String: Any]) -> ActivationOutcome {
         // Lowercased but deliberately NOT trimmed. Case varies across Graph endpoints so
         // folding it is necessary; whitespace does not, and trimming would make a padded
-        // "Granted " parse as success. That is the unsafe direction — a status that is not
+        // "Granted " parse as success. That is the unsafe direction, a status that is not
         // exactly a grant is not clearly a grant.
         let raw = json["status"] as? String ?? ""
         let status = raw.lowercased()
@@ -236,7 +236,7 @@ public enum ActivationRequest {
     ///      so the entry that unblocks it should not be third.
     ///   2. Then the LEAST-PRIVILEGED option. Group ownership can change who else is in the
     ///      group, so where somebody is eligible for both membership and ownership,
-    ///      membership is offered first — it is what reading one password needs. Ordering
+    ///      membership is offered first, it is what reading one password needs. Ordering
     ///      the larger grant first invites activating it out of habit.
     ///   3. Then alphabetically, so the list is stable between runs.
     public static func combined(roles: [EligibleAccess], groups: [EligibleAccess]) -> [EligibleAccess] {

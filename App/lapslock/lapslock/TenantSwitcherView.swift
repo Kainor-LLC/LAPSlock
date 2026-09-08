@@ -12,7 +12,7 @@ import AuthKit
 //
 // That sets the design rule for this file: **every failure names what happened and what to
 // do next, on screen, with no reference to anything outside it.** The one that matters most
-// is consent — app consent is per-tenant, so an MSP cannot self-serve into a customer's
+// is consent, app consent is per-tenant, so an MSP cannot self-serve into a customer's
 // directory, and "it didn't work" would be an unanswerable support email. That case gets a
 // full explanation and a shareable approval link.
 

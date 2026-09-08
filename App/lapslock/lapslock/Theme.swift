@@ -4,11 +4,11 @@ import UIKit
 // Visual identity, carried over from kainor.com so the product reads as one thing.
 //
 // DESIGN NOTE: the palette and the pit-lane language come from the marketing site, but
-// the structure here is deliberately iOS-native — List, NavigationStack, SF Symbols.
+// the structure here is deliberately iOS-native, List, NavigationStack, SF Symbols.
 // A heavily custom-chromed iOS app reads as a ported web page, which is the last
 // impression an infrastructure tool wants to give.
 //
-// The one typographic conviction: every piece of MACHINE DATA is monospaced —
+// The one typographic conviction: every piece of MACHINE DATA is monospaced, 
 // passwords, device identifiers, serial numbers, the countdown. This is functional, not
 // stylistic. An admin transcribing a random 14-character password into a console needs
 // unambiguous glyphs and fixed advance width; proportional text turns l/1/I and 0/O
@@ -27,11 +27,11 @@ public enum Brand {
     /// Secondary text on the navy field.
     public static let mist = fixed(0xA9B6C6)
 
-    /// The accent, for surfaces that follow the system appearance — buttons, tints, list
+    /// The accent, for surfaces that follow the system appearance, buttons, tints, list
     /// rows, banners.
     ///
     /// ADAPTIVE, and it has to be. Both values are the icon's steel: as drawn for light
-    /// appearance, lifted for dark. A single value cannot serve both — measured against
+    /// appearance, lifted for dark. A single value cannot serve both, measured against
     /// white, the icon's steel is 5.30:1 and the lifted one only 3.09:1; against a dark
     /// system background the ranking reverses.
     public static let accent = Color(uiColor: UIColor { traits in
@@ -42,7 +42,7 @@ public enum Brand {
     /// takes a fixed value rather than an adaptive one.
     ///
     /// The lifted steel, at 5.09:1 on the field. **The icon's steel as drawn measures 2.97:1
-    /// here, below the 3.0 floor for a UI component** — which is why this token exists
+    /// here, below the 3.0 floor for a UI component**, which is why this token exists
     /// separately instead of the mark's colour being used directly. The countdown ring and
     /// the reveal timer live on this surface, so it is the one place the accent must not be
     /// taken on faith.
@@ -72,7 +72,7 @@ public enum Brand {
 // MARK: - shared primitives
 
 /// A labelled row of machine data. Label is proportional (it's prose), value is
-/// monospaced (it's data) — the distinction is the point.
+/// monospaced (it's data), the distinction is the point.
 struct DataRow: View {
     let label: String
     let value: String?
@@ -94,7 +94,7 @@ struct DataRow: View {
     }
 }
 
-/// Platform glyph. Kept literal — an admin scanning a list identifies by silhouette
+/// Platform glyph. Kept literal, an admin scanning a list identifies by silhouette
 /// faster than by reading the OS name.
 struct PlatformIcon: View {
     let systemName: String
@@ -145,7 +145,7 @@ struct StatusPill: View {
 ///
 /// Always shown in the live path, not only when switched. For a single-organization admin it
 /// is quiet context; for an MSP it is the answer to the question that matters most before
-/// revealing a password — whose directory am I actually looking at. A tool where that is
+/// revealing a password, whose directory am I actually looking at. A tool where that is
 /// ambiguous is a tool that eventually reveals the right password to the wrong ticket.
 ///
 /// Away from home it becomes a warning rather than a label. Absence of a banner is easy to

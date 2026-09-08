@@ -10,7 +10,7 @@ import XCTest
 /// fix an expired token or a missing scope. Both are covered below.
 final class ClaimsChallengeTests: XCTestCase {
 
-    /// `{"access_token":{"acr":{"essential":true,"value":"c1"}}}` — the real shape Entra
+    /// `{"access_token":{"acr":{"essential":true,"value":"c1"}}}`, the real shape Entra
     /// sends when it wants MFA satisfied in-session.
     private let claimsJSON = #"{"access_token":{"acr":{"essential":true,"value":"c1"}}}"#
 
@@ -99,7 +99,7 @@ final class ClaimsChallengeTests: XCTestCase {
 /// Conditional Access authentication context, Graph answers 400 with
 /// `RoleAssignmentRequestAcrsValidationFailed` and puts the required claim in the message as
 /// raw JSON. A retry that only watched 401 and 403 therefore never fired, and activation
-/// failed with a bare 400 — observed on device 2026-09-02.
+/// failed with a bare 400, observed on device 2026-09-02.
 final class GraphErrorClaimsChallengeTests: XCTestCase {
 
     /// The real message shape, as Microsoft documents it.

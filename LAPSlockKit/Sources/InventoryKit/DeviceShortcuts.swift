@@ -3,7 +3,7 @@ import Foundation
 // Favourites and recents: getting back to a device you have already found.
 //
 // Search answers "I know the name". This answers "I was just here" and "I am here every
-// week" — a lab bench, a row of kiosks, the one server that keeps breaking.
+// week", a lab bench, a row of kiosks, the one server that keeps breaking.
 //
 // WHAT IS STORED, AND WHY IT IS SO LITTLE. Device IDs and nothing else. No names, no users,
 // no serials. A stored hostname would be tenant data sitting on a phone for no reason; an
@@ -12,7 +12,7 @@ import Foundation
 //
 // TENANT-SCOPED, WHICH IS NOT OPTIONAL. An MSP switches between customer organizations in
 // one install. Favourites from customer A appearing while operating in customer B would be
-// a cross-customer leak of which machines matter to whom — small, but exactly the kind of
+// a cross-customer leak of which machines matter to whom, small, but exactly the kind of
 // thing this product cannot afford. Every read and write is keyed by tenant.
 //
 // NOT the Keychain. These are not secrets and they do not need to survive a reinstall; the
@@ -77,7 +77,7 @@ public final class DeviceShortcutStore: DeviceShortcutStoring, @unchecked Sendab
     /// Moves an ID to the front, de-duplicated, capped.
     ///
     /// Re-visiting a device already in the list moves it up rather than adding a second
-    /// entry — otherwise a list of five recents becomes five copies of the machine somebody
+    /// entry, otherwise a list of five recents becomes five copies of the machine somebody
     /// is currently working on, which is the opposite of useful.
     static func recording(_ deviceId: String, in list: [String], cap: Int = maxRecents) -> [String] {
         ([deviceId] + list.filter { $0 != deviceId }).prefix(max(0, cap)).map { $0 }

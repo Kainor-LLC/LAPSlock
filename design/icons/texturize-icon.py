@@ -45,7 +45,7 @@ SS = ri.SS
 SEED = 31
 
 # ---- shipping configuration -------------------------------------------------
-# The icon that ships is the photoreal tread. Decision 2026-08-29: the keycap
+# The icon that ships is the photoreal tread; the keycap
 # read as one more lock-family security icon; the tread ring is the mark nobody
 # else in the category has. Flip these two constants and re-run to change it.
 SHIP_BASE = "tread"    # "tread" = full ring | "skid" = broken arcs

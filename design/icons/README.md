@@ -29,14 +29,14 @@ not call the shipping emitters. If you resurrect them, resurrect this warning wi
 **A keyhole inside a photoreal tire tread ring**, light on navy.
 `SHIP_BASE = "tread"`, `SHIP_LIGHT = False` in `texturize-icon.py` are authoritative.
 
-Decided 2026-08-29. The clean keycap that shipped before it read as one more entry in the
+The clean keycap that shipped before it read as one more entry in the
 lock family; the tread ring is the mark nobody else in the category has, and it carries the
 racing heritage the product was originally named for.
 
 The realism is in the **shape of the stencil, not in shading**: pressure variation, ragged
 rubber edges, ink starvation, edge spatter. The output stays a flat-colour stencil with no
 baked gradients, shadows or blur, which is what makes it compatible with Icon Composer and
-Liquid Glass — the system applies the material itself.
+Liquid Glass, the system applies the material itself.
 
 ### Earlier attempts, recorded so nobody retries them
 
@@ -59,7 +59,7 @@ be redone rather than re-argued.
 Two, both from real feedback, both permanent:
 
 1. The product was renamed from **PitLAPS** because it reads as *armpit*.
-2. The original icon — a top-down race car with a keyhole cockpit — read as **phallic**.
+2. The original icon, a top-down race car with a keyhole cockpit, read as **phallic**.
 
 Check any new mark against both, with somebody else's eyes.
 
@@ -71,7 +71,7 @@ Check any new mark against both, with somebody else's eyes.
 | Steel | `#4A6E96` | LAPS in the wordmark |
 | Cap | `#EEF3F8` | tread and keyhole |
 | Ink | `#1A1A1A` | lock in the wordmark |
-| Steel, lifted | `#6E96C2` | the app's accent on the navy field — see below |
+| Steel, lifted | `#6E96C2` | the app's accent on the navy field, see below |
 
 **The app's accent is derived from Steel, not equal to it.** `Brand.accent` in `Theme.swift`
 resolves to Steel `#4A6E96` in light appearance and the lifted `#6E96C2` in dark;
@@ -81,10 +81,10 @@ both appearances.
 The lift is not a style preference. **Steel as drawn measures 2.97:1 against the navy field,
 below WCAG's 3.0 floor for a UI component**, and the field is where the countdown ring and
 the reveal timer live. Steel measures 5.30:1 on white and the lifted value only 3.09:1, so
-neither one serves both surfaces — which is why the accent is two tokens. Anything added to
+neither one serves both surfaces, which is why the accent is two tokens. Anything added to
 this palette that will be used as an accent needs measuring on both grounds before it ships.
 
-Until 2026-09-02 the app's accent was safety orange `#D9480F`, a PitLAPS-era value that
+The app's accent was previously safety orange `#D9480F`, a PitLAPS-era value that
 appears nowhere in this mark. That went unnoticed partly because `Theme.swift` stored colours
 as fractional component triples, which cannot be compared by eye against this table. It now
 stores hex.
@@ -107,7 +107,7 @@ one.
 
 ## Judge at 29 px, not at 1024
 
-`proof-strip-shipping.png` renders the icon at 180, 120, 87, 60 and 29 points — the sizes
+`proof-strip-shipping.png` renders the icon at 180, 120, 87, 60 and 29 points, the sizes
 iOS actually draws. Regenerate and look at it after any change to the mark.
 
 Judging an icon at 1024 is how you ship something that is mud on a home screen. That single
@@ -115,13 +115,13 @@ test is what killed the padlock version, and it is the reason the tread is a sol
 grooves rather than separate blocks.
 
 Known: at 29 px the tread reads as a distinctive textured ring rather than legibly as tire
-tread. That is accepted — the silhouette is still unmistakable and the keyhole is still the
+tread. That is accepted, the silhouette is still unmistakable and the keyhole is still the
 focal point. If it is ever revisited, enlarging the keyhole by 15–20% would buy legibility
 at the smallest size.
 
 ## The Entra logo is not a minor asset
 
-`entra-logo-215.png` is the image on the **consent screen** — the moment an administrator
+`entra-logo-215.png` is the image on the **consent screen**, the moment an administrator
 decides whether to grant this app read access to every local administrator password in
 their tenant. That single screen is the largest threat to this product, larger than price
 or marketing.

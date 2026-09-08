@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Spec §3.1 / §13 — the isolation guard.
+# Build Spec §3.1 / §13, the isolation guard.
 #
 # Fails (exit 1) if a module imports something that could carry a credential out of the
 # app. This turns "the security boundary" from a comment into an enforced invariant.
@@ -17,7 +17,7 @@
 #
 #   LicensingKit   must import Foundation + CryptoKit + Security only.
 #   SubscriptionKit must import Foundation + StoreKit + LicensingKit only, and must
-#                  never reach a credential — it handles money, not secrets.
+#                  never reach a credential, it handles money, not secrets.
 #                  The free-tier meter counts EVENTS. If it ever imports CredentialKit it
 #                  gains the ability to hold a credential, and the guarantee that the meter
 #                  cannot see passwords stops being structural and becomes a matter of
@@ -71,7 +71,7 @@ check_module () {
     | grep -vE 'XCTest|@testable' \
     || true)"
   if [[ -n "$unexpected" ]]; then
-    echo "⚠️  isolation-check: unexpected import(s) in ${module} — review manually:"
+    echo "⚠️  isolation-check: unexpected import(s) in ${module}, review manually:"
     printf '   %s\n' "$unexpected"
     echo "   (Allowed by policy: ${allowed//|/, }. Add here only after a security review.)"
     violations=$((violations + 1))
@@ -133,5 +133,5 @@ if [[ "$violations" -gt 0 ]]; then
 fi
 
 echo "✅ isolation-check passed: CredentialKit imports only Foundation + AuthKit,"
-echo "   LicensingKit cannot reach CredentialKit, and PrivilegedAccessKit — which requests"
-echo "   privilege escalation — cannot reach a credential."
+echo "   LicensingKit cannot reach CredentialKit, and PrivilegedAccessKit, which requests"
+echo "   privilege escalation, cannot reach a credential."

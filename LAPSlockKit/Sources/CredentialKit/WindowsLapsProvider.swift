@@ -1,12 +1,12 @@
 import Foundation
 import AuthKit
 
-// Build Spec §2.3, §3.4, §6 — Windows LAPS. FULLY SUPPORTED.
+// Build Spec §2.3, §3.4, §6, Windows LAPS. FULLY SUPPORTED.
 //
 // Reveal:  GET /v1.0/directory/deviceLocalCredentials/{entraDeviceId}?$select=credentials
 //          Scope: DeviceLocalCredential.Read.All (delegated) AND the signed-in admin must
 //          hold Cloud Device Administrator or Intune Service Administrator in Entra.
-// Metadata: same resource without $select=credentials — needs only ReadBasic.All.
+// Metadata: same resource without $select=credentials, needs only ReadBasic.All.
 //
 // This file is the ONLY Windows code path that touches a password value. It never logs
 // a request or response body, and the password leaves only as a SensitiveValue.
@@ -94,7 +94,7 @@ public struct WindowsLapsProvider: LocalAdminCredentialProviding {
 
     /// Parses the `credentials` payload into the current password and its history.
     ///
-    /// Static and pure so every branch is covered without a tenant — ordering, entries
+    /// Static and pure so every branch is covered without a tenant, ordering, entries
     /// missing a date, entries missing a password. That matters more here than almost
     /// anywhere else in the app: **this function decides which password an admin is shown**,
     /// and showing the wrong one sends them to a console with a credential that fails.
@@ -121,7 +121,7 @@ public struct WindowsLapsProvider: LocalAdminCredentialProviding {
                 backupDateTime: GraphHTTP.date(entry["backupDateTime"]),
                 secret: secret)
         }
-        // Newest first. An entry with no date sorts last rather than winning by accident —
+        // Newest first. An entry with no date sorts last rather than winning by accident, 
         // `.distantPast` is deliberate, because treating an undated entry as newest would
         // put an unknown password in front of a known-current one.
         .sorted { ($0.backupDateTime ?? .distantPast) > ($1.backupDateTime ?? .distantPast) }

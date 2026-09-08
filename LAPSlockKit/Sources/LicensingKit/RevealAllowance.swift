@@ -1,6 +1,6 @@
 import Foundation
 
-// Build Spec — free tier metering.
+// Build Spec, free tier metering.
 //
 // WHAT THIS MODULE IS FOR
 //

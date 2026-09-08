@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     The main harness got a 500 on the documented beta function. A 500 is NOT a clean
-    negative — it usually means the request was accepted but the service had no record
+    negative, it usually means the request was accepted but the service had no record
     to return. This script distinguishes the possibilities:
 
       (a) Device is not ADE-enrolled / has no macOS LAPS account configured
@@ -28,7 +28,7 @@
 param(
     # Intune managedDeviceId to probe. If omitted, the first macOS device found is used.
     [string] $ManagedDeviceId = "",
-    # Optional sign-in hint. Left empty on purpose — this file is public.
+    # Optional sign-in hint. Left empty on purpose, this file is public.
     [string] $UserPrincipalName = ""
 )
 
@@ -54,7 +54,7 @@ Write-Info "Account: $($ctx.Account)"
 Write-Info "Tenant:  $($ctx.TenantId)"
 
 # ---------------------------------------------------------------------------
-# 0. Resolve a device to probe (no hardcoded IDs — this file is public).
+# 0. Resolve a device to probe (no hardcoded IDs, this file is public).
 # ---------------------------------------------------------------------------
 if ([string]::IsNullOrWhiteSpace($ManagedDeviceId)) {
     Write-Section "0. Finding a macOS managed device"
@@ -135,7 +135,7 @@ catch {
     $status = $null
     try { $status = $_.Exception.Response.StatusCode.value__ } catch { }
     Write-Bad "HTTP $status"
-    # THE PART THE MAIN HARNESS SWALLOWED: Graph's actual error payload.
+    # Graph's actual error payload, which the verification harness does not print.
     if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
         Write-Host "  --- Graph error body ---" -ForegroundColor Red
         Write-Host $_.ErrorDetails.Message
@@ -186,7 +186,7 @@ Write-Host @"
   Then interpret:
     * Portal SHOWS a password, but Graph returns metadata only / 500
         -> The portal uses an internal API. Public Graph cannot retrieve macOS LAPS.
-           DECISION: macOS reveal is not buildable. Ship Windows-only reveal.
+           Conclusion: macOS reveal is not buildable on documented Graph.
     * Portal shows NO password / "not available"
         -> This device has no macOS LAPS account. The API test was moot; retest on a
            device that does, or accept the documentation-based conclusion.

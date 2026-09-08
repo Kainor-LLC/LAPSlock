@@ -92,7 +92,7 @@ final class ActivationRequestTests: XCTestCase {
     }
 
     func test_theDefaultDurationIsTheShortestOffered() {
-        // Not a security preference — a correctness one. Every PIM policy caps activation
+        // Not a security preference, a correctness one. Every PIM policy caps activation
         // length, the cap is per-tenant and often per-group, and asking for longer than the
         // policy allows is rejected with a bare 400 naming no reason. A hardcoded five hours
         // was not merely generous, it was invalid in a tenant that allowed less.
@@ -190,7 +190,7 @@ final class ActivationRequestTests: XCTestCase {
 
     func test_provisioningIsNotWaitingForApproval() {
         // No approver is involved in any of these: PIM has accepted the activation and is
-        // applying it. `PendingApprovalProvisioning` and `AdminApproved` included — approval
+        // applying it. `PendingApprovalProvisioning` and `AdminApproved` included, approval
         // has already happened by the time either appears.
         let inProgress = [
             "PendingProvisioning", "PendingApprovalProvisioning", "PendingScheduleCreation",
@@ -338,7 +338,7 @@ final class ActivationRequestTests: XCTestCase {
 final class PrivilegedScopeTests: XCTestCase {
 
     /// The toggle consents to `allScopes`. It used to consent to `activateScopes` alone,
-    /// which left the read scopes unconsented — so opening the sheet made a silent request
+    /// which left the read scopes unconsented, so opening the sheet made a silent request
     /// for a scope nobody had approved, and the failure surfaced as "your account may not be
     /// eligible", a message about a different problem entirely.
     func test_allScopesCoversBothReadingAndActivating() {
@@ -350,7 +350,7 @@ final class PrivilegedScopeTests: XCTestCase {
     func test_bothPIMSurfacesAreCoveredInEachDirection() {
         // Six scopes: eligibility read, policy read and activate, each for roles and for
         // groups. Missing any one shows a tenant "no eligible access", offers a duration the
-        // policy will refuse, or fails activation — all of which read as the feature being
+        // policy will refuse, or fails activation, all of which read as the feature being
         // broken rather than a permission being absent.
         XCTAssertEqual(Set(PrivilegedAccessGraph.allScopes).count, 6)
         for scope in [PrivilegedAccessGraph.rolePolicyReadScope, PrivilegedAccessGraph.groupPolicyReadScope] {
@@ -382,7 +382,7 @@ final class PrivilegedEndpointTests: XCTestCase {
     /// Groups: Graph documents that listing group eligibility REQUIRES a principalId or
     /// groupId filter, so the plain collection is an invalid request. It returned nothing,
     /// one surface failing is tolerated by design, and a tenant with PIM for Groups
-    /// configured showed no groups — a silent half-failure rather than an error.
+    /// configured showed no groups, a silent half-failure rather than an error.
     ///
     /// Roles: the plain collection returns every schedule the caller can see, which needs
     /// directory-wide read. It works for a Global Administrator and returns nothing useful
@@ -397,7 +397,7 @@ final class PrivilegedEndpointTests: XCTestCase {
 
     func test_activationPathsAreNotFiltered() {
         // The activation endpoints take a body naming the principal, so a filter function
-        // there would be wrong — and would silently post to a URL Graph does not serve.
+        // there would be wrong, and would silently post to a URL Graph does not serve.
         for path in [PrivilegedAccessGraph.roleActivationPath, PrivilegedAccessGraph.groupActivationPath] {
             XCTAssertFalse(path.contains("filterByCurrentUser"), "\(path) must not be filtered")
             XCTAssertTrue(path.hasSuffix("ScheduleRequests"))

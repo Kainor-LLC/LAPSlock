@@ -2,7 +2,7 @@ import XCTest
 import AuthKit
 @testable import CredentialKit
 
-// Build Spec §13 — capability/platform contract tests. No Microsoft dependency.
+// Build Spec §13, capability/platform contract tests. No Microsoft dependency.
 // These lock in the macOS decision so it can't silently regress, and they are the
 // tests to update when macOS reveal becomes available.
 
@@ -139,7 +139,7 @@ final class ProviderCapabilityTests: XCTestCase {
 // MARK: - test double
 
 /// Minimal AuthManaging stand-in. Proves CredentialKit is testable with zero
-/// Microsoft dependencies — the payoff of the AuthKit protocol seam.
+/// Microsoft dependencies, the payoff of the AuthKit protocol seam.
 private struct FakeAuth: AuthManaging {
     var currentAccount: AdminAccount? {
         get async { AdminAccount(id: "acct", tenantId: "tenant-1", username: "admin@example.com") }

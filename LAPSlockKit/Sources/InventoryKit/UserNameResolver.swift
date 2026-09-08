@@ -5,7 +5,7 @@ import AuthKit
 //
 // WHY THIS IS OPT-IN. Intune's `userDisplayName` is often blank depending on how the primary
 // user was assigned, so rows show the UPN. Filling the gap means reading user objects from
-// the directory, which is a NEW permission on every customer's consent screen —
+// the directory, which is a NEW permission on every customer's consent screen, 
 // `User.ReadBasic.All`, a password app asking to read the user list. A security reviewer
 // will ask why. So it sits behind a Settings toggle, off by default, exactly like BitLocker
 // rotation and role activation: a customer who never turns it on never sees the permission
@@ -13,7 +13,7 @@ import AuthKit
 // Decision: "UPN should be enough" as the default, optional for those who want names.
 //
 // WHAT IT COSTS AND WHAT IT KEEPS. Lookups are by UPN, which the device record already
-// carries, so the inventory query is untouched — the `$select` there is fragile and one bad
+// carries, so the inventory query is untouched, the `$select` there is fragile and one bad
 // field 400s the whole list. Fifteen UPNs per request, the most Graph's `in` operator takes.
 // Results live in memory for the session and are never written anywhere: the app already
 // promises to record nothing about a tenant's users, and a name cache on disk would be a
@@ -93,7 +93,7 @@ public actor UserNameResolver: UserNameResolving {
 
     /// `userPrincipalName in ('a@x.com','b@x.com')`, with OData's quote escaping.
     ///
-    /// An apostrophe in a UPN — o'brien@ — is legal and, unescaped, ends the string literal
+    /// An apostrophe in a UPN, o'brien@, is legal and, unescaped, ends the string literal
     /// early and turns the whole filter into a 400. Doubled, per OData, it is a literal quote.
     static func filterClause(for upns: [String]) -> String {
         let quoted = upns.map { "'" + $0.replacingOccurrences(of: "'", with: "''") + "'" }

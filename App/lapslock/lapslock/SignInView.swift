@@ -1,7 +1,7 @@
 import SwiftUI
 import AuthKit
 
-// Build Spec §4, §8 — the first screen anyone sees.
+// Build Spec §4, §8, the first screen anyone sees.
 //
 // DESIGN DECISION: the explainer is the sign-in screen, not a separate interstitial.
 // An extra screen before a button gets skipped or resented. Here the same information
@@ -26,7 +26,7 @@ public struct SignInView: View {
     let consentURL: URL?
     let isBusy: Bool
     /// Opens Settings without a session. Diagnostics live there, and a failed sign-in is
-    /// exactly when somebody needs them — so the gear cannot be behind the sign-in.
+    /// exactly when somebody needs them, so the gear cannot be behind the sign-in.
     let onOpenSettings: (() -> Void)?
 
     @State private var showingApprovalSheet = false

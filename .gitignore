@@ -1,6 +1,4 @@
-# ─────────────────────────────────────────────────────────────────────────────
 # Xcode / Swift
-# ─────────────────────────────────────────────────────────────────────────────
 
 ## Build output
 build/
@@ -12,7 +10,7 @@ DerivedData/
 *.dSYM
 
 ## Per-user Xcode state (window layout, breakpoints, selected scheme).
-## Never commit these — they churn on every open and conflict constantly.
+## Never commit these, they churn on every open and conflict constantly.
 xcuserdata/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
@@ -41,26 +39,22 @@ xcuserdata/
 .build/
 .swiftpm/
 
-## NOTE ON Package.resolved — deliberately NOT ignored.
+## NOTE ON Package.resolved, deliberately NOT ignored.
 ## For an application (as opposed to a library) the resolved file pins the exact
 ## dependency versions that were built and shipped. For a security product this is
 ## supply-chain evidence: it records precisely which MSAL version is in a given
 ## release, and lets a build be reproduced months later. Keep it tracked.
 
-# ─────────────────────────────────────────────────────────────────────────────
 # macOS Finder junk (not covered by GitHub's Swift template)
-# ─────────────────────────────────────────────────────────────────────────────
 .DS_Store
 .AppleDouble
 .LSOverride
 Icon
 ._*
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Secrets — this repo is PUBLIC. Nothing credential-shaped may land here.
+# Secrets, this repo is PUBLIC. Nothing credential-shaped may land here.
 # The app is a public client (PKCE, no client secret), so there should never be a
 # secret to commit; these patterns exist to catch mistakes, not to enable them.
-# ─────────────────────────────────────────────────────────────────────────────
 *.local.xcconfig
 Secrets.xcconfig
 *.p12

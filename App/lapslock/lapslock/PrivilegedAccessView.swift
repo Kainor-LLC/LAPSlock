@@ -9,8 +9,8 @@ import PrivilegedAccessKit
 // activate, walk back. This closes that loop without leaving the bench.
 //
 // WRITTEN FOR SOMEBODY WHO CANNOT ASK FOR HELP. Like the tenant switcher, the end-to-end
-// path depends on tenant policy nobody here can reproduce — approval requirements, MFA
-// configuration, which roles are eligible — so failures have to explain themselves on
+// path depends on tenant policy nobody here can reproduce, approval requirements, MFA
+// configuration, which roles are eligible, so failures have to explain themselves on
 // screen.
 //
 // AND ONE RULE ABOVE THE REST: a PENDING approval must never look like success. If the
@@ -33,7 +33,7 @@ struct PrivilegedAccessView: View {
     /// on and no consent in the tenant they just signed into, and telling them to go
     /// toggle a switch off and on again is a puzzle, not an instruction.
     let requestConsent: (() async -> String?)?
-    /// The tenant's activation rules for one piece of access. Never fails — an unreadable
+    /// The tenant's activation rules for one piece of access. Never fails, an unreadable
     /// policy returns `.unknown` and the sheet behaves as it did before policies were read.
     let policy: (EligibleAccess) async -> ActivationPolicy
     /// Re-reads a request PIM already created, for the "Check again" button. Optional so a
@@ -123,7 +123,7 @@ struct PrivilegedAccessView: View {
 
     /// Says what the entry is and, for a role, whether it can actually read a credential.
     ///
-    /// Groups are never claimed to grant credential access — a group's id says nothing about
+    /// Groups are never claimed to grant credential access, a group's id says nothing about
     /// which roles it carries, so promoting one would be a guess presented as fact.
     /// Says what the tenant actually requires, once its policy has been read, rather than
     /// hedging about what tenants generally require.
@@ -153,7 +153,7 @@ struct PrivilegedAccessView: View {
         case .group(_, let accessId):
             // Ownership is not membership with extras. An owner of a role-assignable group
             // can change who is in it, which means granting that group's roles to other
-            // people — a bigger thing than reading one password, and worth saying so rather
+            // people, a bigger thing than reading one password, and worth saying so rather
             // than leaving the difference to one word.
             return accessId == .owner
                 ? "Group ownership — also lets you change who else is in this group"
@@ -249,7 +249,7 @@ struct PrivilegedAccessView: View {
             }
         case .pendingApproval(let requestId):
             // Deliberately NOT dressed as success. No checkmark, no accent colour. And
-            // reached ONLY for the two statuses that genuinely mean a person must decide —
+            // reached ONLY for the two statuses that genuinely mean a person must decide, 
             // this screen once appeared for ordinary provisioning delays, which sent
             // somebody looking for an approver their tenant does not use.
             Section {
@@ -310,7 +310,7 @@ struct PrivilegedAccessView: View {
     ///
     /// **A button rather than polling.** The wait is usually seconds, and a timer firing
     /// Graph calls at a screen nobody is looking at spends a customer's throttling budget to
-    /// save a tap. This costs one request, only when asked for, and no new permission — it is
+    /// save a tap. This costs one request, only when asked for, and no new permission, it is
     /// a GET on the path the activation was POSTed to.
     ///
     /// Absent when there is no request id to read, which is also how the two settled outcomes
@@ -369,7 +369,7 @@ struct PrivilegedAccessView: View {
 
             // Recoverable right here rather than by sending the user to Settings. Consent is
             // granted per organization, so an admin who works across tenants will meet this
-            // every time they reach a new one — and it is a permission prompt away, not a
+            // every time they reach a new one, and it is a permission prompt away, not a
             // configuration change.
             if failure.isConsent, let requestConsent {
                 Button {
@@ -469,7 +469,7 @@ struct PrivilegedFailure: Equatable {
     /// Appends Microsoft's own error code on its own line.
     ///
     /// A helper rather than an inline escape because writing Swift escape sequences through
-    /// a text-processing step is how this file got mangled twice in one session — Python
+    /// a text-processing step is how this file got mangled twice in one session, Python
     /// turns a backslash-n into a real newline and the string literal ends mid-sentence.
     /// Nothing here contains an escape for a tool to eat.
     static func codeSuffix(_ code: String) -> String {

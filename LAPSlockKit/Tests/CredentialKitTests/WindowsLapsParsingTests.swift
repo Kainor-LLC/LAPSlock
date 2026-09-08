@@ -5,7 +5,7 @@ import XCTest
 ///
 /// This is the function that decides WHICH password an admin is shown, so it is tested
 /// harder than its size suggests. Showing the wrong version sends somebody to a console
-/// with a credential that fails — and the reason history exists at all is that a device
+/// with a credential that fails, and the reason history exists at all is that a device
 /// which stopped checking in is still on an older password.
 final class WindowsLapsParsingTests: XCTestCase {
 

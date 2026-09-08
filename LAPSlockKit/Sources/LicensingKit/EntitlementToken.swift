@@ -1,6 +1,6 @@
 import Foundation
 
-// Build Spec — the verified entitlement.
+// Build Spec, the verified entitlement.
 //
 // Nothing in this file is trusted until `EntitlementVerifier` has checked a signature. The
 // types exist so that a VERIFIED token and an unverified blob cannot be confused: if you are
@@ -68,7 +68,7 @@ public struct VerifiedEntitlement: Sendable, Equatable {
 
 /// Why a token was not accepted.
 ///
-/// Every case means the same thing to the user — the free tier — and none of them is shown
+/// Every case means the same thing to the user, the free tier, and none of them is shown
 /// as an error. Contract section 7.6: failure degrades, never blocks, and never interrupts.
 /// The distinctions exist for the diagnostics report, not for a dialog.
 public enum EntitlementVerificationFailure: Error, Sendable, Equatable {

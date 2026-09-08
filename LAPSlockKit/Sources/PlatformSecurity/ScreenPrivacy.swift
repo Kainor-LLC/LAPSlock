@@ -5,7 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers   // UTType, used for the pasteboard item type.
 #endif
 
-// Build Spec §6 — screen-level protections around a revealed credential.
+// Build Spec §6, screen-level protections around a revealed credential.
 //
 // Three distinct leaks, three distinct defenses:
 //   1. App-switcher snapshot. iOS photographs your UI when the app backgrounds. If a
@@ -58,7 +58,7 @@ public final class ScreenPrivacyMonitor: ObservableObject {
             }
         })
 
-        // Screenshots. Cannot be blocked — only detected, after the fact.
+        // Screenshots. Cannot be blocked, only detected, after the fact.
         observers.append(center.addObserver(
             forName: UIApplication.userDidTakeScreenshotNotification,
             object: nil,
@@ -100,7 +100,6 @@ public final class ScreenPrivacyMonitor: ObservableObject {
 ///
 /// Applied via `.privacyCover(isProtected:)` on any view that can show a password.
 ///
-/// ─────────────────────────────────────────────────────────────────────────────
 /// KNOWN COSMETIC BUG, and two fixes that did NOT work. Read before attempting a third.
 ///
 /// Symptom: after tapping reveal, the "Hidden" cover appears for roughly two seconds and
@@ -115,12 +114,12 @@ public final class ScreenPrivacyMonitor: ObservableObject {
 /// Between 4 and 5 the condition below is satisfied even though the user never left the
 /// app. SwiftUI's scenePhase simply has not caught up with the system prompt dismissing.
 ///
-/// FAILED ATTEMPT 1 — @State captured in .onChange(of: scenePhase), covering .inactive
+/// FAILED ATTEMPT 1, @State captured in .onChange(of: scenePhase), covering .inactive
 /// only when a credential was on screen at the transition. Change handlers run AFTER the
 /// render they describe, and that render is the one iOS photographs, so the state was one
 /// frame stale exactly when it mattered.
 ///
-/// FAILED ATTEMPT 2 — same idea, recorded during body evaluation into a reference type to
+/// FAILED ATTEMPT 2, same idea, recorded during body evaluation into a reference type to
 /// remove the deferral. Also failed the switcher test on device.
 ///
 /// Both attempts failed in the dangerous direction: the credential appeared in the app
@@ -135,9 +134,8 @@ public final class ScreenPrivacyMonitor: ObservableObject {
 /// Whatever is attempted, verify ON DEVICE, in this order, and treat the second as
 /// blocking: (1) reveal shows no flash, (2) credential up, swipe to the app switcher,
 /// the card must show "Hidden".
-/// ─────────────────────────────────────────────────────────────────────────────
 public struct PrivacyCoverModifier: ViewModifier {
-    /// Only cover when there is something worth hiding — a permanent cover would make
+    /// Only cover when there is something worth hiding, a permanent cover would make
     /// the app switcher useless for ordinary browsing.
     let isProtected: Bool
 
@@ -196,9 +194,9 @@ public enum SecureClipboard {
     public static let defaultExpiry: TimeInterval = 90
 
     /// Copies with two protections:
-    ///   * `localOnly: true` — keeps it off Universal Clipboard, so it does not sync to
+    ///   * `localOnly: true`, keeps it off Universal Clipboard, so it does not sync to
     ///     the admin's Mac or iPad, where it would sit in another pasteboard entirely.
-    ///   * `expirationDate` — iOS clears the item automatically, so a password doesn't
+    ///   * `expirationDate`, iOS clears the item automatically, so a password doesn't
     ///     linger for the next app that reads the pasteboard.
     ///
     /// Returns the moment the item will expire, for UI copy.

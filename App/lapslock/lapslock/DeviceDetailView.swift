@@ -8,7 +8,7 @@ import PlatformSecurity
 import DiagnosticsKit
 import LicensingKit
 
-// Build Spec §6 — device detail and the credential reveal.
+// Build Spec §6, device detail and the credential reveal.
 //
 // This screen is where every piece of the foundation converges, in a strict order:
 //
@@ -38,7 +38,7 @@ final class DeviceDetailModel: ObservableObject {
     ///
     /// Kept separate from `errorMessage` deliberately. Matching on the prose to decide
     /// whether to offer activation would break the first time somebody reworded the copy,
-    /// and it would break silently — the button would just stop appearing.
+    /// and it would break silently, the button would just stop appearing.
     @Published var lastFailureWasMissingRole = false
     @Published var statusNote: String?
     @Published var isWorking = false
@@ -75,7 +75,7 @@ final class DeviceDetailModel: ObservableObject {
     /// Every version of the LAPS password from the current reveal, newest first.
     ///
     /// Index 0 is the current password. The rest are history, which Graph returned in the
-    /// SAME response — so they cost no extra request, no extra audit event and no extra
+    /// SAME response, so they cost no extra request, no extra audit event and no extra
     /// metered reveal. They are all live bytes and are all wiped together.
     private var lapsVersions: [CredentialVersion] = []
 
@@ -84,7 +84,7 @@ final class DeviceDetailModel: ObservableObject {
     /// machine you type one of them.
     @Published private(set) var visibleLapsVersion = 0
 
-    /// The version list for the UI. Dates and account names only — **no secrets**, so the
+    /// The version list for the UI. Dates and account names only, **no secrets**, so the
     /// list can be rendered without any view holding a credential.
     @Published private(set) var lapsVersionSummaries: [LapsVersionSummary] = []
 
@@ -102,7 +102,7 @@ final class DeviceDetailModel: ObservableObject {
     private var bitLockerSecret: SensitiveValue?
     private let bitLocker: any BitLockerKeyProviding
 
-    /// Free-tier reveal meter. Counts events only — LicensingKit cannot hold a credential,
+    /// Free-tier reveal meter. Counts events only, LicensingKit cannot hold a credential,
     /// and `scripts/isolation-check.sh` fails the build if it ever imports CredentialKit.
     private let meter: RevealMeter
     /// Pro removes metering entirely. Wired to the entitlement check once that exists.
@@ -146,11 +146,11 @@ final class DeviceDetailModel: ObservableObject {
     /// Overwrites the held bytes and clears everything shown alongside them.
     ///
     /// Wired to `session.onWipe`, and called DIRECTLY when a reveal is abandoned before it
-    /// was ever published — that path has no visible window running, so `onWipe` would
+    /// was ever published, that path has no visible window running, so `onWipe` would
     /// never fire and nothing else would clean up after it.
     private func wipeHeldSecrets() {
         // EVERY version, not just the visible one. History arrives with the current
-        // password and is held for the same window, so it must die with it — a version
+        // password and is held for the same window, so it must die with it, a version
         // left un-wiped because it was never on screen is the worst kind of leak, the
         // invisible kind.
         for version in lapsVersions { version.secret.wipe() }
@@ -184,7 +184,7 @@ final class DeviceDetailModel: ObservableObject {
     ///
     /// Not a new reveal: the gate has already passed for this window and every version is
     /// already in memory, so this asks for no biometrics, makes no Graph call and spends no
-    /// credit — the same reasoning that lets Copy work without re-gating.
+    /// credit, the same reasoning that lets Copy work without re-gating.
     ///
     /// The window is deliberately NOT extended. Sixty seconds is the exposure budget for
     /// one reveal, and letting a tap on a history row top it up would make the budget
@@ -196,7 +196,7 @@ final class DeviceDetailModel: ObservableObject {
 
         // Clear the clipboard if it still holds the version being swapped away. Otherwise
         // the screen and the clipboard disagree, and pasting the wrong password into a
-        // console is a failed login or a lockout — whereas an empty paste is obvious
+        // console is a failed login or a lockout, whereas an empty paste is obvious
         // immediately and costs one more tap.
         if let copied = lastCopiedValue {
             SecureClipboard.clearIfHolding(copied)
@@ -235,7 +235,7 @@ final class DeviceDetailModel: ObservableObject {
     ///
     ///  1. The privacy cover was *correct* to hide a credential published while inactive,
     ///     so a reveal showed the "item is hidden" screen for about two seconds. An admin
-    ///     at a machine reads that as failure and taps again — and every extra tap is
+    ///     at a machine reads that as failure and taps again, and every extra tap is
     ///     another audit event in the customer's tenant.
     ///  2. The 60-second window began ticking while nothing was readable, so the user lost
     ///     part of the time they were given.
@@ -315,7 +315,7 @@ final class DeviceDetailModel: ObservableObject {
         lastFailureWasMissingRole = false
         statusNote = nil
 
-        // Structural blocks first — no gate, no network, just an explanation.
+        // Structural blocks first, no gate, no network, just an explanation.
         if let blocked = device.revealBlockedReason {
             errorMessage = blocked
             return
@@ -399,7 +399,7 @@ final class DeviceDetailModel: ObservableObject {
             revealedItem = .lapsPassword
             beginVisibleWindow()
             // Charge only now. A cancelled prompt, a permission error or a network
-            // failure must never cost a credit — the user pays for reveals that actually
+            // failure must never cost a credit, the user pays for reveals that actually
             // produced a password, and nothing else.
             remainingReveals = meter.recordReveal(deviceIdentifier: device.id, isPro: isPro)
             await Self.record(.credentialReveal, .success,
@@ -416,7 +416,7 @@ final class DeviceDetailModel: ObservableObject {
 
     // MARK: - BitLocker
 
-    /// Loads key METADATA only — no key values, low-privilege scope. Safe before any gate.
+    /// Loads key METADATA only, no key values, low-privilege scope. Safe before any gate.
     func loadBitLockerKeys() async {
         guard let entraDeviceId = device.entraDeviceId else { return }
         guard device.platform == .windows else { return }
@@ -519,7 +519,7 @@ final class DeviceDetailModel: ObservableObject {
         statusNote = SecureClipboard.copyConfirmation()
     }
 
-    /// Error copy for the key LIST, which is a softer failure than a failed reveal —
+    /// Error copy for the key LIST, which is a softer failure than a failed reveal, 
     /// the rest of the screen still works.
     static func describeBitLockerList(_ error: Error) -> String? {
         guard let e = error as? CredentialError else { return "Couldn't load BitLocker recovery keys." }
@@ -573,7 +573,7 @@ final class DeviceDetailModel: ObservableObject {
     // MARK: - copy
 
     /// The username is not secret, so it copies without the expiring-clipboard
-    /// treatment the password gets — an admin often needs it on the clipboard for
+    /// treatment the password gets, an admin often needs it on the clipboard for
     /// longer than 90 seconds while working through a logon prompt.
     func copyUsername(_ name: String) {
         UIPasteboard.general.string = name
@@ -587,7 +587,7 @@ final class DeviceDetailModel: ObservableObject {
     // 48-digit BitLocker recovery key will get it out of the app another way.** They will
     // photograph the screen with a second phone, or transcribe it into Notes, or read it
     // aloud on a call. Every one of those is worse handling than the clipboard this app
-    // already hardened — the clipboard entry expires, is cleared when the reveal window
+    // already hardened, the clipboard entry expires, is cleared when the reveal window
     // ends, and is excluded from Universal Clipboard. A hand-copied key has none of that
     // and never expires.
     //
@@ -597,7 +597,7 @@ final class DeviceDetailModel: ObservableObject {
     //
     // The metered reveal count is the free-tier limit, and it is enough: five reveals per 30
     // days is genuinely binding for a working administrator, which is where Pro earns its
-    // money. Founder's read, and correct — "the limit is the bigger catch".
+    // money. Founder's read, and correct, "the limit is the bigger catch".
     //
     // Pro therefore means unmetered reveals. Future conveniences may be gated (favourites,
     // app lock) as long as they do not make credential HANDLING worse.
@@ -708,7 +708,7 @@ final class DeviceDetailModel: ObservableObject {
     /// else.
     ///
     /// TODO when StoreKit products exist: append the upgrade action and let StoreKit
-    /// supply the localized price. Never hardcode a price string — App Store pricing is
+    /// supply the localized price. Never hardcode a price string, App Store pricing is
     /// per-storefront and a baked-in number will be wrong somewhere.
     static func meterExhaustedMessage(nextAvailable: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
@@ -811,7 +811,7 @@ struct DeviceDetailView: View {
     /// Switches between the password versions the tenant keeps.
     ///
     /// **Why this is here at all.** A device that has not checked in since its last
-    /// rotation is still using an older password — and a device that stopped checking in is
+    /// rotation is still using an older password, and a device that stopped checking in is
     /// exactly the one an admin ends up standing at. Without history the app confidently
     /// shows the one password that will not work.
     ///
@@ -821,7 +821,7 @@ struct DeviceDetailView: View {
     /// What a version row is called.
     ///
     /// **Not every extra entry is an older password.** Graph's `credentials` collection can
-    /// carry entries for DIFFERENT managed accounts — LAPS policy can change
+    /// carry entries for DIFFERENT managed accounts, LAPS policy can change
     /// `AdministratorAccountName`, and each account's backups appear in the same collection.
     /// Calling another account's current password "Previous password" would be wrong in a way
     /// that matters: an admin would skip the entry that actually works. So when the account
@@ -1263,7 +1263,7 @@ struct RevealedCredentialCard: View {
         .padding(.vertical, 6)
     }
 
-    /// The account name is half the credential — you cannot sign in with a password
+    /// The account name is half the credential, you cannot sign in with a password
     /// alone, and LAPS account names vary by policy (Administrator, LapsAdmin, a custom
     /// name). It gets its own labelled, copyable field rather than a caption.
     ///
@@ -1321,7 +1321,7 @@ struct RevealedCredentialCard: View {
         }
     }
 
-    /// The signature element: a pit-timer countdown. Functional first — an admin needs
+    /// The signature element: a pit-timer countdown. Functional first, an admin needs
     /// to know how long they have before it disappears mid-transcription.
     private var countdown: some View {
         CountdownRing(secondsRemaining: secondsRemaining, progress: progress)
@@ -1330,7 +1330,7 @@ struct RevealedCredentialCard: View {
 
 // MARK: - revealed recovery key card
 
-/// A BitLocker recovery key is 48 digits in eight hyphenated groups — far too long to
+/// A BitLocker recovery key is 48 digits in eight hyphenated groups, far too long to
 /// read as one line on a phone. It is chunked into two rows of four groups, which is how
 /// people actually read them off a screen while typing into a recovery prompt.
 ///
@@ -1423,7 +1423,7 @@ struct RevealedRecoveryKeyCard: View {
 
 /// The signature element, shared by both credential cards: a pit-timer countdown.
 ///
-/// Functional before decorative — an admin mid-transcription needs to know how long is
+/// Functional before decorative, an admin mid-transcription needs to know how long is
 /// left before the value disappears.
 struct CountdownRing: View {
     let secondsRemaining: Int

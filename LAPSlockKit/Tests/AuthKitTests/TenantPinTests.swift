@@ -5,7 +5,7 @@ import XCTest
 ///
 /// This is the single most security-relevant comparison in the auth path: it is what stops a
 /// token issued for one organization being used against another. It was moved out of
-/// `MSALAuthManager` into `TenantPin` precisely so it could be tested — MSALResult cannot be
+/// `MSALAuthManager` into `TenantPin` precisely so it could be tested, MSALResult cannot be
 /// constructed on macOS, so the comparison was previously uncovered.
 final class TenantPinTests: XCTestCase {
 

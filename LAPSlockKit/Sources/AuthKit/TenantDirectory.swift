@@ -19,7 +19,7 @@ import Foundation
 public enum TenantDirectoryError: Error, Sendable, Equatable {
     /// The input was neither a GUID nor a plausible domain.
     case malformedInput
-    /// Discovery returned nothing usable — usually a domain with no Entra tenant behind it.
+    /// Discovery returned nothing usable, usually a domain with no Entra tenant behind it.
     case notFound
     case network
 }
@@ -65,7 +65,7 @@ public enum TenantDirectory {
     ///
     /// The issuer is `https://login.microsoftonline.com/{tid}/v2.0`. Extracted by GUID shape
     /// rather than by splitting on slashes, so a change to the surrounding URL structure
-    /// cannot silently yield a wrong value — it yields nothing, and that surfaces.
+    /// cannot silently yield a wrong value, it yields nothing, and that surfaces.
     static func tenantId(fromDiscovery data: Data) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let issuer = object["issuer"] as? String

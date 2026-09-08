@@ -21,7 +21,7 @@ final class SubscriptionCatalogueTests: XCTestCase {
         // A customer may hold only ONE subscription per group, and Apple grants exactly one
         // introductory offer per group per customer. Both matter: MSP is a strict superset
         // of Pro, so separate groups would let somebody hold both and pay $19.99 + $49.99
-        // for overlapping benefits — and would hand out a second 30-day trial, 60 days free.
+        // for overlapping benefits, and would hand out a second 30-day trial, 60 days free.
         XCTAssertEqual(Set(SubscriptionProduct.allCases.map(\.groupIdentifier)).count, 1)
     }
 
@@ -39,8 +39,8 @@ final class SubscriptionCatalogueTests: XCTestCase {
     }
 
     func test_anUnknownIdentifierGrantsNothing() {
-        // A transaction for something we do not sell — a renamed product, another app's ID,
-        // a tampered payload — must not resolve to a paid tier.
+        // A transaction for something we do not sell, a renamed product, another app's ID,
+        // a tampered payload, must not resolve to a paid tier.
         XCTAssertNil(SubscriptionProduct(identifier: "com.kainor.lapslock.pro"))
         XCTAssertNil(SubscriptionProduct(identifier: ""))
         XCTAssertNil(SubscriptionProduct(identifier: "com.someone.else.pro.monthly"))

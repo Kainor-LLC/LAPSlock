@@ -4,7 +4,6 @@ import AuthKit
 // Diagnostics for support: enough to debug a customer's failure, structurally incapable
 // of capturing a credential.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // THE DESIGN PRINCIPLE
 //
 // Redaction-by-discipline fails eventually. Somebody adds a `details: String` field,
@@ -18,14 +17,13 @@ import AuthKit
 // arbitrary `Error.localizedDescription`.
 //
 // If a future change needs free text, it needs a new type, and that change should be
-// obvious in review — which is the point.
+// obvious in review, which is the point.
 //
 // ISOLATION: this module depends on Foundation only, and CredentialKit does NOT import
 // it. Diagnostics are recorded by the APP layer from typed errors, never from inside the
 // credential path. `scripts/isolation-check.sh` fails the build if that ever changes.
-// ─────────────────────────────────────────────────────────────────────────────
 
-/// What kind of operation failed. Fixed set — no free text.
+/// What kind of operation failed. Fixed set, no free text.
 public enum DiagnosticOperation: String, Sendable, Codable, CaseIterable {
     case signIn
     case tokenSilent
@@ -37,7 +35,7 @@ public enum DiagnosticOperation: String, Sendable, Codable, CaseIterable {
     case credentialRotate
     case biometricGate
     /// Switching to a customer organization (MSP tiers). Added because that path
-    /// cannot be tested by the vendor — the first person to hit a failure is a customer, so
+    /// cannot be tested by the vendor, the first person to hit a failure is a customer, so
     /// the report has to carry enough to answer them.
     case tenantSwitch
     /// Just-in-time PIM activation. Added because the tenant policy that refuses one is
@@ -63,7 +61,7 @@ public enum DiagnosticOutcome: String, Sendable, Codable, CaseIterable {
     case biometricUnavailable
     case biometricFailed
     case unknown
-    /// The request itself was rejected — a 4xx that is not an auth problem. Distinct from
+    /// The request itself was rejected, a 4xx that is not an auth problem. Distinct from
     /// `serviceUnavailable` because they lead somewhere completely different: one is our
     /// request being wrong, the other is Microsoft being down. Conflating them sent a
     /// diagnostics reader looking for an outage that was not happening.
@@ -82,10 +80,10 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     /// Microsoft Graph's `request-id` header. This is the single most useful field for a
     /// Microsoft support case, and it identifies a REQUEST, not a person or a secret.
     ///
-    /// `private(set)` only so `withGraphRequestId` can fill it in at record time — the
+    /// `private(set)` only so `withGraphRequestId` can fill it in at record time, the
     /// recording call sites do not hold the HTTP response. Still sanitised on the way in.
     public private(set) var graphRequestId: String?
-    /// Endpoint TEMPLATE, not the real URL — "/directory/deviceLocalCredentials/{id}".
+    /// Endpoint TEMPLATE, not the real URL, "/directory/deviceLocalCredentials/{id}".
     /// Identifiers are never interpolated in, so a device ID can't leak through here.
     public let endpointTemplate: String?
     /// Platform of the device involved, when relevant. A category, not an identity.
@@ -96,7 +94,7 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     // Auth failure detail, added after the broker bug proved it necessary. Each
     // is allowlisted here again, independently of whoever produced it: this type does not
     // trust its callers to have sanitised. A description string is deliberately NOT among
-    // them — an MSAL description can carry a redirect URL, and a redirect URL can carry an
+    // them, an MSAL description can carry a redirect URL, and a redirect URL can carry an
     // authorization code.
 
     /// `NSError.code` from the MSAL domain. A number.
@@ -108,11 +106,11 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     public let oauthError: String?
     /// Entra correlation ID. A GUID identifying a request, not a person.
     public let correlationId: String?
-    /// Whether the Authenticator broker ANSWERED the request. Not whether it was opened —
+    /// Whether the Authenticator broker ANSWERED the request. Not whether it was opened, 
     /// there is no signal for that, and the label says `broker-responded` accordingly.
     public let brokerInvolved: Bool?
 
-    /// Microsoft Graph's own error code — `InvalidRequest`, `RoleAssignmentExists` and so
+    /// Microsoft Graph's own error code, `InvalidRequest`, `RoleAssignmentExists` and so
     /// on. Allowlisted to an identifier shape, so a code passes and the human-readable
     /// message that accompanies it cannot.
     ///
@@ -227,7 +225,7 @@ public struct DiagnosticEnvironment: Sendable, Codable {
 /// DELIBERATELY NOT PERSISTED. Writing diagnostics to disk would create a file that
 /// outlives the app session and could be swept up by a backup or a file-sharing
 /// mistake. The cost is that a crash loses the log and the user has to reproduce the
-/// problem before exporting — an acceptable trade for a tool that handles administrator
+/// problem before exporting, an acceptable trade for a tool that handles administrator
 /// credentials.
 public actor DiagnosticsRecorder {
     public static let shared = DiagnosticsRecorder()
@@ -249,7 +247,7 @@ public actor DiagnosticsRecorder {
     /// Attaches Graph's `request-id` to a failure that did not carry one.
     ///
     /// **Filled here rather than at every call site**, because there are a dozen of them and
-    /// none of them holds the HTTP response by the time it records anything — the typed
+    /// none of them holds the HTTP response by the time it records anything, the typed
     /// errors deliberately do not carry a diagnostics payload. `GraphResponseTracer` explains
     /// the side channel.
     ///

@@ -1,10 +1,10 @@
 import Foundation
 
-// Build Spec §6 — the reveal window: a password is visible for a bounded time, then
+// Build Spec §6, the reveal window: a password is visible for a bounded time, then
 // the app re-masks it and wipes the value.
 //
 // DESIGN: this is a pure state machine over an injected clock. No Timer, no UIKit, no
-// singletons — which means the auto-hide behavior can be tested deterministically
+// singletons, which means the auto-hide behavior can be tested deterministically
 // instead of with sleeps. The app layer drives `tick()` from a SwiftUI timer and wires
 // `onExpire` to SensitiveValue.wipe().
 //

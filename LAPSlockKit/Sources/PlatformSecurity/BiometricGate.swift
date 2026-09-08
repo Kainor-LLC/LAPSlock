@@ -3,7 +3,7 @@ import Foundation
 import LocalAuthentication
 #endif
 
-// Build Spec §6 — the biometric gate that must pass BEFORE any password is fetched.
+// Build Spec §6, the biometric gate that must pass BEFORE any password is fetched.
 //
 // DESIGN: the decision logic is separated from LAContext so it can be unit tested with
 // no device, no simulator prompt, and no user interaction. `BiometricGateOutcome` and
@@ -20,7 +20,7 @@ import LocalAuthentication
 public enum BiometricAvailability: Sendable, Equatable {
     /// Face ID or Touch ID is enrolled and usable.
     case biometricsAvailable(kind: BiometricKind)
-    /// No biometrics enrolled, but a device passcode is set — gate still works.
+    /// No biometrics enrolled, but a device passcode is set, gate still works.
     case passcodeOnly
     /// No biometrics AND no passcode. The device has no owner authentication at all.
     case noneConfigured
@@ -48,7 +48,7 @@ public enum BiometricGateOutcome: Sendable, Equatable {
     case fallbackDismissed
     /// Authentication ran and failed (wrong face, wrong passcode).
     case failed
-    /// Cannot authenticate at all — the device has no passcode or biometrics.
+    /// Cannot authenticate at all, the device has no passcode or biometrics.
     case unavailable(reason: String)
 }
 
@@ -101,7 +101,7 @@ public enum BiometricPolicy {
 
 #if canImport(LocalAuthentication)
 
-/// Wraps LAContext. One instance per authentication attempt — LAContext is not designed
+/// Wraps LAContext. One instance per authentication attempt, LAContext is not designed
 /// to be reused across evaluations, and reuse can silently return a cached success.
 public struct BiometricGate: Sendable {
 
@@ -138,7 +138,7 @@ public struct BiometricGate: Sendable {
     /// so the ordering is the caller's contract.
     public func authenticate(deviceName: String?) async -> BiometricGateOutcome {
         let context = LAContext()
-        // Deliberately NOT setting localizedFallbackTitle to "" — an empty string hides
+        // Deliberately NOT setting localizedFallbackTitle to "", an empty string hides
         // the passcode fallback, which would strand a locked-out admin.
         context.localizedFallbackTitle = "Use Passcode"
 

@@ -11,7 +11,7 @@ import PrivilegedAccessKit
 import SubscriptionKit
 
 // App root. Owns the one decision the rest of the app depends on: which data source
-// is in play — a live tenant, or demo mode.
+// is in play, a live tenant, or demo mode.
 //
 // Demo mode exists for three reasons (§ App Store Review Guideline 2.1):
 //   1. App Store reviewers cannot sign into a customer's Entra tenant.
@@ -101,14 +101,14 @@ enum RevealMeters {
 /// There is deliberately no `demo` counterpart. Demo mode is for evaluating the app without
 /// signing in, and an install in that state must have no code path that can contact Kainor
 /// (entitlement contract section 7.1). Passing nil to Settings in demo is what enforces it.
-/// The MSP customer list. Live path only — demo mode has no tenants to switch between, and
+/// The MSP customer list. Live path only, demo mode has no tenants to switch between, and
 /// giving it a store would create a code path where an unsigned-in install holds a list of
 /// organizations.
 enum TenantStores {
     static let live = KeychainTenantStore()
 }
 
-/// Favourites and recents. Live path only — demo mode has no tenant to key them by, and
+/// Favourites and recents. Live path only, demo mode has no tenant to key them by, and
 /// giving it one would mean an unsigned-in install held a list of device identifiers.
 enum DeviceShortcutStores {
     static let live = DeviceShortcutStore()
@@ -133,8 +133,8 @@ final class AppRootModel: ObservableObject {
     ///
     /// The existence of a LiveSession is the proof that authentication succeeded, so
     /// every accessor here returns a non-optional live service. That is deliberate:
-    /// the previous shape returned optionals, and the call site — a non-@ViewBuilder
-    /// closure returning a concrete DeviceDetailView, which cannot branch — had no way
+    /// the previous shape returned optionals, and the call site, a non-@ViewBuilder
+    /// closure returning a concrete DeviceDetailView, which cannot branch, had no way
     /// to handle nil except to coalesce in a demo provider while still reporting
     /// isDemo: false. A revealed value with no banner and no way to tell it was fake
     /// is the one bug this app cannot ship. Hoisting the check up to a place that can
@@ -230,7 +230,7 @@ final class AppRootModel: ObservableObject {
 
     /// Recomputes both capabilities from the organization licence AND the Apple subscription.
     ///
-    /// Merged per capability rather than by picking a winning tier — see
+    /// Merged per capability rather than by picking a winning tier, see
     /// `SubscriptionEntitlement.merge`. An Enterprise organization licence is paid but cannot
     /// switch tenants, while an MSP subscription can, so somebody holding both must end up
     /// with unmetered reveals *and* switching. Any single-tier answer drops one of them.
@@ -241,7 +241,7 @@ final class AppRootModel: ObservableObject {
     /// **Takes the subscription as an argument rather than reading it, and that is the whole
     /// point of this method existing separately.**
     ///
-    /// `@Published` emits in `willSet` — the publisher fires BEFORE the stored property is
+    /// `@Published` emits in `willSet`, the publisher fires BEFORE the stored property is
     /// updated. So a sink that reacted by reading `subscriptions.entitlement` read the
     /// PREVIOUS value, and buying MSP left `canSwitchTenants` false until the next launch
     /// recomputed it from scratch. Observed on device: the tenant switcher only
@@ -361,7 +361,7 @@ final class AppRootModel: ObservableObject {
 
     /// Puts a previously signed-in admin straight back into the app.
     ///
-    /// Silent only — see `MSALAuthManager.restoreSession`. Nothing here overrides Entra: a
+    /// Silent only, see `MSALAuthManager.restoreSession`. Nothing here overrides Entra: a
     /// revoked or expired refresh token, or a Conditional Access policy demanding
     /// reauthentication, simply produces nil and the sign-in screen.
     func restoreSession() async {
@@ -422,7 +422,7 @@ final class AppRootModel: ObservableObject {
     /// This is the compensation for a feature that cannot be tested here. An MSP who cannot
     /// reach a customer tenant has an on-screen explanation from `SwitchFailure`, and if that
     /// is not enough, the support report now carries the AADSTS code, the correlation ID and
-    /// whether the broker answered — which is what Microsoft support needs to say why.
+    /// whether the broker answered, which is what Microsoft support needs to say why.
     ///
     /// The TARGET TENANT IS DELIBERATELY NOT RECORDED. It identifies one of the MSP's
     /// customers, and a support report is a thing people email. The correlation ID lets
@@ -457,7 +457,7 @@ final class AppRootModel: ObservableObject {
     ///
     /// This is the change the broker bug asked for: the user still sees a plain
     /// sentence, but the support report now carries the MSAL code, the AADSTS code, the
-    /// correlation ID and whether the broker was in the path — and nothing else, because
+    /// correlation ID and whether the broker was in the path, and nothing else, because
     /// `AuthFailureDetail` and `DiagnosticEvent` each refuse anything that is not a number,
     /// a bool, or a string of a fixed shape.
     private func recordSignInFailure(_ outcome: DiagnosticOutcome) async {
@@ -493,18 +493,18 @@ final class AppRootModel: ObservableObject {
     /// Requests incremental consent for the device-write scope, used when the user turns
     /// on BitLocker rotation. Returns nil on success or a user-facing message on failure.
     ///
-    /// Asking here — at the moment the toggle flips — means an admin discovers a blocked
+    /// Asking here, at the moment the toggle flips, means an admin discovers a blocked
     /// permission while sitting at their desk, not while standing at a broken machine.
     /// Requests consent for the PIM activation scopes.
     ///
     /// Mirrors `requestRotationConsent` deliberately: same opt-in shape, same incremental
     /// consent, same rule that a customer who never enables it never sees the permission
-    /// requested. This one is the heavier ask of the two — it lets the app request a
-    /// privilege escalation — so it stays off by default.
+    /// requested. This one is the heavier ask of the two, it lets the app request a
+    /// privilege escalation, so it stays off by default.
     func requestPrivilegedActivationConsent() async -> String? {
         guard let auth else { return "Sign in first." }
         do {
-            // ALL of them — read and activate. Consenting to activation alone left the
+            // ALL of them, read and activate. Consenting to activation alone left the
             // read scopes unconsented, so the sheet failed the moment it opened.
             _ = try await auth.token(scopes: PrivilegedAccessGraph.allScopes, allowInteractive: true)
             return nil
@@ -621,7 +621,7 @@ final class AppRootModel: ObservableObject {
         }()
 
         // Graph's status and code, not MSAL's. The previous version read httpStatus from the
-        // AUTH failure detail, which is nil for a Graph error — so a 400 was reported with no
+        // AUTH failure detail, which is nil for a Graph error, so a 400 was reported with no
         // status at all and an outcome that claimed an outage.
         var graphStatus: Int?
         var graphCode: String?
@@ -673,7 +673,7 @@ struct AppRootView: View {
     var body: some View {
         content
             // A full cover rather than a conditional branch, so the app underneath keeps its
-            // state — an admin who unlocks lands back exactly where they were rather than on
+            // state, an admin who unlocks lands back exactly where they were rather than on
             // a freshly reloaded device list.
             .overlay {
                 if appLock.isLocked {
@@ -880,7 +880,7 @@ struct AppRootView: View {
             .sheet(isPresented: $showingSignedOutSettings) {
                 // No tenant, so nothing tenant-scoped is offered: no consent requests, no
                 // license, no sign-out. What IS here is the diagnostics report, with the
-                // most recent sign-in failure attached — the reason this sheet exists.
+                // most recent sign-in failure attached, the reason this sheet exists.
                 SettingsView(
                     settings: AppSettings.shared,
                     requestRotationConsent: { "Sign in first." },
@@ -902,7 +902,7 @@ struct AppRootView: View {
             }
 
             // Demo entry lives here so a reviewer (or a prospect) can evaluate the app
-            // without a tenant. Understated on purpose — it isn't the primary path.
+            // without a tenant. Understated on purpose, it isn't the primary path.
             Button("Explore with demo data") {
                 root.enterDemoMode()
             }

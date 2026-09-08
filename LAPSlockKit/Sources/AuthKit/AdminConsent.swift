@@ -1,6 +1,6 @@
 import Foundation
 
-// Build Spec §4, §8 — consent onboarding.
+// Build Spec §4, §8, consent onboarding.
 //
 // THE PROBLEM THIS SOLVES
 // All four Graph scopes LAPSlock requests are admin-restricted. That produces a
@@ -9,7 +9,7 @@ import Foundation
 //   An admin signs in, approves the consent prompt, but does NOT tick "Consent on
 //   behalf of your organization." Entra records a per-user grant (consentType:
 //   Principal) instead of a tenant-wide one (AllPrincipals). The app then works
-//   perfectly for that admin and fails for every other person in the tenant — and
+//   perfectly for that admin and fails for every other person in the tenant, and
 //   because the scopes are admin-restricted, a helpdesk tech cannot self-approve.
 //
 // The person who tested it sees success; the team sees AADSTS65001. Left unhandled,
@@ -22,7 +22,7 @@ import Foundation
 public enum AdminConsentLink {
 
     /// The v2 admin consent endpoint. Sending an admin here grants for the whole
-    /// organization — there is no per-user option on this flow, which is precisely why
+    /// organization, there is no per-user option on this flow, which is precisely why
     /// it is the reliable remedy for a missed checkbox.
     ///
     /// - Parameters:
@@ -72,7 +72,7 @@ public enum ConsentState: Sendable, Equatable {
     /// Nobody has consented for this tenant yet, and the signed-in user may not be
     /// able to. Show the "ask an administrator" path with a shareable link.
     case organizationApprovalRequired
-    /// The signed-in user personally consented, but the organization hasn't — so this
+    /// The signed-in user personally consented, but the organization hasn't, so this
     /// account works while others fail. Worth surfacing even though nothing looks
     /// broken for the current user.
     case grantedForThisUserOnly
@@ -109,7 +109,7 @@ public enum ConsentState: Sendable, Equatable {
     /// The single next action, phrased as a button label.
     ///
     /// **`roleMissing` deliberately offers none.** It used to return "How to fix this", and
-    /// the only place that renders it opens the admin-consent sheet — which explains getting
+    /// the only place that renders it opens the admin-consent sheet, which explains getting
     /// an administrator to approve the app, a different problem with a different fix, as this
     /// enum's own doc comment says two cases above. Sending somebody with a role problem to
     /// a consent explanation is worse than sending them nowhere, and the explanation for this
@@ -132,8 +132,8 @@ public enum ConsentState: Sendable, Equatable {
 public enum ConsentDiagnostics {
 
     /// Entra error codes that mean "consent is missing for this caller".
-    /// AADSTS65001 — user or admin has not consented.
-    /// AADSTS900971 / AADSTS90094 — admin consent required for the requested scopes.
+    /// AADSTS65001, user or admin has not consented.
+    /// AADSTS900971 / AADSTS90094, admin consent required for the requested scopes.
     static let consentCodes = ["AADSTS65001", "AADSTS90094", "AADSTS900971"]
 
     /// Inspects an error message for a consent-related Entra code.

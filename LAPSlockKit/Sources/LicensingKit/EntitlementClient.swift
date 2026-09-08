@@ -1,13 +1,13 @@
 import Foundation
 
-// Build Spec — the one call this app makes to a Kainor server. Contract sections 2 to 4.
+// Build Spec, the one call this app makes to a Kainor server. Contract sections 2 to 4.
 //
 // EVERYTHING THAT GOES ON THE WIRE IS DECIDED HERE, NOT BY THE HTTP STACK.
 //
 // The request body is a version and a tenant ID. The headers are the four in contract
 // section 2. URLSession's default User-Agent carries the bundle identifier, build number and
 // OS version, so it is overridden with a string that names only the app and its version.
-// The session is ephemeral — no cookie store, no cache — so there is no persistent client
+// The session is ephemeral, no cookie store, no cache, so there is no persistent client
 // identifier and two requests from the same install are not linkable beyond a source address.
 //
 // An administrator with a proxy is supposed to be able to confirm all of that in ten
@@ -31,7 +31,7 @@ public struct EntitlementResponse: Sendable, Equatable, Decodable {
 
 /// Why a fetch failed. The manager cares about exactly one distinction: was this the
 /// NETWORK, or was it the SERVER giving an answer? Only a network failure earns the offline
-/// grace in contract section 7.5. A server that answered — with anything — did not.
+/// grace in contract section 7.5. A server that answered, with anything, did not.
 public enum EntitlementFetchError: Error, Sendable, Equatable {
     /// No response reached us: offline, DNS, TLS, timeout. Grace applies.
     case network

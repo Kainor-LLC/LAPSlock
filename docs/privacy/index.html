@@ -184,8 +184,8 @@
     <h3>If your organization buys a license</h3>
     <p>Organization licenses are keyed to a Microsoft tenant. For each paying organization, Kainor
     LLC keeps the tenant ID, the license tier, its term dates, and an order reference. That is the
-    whole record. It contains no person's name or email address — those stay with the payment
-    processor as a billing record — and nothing about how the app is used. A tenant ID identifies an
+    whole record. It contains no person's name or email address, those stay with the payment
+    processor as a billing record, and nothing about how the app is used. A tenant ID identifies an
     organization, not a person.</p>
     <p>Our license server does not log tenant IDs. Its request logs are the ordinary kind every web
     service has (a timestamp, a source address, a status code), kept briefly, and they cannot show
@@ -210,13 +210,13 @@
     <h2 class="sec">Network connections</h2>
     <p>LAPSlock connects to exactly two hosts:</p>
     <ul>
-      <li><code>login.microsoftonline.com</code> — Microsoft sign-in</li>
-      <li><code>graph.microsoft.com</code> — Microsoft Graph, where your data lives</li>
+      <li><code>login.microsoftonline.com</code>: Microsoft sign-in</li>
+      <li><code>graph.microsoft.com</code>: Microsoft Graph, where your data lives</li>
     </ul>
     <p>A third host is contacted <strong>only if your organization activates a paid license</strong>
     in Settings, and never before:</p>
     <ul>
-      <li><code>kainor-lapslock-prod-func.azurewebsites.net</code> — Kainor's license check</li>
+      <li><code>kainor-lapslock-prod-func.azurewebsites.net</code>: Kainor's license check</li>
     </ul>
     <p>That request contains your Microsoft tenant ID and nothing else: no sign-in token, no user
     name, no device information, and no count of anything you have done in the app. It is made when

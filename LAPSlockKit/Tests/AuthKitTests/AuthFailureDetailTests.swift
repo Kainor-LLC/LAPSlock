@@ -8,7 +8,7 @@ final class AuthFailureDetailTests: XCTestCase {
 
     func test_aadCodeIsExtractedFromTextAndTheTextIsDropped() {
         // The real shape of an MSAL description, including a redirect URL with a code in
-        // the query — which is exactly what must never be stored.
+        // the query, which is exactly what must never be stored.
         let description = "AADSTS50076: Due to a configuration change made by your administrator, you must use multi-factor authentication. Trace ID: 1f2e3d4c-0000-0000-0000-000000000000 redirect_uri=msauth.com.kainor.lapslock://auth?code=SECRET_AUTH_CODE_VALUE"
         let code = AuthFailureDetail.extractAADCode(from: description)
         XCTAssertEqual(code, "AADSTS50076")

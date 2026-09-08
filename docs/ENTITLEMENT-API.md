@@ -584,7 +584,7 @@ checked and knowing how the tool is used, and it is the line the product refuses
 
 ### 8.7 How rows get there
 
-Since 2026-09-04 a second endpoint on the same Function, `/stripe-webhook`, writes the
+A second endpoint on the same Function, `/stripe-webhook`, writes the
 licence table when Stripe reports a payment. It changes nothing in §8.1: the row it writes has
 the fields listed there and no others, and the purchaser's name, email and address stay in
 Stripe as a billing record, the webhook reads a tenant domain from a checkout custom field,

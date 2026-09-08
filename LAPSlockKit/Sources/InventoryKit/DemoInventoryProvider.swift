@@ -2,7 +2,7 @@ import Foundation
 import CredentialKit
 
 // Demo inventory. Powers SwiftUI previews, UI development without a tenant, and
-// App Store review (Guideline 2.1 — reviewers can't sign into a customer tenant).
+// App Store review (Guideline 2.1, reviewers can't sign into a customer tenant).
 //
 // THE DATA IS CHOSEN TO EXERCISE EVERY UI STATE, not to look pretty:
 //   * Windows devices that can reveal (the happy path)

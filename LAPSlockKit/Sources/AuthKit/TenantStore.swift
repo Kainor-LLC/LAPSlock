@@ -9,7 +9,7 @@ import Security
 //
 // Individually these values are public: any domain's tenant GUID is returned by
 // unauthenticated OIDC discovery, which is the same fact the entitlement contract relies on
-// in §9.1. In aggregate they are something else — **a list of an MSP's clients** — and that
+// in §9.1. In aggregate they are something else, **a list of an MSP's clients**, and that
 // is commercially sensitive.
 //
 // This is the client-side half of a decision already made on the server side. The
@@ -22,7 +22,7 @@ import Security
 public struct TenantReference: Codable, Sendable, Equatable, Identifiable, Hashable {
     /// Lowercase canonical GUID. Also the identity: one row per directory.
     public let tenantId: String
-    /// What the user typed — usually a domain. Shown in the picker, because an
+    /// What the user typed, usually a domain. Shown in the picker, because an
     /// administrator recognises `contoso.com` and not a GUID.
     public var label: String
     public var lastUsedAt: Date
@@ -87,7 +87,7 @@ public final class InMemoryTenantStore: TenantStoring, @unchecked Sendable {
 ///
 /// `WhenUnlockedThisDeviceOnly`, deliberately on both halves. WhenUnlocked because the list
 /// is only ever read with the app in the foreground. ThisDeviceOnly because a client list
-/// must not sync through iCloud Keychain and must not restore onto a different phone —
+/// must not sync through iCloud Keychain and must not restore onto a different phone, 
 /// re-adding a customer is one line of typing, and a client list following a restored backup
 /// around is not.
 public struct KeychainTenantStore: TenantStoring {

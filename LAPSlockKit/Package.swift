@@ -1,5 +1,5 @@
 // swift-tools-version: 5.9
-// LAPSlockKit — module boundaries per Build Spec §3.1.
+// LAPSlockKit, module boundaries per Build Spec §3.1.
 //
 // THE CRITICAL RULE (§3.1): CredentialKit depends on AuthKit + Foundation ONLY.
 // Adding a licensing module, any analytics SDK, or any logging framework to
@@ -8,7 +8,7 @@
 // Enforced twice: here, and by scripts/isolation-check.sh in CI.
 //
 // WHY MSAL LIVES IN ITS OWN TARGET (AuthKitMSAL):
-//   1. CredentialKit's link graph contains no third-party binary at all — the
+//   1. CredentialKit's link graph contains no third-party binary at all, the
 //      credential path depends only on the AuthManaging protocol.
 //   2. The test suite builds and runs with zero network access and zero
 //      Microsoft dependencies, so tests are fast and deterministic.
@@ -17,7 +17,7 @@
 // WHY macOS IS IN `platforms` FOR AN iOS APP:
 //   The shipping product is iOS-only. macOS is declared solely so the test suite can
 //   run on the "My Mac" destination (much faster than booting a simulator). All
-//   testable code — CredentialKit, AuthKit — is pure Foundation and platform-agnostic.
+//   testable code, CredentialKit, AuthKit, is pure Foundation and platform-agnostic.
 //   AuthKitMSAL's implementation is wrapped in `#if os(iOS)` because MSAL's iOS flow
 //   uses UIKit; on macOS that target simply compiles to nothing.
 //   The macOS minimum must be >= 10.15 or the MSAL package product fails to resolve.
@@ -76,7 +76,7 @@ let package = Package(
         // import CredentialKit.
         //
         // Its own target rather than a folder in LicensingKit because LicensingKit is
-        // capped by isolation-check at Foundation + CryptoKit + Security — deliberately, so
+        // capped by isolation-check at Foundation + CryptoKit + Security, deliberately, so
         // the module that verifies signed entitlements cannot grow a payments SDK. StoreKit
         // lives out here instead, and LicensingKit stays the pure verifier it was.
         .target(name: "SubscriptionKit", dependencies: ["LicensingKit"]),
@@ -87,7 +87,7 @@ let package = Package(
         // Its own module rather than a folder in AuthKit because of what it asks for: this
         // is the one part of the app that requests a privilege ESCALATION. Keeping it
         // structurally unable to see a credential means "activating a role cannot touch a
-        // password" is a property of the link graph rather than a claim in a comment — the
+        // password" is a property of the link graph rather than a claim in a comment, the
         // same argument that isolates CredentialKit and LicensingKit from each other.
         .target(name: "PrivilegedAccessKit", dependencies: ["AuthKit"]),
 
@@ -104,7 +104,7 @@ let package = Package(
         // Free-tier reveal metering. Foundation + CryptoKit only.
         //
         // ⚠ ISOLATION: this target must NOT depend on CredentialKit, and CredentialKit
-        // must never import it. The meter counts EVENTS — no type in it has anywhere to
+        // must never import it. The meter counts EVENTS, no type in it has anywhere to
         // put a credential. Wiring happens in the app layer (DeviceDetailModel), which
         // already coordinates the gate, the provider and the reveal session.
         .target(name: "LicensingKit"),

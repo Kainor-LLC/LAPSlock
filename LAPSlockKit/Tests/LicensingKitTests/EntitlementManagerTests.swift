@@ -89,10 +89,10 @@ final class EntitlementManagerTests: XCTestCase {
 
     private let day: TimeInterval = 86_400
 
-    // MARK: 7.1 — a free install never calls
+    // MARK: 7.1, a free install never calls
 
     func test_aFreshInstallNeverReachesTheNetwork() async {
-        // The single most important property in this file. No activation, no call — not on
+        // The single most important property in this file. No activation, no call, not on
         // launch, not on refreshIfDue, not ever. FakeFetcher fails the test if touched.
         XCTAssertFalse(manager.isActivated)
         let outcome = await manager.refreshIfDue()
@@ -132,7 +132,7 @@ final class EntitlementManagerTests: XCTestCase {
     }
 
     func test_aTokenForTheWrongTenantIsRejectedAndNotStored() async {
-        // A server — or a man in the middle — hands back a valid token for someone else.
+        // A server, or a man in the middle, hands back a valid token for someone else.
         fetcher.respond(token: token("enterprise", tenant: tenantB))
 
         let outcome = await manager.activate(tenantId: tenantA)
@@ -152,7 +152,7 @@ final class EntitlementManagerTests: XCTestCase {
         XCTAssertEqual(manager.state(signedInTenantId: tenantA).tier, .free)
     }
 
-    // MARK: 7.3 — schedule
+    // MARK: 7.3, schedule
 
     func test_refreshIsNotDueForAFreshToken() async {
         fetcher.respond(token: token("enterprise"))
@@ -234,7 +234,7 @@ final class EntitlementManagerTests: XCTestCase {
         XCTAssertEqual(outcome, .updated(.enterprise))
     }
 
-    // MARK: 7.5 — grace
+    // MARK: 7.5, grace
 
     func test_anExpiredTokenIsKeptAliveOnlyByANetworkFailure() async {
         fetcher.respond(token: token("enterprise"))
@@ -299,7 +299,7 @@ final class EntitlementManagerTests: XCTestCase {
         XCTAssertEqual(manager.state(signedInTenantId: tenantA).tier, .enterprise, "the good token survives")
     }
 
-    // MARK: 7.4 step 8 — tenant binding to the current sign-in
+    // MARK: 7.4 step 8, tenant binding to the current sign-in
 
     func test_anEnterpriseLicenseDoesNotFollowTheUserToAnotherTenant() async {
         fetcher.respond(token: token("enterprise"))
@@ -323,7 +323,7 @@ final class EntitlementManagerTests: XCTestCase {
         XCTAssertEqual(manager.state(signedInTenantId: nil).tier, .msp)
     }
 
-    // MARK: 7.7 — StoreKit precedence
+    // MARK: 7.7, StoreKit precedence
 
     func test_storeKitAloneIsSufficient() {
         XCTAssertTrue(manager.isPro(signedInTenantId: tenantA, storeKitEntitlementActive: true))

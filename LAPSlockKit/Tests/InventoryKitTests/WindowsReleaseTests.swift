@@ -6,7 +6,7 @@ import XCTest
 // The behavior that matters most here is the FALLBACK. This table is a snapshot taken
 // at a point in time, and Microsoft will ship builds that postdate it. An unknown build
 // must degrade to something true ("Windows 11", or the raw version) and must never
-// produce a confident wrong answer — an admin who reads "24H2" on a 26H1 machine has
+// produce a confident wrong answer, an admin who reads "24H2" on a 26H1 machine has
 // been actively misled.
 
 final class WindowsReleaseTests: XCTestCase {

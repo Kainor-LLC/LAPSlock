@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-// Build Spec — entitlement verification, contract section 7.4.
+// Build Spec, entitlement verification, contract section 7.4.
 //
 // THE ORDER OF THE CHECKS BELOW IS THE CONTRACT, NOT A STYLE CHOICE.
 //
@@ -39,7 +39,7 @@ public struct EntitlementVerifier: Sendable {
     ///
     /// - Parameter boundTenantId: the tenant the license was activated against. `sub` must
     ///   equal this. Whether it must ALSO be the tenant currently signed in is a separate
-    ///   question the caller answers, because the answer differs by tier — see
+    ///   question the caller answers, because the answer differs by tier, see
     ///   `EntitlementManager`.
     public func verify(
         token: String,

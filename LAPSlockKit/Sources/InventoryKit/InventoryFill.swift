@@ -6,7 +6,7 @@ import Foundation
 // `managedDevices` has no usable server-side name search (`$filter` supports `eq` and a
 // little `startswith`, no `contains`, and `$search` is unsupported on the resource). On a
 // tenant large enough that the administrator has not scrolled to the end, searching for a
-// device that EXISTS returned nothing — and that never read as "still loading", it read as
+// device that EXISTS returned nothing, and that never read as "still loading", it read as
 // "this app cannot find my machine". It got worse the bigger the customer.
 //
 // THE SHAPE. The first page renders immediately, then this pages onward in the background
@@ -15,7 +15,7 @@ import Foundation
 // partial load was a lie.
 //
 // ONE PAGER AT A TIME. `DeviceInventoryService` is an actor, but `loadNextPage` reads the
-// next link, suspends on the fetch, then appends — so two concurrent callers read the same
+// next link, suspends on the fetch, then appends, so two concurrent callers read the same
 // link and append the same page twice. While a fill is running it must be the only thing
 // paging; the list model enforces that by making its manual "load more" a no-op meanwhile.
 
@@ -39,7 +39,7 @@ public enum InventoryFill {
         /// Stopped at the cap with pages remaining. Search is NOT complete, and the UI
         /// must say so rather than showing an empty result as if it were an answer.
         case capped
-        /// The caller cancelled — refresh, sign-out or tenant switch.
+        /// The caller cancelled, refresh, sign-out or tenant switch.
         case cancelled
         /// A page failed after any retry. Everything loaded so far is kept and usable.
         case failed(InventoryError)
@@ -86,7 +86,7 @@ public enum InventoryFill {
             }
         }
 
-        // At the cap. Only "capped" if something actually remains — a tenant of exactly
+        // At the cap. Only "capped" if something actually remains, a tenant of exactly
         // maxPages pages is complete, not cut off.
         let more = (try? await inventory.hasMore()) ?? true
         return more ? .capped : .complete

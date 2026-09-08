@@ -6,13 +6,13 @@ import DiagnosticsKit
 //
 // TWO EXPORT PATHS, on purpose:
 //
-//   1. Email (mailto:) — what you asked for. Opens the default mail app with the address,
+//   1. Email (mailto:), what you asked for. Opens the default mail app with the address,
 //      subject, and body prefilled. The catch is that mailto URLs have practical length
 //      limits (a couple of thousand characters before iOS or the mail client truncates),
 //      and a full 200-event report blows straight past that. So the emailed body carries
 //      the environment plus the most recent events only, and says so.
 //
-//   2. Share sheet — carries the COMPLETE report with no length limit, and lets someone
+//   2. Share sheet, carries the COMPLETE report with no length limit, and lets someone
 //      put it in Slack, Teams, Files, or a ticket instead of email.
 //
 // Both are offered because the person hitting a bug isn't always the person who emails
@@ -43,7 +43,7 @@ enum DiagnosticsExport {
     /// marketing name and doesn't identify a person.
     ///
     /// On the simulator `uname` returns the HOST architecture ("arm64"), which is both
-    /// useless for triage and misleading — it looks like a device model. The simulator
+    /// useless for triage and misleading, it looks like a device model. The simulator
     /// exposes the model it is pretending to be in an environment variable, so use that
     /// and label it plainly.
     static func hardwareIdentifier() -> String {

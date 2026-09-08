@@ -6,7 +6,7 @@ import XCTest
 //
 // The strongest test here is `test_reportContainsNoFreeText`, which asserts the report
 // never contains strings that were never given to it. That sounds trivial, but it's the
-// property that breaks the moment someone adds a free-text field — which is exactly when
+// property that breaks the moment someone adds a free-text field, which is exactly when
 // you want a red test.
 
 final class DiagnosticEventTests: XCTestCase {
@@ -114,7 +114,7 @@ final class DiagnosticsReportTests: XCTestCase {
     }
 
     /// THE important test. The report must contain only what was given to it as typed
-    /// data — never a device name, a UPN, a serial, or a password, because there is no
+    /// data, never a device name, a UPN, a serial, or a password, because there is no
     /// field on DiagnosticEvent capable of carrying one.
     func test_reportContainsNoFreeText() async {
         let r = DiagnosticsRecorder(capacity: 50)

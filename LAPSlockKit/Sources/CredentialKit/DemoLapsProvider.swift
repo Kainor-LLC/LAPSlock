@@ -20,7 +20,7 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
     public let platform: DevicePlatform
 
     /// Matches the real providers' declared capabilities so the demo exercises the same
-    /// UI branches — including macOS reveal being unavailable.
+    /// UI branches, including macOS reveal being unavailable.
     public var capabilities: CredentialCapabilities {
         switch platform {
         case .windows:
@@ -109,7 +109,7 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
             throw CredentialError.decodeFailure
         }
         // Two older versions, so the history picker is exercised in demo mode and by App
-        // Store review — a reviewer cannot sign into a tenant, so anything absent from the
+        // Store review, a reviewer cannot sign into a tenant, so anything absent from the
         // demo is effectively untested by them. Tenants that keep no history are the
         // default in production, and the picker hides itself for those.
         let history: [CredentialVersion] = [1, 2].compactMap { generation in

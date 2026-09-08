@@ -1,7 +1,7 @@
 import Foundation
 import AuthKit
 
-// Build Spec §2.5, §5.2, §6, §8 — the platform seam.
+// Build Spec §2.5, §5.2, §6, §8, the platform seam.
 //
 // WHY THIS EXISTS
 // Windows LAPS and macOS LAPS are different products with different storage, different
@@ -28,7 +28,7 @@ public enum LapsCredentialScopes {
     public static let intuneDevices = "DeviceManagementManagedDevices.Read.All"
     /// Entra device objects, needed for the two-identifier join (§2.5).
     public static let entraDevices = "Device.Read.All"
-    /// LAPS metadata only — no password value.
+    /// LAPS metadata only, no password value.
     public static let metadataBasic = "DeviceLocalCredential.ReadBasic.All"
     /// LAPS password reveal. Requested incrementally at first reveal, never at sign-in (§4).
     public static let reveal = "DeviceLocalCredential.Read.All"
@@ -36,16 +36,16 @@ public enum LapsCredentialScopes {
     public static let bitLockerKeysBasic = "BitLockerKey.ReadBasic.All"
     /// Permission to MODIFY devices. Required to rotate a BitLocker recovery key.
     /// Never requested at sign-in and never requested unless the user explicitly enables
-    /// rotation in Settings — a consent screen that says "modify your devices" is a much
+    /// rotation in Settings, a consent screen that says "modify your devices" is a much
     /// harder ask than one that says "read device inventory", and most customers don't
     /// need it. This is the same scope family that permits wipe and retire.
     public static let deviceWrite = "DeviceManagementManagedDevices.ReadWrite.All"
-    /// BitLocker recovery key values. Delegated only — Microsoft does not support
+    /// BitLocker recovery key values. Delegated only, Microsoft does not support
     /// application permissions for retrieving a key, which suits this app exactly.
     /// Requested incrementally at first reveal, never at sign-in.
     public static let bitLockerKeys = "BitLockerKey.Read.All"
 
-    /// Granted at sign-in. Deliberately EXCLUDES both reveal scopes — a first consent
+    /// Granted at sign-in. Deliberately EXCLUDES both reveal scopes, a first consent
     /// screen should read "reads device inventory", not "reads every password and disk
     /// encryption key in your tenant".
     public static let signInBaseline = [intuneDevices, entraDevices, metadataBasic, bitLockerKeysBasic]
@@ -104,9 +104,9 @@ public struct CredentialCapabilities: Sendable, Equatable {
 /// actions key on the managed device id.
 public struct DeviceCredentialTarget: Sendable, Equatable {
     public let platform: DevicePlatform
-    /// Entra directory device id — Windows LAPS reveal path.
+    /// Entra directory device id, Windows LAPS reveal path.
     public let entraDeviceId: String?
-    /// Intune managed device id — Intune action path (rotate).
+    /// Intune managed device id, Intune action path (rotate).
     public let managedDeviceId: String?
     public let deviceName: String?
 
@@ -143,7 +143,7 @@ public struct CredentialMetadata: Sendable, Equatable {
 ///
 /// **Why history matters, and it is not nostalgia.** A device that has not checked in
 /// since its last rotation is still using an OLDER password. The admin standing at exactly
-/// that machine — the one that stopped checking in, which is why they are standing at it —
+/// that machine, the one that stopped checking in, which is why they are standing at it, 
 /// needs the previous value, and the current one will not work.
 public struct CredentialVersion {
     public let accountName: String?
@@ -162,7 +162,7 @@ public struct RevealedCredential {
     public let backupDateTime: Date?
     public let secret: SensitiveValue
     /// Older passwords for the same device, newest first, and **empty unless the tenant's
-    /// LAPS policy keeps history** — which is not the default.
+    /// LAPS policy keeps history**, which is not the default.
     ///
     /// These arrive in the same Graph response as the current password: one request, one
     /// audit event, one metered reveal. Nothing here costs an extra call, which is why
@@ -187,11 +187,11 @@ public struct RevealedCredential {
 
 /// Error taxonomy (§8). Each case maps to a distinct, actionable UI state.
 public enum CredentialError: Error, Sendable, Equatable {
-    case consentRequired                      // 401 — re-auth / grant scope
-    case notAuthorized                        // 403 — signed in, lacks the directory role
-    case notLapsEnabled                       // 404 — no LAPS record for this device
-    case throttled(retryAfter: TimeInterval?) // 429 — honor Retry-After
-    case serviceUnavailable(status: Int)      // 5xx — Microsoft-side failure, retryable
+    case consentRequired                      // 401, re-auth / grant scope
+    case notAuthorized                        // 403, signed in, lacks the directory role
+    case notLapsEnabled                       // 404, no LAPS record for this device
+    case throttled(retryAfter: TimeInterval?) // 429, honor Retry-After
+    case serviceUnavailable(status: Int)      // 5xx, Microsoft-side failure, retryable
     case transport(status: Int)
     case emptyCredentialSet
     case decodeFailure
@@ -243,7 +243,7 @@ enum GraphHTTP {
     static func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw CredentialError.transport(status: -1) }
         // Graph's request-id, captured before the throw. The typed errors below carry no
-        // diagnostics payload on purpose — see GraphResponseTracer.
+        // diagnostics payload on purpose, see GraphResponseTracer.
         if !(200...299).contains(http.statusCode) {
             GraphResponseTracer.shared.recordFailure(http)
         }

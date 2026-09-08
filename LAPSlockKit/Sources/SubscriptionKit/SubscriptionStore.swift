@@ -4,7 +4,7 @@ import StoreKit
 // The live StoreKit layer: what Apple says this Apple ID owns, and how to buy.
 //
 // DELIBERATELY THIN. Every decision worth testing lives in `SubscriptionCatalogue` as a pure
-// function over plain values, because StoreKit's types cannot be faked — `Transaction` and
+// function over plain values, because StoreKit's types cannot be faked, `Transaction` and
 // `Product` are concrete, not protocols, so a unit test cannot manufacture one. What is left
 // here is the minimum glue, and it is verified against a local StoreKit configuration file
 // rather than by unit tests. Anything that can be decided without StoreKit belongs next door.
@@ -51,7 +51,7 @@ public final class SubscriptionStore: ObservableObject {
                 await self.refreshEntitlement()
                 // Offers are reloaded too, not just the entitlement. TRIAL ELIGIBILITY IS
                 // PART OF AN OFFER, and it changes the moment a subscription is bought or
-                // refunded — so a list loaded once at launch advertises "free for the first
+                // refunded, so a list loaded once at launch advertises "free for the first
                 // month" to somebody who has just used theirs, and keeps hiding it from
                 // somebody whose purchase was refunded. Prices can move under us too.
                 await self.loadOffers()
@@ -59,7 +59,7 @@ public final class SubscriptionStore: ObservableObject {
         }
         Task {
             // BEFORE anything else. StoreKit redelivers an unfinished transaction forever,
-            // and — the part that bites — an unfinished transaction can block a subsequent
+            // and, the part that bites, an unfinished transaction can block a subsequent
             // purchase attempt, which presents as `purchase()` never returning and a UI
             // spinning with no way out. `Transaction.updates` carries only NEW activity, so
             // leftovers from a previous launch have to be swept explicitly.
@@ -79,7 +79,7 @@ public final class SubscriptionStore: ObservableObject {
     /// Stops waiting on a purchase without cancelling it.
     ///
     /// **Safe because the outcome is not lost.** Whatever StoreKit eventually decides arrives
-    /// through `Transaction.updates`, which runs independently of this call — so abandoning
+    /// through `Transaction.updates`, which runs independently of this call, so abandoning
     /// the wait costs nothing and a purchase that completes later still grants access.
     ///
     /// This exists because `purchase()` can fail to return at all. Observed on a TestFlight
@@ -259,8 +259,8 @@ public struct SubscriptionOffer: Identifiable, Sendable {
 
     /// Copy for an introductory offer, or nil if it is not something to advertise.
     ///
-    /// Only a FREE TRIAL is described. Apple's other introductory modes — pay-as-you-go and
-    /// pay-up-front — are discounts rather than free access, and calling one of those "free"
+    /// Only a FREE TRIAL is described. Apple's other introductory modes, pay-as-you-go and
+    /// pay-up-front, are discounts rather than free access, and calling one of those "free"
     /// on a purchase button is the kind of wrong that gets an app rejected.
     static func introductoryDescription(_ offer: Product.SubscriptionOffer) -> String? {
         guard offer.paymentMode == .freeTrial else { return nil }

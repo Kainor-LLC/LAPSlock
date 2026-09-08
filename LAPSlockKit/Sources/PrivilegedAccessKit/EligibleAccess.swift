@@ -1,6 +1,6 @@
 import Foundation
 
-// Build Spec — PIM eligibility and activation, Graph v1.0 GA.
+// Build Spec, PIM eligibility and activation, Graph v1.0 GA.
 //
 // THE SCENARIO. An administrator at a broken workstation needs a LAPS password, and the
 // access that would let them read it is PIM-*eligible* rather than active. Today that means
@@ -10,7 +10,7 @@ import Foundation
 // permission", which is true and useless.
 //
 // TWO KINDS, NOT ONE. Eligibility can be for a directory role, or for membership of a group
-// that carries role assignments — "PIM for Groups". Mature tenants often prefer the group
+// that carries role assignments, "PIM for Groups". Mature tenants often prefer the group
 // form because it is governed alongside every other group. They are separate Graph surfaces
 // with separate scopes and separate request bodies, and an implementation that handled only
 // roles would silently show "no eligible access" to exactly the tenants that manage access
@@ -38,7 +38,7 @@ public struct EligibleAccess: Sendable, Equatable, Identifiable, Hashable {
     public let kind: EligibleAccessKind
     /// Human-readable name, when Graph expanded it. Nil when only ids came back.
     public let displayName: String?
-    /// When the ELIGIBILITY lapses — not the activation. Nil for permanent eligibility.
+    /// When the ELIGIBILITY lapses, not the activation. Nil for permanent eligibility.
     public let eligibilityEndsAt: Date?
 
     public init(id: String, kind: EligibleAccessKind, displayName: String?, eligibilityEndsAt: Date?) {
@@ -56,7 +56,7 @@ public struct EligibleAccess: Sendable, Equatable, Identifiable, Hashable {
     /// thing twice in the same row.
     ///
     /// Two rows for one group can therefore share a label, which would make `sorted` order
-    /// them arbitrarily — so `combined` breaks that tie explicitly on
+    /// them arbitrarily, so `combined` breaks that tie explicitly on
     /// `grantsManagementOfOthers` rather than leaning on the text.
     public var label: String {
         if let displayName, !displayName.isEmpty { return displayName }
@@ -68,7 +68,7 @@ public struct EligibleAccess: Sendable, Equatable, Identifiable, Hashable {
 
     /// True for group ownership, which is a materially larger grant than membership.
     ///
-    /// **An owner of a role-assignable group can change who is in it** — so activating
+    /// **An owner of a role-assignable group can change who is in it**, so activating
     /// ownership is not just "membership plus a bit", it is the ability to grant that
     /// group's roles to other people. Somebody who needs to read one password wants
     /// membership. Worth marking so the UI can say so and so the least-privileged option
@@ -104,7 +104,7 @@ public struct EligibleAccess: Sendable, Equatable, Identifiable, Hashable {
 
     /// The scope that endpoint needs. Reading a request back is a GET on the path it was
     /// POSTed to, so re-checking an activation costs **no additional scope and no further
-    /// consent** — which is what makes a "Check again" button free.
+    /// consent**, which is what makes a "Check again" button free.
     public var activateScope: String {
         switch kind {
         case .directoryRole: return PrivilegedAccessGraph.roleActivateScope
@@ -127,14 +127,14 @@ public struct EligibleAccess: Sendable, Equatable, Identifiable, Hashable {
 /// Graph endpoints and scopes for both surfaces.
 ///
 /// Scope names verified against Graph's own refusal, which names every scope it would have
-/// accepted — a more reliable source than documentation.
+/// accepted, a more reliable source than documentation.
 public enum PrivilegedAccessGraph {
 
     // Directory roles.
     //
     // `filterByCurrentUser(on='principal')` rather than the plain list, and that is a
     // correctness matter rather than a nicety. The unfiltered collection returns every
-    // schedule the CALLER can see, which needs directory-wide read — so it works for a
+    // schedule the CALLER can see, which needs directory-wide read, so it works for a
     // Global Administrator and returns nothing useful for the ordinary admin this feature
     // exists to help. The self-service function returns exactly the caller's own
     // eligibility with only the read scope.
@@ -150,7 +150,7 @@ public enum PrivilegedAccessGraph {
     // eligibility **requires** either a `principalId` or a `groupId` filter, so the plain
     // collection is simply an invalid request. Calling it returned nothing, one surface
     // failing is tolerated by design, and the result was a tenant with PIM for Groups
-    // configured showing no groups — a silent half-failure rather than an error.
+    // configured showing no groups, a silent half-failure rather than an error.
     public static let groupEligibilityPath =
         "/v1.0/identityGovernance/privilegedAccess/group/eligibilitySchedules/filterByCurrentUser(on='principal')"
     public static let groupActivationPath = "/v1.0/identityGovernance/privilegedAccess/group/assignmentScheduleRequests"
@@ -175,7 +175,7 @@ public enum PrivilegedAccessGraph {
     /// Read AND activate, and asking for only half is a bug this shipped once: the Settings
     /// toggle consented to the activation scopes alone, so opening the sheet then made a
     /// silent request for the unconsented READ scopes, which failed and surfaced as "your
-    /// account may not be eligible" — a message about the wrong problem entirely.
+    /// account may not be eligible", a message about the wrong problem entirely.
     ///
     /// These are the only scopes gated behind the opt-in toggle, and they are a heavier ask
     /// than reading a password: they let the app request a privilege escalation. A customer
@@ -186,7 +186,7 @@ public enum PrivilegedAccessGraph {
 /// Where an activation ended up.
 ///
 /// `pendingApproval` is not a flavour of success and must never be shown as one. When a
-/// tenant requires approval, `selfActivate` creates a request and returns — nothing is
+/// tenant requires approval, `selfActivate` creates a request and returns, nothing is
 /// active. Telling an administrator otherwise sends them back to a broken machine to fail
 /// again.
 ///
@@ -226,11 +226,11 @@ public enum ActivationOutcome: Sendable, Equatable {
 public enum PrivilegedAccessError: Error, Sendable, Equatable {
     /// Graph requires MFA satisfied in THIS session before it will self-activate anything.
     /// The caller re-authenticates with the challenge and retries. This is the only
-    /// legitimate way to satisfy that requirement — see `ClaimsChallenge`.
+    /// legitimate way to satisfy that requirement, see `ClaimsChallenge`.
     case claimsChallenge(ClaimsChallenge)
     /// The scope has not been consented. Expected until the user opts in.
     case consentRequired
-    /// No eligible access. Not an error to apologise for — it usually means the user's
+    /// No eligible access. Not an error to apologise for, it usually means the user's
     /// access is permanent rather than PIM-managed.
     case noEligibleAccess
     case alreadyActive

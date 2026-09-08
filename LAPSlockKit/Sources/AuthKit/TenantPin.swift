@@ -1,13 +1,13 @@
 import Foundation
 
-// Build Spec §3.3 — the tenant guard, made explicit.
+// Build Spec §3.3, the tenant guard, made explicit.
 //
 // WHAT THIS REPLACES, AND WHY IT IS NOT A WEAKENING.
 //
 // The guard used to compare a returned token's `tid` against the signed-in account's OWN
 // tenant. That is correct for a single-organization admin and wrong for an MSP, who
 // legitimately operates in a customer's tenant with an account whose home tenant is their
-// own. The naive fix — deleting the comparison — would remove the only thing stopping a
+// own. The naive fix, deleting the comparison, would remove the only thing stopping a
 // token for the wrong organization being used against it.
 //
 // So the comparison stays and the EXPECTATION becomes explicit. Before: "this token must be

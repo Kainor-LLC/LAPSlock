@@ -18,7 +18,7 @@ import AuthKit
 //   * ThisDeviceOnly, non-synced keychain for the MSAL token cache (§4)
 //   * config injection for BYO registration (§9)
 //
-// CONCURRENCY NOTE — read this before changing anything in here.
+// CONCURRENCY NOTE, read this before changing anything in here.
 //
 // It is not enough to build MSALWebviewParameters on the main actor. MSAL dereferences
 // the presenting view controller AGAIN inside acquireToken, on whatever thread you called
@@ -53,7 +53,7 @@ public struct AuthConfiguration: Sendable {
     /// Vendor multi-tenant default (§9).
     ///
     /// This client ID points at the "LAPSlock" app registration in the Kainor LLC tenant.
-    /// It is NOT a secret — it appears in every authorization request and is public by
+    /// It is NOT a secret, it appears in every authorization request and is public by
     /// design for a PKCE public client. What it is, however, is load-bearing: every
     /// shipped build references it, and every customer tenant's consent creates a service
     /// principal pointing at this object. Changing or deleting it breaks every install.
@@ -155,13 +155,13 @@ public actor MSALAuthManager: AuthManaging {
     /// Restores a previous session without prompting, or returns nil.
     ///
     /// **Why this exists.** MSAL already holds the account and a refresh token in its
-    /// keychain-backed cache, and nothing was asking for them — so every launch showed the
+    /// keychain-backed cache, and nothing was asking for them, so every launch showed the
     /// sign-in screen and made the user tap a button that then succeeded silently. That is
     /// friction with no security value: the tokens were already on the device.
     ///
     /// **Entra still decides.** This only ever acquires silently. If the refresh token has
     /// expired, been revoked, or Conditional Access now demands reauthentication, the silent
-    /// attempt fails and nil comes back — and the sign-in screen appears, which is exactly
+    /// attempt fails and nil comes back, and the sign-in screen appears, which is exactly
     /// right. The app deliberately does NOT impose a session lifetime of its own: that is the
     /// tenant's policy to set, and second-guessing it would contradict the whole delegated
     /// model.
@@ -176,7 +176,7 @@ public actor MSALAuthManager: AuthManaging {
 
         pinnedAccount = account
         // A restored session starts in the account's own tenant. An MSP's customer selection
-        // is deliberately not carried across a launch — operating in someone else's tenant
+        // is deliberately not carried across a launch, operating in someone else's tenant
         // should be a decision made now, not one inherited from last week.
         activeTenant = nil
 
@@ -192,7 +192,7 @@ public actor MSALAuthManager: AuthManaging {
 
     /// Builds an `AdminAccount` from a cached MSAL account.
     ///
-    /// Separate from the `MSALResult` version because a restore has no result to read — only
+    /// Separate from the `MSALResult` version because a restore has no result to read, only
     /// what the cache kept. Returns nil rather than throwing: a cache entry too incomplete to
     /// use is a reason to show the sign-in screen, not an error to surface.
     private static func account(from msalAccount: MSALAccount) -> AdminAccount? {
@@ -254,7 +254,7 @@ public actor MSALAuthManager: AuthManaging {
 
     public func signOut(account: AdminAccount) async throws {
         // A throw here means nothing is cached for this account, which is
-        // indistinguishable from "already signed out" — so absorb it.
+        // indistinguishable from "already signed out", so absorb it.
         let msalAccount: MSALAccount
         do {
             msalAccount = try application.account(forIdentifier: account.id)
@@ -303,7 +303,7 @@ public actor MSALAuthManager: AuthManaging {
         guard let pin = operatingPin else { throw AuthError.noAccount }
         // MSALClaimsRequest reports parse failure through the NSError out-parameter rather
         // than by returning nil, so the error has to be inspected explicitly. A guard on the
-        // return value compiles to nothing useful here — the initializer is non-optional.
+        // return value compiles to nothing useful here, the initializer is non-optional.
         var claimsError: NSError?
         let claimsRequest = MSALClaimsRequest(jsonString: claims, error: &claimsError)
         if let claimsError {
@@ -435,7 +435,7 @@ public actor MSALAuthManager: AuthManaging {
     /// The reveal scope (DeviceLocalCredential.Read.All) is requested later, on demand.
     ///
     /// NOTE: these mirror CredentialKit's `LapsCredentialScopes.signInBaseline`. They are
-    /// duplicated rather than imported on purpose — AuthKitMSAL must not depend on
+    /// duplicated rather than imported on purpose, AuthKitMSAL must not depend on
     /// CredentialKit, or the credential module would end up in MSAL's link graph and
     /// break the §3.1 isolation boundary. If you change one, change both.
     private static let baseScopes = [
@@ -464,7 +464,7 @@ public actor MSALAuthManager: AuthManaging {
 
     /// §3.3 cross-tenant guard: reject any token whose tid differs from the pinned account.
     /// The tenant a token actually came back for. The comparison against what we asked for
-    /// lives in `TenantPin.validate`, where it is unit tested — MSALResult cannot be
+    /// lives in `TenantPin.validate`, where it is unit tested, MSALResult cannot be
     /// constructed on macOS, so a comparison written here could not be.
     private static func tenantId(of result: MSALResult) -> String? {
         result.tenantProfile.tenantId ?? (result.account.accountClaims?["tid"] as? String)
@@ -472,7 +472,7 @@ public actor MSALAuthManager: AuthManaging {
 
     /// Reduces an MSAL error to the allowlisted support-report shape. Reads only fixed
     /// userInfo keys. The description is consulted for an `AADSTS` code by regex and then
-    /// discarded — it can contain the failing URL, and a broker redirect URL can contain an
+    /// discarded, it can contain the failing URL, and a broker redirect URL can contain an
     /// authorization code, which is why no field here is a description.
     private static func detail(from error: Error?, step: AuthStep) -> AuthFailureDetail {
         guard let error = error as NSError?, error.domain == MSALErrorDomain else {

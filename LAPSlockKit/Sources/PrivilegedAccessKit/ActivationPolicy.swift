@@ -11,7 +11,7 @@ import Foundation
 // The same policy answers three other questions the UI was guessing at: whether a
 // justification is required, whether a ticket number is required, and whether activation
 // demands a Conditional Access authentication context. That last one is what produced
-// `RoleAssignmentRequestAcrsValidationFailed` on device — reading it up front turns a
+// `RoleAssignmentRequestAcrsValidationFailed` on device, reading it up front turns a
 // mid-activation failure into a sign-in that happens before the request.
 
 /// The end-user activation rules from a PIM policy.
@@ -42,13 +42,13 @@ public struct ActivationPolicy: Sendable, Equatable {
 
     /// Nothing known. Every field permissive except the ones the UI already asks for anyway,
     /// so a tenant whose policy could not be read behaves exactly as it did before this
-    /// type existed — the policy read is an improvement, never a new way to fail.
+    /// type existed, the policy read is an improvement, never a new way to fail.
     public static let unknown = ActivationPolicy()
 
     /// Durations to offer, capped at what the policy allows.
     ///
     /// Returns the standard options up to and including the maximum, and if the maximum is
-    /// not one of them — three hours, say — the maximum itself is added so the user can use
+    /// not one of them, three hours, say, the maximum itself is added so the user can use
     /// their whole allowance. Never offers something the policy will refuse.
     public var offeredDurations: [(label: String, iso: String)] {
         guard let maximumDuration, let maxHours = Self.hours(maximumDuration) else {

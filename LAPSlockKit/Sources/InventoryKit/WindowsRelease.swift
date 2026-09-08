@@ -11,14 +11,14 @@ import Foundation
 //
 // 1. Graceful degradation. New Windows releases ship on their own schedule, and this
 //    table is a snapshot. An unknown build returns nil and the UI falls back to showing
-//    the raw version — never a wrong guess, never a crash. Adding a release later is one
+//    the raw version, never a wrong guess, never a crash. Adding a release later is one
 //    line here.
 //
 // 2. No Server claims from ambiguous builds. Several builds are shared between client
 //    and Server (26100 is both Windows 11 24H2 and Server 2025), and the Intune
 //    `operatingSystem` field says only "Windows" for both. Where a build is
 //    unambiguously Server, it's named as Server. Where it's shared, the client name is
-//    used, because Intune-managed fleets are overwhelmingly clients — and the raw build
+//    used, because Intune-managed fleets are overwhelmingly clients, and the raw build
 //    stays on screen so an admin can always tell.
 
 public enum WindowsRelease {

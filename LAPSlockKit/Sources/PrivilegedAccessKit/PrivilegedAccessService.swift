@@ -62,7 +62,7 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     ///
     /// A failure on ONE surface does not fail the whole call. A tenant may use PIM for
     /// Groups and not roles, or the reverse, and one of the two scopes may be unconsented
-    /// while the other is fine. Returning what we could read beats returning nothing —
+    /// while the other is fine. Returning what we could read beats returning nothing, 
     /// except when both fail, which is a real error and is thrown.
     public func eligibleAccess() async throws -> [EligibleAccess] {
         async let rolesResult = attemptList(.roles)
@@ -87,7 +87,7 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     ///
     /// A discriminator rather than four separate arguments, so the path, the `$expand`, the
     /// scope and the parser cannot drift apart. Reading a group schedule with the role
-    /// parser would silently return an empty list, which reads as "no eligible access" —
+    /// parser would silently return an empty list, which reads as "no eligible access", 
     /// the exact failure that is hardest to notice.
     private enum Surface {
         case roles
@@ -140,7 +140,7 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         } catch let error as AuthError {
             // interactionRequired matters as much as consentRequired here. A SILENT request
             // for a scope nobody has consented to throws interactionRequired, not
-            // consentRequired — so mapping only the latter reported "not authorized" for
+            // consentRequired, so mapping only the latter reported "not authorized" for
             // what is really "permission not granted yet", which points the user at the
             // wrong problem.
             switch error {
@@ -159,7 +159,7 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     /// Reads the activation rules the tenant has set for this access.
     ///
     /// **Never throws.** A policy read that fails leaves the UI exactly as it behaved before
-    /// this existed — standard durations, justification asked for anyway. The read is here to
+    /// this existed, standard durations, justification asked for anyway. The read is here to
     /// stop offering choices the tenant will refuse; it must not become a new way for
     /// activation to be unavailable, particularly since the policy scopes may not be
     /// consented in a tenant where activation itself is fine.
@@ -233,12 +233,12 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     /// Re-reads one activation request, so a user waiting on it can find out where it got to.
     ///
     /// **A GET on the path the request was POSTed to**, which is why this costs no new scope
-    /// and no new consent prompt — the activation scope already covers it. The response has
+    /// and no new consent prompt, the activation scope already covers it. The response has
     /// the same shape as the creation response, so `outcome(from:)` classifies it identically
     /// and a re-check cannot disagree with the original for any reason but a genuine change.
     ///
     /// Never interactive. This runs from a button somebody taps while waiting, and a sign-in
-    /// prompt is not an acceptable answer to "has it finished yet?" — the token is seconds
+    /// prompt is not an acceptable answer to "has it finished yet?", the token is seconds
     /// old in the case this exists for.
     public func status(ofRequest requestId: String, for access: EligibleAccess) async throws -> ActivationOutcome {
         let token = try await auth.token(scopes: [access.activateScope], allowInteractive: false)
@@ -358,7 +358,7 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
             // Conditional Access authentication context, Graph answers 400 with
             // `RoleAssignmentRequestAcrsValidationFailed` and puts the required claim in the
             // message. Checked before anything else in this branch, because to every other
-            // reading it is an indistinguishable bad request — which is exactly how it
+            // reading it is an indistinguishable bad request, which is exactly how it
             // presented before this existed.
             if haystack.contains("acrsvalidationfailed") || haystack.contains("acrs") {
                 if let message = Self.graphErrorMessage(data),
@@ -393,7 +393,7 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         return (code + " " + message).lowercased()
     }
 
-    /// Graph's error code alone, for the diagnostics report. Just the identifier — the
+    /// Graph's error code alone, for the diagnostics report. Just the identifier, the
     /// message beside it is prose and stays out.
     static func graphErrorCode(_ data: Data) -> String? {
         guard let code = errorObject(data)?["code"] as? String, !code.isEmpty else { return nil }
@@ -401,7 +401,7 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     }
 
     /// Graph's error message, used ONLY to extract a claims challenge from it. It is prose
-    /// and never recorded or displayed — `graphErrorCode` is what reaches the report.
+    /// and never recorded or displayed, `graphErrorCode` is what reaches the report.
     static func graphErrorMessage(_ data: Data) -> String? {
         errorObject(data)?["message"] as? String
     }

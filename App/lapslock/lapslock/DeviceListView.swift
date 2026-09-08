@@ -5,7 +5,7 @@ import InventoryKit
 import DiagnosticsKit
 import LicensingKit
 
-// Build Spec §5 — the device list. First screen after sign-in.
+// Build Spec §5, the device list. First screen after sign-in.
 //
 // The job is narrow: find one device fast. So search is prominent, rows carry only
 // what's needed to identify and triage (name, who has it, platform, anything wrong),
@@ -25,7 +25,7 @@ final class DeviceListModel: ObservableObject {
     @Published var errorMessage: String?
 
     /// Where the background fill has got to. Drives every "still loading" indicator, and
-    /// the search empty state reads it to avoid the lie this exists to fix — "no devices
+    /// the search empty state reads it to avoid the lie this exists to fix, "no devices
     /// match" while half the tenant has not arrived yet.
     enum FillState: Equatable {
         case idle
@@ -67,7 +67,7 @@ final class DeviceListModel: ObservableObject {
     private let inventory: any DeviceInventoryProviding
 
     /// Looks up primary users' display names when Intune left them empty. Nil in demo, and
-    /// consulted only while the Settings toggle is on — it is the only thing in this model
+    /// consulted only while the Settings toggle is on, it is the only thing in this model
     /// that can touch the user directory, and the toggle is the customer's consent to that.
     private let nameResolver: (any UserNameResolving)?
     private let settings: AppSettings?
@@ -116,8 +116,8 @@ final class DeviceListModel: ObservableObject {
         self.isPro = isPro
         self.remainingReveals = resolvedMeter.remaining(isPro: isPro)
 
-        // Names are filled in whenever the device set changes — first page, each page the
-        // fill delivers, a manual page — and when the toggle flips on mid-session. The
+        // Names are filled in whenever the device set changes, first page, each page the
+        // fill delivers, a manual page, and when the toggle flips on mid-session. The
         // resolver caches misses as well as hits, so this settles after one round: devices
         // that gained a name no longer need one, and devices whose user has none stay
         // exactly as they were, which reassigns nothing and so does not re-trigger.
@@ -152,7 +152,7 @@ final class DeviceListModel: ObservableObject {
         resolve(shortcuts.favourites)
     }
 
-    /// Recently opened devices, excluding anything already pinned — a device in both lists
+    /// Recently opened devices, excluding anything already pinned, a device in both lists
     /// twice is noise, and the favourite is the more deliberate of the two.
     var recentDevices: [ManagedDeviceSummary] {
         resolve(shortcuts.recents.filter { !shortcuts.favourites.contains($0) })
@@ -222,7 +222,7 @@ final class DeviceListModel: ObservableObject {
     /// Pages the rest of the tenant in the background so search covers all of it.
     ///
     /// Starts right after the first page rather than only once somebody types, because the
-    /// working set should already be full by the time they do — a few seconds of background
+    /// working set should already be full by the time they do, a few seconds of background
     /// paging against a search that lies until then is not a close call.
     private func startFill() {
         fillTask?.cancel()
@@ -298,7 +298,7 @@ final class DeviceListModel: ObservableObject {
 
     // MARK: - diagnostics
 
-    /// Records an operation outcome. Typed fields only — no device names, no URLs, no
+    /// Records an operation outcome. Typed fields only, no device names, no URLs, no
     /// response bodies, because DiagnosticEvent cannot carry them.
     ///
     /// Graph's `request-id` is filled in by `DiagnosticsRecorder` rather than passed here:
@@ -372,7 +372,7 @@ struct DeviceListView: View {
 
     /// Refreshes tenant state when the list appears. Note the NavigationStack does not
 
-    /// disappear when a detail view is pushed, so this fires once at launch — which is
+    /// disappear when a detail view is pushed, so this fires once at launch, which is
 
     /// enough here, because switching organizations happens through the sheet below.
 
@@ -594,7 +594,7 @@ struct DeviceListView: View {
             .padding(.vertical, 8)
             .task {
                 // Auto-page when this row appears. Only reached once the fill has stopped
-                // short — at the cap or on an error — so scrolling still continues past it.
+                // short, at the cap or on an error, so scrolling still continues past it.
                 await model.loadMore()
             }
         }

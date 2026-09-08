@@ -2,7 +2,7 @@ import XCTest
 import CredentialKit
 @testable import InventoryKit
 
-// Build Spec §13 — inventory parsing and search tests. No network, no Microsoft deps.
+// Build Spec §13, inventory parsing and search tests. No network, no Microsoft deps.
 //
 // The parsing tests matter more than they look: the Entra device id normalization is
 // what stands between an admin and a confusing 404. Graph returns "no Entra identity"

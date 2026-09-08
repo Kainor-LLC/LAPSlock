@@ -1,7 +1,7 @@
 import Foundation
 import AuthKit
 
-// Build Spec §3.4, §6 — the single entry point the rest of the app talks to.
+// Build Spec §3.4, §6, the single entry point the rest of the app talks to.
 //
 // The app never instantiates a platform provider or branches on OS. It asks the
 // coordinator, which resolves the provider from the device's platform. Adding a
@@ -40,7 +40,7 @@ public actor CredentialCoordinator {
         try await provider(for: target.platform).metadata(for: target)
     }
 
-    /// Reveal. The caller MUST have completed the biometric gate first (§6 step 2) —
+    /// Reveal. The caller MUST have completed the biometric gate first (§6 step 2), 
     /// this layer performs no UI and cannot verify it, so that ordering is the
     /// view model's contract.
     public func reveal(for target: DeviceCredentialTarget) async throws -> RevealedCredential {

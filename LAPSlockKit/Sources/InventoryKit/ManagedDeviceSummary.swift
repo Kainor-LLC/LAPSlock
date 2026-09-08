@@ -1,14 +1,13 @@
 import Foundation
 import CredentialKit
 
-// Build Spec §2.2, §2.5, §5 — device inventory models.
+// Build Spec §2.2, §2.5, §5, device inventory models.
 //
 // EVERYTHING HERE IS NON-SENSITIVE. Device names, OS versions, compliance state, and
 // identifiers are ordinary management metadata: cacheable, loggable, and safe to keep in
-// memory. Passwords never touch this module — that is CredentialKit's job, and the
+// memory. Passwords never touch this module, that is CredentialKit's job, and the
 // separation is deliberate (§3.1).
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // FINDING (verified against a live tenant): §2.5's "two-identifier
 // join" is NOT a join. The Intune v1.0 managedDevices resource returns
 // `azureADDeviceId` directly, so the Entra device id that Windows LAPS reveal keys
@@ -19,13 +18,12 @@ import CredentialKit
 // all-zeros GUID for devices that are not Entra-joined (e.g. workplace-joined or
 // Intune-only). Those devices cannot have Windows LAPS, so the UI must say so
 // instead of firing a request that 404s.
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// Ordinary management metadata for one device. Safe to cache.
 public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable {
-    /// Intune managedDeviceId — the key for Intune actions (rotate, portal deep link).
+    /// Intune managedDeviceId, the key for Intune actions (rotate, portal deep link).
     public let id: String
-    /// Entra directory device id — the key for Windows LAPS reveal. Nil when absent
+    /// Entra directory device id, the key for Windows LAPS reveal. Nil when absent
     /// or when Graph returned the all-zeros placeholder.
     public let entraDeviceId: String?
     public let deviceName: String
@@ -42,7 +40,7 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
     /// way to know which one they were given.
     public let emailAddress: String?
     /// Intune's own name for the device, which is not always the same string as
-    /// `deviceName` — some enrolment paths generate one and let the other drift.
+    /// `deviceName`, some enrolment paths generate one and let the other drift.
     public let managedDeviceName: String?
     public let serialNumber: String?
     public let model: String?
@@ -207,9 +205,9 @@ public struct DevicePage: Sendable, Equatable {
 }
 
 public enum InventoryError: Error, Sendable, Equatable {
-    case notAuthorized                        // 403 — lacks an Intune read role
+    case notAuthorized                        // 403, lacks an Intune read role
     case consentRequired                      // 401
-    case throttled(retryAfter: TimeInterval?) // 429 — honor Retry-After
+    case throttled(retryAfter: TimeInterval?) // 429, honor Retry-After
     case serviceUnavailable(status: Int)      // 5xx
     case transport(status: Int)
     case decodeFailure

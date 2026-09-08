@@ -1,25 +1,23 @@
 import Foundation
 import AuthKit
 
-// Build Spec §2.4 — macOS LAPS. REVEAL UNAVAILABLE (verified empirically).
+// Build Spec §2.4, macOS LAPS. REVEAL UNAVAILABLE (verified empirically).
 //
-// ═══════════════════════════════════════════════════════════════════════════════
 // HOW TO ENABLE macOS REVEAL WHEN MICROSOFT SHIPS IT
-// ═══════════════════════════════════════════════════════════════════════════════
 // Everything needed is in this one file. No UI, view-model, or other module changes.
 //   1. Re-run tools/Verify-MacOSLapsGraph.ps1 against a live tenant.
 //   2. If a documented endpoint returns a password value:
 //        a. set `supportsReveal: true` in `capabilities` below
 //        b. clear `unavailabilityReason`
 //        c. set `usesBetaAPI` to reflect the endpoint's status (false only once GA)
-//        d. implement `reveal(for:)` — replace the thrown error with the real request,
+//        d. implement `reveal(for:)`, replace the thrown error with the real request,
 //           parsing straight into SensitiveValue exactly as WindowsLapsProvider does
 //        e. put the required scope in `revealScopes`
 //   3. Run the CredentialKitTests capability tests; they assert the declared shape.
 //
 // WHY IT'S OFF (evidence, tested against a licensed production tenant):
 //   * The Entra store used by Windows LAPS returns 200 OK with NO credentials array for
-//     ADE-enrolled Macs — macOS passwords are not kept there. Consistent with Microsoft's
+//     ADE-enrolled Macs, macOS passwords are not kept there. Consistent with Microsoft's
 //     "stored and encrypted by Intune" statement.
 //   * The documented beta function is specified to return only
 //     passwordLastRotationDateTime. There is no password field in the contract:
@@ -28,7 +26,6 @@ import AuthKit
 //     ADE-enrolled, LAPS-managed Mac tested (multiple devices, multiple users, one
 //     tenant). The portal displays these passwords, so retrieval is
 //     portal-internal. Per §2.4 we do NOT ship on undocumented/internal endpoints.
-// ═══════════════════════════════════════════════════════════════════════════════
 
 public struct MacOSLapsProvider: LocalAdminCredentialProviding {
     public let platform: DevicePlatform = .macOS
@@ -96,7 +93,7 @@ public struct MacOSLapsProvider: LocalAdminCredentialProviding {
         )
     }
 
-    // MARK: - reveal (NOT AVAILABLE — see the header block to enable)
+    // MARK: - reveal (NOT AVAILABLE, see the header block to enable)
 
     public func reveal(for target: DeviceCredentialTarget) async throws -> RevealedCredential {
         // Fails loudly and specifically rather than returning an empty value, so the UI

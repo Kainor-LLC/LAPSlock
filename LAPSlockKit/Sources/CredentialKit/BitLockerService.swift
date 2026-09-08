@@ -7,7 +7,7 @@ import AuthKit
 // ever holds key material), key parsed straight into SensitiveValue, nothing logged.
 
 public struct BitLockerService: BitLockerKeyProviding {
-    /// ReadBasic is enough to LIST keys without values — request the cheaper scope for
+    /// ReadBasic is enough to LIST keys without values, request the cheaper scope for
     /// the cheaper operation so a tenant can allow browsing without allowing retrieval.
     public let listScopes = [LapsCredentialScopes.bitLockerKeysBasic]
     /// Retrieving an actual key needs the full scope, requested incrementally on first
@@ -48,7 +48,7 @@ public struct BitLockerService: BitLockerKeyProviding {
             let value = root["value"] as? [[String: Any]]
         else { throw CredentialError.decodeFailure }
 
-        // Newest first within each volume type, OS volume first overall — an admin at a
+        // Newest first within each volume type, OS volume first overall, an admin at a
         // recovery prompt is almost always looking at the OS drive.
         return value
             .compactMap { BitLockerKeyInfo(graphEntry: $0) }

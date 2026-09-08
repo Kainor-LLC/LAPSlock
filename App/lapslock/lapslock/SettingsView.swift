@@ -11,7 +11,7 @@ import StoreKit
 // Settings. Three toggles, each with a deliberate design decision behind it.
 //
 // WHERE THIS LIVES: a gear in the device list toolbar, opening a sheet. Not on the device
-// list itself — that screen's job is find-a-device-fast, and controls there compete with
+// list itself, that screen's job is find-a-device-fast, and controls there compete with
 // the search field and get tapped by accident.
 
 /// Persisted preferences. Plain UserDefaults: none of this is sensitive, and it must
@@ -39,15 +39,15 @@ final class AppSettings: ObservableObject {
 
     /// Whether to look up primary users' display names in Entra when Intune leaves the
     /// field empty. Decision: the UPN is the default and is enough;
-    /// names are optional because they cost a permission — `User.ReadBasic.All` on the
-    /// consent screen — that a customer should choose, not inherit.
+    /// names are optional because they cost a permission, `User.ReadBasic.All` on the
+    /// consent screen, that a customer should choose, not inherit.
     @Published var userNamesEnabled: Bool {
         didSet { UserDefaults.standard.set(userNamesEnabled, forKey: Keys.userNames) }
     }
 
     /// Whether the whole app is held behind Face ID, separate from the per-reveal gate.
     ///
-    /// What it protects is NOT a credential — those already have their own gate. It is the
+    /// What it protects is NOT a credential, those already have their own gate. It is the
     /// device inventory: hostnames, primary users, compliance state. That is reconnaissance
     /// for an entire tenant, and a borrowed unlocked phone should not hand it over.
     @Published var appLockEnabled: Bool {
@@ -138,7 +138,7 @@ struct SettingsView: View {
     var requestUserNamesConsent: (() async -> String?)? = nil
     /// Opens the activation sheet, injected so Settings need not know about Graph.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
-    /// Apple subscriptions. Nil in demo mode and while signed out — there is nothing to buy
+    /// Apple subscriptions. Nil in demo mode and while signed out, there is nothing to buy
     /// on a screen that cannot reach a tenant.
     var subscriptions: SubscriptionStore? = nil
     /// False when opened from the sign-in screen.
@@ -146,8 +146,8 @@ struct SettingsView: View {
     /// **Settings must be reachable without signing in**, because the diagnostics report is
     /// in here and a failed sign-in is exactly when somebody needs it. Found on device: after
     /// a sign-in failure the only route to the report was through demo mode, which is not a
-    /// route anyone would guess. Signed out, the sections that need a tenant — rotation,
-    /// role activation, the macOS toggle, the license, sign-out — are simply absent rather
+    /// route anyone would guess. Signed out, the sections that need a tenant, rotation,
+    /// role activation, the macOS toggle, the license, sign-out, are simply absent rather
     /// than present and broken.
     var hasSession: Bool = true
 
@@ -250,7 +250,7 @@ struct SettingsView: View {
 
     /// Holds the whole app behind Face ID.
     ///
-    /// Unlike the other toggles this asks Microsoft for nothing — it is entirely local, so
+    /// Unlike the other toggles this asks Microsoft for nothing, it is entirely local, so
     /// there is no consent prompt and no new permission on anybody's consent screen.
     private var appLockSection: some View {
         Section {
@@ -276,7 +276,7 @@ struct SettingsView: View {
     ///
     /// Intune often leaves `userDisplayName` empty, so rows show the UPN. Filling the gap
     /// means reading user objects from Entra, which puts `User.ReadBasic.All` on the
-    /// customer's consent screen — a password app asking to read the user list. That is a
+    /// customer's consent screen, a password app asking to read the user list. That is a
     /// choice for the customer, so it has the same shape as rotation: off by default, consent
     /// requested at the moment of the decision, and the footer says exactly what it adds.
     private var userNamesSection: some View {
@@ -411,7 +411,7 @@ struct SettingsView: View {
     /// Just-in-time role activation, behind an opt-in toggle.
     ///
     /// Same shape as the rotation toggle above, and the same reason: the permission this
-    /// asks for — requesting a privilege escalation — reads worse on a consent screen than
+    /// asks for, requesting a privilege escalation, reads worse on a consent screen than
     /// reading a password does. A customer who never turns it on never sees it requested.
     ///
     /// The button appears only once the toggle is on, because offering an action whose
@@ -550,14 +550,14 @@ struct SettingsView: View {
     /// **This section shows prices and the organization licence section does not, which looks
     /// inconsistent and is not.** Guideline 3.1.3 forbids pointing at outside purchasing from
     /// inside the app, which is why the licence section is a bare status readout with no price
-    /// and no link — see `App Store Review Guideline 3.1.3`. Apple's own in-app purchase is the one
+    /// and no link, see `App Store Review Guideline 3.1.3`. Apple's own in-app purchase is the one
     /// place selling is permitted, and Apple in fact requires the price to be shown. So the
     /// two sections follow opposite rules on purpose. Do not "harmonise" them.
     @ViewBuilder
     private var subscriptionSection: some View {
         // VISIBLE IN DEMO MODE, and that is deliberate rather than an oversight.
         //
-        // App Review cannot sign into a customer's Entra tenant — that is the whole reason
+        // App Review cannot sign into a customer's Entra tenant, that is the whole reason
         // demo mode exists (Guideline 2.1). If the purchase screen were reachable only after
         // signing in, a reviewer could never see it, and "in-app purchase not functional" is
         // a routine rejection. Hidden only while signed OUT, where there is no Settings sheet
@@ -585,7 +585,7 @@ struct SettingsView: View {
                                 }
                                 Spacer(minLength: 8)
                                 // The price is the most important fact in the row, so it is
-                                // NOT secondary — faded grey on a dark background made the
+                                // NOT secondary, faded grey on a dark background made the
                                 // numbers hard to read on device. The billing period stays
                                 // quiet underneath, which is the part that can be small.
                                 VStack(alignment: .trailing, spacing: 0) {
@@ -654,7 +654,7 @@ struct SettingsView: View {
     /// What just changed, and where to find it.
     ///
     /// Founder bought MSP on device and the tenant switcher appeared with nothing to explain
-    /// it — a purchase that silently alters the toolbar reads as either broken or magic. This
+    /// it, a purchase that silently alters the toolbar reads as either broken or magic. This
     /// is deliberately NOT a tutorial: it names the capability and the one place it lives,
     /// once, at the moment it becomes true.
     static func unlockedMessage(for plan: SubscriptionProduct) -> String {
@@ -708,15 +708,15 @@ struct SettingsView: View {
     /// section is the whole user-facing surface of that decision, so the footer says it out
     /// loud: until you activate, the app talks to Microsoft and nothing else.
     ///
-    /// No pitch, no price. The same rule as the reveals section — this is a status readout
+    /// No pitch, no price. The same rule as the reveals section, this is a status readout
     /// and an action, for an audience that resents being sold to inside a settings screen.
     @ViewBuilder
     private var licenseSection: some View {
         if let entitlement, !isDemo {
             Section {
                 if isLicenseActivated, licenseIsForAnotherOrganization {
-                    // Activated, but for a different tenant. Not unlicensed — so do not
-                    // show a bare Activate button as if nothing had happened — but the
+                    // Activated, but for a different tenant. Not unlicensed, so do not
+                    // show a bare Activate button as if nothing had happened, but the
                     // license does not apply here, so Refresh would fetch for the wrong
                     // organization. Say which situation this is and offer the way out.
                     LabeledContent("Plan", value: "Free here")
@@ -873,7 +873,7 @@ struct SettingsView: View {
     /// the meter decorative, and a runtime flag is one careless edit away from shipping.
     ///
     /// It exists because testing anything about metering otherwise means waiting out a
-    /// 30 day window or reinstalling, and reinstalling does not help — the ledger lives
+    /// 30 day window or reinstalling, and reinstalling does not help, the ledger lives
     /// in the Keychain and survives deletion, which is verified behaviour.
     private var debugSection: some View {
         Section {
@@ -1010,8 +1010,8 @@ struct SettingsView: View {
             if let tenantId, !isDemo {
                 // Feeds the organization purchase flow, which is keyed to the tenant. A
                 // plain copy, not the expiring local-only pasteboard used for credentials:
-                // a tenant ID is public — any domain's is returned by unauthenticated OIDC
-                // discovery — and the buyer needs to paste it into a web form.
+                // a tenant ID is public, any domain's is returned by unauthenticated OIDC
+                // discovery, and the buyer needs to paste it into a web form.
                 Button {
                     UIPasteboard.general.string = tenantId
                     copiedTenantId = true
@@ -1036,7 +1036,7 @@ struct SettingsView: View {
     /// This was missing entirely at first: `signOut()` existed on the root model and
     /// was only reachable from an error-recovery path, so there was no way for a user to end
     /// a session at all. For a tool that reveals administrator passwords that is not a
-    /// missing convenience — you could not hand the phone back, and an MSP could not change
+    /// missing convenience, you could not hand the phone back, and an MSP could not change
     /// tenants without force-quitting.
     ///
     /// The license is deliberately NOT removed here. It is bound to a tenant and re-verified

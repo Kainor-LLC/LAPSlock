@@ -1,7 +1,7 @@
 import XCTest
 @testable import PlatformSecurity
 
-// Build Spec §13 — tests for the security behaviors around a revealed credential.
+// Build Spec §13, tests for the security behaviors around a revealed credential.
 //
 // These are deterministic: RevealSession runs on an injected clock, so the auto-hide
 // window is tested by advancing time rather than sleeping. That matters because the

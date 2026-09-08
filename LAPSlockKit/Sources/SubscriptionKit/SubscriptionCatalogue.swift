@@ -25,7 +25,7 @@ public enum SubscriptionProduct: String, CaseIterable, Sendable {
 
     /// What owning this grants.
     ///
-    /// MSP is **not** "Pro with extras" — see `SubscriptionEntitlement.merge`. It is a
+    /// MSP is **not** "Pro with extras", see `SubscriptionEntitlement.merge`. It is a
     /// different capability, which is why it sits in its own subscription group at Apple
     /// rather than as a higher rung of the individual one.
     public var tier: EntitlementTier {
@@ -40,11 +40,11 @@ public enum SubscriptionProduct: String, CaseIterable, Sendable {
     /// A customer may hold only one subscription per group, and Apple grants exactly one
     /// introductory offer per group per customer, ever. Both of those matter here:
     ///
-    ///   * MSP is a strict SUPERSET of Pro — everything Pro grants plus tenant switching. In
+    ///   * MSP is a strict SUPERSET of Pro, everything Pro grants plus tenant switching. In
     ///     separate groups a customer could hold Pro *and* MSP simultaneously and pay
     ///     $19.99 + $49.99 for overlapping benefits. One group makes that impossible
     ///     structurally rather than relying on anyone noticing.
-    ///   * Separate groups would also mean a **second 30-day free trial** — 60 days free by
+    ///   * Separate groups would also mean a **second 30-day free trial**, 60 days free by
     ///     taking the Pro trial, cancelling, then taking the MSP one.
     ///   * And a Pro subscriber who becomes an MSP gets an immediate, prorated upgrade
     ///     instead of having to cancel and rebuy with no credit for unused time.
@@ -62,7 +62,7 @@ public enum SubscriptionProduct: String, CaseIterable, Sendable {
 
     /// Where this sits in the group, 1 being the highest level of service. Mirrors the order
     /// configured in App Store Connect, which is what drives Apple's upgrade and downgrade
-    /// behaviour — so a mismatch here and there is a billing surprise, not a cosmetic bug.
+    /// behaviour, so a mismatch here and there is a billing surprise, not a cosmetic bug.
     public var serviceLevel: Int {
         switch self {
         case .mspYearly:  return 1
@@ -94,7 +94,7 @@ public struct SubscriptionEntitlement: Sendable, Equatable {
 
     /// Highest-value tier Apple is vouching for. `.free` when nothing is active.
     ///
-    /// Deliberately not used for merging — see `merge`. It exists for display.
+    /// Deliberately not used for merging, see `merge`. It exists for display.
     public var tier: EntitlementTier {
         if activeProducts.contains(.mspYearly) { return .msp }
         if activeProducts.contains(where: { $0.tier == .pro }) { return .pro }

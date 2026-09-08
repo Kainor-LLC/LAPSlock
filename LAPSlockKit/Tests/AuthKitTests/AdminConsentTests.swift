@@ -1,7 +1,7 @@
 import XCTest
 @testable import AuthKit
 
-// Build Spec §13 — consent onboarding tests.
+// Build Spec §13, consent onboarding tests.
 //
 // These matter because the failure they guard against is invisible to the person who
 // causes it: an admin who consents without ticking the organization checkbox sees a
@@ -144,7 +144,7 @@ final class ConsentDiagnosticsTests: XCTestCase {
     }
 
     /// Narrowed 2026-09-02. It used to assert that `roleMissing` offers an action too, which
-    /// encoded a reasonable intent — the state IS recoverable — but the only screen that
+    /// encoded a reasonable intent, the state IS recoverable, but the only screen that
     /// renders `actionLabel` is the SIGNED-OUT one, and its button opens the admin-consent
     /// sheet. So the action sent somebody with a role problem to an explanation about
     /// approving the app, and it could not have done better: you cannot activate a role
@@ -178,7 +178,7 @@ extension ConsentDiagnosticsTests {
         XCTAssertNotNil(ConsentState.grantedForThisUserOnly.actionLabel)
     }
 
-    /// With no button, the explanation has to stand alone — so it names both the
+    /// With no button, the explanation has to stand alone, so it names both the
     /// least-privileged role that works and the way to obtain it.
     func test_roleMissingExplainsItselfWithoutAnAction() {
         let explanation = ConsentState.roleMissing.explanation

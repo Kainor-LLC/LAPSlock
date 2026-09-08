@@ -4,17 +4,16 @@ import PlatformSecurity
 
 // App lock: Face ID over the whole app, distinct from the per-reveal gate.
 //
-// WHAT IT PROTECTS. Not a credential — those have their own gate, which always runs and is
+// WHAT IT PROTECTS. Not a credential, those have their own gate, which always runs and is
 // not affected by this setting. This protects the DEVICE LIST: hostnames, primary users,
 // compliance state, which machines exist. That is reconnaissance for a whole tenant, and it
 // is exactly what somebody holding a borrowed unlocked phone would page through.
 //
-// ─────────────────────────────────────────────────────────────────────────────
 // THE HAZARD THIS IS BUILT AROUND, AND WHY THE GRACE PERIOD IS NOT A UX NICETY
 //
 // Signing in sends the app to the background: MSAL invokes Microsoft Authenticator, the
 // user approves, and control returns. Locking on that return would put a Face ID prompt in
-// the middle of a sign-in, over a flow that is already the most fragile thing in this app —
+// the middle of a sign-in, over a flow that is already the most fragile thing in this app, 
 // "broker redirects never handled" is a documented past bug here that took two failed fixes.
 //
 // So the lock does NOT engage on every background. It engages after `graceInterval`, which
@@ -22,10 +21,9 @@ import PlatformSecurity
 // sign-in is in progress. Belt and braces, because the failure mode is a user who cannot
 // sign in at all.
 //
-// It also never re-locks while merely INACTIVE — a notification banner, Control Centre, or
+// It also never re-locks while merely INACTIVE, a notification banner, Control Centre, or
 // the Face ID prompt of a credential reveal all pass through `.inactive`, and treating that
 // as "the app was put away" would fight the reveal publishing logic in DeviceDetailModel.
-// ─────────────────────────────────────────────────────────────────────────────
 
 @MainActor
 final class AppLockModel: ObservableObject {
@@ -55,7 +53,7 @@ final class AppLockModel: ObservableObject {
     /// Records scene changes and decides whether to re-lock.
     ///
     /// - Parameter isSigningIn: suppresses locking entirely. A sign-in that takes longer
-    ///   than the grace period — hunting for a phone to approve a push — must not come back
+    ///   than the grace period, hunting for a phone to approve a push, must not come back
     ///   to a lock screen sitting on top of MSAL's flow.
     func sceneChanged(to phase: ScenePhase, enabled: Bool, isSigningIn: Bool) {
         guard enabled else {
@@ -65,7 +63,7 @@ final class AppLockModel: ObservableObject {
         switch phase {
         case .background:
             // Only `.background` starts the clock. `.inactive` covers notification banners,
-            // Control Centre and the reveal's own Face ID prompt — none of which means the
+            // Control Centre and the reveal's own Face ID prompt, none of which means the
             // app was put away.
             backgroundedAt = Date()
         case .active:
@@ -81,7 +79,7 @@ final class AppLockModel: ObservableObject {
         }
     }
 
-    /// Prompts for Face ID. Failure leaves the app locked — there is no path that unlocks
+    /// Prompts for Face ID. Failure leaves the app locked, there is no path that unlocks
     /// without a successful authentication.
     func unlock() async {
         guard !isAuthenticating else { return }
@@ -100,7 +98,7 @@ final class AppLockModel: ObservableObject {
         case .unavailable(let reason):
             // The device lost its passcode or biometrics after the setting was turned on.
             // Staying locked forever would strand somebody out of their own app, so this
-            // explains the situation and lets them through — the per-reveal gate still
+            // explains the situation and lets them through, the per-reveal gate still
             // stands between them and any credential.
             failureMessage = reason
             isLocked = false
@@ -109,7 +107,7 @@ final class AppLockModel: ObservableObject {
 }
 
 /// The lock screen. Deliberately says nothing about the tenant, the account, or how many
-/// devices are behind it — a lock screen that leaks what it is protecting is decoration.
+/// devices are behind it, a lock screen that leaks what it is protecting is decoration.
 struct AppLockScreen: View {
     @ObservedObject var model: AppLockModel
 

@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-// Build Spec — entitlement verification keys.
+// Build Spec, entitlement verification keys.
 //
 // THE PUBLIC KEYS ARE COMPILED IN, AND THE CLIENT NEVER FETCHES ONE.
 //
@@ -39,7 +39,7 @@ public struct EntitlementKeyring: Sendable {
     /// uncompressed public point: `0x04` then the 32-byte X, then the 32-byte Y.
     ///
     /// These bytes were transcribed from the vault's JWK, whose `x` and `y` the Azure CLI
-    /// prints in STANDARD base64 rather than base64url — a trap worth naming, because those
+    /// prints in STANDARD base64 rather than base64url, a trap worth naming, because those
     /// values contain `+` and `/` and pasting them into a base64url decoder produces a
     /// different, silently wrong key. The point below was checked against the P-256 curve
     /// equation before it was written down.

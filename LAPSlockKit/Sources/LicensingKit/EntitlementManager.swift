@@ -1,6 +1,6 @@
 import Foundation
 
-// Build Spec — the rules that make the contract's privacy claims true. Section 7.
+// Build Spec, the rules that make the contract's privacy claims true. Section 7.
 //
 // The wire format is half the contract. THIS FILE IS THE OTHER HALF. Sections 7.1 to 7.3,
 // 7.5 and 7.7 are normative for the client, and a client that violates them breaks the
@@ -18,7 +18,7 @@ import Foundation
 // manager, request timing becomes usage telemetry and section 8.2 stops being true.
 
 /// What the app gets back. Never an error: failure degrades to `.free`, silently, and the
-/// user finds out where they already look — the license row in Settings.
+/// user finds out where they already look, the license row in Settings.
 public struct EntitlementState: Sendable, Equatable {
     public let tier: EntitlementTier
     /// True when the tier came from an expired token kept alive by the offline grace window.
@@ -143,7 +143,7 @@ public final class EntitlementManager {
     /// currently signed in.
     ///
     /// Activation binds an install to one tenant. An administrator who activates in tenant A
-    /// and later signs into tenant B is not unlicensed — they hold a license, it just does
+    /// and later signs into tenant B is not unlicensed, they hold a license, it just does
     /// not apply here. Without this distinction the UI shows the activated branch with a
     /// Refresh button that would fetch for tenant A while the user is looking at tenant B,
     /// and offers no way to activate B at all.
@@ -178,7 +178,7 @@ public final class EntitlementManager {
     }
 
     /// The scheduled refresh. Section 7.3, all of it:
-    ///   * only if a license has been activated — a free install never reaches the network
+    ///   * only if a license has been activated, a free install never reaches the network
     ///   * at most once per 24 hours, counting failures as attempts
     ///   * only when the token is missing, past `refreshAfter`, or inside 7 days of `exp`
     ///
@@ -258,8 +258,8 @@ public final class EntitlementManager {
             return .serverError(status: status)
 
         } catch let failure as EntitlementVerificationFailure {
-            // The server sent a token we refuse. Keep the old one if there was one — it may
-            // still be good — but record that the server is answering.
+            // The server sent a token we refuse. Keep the old one if there was one, it may
+            // still be good, but record that the server is answering.
             updated.lastFailureWasNetwork = false
             try? store.save(updated)
             return .rejected(failure)

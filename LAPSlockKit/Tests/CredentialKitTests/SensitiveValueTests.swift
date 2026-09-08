@@ -2,7 +2,7 @@ import XCTest
 @testable import CredentialKit
 
 // Build Spec §13 unit tests for the security core.
-// These run with ZERO Microsoft dependencies — the whole point of the AuthKit seam.
+// These run with ZERO Microsoft dependencies, the whole point of the AuthKit seam.
 
 final class SensitiveValueTests: XCTestCase {
 

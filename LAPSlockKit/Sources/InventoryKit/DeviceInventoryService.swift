@@ -2,7 +2,7 @@ import Foundation
 import AuthKit
 import CredentialKit
 
-// Build Spec §2.2, §5, §7, §8 — device inventory fetching.
+// Build Spec §2.2, §5, §7, §8, device inventory fetching.
 //
 // Responsibilities:
 //   * page through /v1.0/deviceManagement/managedDevices via $top + @odata.nextLink
@@ -17,7 +17,7 @@ import CredentialKit
 enum InventoryHTTP {
     static let base = "https://graph.microsoft.com"
 
-    /// Fields the list UI actually needs. `azureADDeviceId` is the important one — it is
+    /// Fields the list UI actually needs. `azureADDeviceId` is the important one, it is
     /// the Entra device id Windows LAPS reveal keys on, and it arrives here directly
     /// rather than requiring a second lookup (see ManagedDeviceSummary header).
     ///
@@ -68,7 +68,7 @@ enum InventoryHTTP {
     static func validate(_ response: URLResponse) throws {
         guard let http = response as? HTTPURLResponse else { throw InventoryError.transport(status: -1) }
         // Capture Graph's request-id before throwing. It is the first thing Microsoft support
-        // asks for, and the typed errors below deliberately do not carry it — see
+        // asks for, and the typed errors below deliberately do not carry it, see
         // GraphResponseTracer for why this is a side channel rather than an error payload.
         if !(200...299).contains(http.statusCode) {
             GraphResponseTracer.shared.recordFailure(http)
@@ -207,8 +207,7 @@ public actor DeviceInventoryService {
 /// be found, which reads as a broken app rather than an incomplete load. `loadAll` exists
 /// for this but nothing calls it on the search path yet.
 ///
-/// ─────────────────────────────────────────────────────────────────────────────
-/// PERFORMANCE NOTE — this runs on the main thread on every keystroke.
+/// PERFORMANCE NOTE, this runs on the main thread on every keystroke.
 ///
 /// The obvious implementation is quadratically worse than it looks, and shipped once:
 ///
@@ -229,7 +228,6 @@ public actor DeviceInventoryService {
 /// If this ever needs to get faster again, the next step is caching folded fields keyed by
 /// device id rather than folding per keystroke. That trades memory and cache-invalidation
 /// complexity for speed, so it is not worth doing until measurement says so.
-/// ─────────────────────────────────────────────────────────────────────────────
 public enum DeviceSearch {
 
     private static let foldOptions: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
@@ -319,7 +317,7 @@ public enum DeviceSearch {
     }
 
     /// 0 exact, 1 prefix, 2 substring, nil no match. Both arguments must already be
-    /// folded — these are plain comparisons, not locale-aware ones.
+    /// folded, these are plain comparisons, not locale-aware ones.
     private static func strength(_ foldedField: String, _ foldedQuery: String) -> Int? {
         if foldedField == foldedQuery { return 0 }
         if foldedField.hasPrefix(foldedQuery) { return 1 }

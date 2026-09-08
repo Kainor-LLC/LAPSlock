@@ -1,6 +1,6 @@
 import Foundation
 
-// Build Spec §3.2 — the boundary type for LAPS plaintext.
+// Build Spec §3.2, the boundary type for LAPS plaintext.
 // Deliberately NOT Codable, NOT Equatable-on-value, no value-exposing description.
 // The only way to the plaintext is `withValue`, and the value must not escape the closure.
 public enum SensitiveEncoding: Sendable { case utf16LE, utf8 }

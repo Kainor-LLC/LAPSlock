@@ -1,24 +1,25 @@
 <#
 .SYNOPSIS
-    LAPSlock macOS LAPS verification harness v2 — resolves Build Spec §2.4.
+    Checks whether any documented Microsoft Graph endpoint returns a macOS LAPS local
+    administrator password value.
 
 .DESCRIPTION
-    v2 FIXES (v1 was wrong in two ways):
-      1. BUG: "$entraDeviceId?`$select=..." — PowerShell accepts '?' as a valid
-         character in a variable name, so it resolved a nonexistent variable
-         'entraDeviceId?' and silently dropped BOTH the device id and the '?'.
-         TEST A never actually ran; its HTTP 400 was a malformed URL, not a result.
-         All URIs are now built with the -f format operator, never interpolated
-         next to a '?'.
-      2. MISSING ENDPOINT: v1 guessed two endpoint names that do not exist. The real
-         documented function is:
-             GET /beta/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail
-         It returns deviceLocalAdminAccountDetail (macOSDeviceLocalAdminAccountDetail).
-         Per Microsoft Learn that resource documents exactly ONE property,
-         passwordLastRotationDateTime — rotation metadata, NOT a password value.
-         This harness confirms that empirically against a live tenant.
+    Three read-only probes against a live tenant, in order:
 
-    Read-only. Performs no rotation, writes nothing, and NEVER prints a password value.
+      A. GET /v1.0/directory/deviceLocalCredentials/{entraDeviceId}?$select=credentials
+         The Windows LAPS store. Shows whether macOS passwords are kept there (they are not).
+      B. GET /beta/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail
+         The only documented macOS function. Its resource type documents one property,
+         passwordLastRotationDateTime; there is no password value in the contract.
+      C. GET /v1.0 and /beta deviceManagement/managedDevices/{id}
+         A property scan, to rule out an undocumented field carrying the password.
+
+    Reports PASS/FAIL per probe and a conclusion. Performs no rotation, writes nothing,
+    and never prints a password value.
+
+    URIs are built with the -f format operator rather than string interpolation:
+    PowerShell treats "$var?" as a variable named "var?", which silently drops both the
+    value and the question mark.
 
 .PREREQUISITES
     - Install-Module Microsoft.Graph -Scope CurrentUser
@@ -34,7 +35,7 @@
 [CmdletBinding()]
 param(
     [string] $ManagedDeviceId,
-    # Optional: pre-fill the sign-in hint. Left empty on purpose — this file is public.
+    # Optional: pre-fill the sign-in hint. Left empty on purpose, this file is public.
     [string] $UserPrincipalName = ""
 )
 
@@ -117,7 +118,7 @@ $foundPasswordSomewhere = $false
 $foundVia = @()
 
 # ---------------------------------------------------------------------------
-# TEST A — Entra deviceLocalCredentials (the Windows LAPS store)
+# TEST A, Entra deviceLocalCredentials (the Windows LAPS store)
 # ---------------------------------------------------------------------------
 Write-Section "TEST A: /v1.0/directory/deviceLocalCredentials (Windows LAPS store)"
 if ([string]::IsNullOrWhiteSpace($entraDeviceId)) {
@@ -151,7 +152,7 @@ if ([string]::IsNullOrWhiteSpace($entraDeviceId)) {
 }
 
 # ---------------------------------------------------------------------------
-# TEST B — the DOCUMENTED beta function (this is the real one; v1 missed it)
+# TEST B, the DOCUMENTED beta function (this is the real one; v1 missed it)
 # ---------------------------------------------------------------------------
 Write-Section "TEST B: retrieveDeviceLocalAdminAccountDetail (DOCUMENTED beta function)"
 $uriB = '{0}/beta/deviceManagement/managedDevices/{1}/retrieveDeviceLocalAdminAccountDetail' -f $graphBase, $ManagedDeviceId
@@ -187,7 +188,7 @@ if ($b.Ok) {
 }
 
 # ---------------------------------------------------------------------------
-# TEST C — managedDevice object scan (v1.0 + beta)
+# TEST C, managedDevice object scan (v1.0 + beta)
 # ---------------------------------------------------------------------------
 Write-Section "TEST C: managedDevices object property scan (v1.0 + beta)"
 foreach ($v in @("v1.0", "beta")) {
@@ -232,7 +233,7 @@ if ($foundPasswordSomewhere) {
     * macOS passwords are held/encrypted by Intune, not in the Entra
       deviceLocalCredentials store that Windows LAPS uses.
 
-  RECOMMENDED PRODUCT DECISION:
+  Conclusion:
     1. Ship Windows LAPS reveal (v1.0, fully documented, GA).
     2. For macOS: show rotation metadata + a 'view in Intune portal' handoff,
        and optionally the rotate action (beta, off by default).

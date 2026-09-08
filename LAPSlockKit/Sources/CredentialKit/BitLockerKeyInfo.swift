@@ -1,7 +1,7 @@
 import Foundation
 import AuthKit
 
-// BitLocker recovery keys — the most-requested adjacent feature in this category.
+// BitLocker recovery keys, the most-requested adjacent feature in this category.
 //
 // WHY THIS BELONGS IN CredentialKit
 // A BitLocker recovery key is a secret of the same weight as a local admin password: it
@@ -18,7 +18,7 @@ import AuthKit
 //     The `key` property is only returned when explicitly $select-ed.
 //
 // Two properties of this API that fit the product unusually well:
-//   1. Delegated only — application permissions are NOT supported for retrieving the key.
+//   1. Delegated only, application permissions are NOT supported for retrieving the key.
 //      The same "acts as you, never on its own" story as LAPS, enforced by Microsoft.
 //   2. Adding $select=key triggers a Microsoft Entra audit entry (KeyManagement category).
 //      The audit claim we already make for LAPS holds here for the same reason.
@@ -28,7 +28,7 @@ import AuthKit
 // Security Reader, Global Reader. A signed-in user who is the registered owner of the
 // device can also read its own key.
 //
-// KEYED BY THE ENTRA DEVICE ID — the same identifier Windows LAPS reveal uses, which
+// KEYED BY THE ENTRA DEVICE ID, the same identifier Windows LAPS reveal uses, which
 // InventoryKit already carries on every device. No new lookup, no new join.
 
 /// Which volume a recovery key unlocks. Shown because a device commonly has several keys

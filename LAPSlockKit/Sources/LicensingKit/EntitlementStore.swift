@@ -3,7 +3,7 @@ import Foundation
 import Security
 #endif
 
-// Build Spec — where the entitlement lives on the device. Contract section 7.5.
+// Build Spec, where the entitlement lives on the device. Contract section 7.5.
 
 /// Everything persisted about a license activation. Codable, and small on purpose.
 ///
@@ -12,7 +12,7 @@ import Security
 /// decoding an unverified claim to find out what to compare it to.
 public struct EntitlementRecord: Codable, Sendable, Equatable {
     public var boundTenantId: String
-    /// The compact JWS as received. Verified from scratch on every read — a stored token is
+    /// The compact JWS as received. Verified from scratch on every read, a stored token is
     /// never trusted because it was trusted before.
     public var token: String?
     /// Server hint, already clamped. Nil when the server did not send one.
@@ -65,11 +65,11 @@ public final class InMemoryEntitlementStore: EntitlementStoring, @unchecked Send
 /// section 7.5: a background refresh may run with the screen locked, and a token that could
 /// not be read then would look like a license flickering off.
 ///
-/// ThisDeviceOnly for the same reason as the ledger — the item must not sync through iCloud
+/// ThisDeviceOnly for the same reason as the ledger, the item must not sync through iCloud
 /// Keychain or ride a restore onto a new phone. A new device re-activating is one tap; a
 /// license following a backup around is not something to explain to an auditor.
 ///
-/// The token is not a credential — it grants no Graph access and cannot read a password —
+/// The token is not a credential, it grants no Graph access and cannot read a password, 
 /// but it IS a bearer statement, and `UserDefaults` is not the place for one.
 public struct KeychainEntitlementStore: EntitlementStoring {
 

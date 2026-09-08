@@ -6,7 +6,7 @@ import CredentialKit
 ///
 /// Mirrors the real service's contract exactly where it matters for the fill: `hasMore`
 /// reflects an unconsumed next page, `loadNextPage` returns nil when exhausted, and a
-/// failing page does NOT advance the cursor — so a retry re-fetches the same page, as it
+/// failing page does NOT advance the cursor, so a retry re-fetches the same page, as it
 /// would against Graph.
 private actor ScriptedInventory: DeviceInventoryProviding {
     private let pages: [[ManagedDeviceSummary]]

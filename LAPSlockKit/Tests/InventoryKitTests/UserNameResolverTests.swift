@@ -20,7 +20,7 @@ final class UserNameResolverTests: XCTestCase {
 
     func test_anApostropheInAUPNIsDoubledNotLeftToBreakTheFilter() {
         // o'brien@ is a legal UPN. Unescaped, the quote ends the literal early and the
-        // whole request is a 400 — for every user in the batch, not just this one.
+        // whole request is a 400, for every user in the batch, not just this one.
         XCTAssertEqual(
             UserNameResolver.filterClause(for: ["o'brien@example.com"]),
             "userPrincipalName in ('o''brien@example.com')")
@@ -106,7 +106,7 @@ final class UserNameResolverTests: XCTestCase {
 
     func test_primaryUserLabelPrefersTheNameThenTheUPNThenTheMail() {
         // Pinned because BOTH the device row and the detail screen's "Primary user" field
-        // read this one property. They disagreed once — the detail screen read
+        // read this one property. They disagreed once, the detail screen read
         // userPrincipalName directly and kept showing an address after the row had a name.
         let named = ManagedDeviceSummary(
             id: "1", entraDeviceId: "e", deviceName: "WS-1", platform: .windows,

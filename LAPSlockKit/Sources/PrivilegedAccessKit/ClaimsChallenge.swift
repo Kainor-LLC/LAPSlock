@@ -1,12 +1,12 @@
 import Foundation
 
-// Build Spec — the claims challenge, which is the reason PIM is a project and not an
+// Build Spec, the claims challenge, which is the reason PIM is a project and not an
 // afternoon.
 //
 // WHAT IT IS. Microsoft requires the caller to have satisfied MFA in the CURRENT session
 // before it will let anyone self-activate a privileged role. When the token in hand does not
 // meet that bar, Graph answers 401 with a `WWW-Authenticate` header carrying a base64 blob of
-// JSON describing what it wants — typically an `acr` value of `c1`. The client decodes that,
+// JSON describing what it wants, typically an `acr` value of `c1`. The client decodes that,
 // hands it to MSAL as a claims request, re-authenticates, and retries.
 //
 // WHY THIS IS CORRECT AND NOT AN OBSTACLE TO ROUTE AROUND. It is the mechanism that stops
@@ -37,7 +37,7 @@ public struct ClaimsChallenge: Sendable, Equatable {
     /// Extracts a challenge from a `WWW-Authenticate` header value.
     ///
     /// Returns nil when there is no challenge, which is the ordinary case for every other
-    /// 401 — a genuinely expired token, a missing scope, a revoked session. Only an
+    /// 401, a genuinely expired token, a missing scope, a revoked session. Only an
     /// `insufficient_claims` style response carries one, and treating an ordinary 401 as a
     /// claims challenge would send the user into a re-authentication loop that could never
     /// resolve.
@@ -57,7 +57,7 @@ public struct ClaimsChallenge: Sendable, Equatable {
     ///
     ///     claims={"access_token":{"acrs":{"essential":true,"value":"c1"}}}
     ///
-    /// Raw JSON, not base64, and in a body rather than a `WWW-Authenticate` header — which
+    /// Raw JSON, not base64, and in a body rather than a `WWW-Authenticate` header, which
     /// is why a retry that only watched 401 and 403 never fired, and activation failed with
     /// a bare 400 instead.
     ///
@@ -131,8 +131,8 @@ public struct ClaimsChallenge: Sendable, Equatable {
         return Data(base64Encoded: normalised)
     }
 
-    /// A claims request is a JSON object. Anything else — an array, a bare string, a number,
-    /// junk — is not a claims challenge and is not passed on to MSAL.
+    /// A claims request is a JSON object. Anything else, an array, a bare string, a number,
+    /// junk, is not a claims challenge and is not passed on to MSAL.
     static func isPlausibleClaimsObject(_ json: String) -> Bool {
         guard let data = json.data(using: .utf8), data.count <= maxDecodedBytes else { return false }
         guard let parsed = try? JSONSerialization.jsonObject(with: data) else { return false }

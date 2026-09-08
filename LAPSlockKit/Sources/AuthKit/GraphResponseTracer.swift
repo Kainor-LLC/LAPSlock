@@ -3,20 +3,20 @@ import Foundation
 // Graph's `request-id`, captured so a support case can name it.
 //
 // WHY THIS MATTERS. When Microsoft Graph fails, `request-id` is the first thing Microsoft
-// support asks for — it is how they find the request in their own logs. Without it a support
+// support asks for, it is how they find the request in their own logs. Without it a support
 // case starts with "something failed sometime", and the diagnostics report was carrying a
 // `graphRequestId` field that nothing ever populated.
 //
 // WHY A SIDE CHANNEL AND NOT AN ERROR PAYLOAD. Adding the id to every case of every error
-// enum would change `InventoryError` and `CredentialError` — both `Equatable` and both
-// compared by value throughout the tests — for a field that is pure diagnostics and never
+// enum would change `InventoryError` and `CredentialError`, both `Equatable` and both
+// compared by value throughout the tests, for a field that is pure diagnostics and never
 // affects a decision. The app already uses exactly this pattern for MSAL failures
 // (`lastAuthFailure`), so a last-failure box is the established shape here rather than a new
 // idea.
 //
 // WHY IT LIVES IN AuthKit. `isolation-check.sh` caps CredentialKit at Foundation + AuthKit,
 // so a credential provider cannot import DiagnosticsKit to report anything. AuthKit is the
-// only module every Graph caller — CredentialKit, InventoryKit, PrivilegedAccessKit — is
+// only module every Graph caller, CredentialKit, InventoryKit, PrivilegedAccessKit, is
 // permitted to see. The name says Graph rather than auth so nobody mistakes it for part of
 // the sign-in flow.
 
@@ -43,7 +43,7 @@ public struct GraphResponseTrace: Sendable, Equatable {
 /// **Lock rather than actor, deliberately.** The write happens inside the synchronous
 /// `validate(_:)` helpers that every Graph call already funnels through. An actor would
 /// force those to become async or to fire off a detached task, and a detached task can
-/// land out of order — which is precisely the failure mode that would attach the wrong id
+/// land out of order, which is precisely the failure mode that would attach the wrong id
 /// to a report.
 public final class GraphResponseTracer: @unchecked Sendable {
 
@@ -52,8 +52,8 @@ public final class GraphResponseTracer: @unchecked Sendable {
     /// How stale a trace may be and still be attributed to an event.
     ///
     /// A last-seen box cannot prove the id belongs to the event being recorded, so the
-    /// window is short and the status must agree. The alternative — attaching whatever was
-    /// last seen — would put a misleading id in front of Microsoft support, which is worse
+    /// window is short and the status must agree. The alternative, attaching whatever was
+    /// last seen, would put a misleading id in front of Microsoft support, which is worse
     /// than putting none.
     public static let attributionWindow: TimeInterval = 30
 
@@ -86,7 +86,7 @@ public final class GraphResponseTracer: @unchecked Sendable {
     /// The recent request id, when it can honestly be attributed to this event.
     ///
     /// - Parameter httpStatus: the event's own status. When both the event and the trace
-    ///   have one and they disagree, nil is returned — they are different requests.
+    ///   have one and they disagree, nil is returned, they are different requests.
     public func attributableRequestId(
         httpStatus: Int?,
         now: Date = Date(),

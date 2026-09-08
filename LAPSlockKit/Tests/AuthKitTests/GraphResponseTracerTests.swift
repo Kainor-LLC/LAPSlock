@@ -5,7 +5,7 @@ import XCTest
 ///
 /// The stakes are specific: this id goes into a support report that a customer hands to
 /// Microsoft, and Microsoft looks it up. An id attributed to the wrong failure sends them
-/// to an unrelated request, which is worse than sending nothing — so every rule here
+/// to an unrelated request, which is worse than sending nothing, so every rule here
 /// refuses rather than guesses.
 final class GraphResponseTracerTests: XCTestCase {
 

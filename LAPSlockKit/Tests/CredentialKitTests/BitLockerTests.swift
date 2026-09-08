@@ -129,7 +129,7 @@ final class DemoBitLockerServiceTests: XCTestCase {
             for group in groups {
                 XCTAssertEqual(group.count, 6)
                 XCTAssertTrue(group.allSatisfy(\.isNumber))
-                // Every group is a repeated digit — no real key looks like this.
+                // Every group is a repeated digit, no real key looks like this.
                 XCTAssertEqual(Set(group).count, 1,
                                "Demo keys must be unmistakable at a glance.")
             }
