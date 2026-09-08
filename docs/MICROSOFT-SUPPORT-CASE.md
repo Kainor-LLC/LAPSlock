@@ -252,6 +252,15 @@ password. Link the Q&A thread.
 - Run `./scripts/pre-push-scan.sh` before committing any version of this file that contains
   real values from a case.
 
+## Filed
+
+- **2026-09-08 — Microsoft Q&A, Kainor's track:**
+  https://learn.microsoft.com/en-us/answers/questions/5997863/is-there-a-supported-graph-api-that-returns-the-ma
+  Tag: Microsoft Security → Microsoft Intune. This is the only Microsoft thread Post 3 quotes.
+- Docs issue on `microsoftgraph/microsoft-graph-docs-contrib`: ⬜ file next, linking the thread
+  above. Title: *retrieveDeviceLocalAdminAccountDetail: state that the password value is not
+  returned by any API.*
+
 ## After the outcome
 
 Record Microsoft's answer verbatim in this file under a new "Outcome" heading with the date

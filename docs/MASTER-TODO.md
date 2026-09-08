@@ -2151,8 +2151,8 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   days between them; blocked on App Review approval, and Post 3 on the Microsoft support
   case. Two hard rules in the file: never name or hint at the employer, and disclose the
   commercial interest in the first paragraph every time.
-- 🔵 File the Microsoft support case for the macOS 500 — the only path to macOS ever working.
-  Drafted 2026-09-08 in `docs/MICROSOFT-SUPPORT-CASE.md`. Two tracks that never cite each
+- ✅ **Kainor's Microsoft question filed 2026-09-08** on Microsoft Q&A (link in
+  `docs/MICROSOFT-SUPPORT-CASE.md`). ⬜ Docs issue next. Post 3 waits for an answer. Two tracks that never cite each
   other: the tenant that has the Macs files the defect with its own request IDs through its
   own support channel; Kainor asks the public API-surface question on Microsoft Q&A and a
   docs issue. The request ID that used to sit here belonged to the other tenant and was
