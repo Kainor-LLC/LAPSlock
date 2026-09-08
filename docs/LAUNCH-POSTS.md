@@ -1,7 +1,7 @@
 # Launch posts
 
-Drafts for founder approval. **Do not post any of these until App Review approves 1.0** — a
-post pointing at an app that is not yet on the store is worse than no post.
+**1.0 is on the App Store as of 2026-09-08:** https://apps.apple.com/us/app/lapslock/id6806470554
+The posts may go out in the sequence at the end of this file.
 
 Written to the marketing philosophy already recorded in `MASTER-TODO.md`: this market is won
 by being the person who obviously knows the subject. No growth hacking, no "excited to
@@ -64,7 +64,7 @@ disclosed tool post if it is substantive. Text post, no link in the title.
 >   the policy targets Entra.
 > - It cannot reveal macOS local admin passwords. There is no Graph API that returns them,
 >   and the one beta endpoint that should return metadata currently 500s on every
->   ADE-enrolled Mac I have tested. I have a support case open with Microsoft about it and
+>   ADE-enrolled Mac I have tested. I have a question open with Microsoft about it and
 >   will write that up separately.
 > - It cannot grant you access you do not have. No permission it requests escalates anyone.
 >
@@ -83,6 +83,7 @@ disclosed tool post if it is substantive. Text post, no link in the title.
 > rolling 30 days, counted on the device and nowhere else. Subscriptions remove the limit.
 > Org licensing by tenant is available directly from us.
 >
+> App Store: https://apps.apple.com/us/app/lapslock/id6806470554
 > Repo: github.com/Kainor-LLC/LAPSlock — the permissions table in `how-it-works` is probably
 > the page a security team wants first. Happy to answer anything about the Graph surface; the
 > LAPS endpoints are underdocumented and I have notes.
@@ -152,7 +153,8 @@ simultaneous posts across subreddits reads as a campaign. Text post.
 > Organization licensing for a whole MSP is available directly from us, and yes, that
 > includes invoicing and a PO if procurement needs one.
 >
-> Repo: github.com/Kainor-LLC/LAPSlock. I would genuinely like to hear how your technicians
+> App Store: https://apps.apple.com/us/app/lapslock/id6806470554 · Repo: github.com/Kainor-LLC/LAPSlock.
+> I would genuinely like to hear how your technicians
 > actually move between customer tenants day to day — the switcher was designed from
 > Microsoft's docs and a two-tenant test lab, not from watching an MSP work.
 
@@ -217,7 +219,7 @@ about Microsoft, not a product post. Link to the repo only in the final paragrap
 
 ## Sequence
 
-1. App Review approves 1.0 →
+1. ~~App Review approves 1.0~~ ✅ released 2026-09-08 →
 2. Post 1 (r/Intune) the same or next day →
 3. Answer every comment for 48 hours, including the hostile ones, technically →
 4. Post 2 (r/msp) three or four days later →

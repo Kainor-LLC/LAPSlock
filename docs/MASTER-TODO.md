@@ -1967,7 +1967,7 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 
   Old note, retained: required before adding checkout, because GitHub Pages prohibits sites
   primarily facilitating commercial transactions. Original text follows.
-- ⬜ ~~Move the marketing site to Cloudflare Pages~~ — required before adding checkout,
+- ✅ ~~Move the marketing site to Cloudflare Pages~~ — DONE 2026-09-04. Original note: required before adding checkout,
   because GitHub Pages prohibits sites primarily facilitating commercial transactions.
   Connect the repo, **no build command, output directory `docs`**, add `kainor.com` and `www`
   as custom domains.
@@ -2102,10 +2102,11 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
 
 ---
 
-# App Store & launch
+# App Store & launch — ✅ 1.0 RELEASED 2026-09-08: https://apps.apple.com/us/app/lapslock/id6806470554
 
-- ⬜ Free app + IAP subscription products in App Store Connect, plus a 7 or 14 day StoreKit
-  free trial. Free tier is metered (5 reveals / 30 days), not feature-crippled — see Pricing.
+- ✅ Free app + IAP subscription products in App Store Connect with an introductory free
+  trial — live with 1.0 on 2026-09-08. Free tier is metered (5 reveals / 30 days), not
+  feature-crippled — see Pricing.
 - 🟡 **Review notes drafted 2026-09-02** — `docs/APP-STORE-REVIEW-NOTES.md`, for your
   approval. Covers demo mode, the meter as designed behavior, Activate-is-not-a-purchase,
   Data Not Collected with the proxy link, Face ID before fetch, switcher behavior. **Flags a
@@ -2128,7 +2129,7 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   reasoning is in the file's comment so the label can be defended. MSAL carries its own
   manifest. **"Data Not Collected" in App Store Connect is still a checkbox for you to tick.**
 - ✅ SECURITY.md with a disclosure policy and the five testable design claims
-- ⬜ Tag a source release per App Store version
+- ✅ Tag a source release per App Store version — `v1.0` at `728ad1f` (build 9), tagged 2026-09-08. Repeat for every version.
 - ✅ **Network transparency doc written 2026-09-02** — `docs/NETWORK-TRANSPARENCY.md`, linked
   from `SECURITY.md`. Three hosts, the one Kainor request byte for byte, the ten-minute proxy
   recipe, and an honest section on what it cannot prove (no reproducible builds on iOS).

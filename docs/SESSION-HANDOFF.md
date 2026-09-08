@@ -3,15 +3,15 @@
 Paste or attach this at the start of a new chat. Attach `docs/MASTER-TODO.md` alongside it
 for the full backlog; this file is just enough to resume without re-explaining.
 
-Last updated: **2026-09-03 — 1.0 SUBMITTED TO THE APP STORE, awaiting review.**
+Last updated: **2026-09-08 — 1.0 RELEASED ON THE APP STORE.** https://apps.apple.com/us/app/lapslock/id6806470554
 
 ---
 
-## WHERE THINGS ACTUALLY STAND, 2026-09-03
+## WHERE THINGS ACTUALLY STAND, 2026-09-08
 
-**Version 1.0 is with App Review**, together with the three subscriptions (a first
-subscription group must be submitted alongside an app version). Nothing is blocked and
-nothing is half-finished. Read this before opening `MASTER-TODO.md`, which is long.
+**Version 1.0 is on the App Store** (build 9, source tagged `v1.0` at `728ad1f`), with the
+three subscriptions live and the Stripe organisation licences proven end to end. Nothing is
+blocked and nothing is half-finished. Launch posts are next, in the order in `LAUNCH-POSTS.md`. Read this before opening `MASTER-TODO.md`, which is long.
 
 **Shipped in 1.0:** device search over the whole tenant, LAPS reveal with password history,
 BitLocker keys per volume, just-in-time PIM role activation reading the tenant's own policy,
@@ -28,7 +28,7 @@ The review notes in `docs/app-store-paste.txt` already answer the two likely one
 evaluate without an Entra tenant (demo mode), and why the Graph permissions are what they
 are. `docs/APP-STORE-3-1-3.md` covers anything about purchasing.
 
-### When it is approved
+### Now that it is released
 
 1. **Marketing.** r/Intune and r/msp first — r/sysadmin removes most self-promotion. Lead
    with the source-available code and the proxy-verifiable network claims, not a feature
@@ -64,12 +64,12 @@ are. `docs/APP-STORE-3-1-3.md` covers anything about purchasing.
    multitasking, both of which break the reveal path if iPad is bolted on carelessly.
 4. **Trademark**, if there is revenue. Not required: rights come from use in commerce.
 
-### Two open threads worth remembering
+### Two threads that were open, both closed
 
-- **`LogError(ex, …)` in the entitlement Function** passes the exception object, which could
-  in principle carry a tenant ID from an Azure SDK message. Failure paths only.
-- **Search is unverified on a large tenant.** Neither available tenant has more than one
-  page of devices. The fill caps at 50 pages / 5,000 devices, and that cap is one line.
+- ~~`LogError(ex, …)` in the entitlement Function~~ — replaced by `SafeDetail(ex)` on
+  2026-09-04, with tests; no exception message reaches a log.
+- ~~Search is unverified on a large tenant~~ — verified 2026-09-03 on a tenant with roughly
+  six pages of devices; background paging and the 50-page cap behaved as designed.
 
 ---
 
