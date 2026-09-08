@@ -3,16 +3,16 @@ import AuthKit
 
 // Primary-user display names, looked up in Entra when Intune leaves the field empty.
 //
-// WHY THIS IS OPT-IN. Intune's `userDisplayName` is often blank depending on how the primary
+// Why this is opt-in: Intune's `userDisplayName` is often blank depending on how the primary
 // user was assigned, so rows show the UPN. Filling the gap means reading user objects from
 // the directory, which is a NEW permission on every customer's consent screen, 
 // `User.ReadBasic.All`, a password app asking to read the user list. A security reviewer
 // will ask why. So it sits behind a Settings toggle, off by default, exactly like BitLocker
 // rotation and role activation: a customer who never turns it on never sees the permission
-// requested, and the footer beside the toggle says what it adds. Founder decision,
-// Decision: "UPN should be enough" as the default, optional for those who want names.
+// requested, and the footer beside the toggle says what it adds. The UPN is the default;
+// names are optional for those who want them.
 //
-// WHAT IT COSTS AND WHAT IT KEEPS. Lookups are by UPN, which the device record already
+// What it costs and what it keeps: lookups are by UPN, which the device record already
 // carries, so the inventory query is untouched, the `$select` there is fragile and one bad
 // field 400s the whole list. Fifteen UPNs per request, the most Graph's `in` operator takes.
 // Results live in memory for the session and are never written anywhere: the app already

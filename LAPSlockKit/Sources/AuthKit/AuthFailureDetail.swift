@@ -2,12 +2,12 @@ import Foundation
 
 // Build Spec, structured auth failure detail for the support report.
 //
-// WHY THIS EXISTS. A device-only sign-in failure surfaced as "check your
+// Why this exists: a device-only sign-in failure surfaced as "check your
 // connection". Diagnosing it took a cable, Xcode and Console.app; the MSAL log named the
 // cause in one line. A customer hitting the same thing has none of those, and the support
 // report gave them nothing to send. This type is what the report was missing.
 //
-// WHY IT IS SHAPED LIKE THIS. The obvious fix, put the error description in the report, is
+// Why it is shaped like this: the obvious fix, put the error description in the report, is
 // the one thing that must not happen. MSAL error descriptions can carry the URL that failed,
 // and a broker redirect URL can carry an authorization code. So this is an ALLOWLIST: every
 // field is a number, a bool, or a string that has been checked against a fixed shape.
@@ -42,7 +42,7 @@ public struct AuthFailureDetail: Sendable, Equatable, Codable {
     ///
     /// Answered, not opened. MSAL sets `MSALBrokerVersionKey` only on a response that came
     /// back through the broker, so launching Authenticator and abandoning it reads as
-    /// `false`, observed on device. There is no signal for "opened", and the
+    /// `false` in practice. There is no signal for "opened", and the
     /// report label says `broker-responded` so nobody reads more into it than it knows.
     public let brokerInvolved: Bool?
 

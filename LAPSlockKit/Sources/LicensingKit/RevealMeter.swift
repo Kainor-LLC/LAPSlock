@@ -3,7 +3,7 @@ import CryptoKit
 
 /// Counts free-tier reveals against a rolling window.
 ///
-/// TWO CALLS, IN THIS ORDER, AND THE ORDER MATTERS:
+/// Two calls, in this order:
 ///
 ///   1. `check(deviceIdentifier:isPro:)` BEFORE the biometric gate.
 ///   2. `recordReveal(deviceIdentifier:isPro:)` AFTER a successful Graph response.

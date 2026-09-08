@@ -9,7 +9,7 @@ import Foundation
 // failed reveal: "your access is not active, activate it here" rather than "you lack
 // permission", which is true and useless.
 //
-// TWO KINDS, NOT ONE. Eligibility can be for a directory role, or for membership of a group
+// Two kinds, not one. Eligibility can be for a directory role, or for membership of a group
 // that carries role assignments, "PIM for Groups". Mature tenants often prefer the group
 // form because it is governed alongside every other group. They are separate Graph surfaces
 // with separate scopes and separate request bodies, and an implementation that handled only
@@ -172,7 +172,7 @@ public enum PrivilegedAccessGraph {
 
     /// **Everything the feature needs, requested together when the user opts in.**
     ///
-    /// Read AND activate, and asking for only half is a bug this shipped once: the Settings
+    /// Read AND activate, and asking for only half is a bug that has happened: the Settings
     /// toggle consented to the activation scopes alone, so opening the sheet then made a
     /// silent request for the unconsented READ scopes, which failed and surfaced as "your
     /// account may not be eligible", a message about the wrong problem entirely.
@@ -192,7 +192,7 @@ public enum PrivilegedAccessGraph {
 ///
 /// **But "not active yet" is not the same thing as "waiting for a human".** PIM answers 201
 /// with a provisioning status for an activation that needs no approval at all and is simply
-/// still being applied. Reporting that as `pendingApproval` shipped once and sent somebody
+/// still being applied. Reporting that as `pendingApproval` once sent somebody
 /// looking for an approver who did not exist. The question every case here answers is what
 /// the user has to DO: use it, wait, chase an approver, or stop trying.
 public enum ActivationOutcome: Sendable, Equatable {

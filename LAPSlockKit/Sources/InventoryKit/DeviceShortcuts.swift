@@ -5,12 +5,12 @@ import Foundation
 // Search answers "I know the name". This answers "I was just here" and "I am here every
 // week", a lab bench, a row of kiosks, the one server that keeps breaking.
 //
-// WHAT IS STORED, AND WHY IT IS SO LITTLE. Device IDs and nothing else. No names, no users,
+// What is stored: device IDs and nothing else. No names, no users,
 // no serials. A stored hostname would be tenant data sitting on a phone for no reason; an
 // ID is enough to look the row up in inventory the app has already loaded, and it is
 // meaningless to anyone who cannot query that tenant.
 //
-// TENANT-SCOPED, WHICH IS NOT OPTIONAL. An MSP switches between customer organizations in
+// Tenant-scoped, and that is not optional. An MSP switches between customer organizations in
 // one install. Favourites from customer A appearing while operating in customer B would be
 // a cross-customer leak of which machines matter to whom, small, but exactly the kind of
 // thing this product cannot afford. Every read and write is keyed by tenant.

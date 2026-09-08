@@ -4,7 +4,7 @@ import PlatformSecurity
 
 // App lock: Face ID over the whole app, distinct from the per-reveal gate.
 //
-// WHAT IT PROTECTS. Not a credential, those have their own gate, which always runs and is
+// What it protects: not a credential. Those have their own gate, which always runs and is
 // not affected by this setting. This protects the DEVICE LIST: hostnames, primary users,
 // compliance state, which machines exist. That is reconnaissance for a whole tenant, and it
 // is exactly what somebody holding a borrowed unlocked phone would page through.

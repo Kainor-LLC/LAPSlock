@@ -3,7 +3,7 @@ import CryptoKit
 
 // Build Spec, entitlement verification, contract section 7.4.
 //
-// THE ORDER OF THE CHECKS BELOW IS THE CONTRACT, NOT A STYLE CHOICE.
+// The order of the checks below is the contract, not a style choice.
 //
 // Nothing reads a claim before the signature has been verified. That is the whole reason
 // this reads as a sequence of small steps rather than a decode-then-validate: a decoded

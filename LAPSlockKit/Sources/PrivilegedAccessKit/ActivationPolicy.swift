@@ -2,7 +2,7 @@ import Foundation
 
 // What the tenant's PIM policy actually allows, read rather than guessed.
 //
-// WHY THIS EXISTS. The activation duration was a hardcoded guess, then a fixed picker. Both
+// The activation duration was a hardcoded guess, then a fixed picker. Both
 // are wrong for the same reason: every PIM policy caps activation length, the cap is set
 // per-tenant and often per-group, and asking for longer than allowed is refused with a bare
 // 400 that names no reason. Offering "8 hours" to a tenant that permits three is offering a

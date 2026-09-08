@@ -275,7 +275,7 @@ final class PrivilegedAccessServiceTests: XCTestCase {
     }
 
     func test_anAcrsFourHundredIsRetriedAsAClaimsChallenge() async throws {
-        // The failure observed on device: a PIM policy requiring a Conditional Access
+        // The real-world failure: a PIM policy requiring a Conditional Access
         // authentication context answers 400, not 401, and carries the required claim in
         // the message. Nothing watched for it, so activation died on a bare bad request.
         // Built rather than written as a literal: the message contains a JSON object, so a

@@ -99,7 +99,7 @@ final class ClaimsChallengeTests: XCTestCase {
 /// Conditional Access authentication context, Graph answers 400 with
 /// `RoleAssignmentRequestAcrsValidationFailed` and puts the required claim in the message as
 /// raw JSON. A retry that only watched 401 and 403 therefore never fired, and activation
-/// failed with a bare 400, observed on device 2026-09-02.
+/// failed with a bare 400 against a real tenant.
 final class GraphErrorClaimsChallengeTests: XCTestCase {
 
     /// The real message shape, as Microsoft documents it.

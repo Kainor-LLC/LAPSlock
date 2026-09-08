@@ -2,7 +2,7 @@ import Foundation
 
 // Build Spec §3.3, the tenant guard, made explicit.
 //
-// WHAT THIS REPLACES, AND WHY IT IS NOT A WEAKENING.
+// What this replaces, and why it is not a weakening.
 //
 // The guard used to compare a returned token's `tid` against the signed-in account's OWN
 // tenant. That is correct for a single-organization admin and wrong for an MSP, who

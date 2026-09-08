@@ -8,8 +8,8 @@ import Foundation
 //
 // The rule that matters most, from section 7.1 and 7.2:
 //
-//   A FREE-TIER INSTALL NEVER CONTACTS THE ENDPOINT. And an activated install contacts it
-//   on the CALENDAR, never in response to what the administrator did.
+//   A free-tier install never contacts the endpoint. An activated install contacts it
+//   on the calendar, never in response to what the administrator did.
 //
 // Every call to the network in this file goes through `attemptFetch`, and there are exactly
 // three callers: Activate, Refresh (manual), and `refreshIfDue`. `refreshIfDue` is gated on

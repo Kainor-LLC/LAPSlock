@@ -2,7 +2,7 @@ import Foundation
 
 // Filling the inventory to completion, so search covers the whole tenant.
 //
-// THE BUG THIS FIXES. Search is client-side over the pages loaded so far, because Graph's
+// The bug this fixes: search is client-side over the pages loaded so far, because Graph's
 // `managedDevices` has no usable server-side name search (`$filter` supports `eq` and a
 // little `startswith`, no `contains`, and `$search` is unsupported on the resource). On a
 // tenant large enough that the administrator has not scrolled to the end, searching for a
@@ -14,7 +14,7 @@ import Foundation
 // loading" while it runs, because the actual defect was that an empty result during a
 // partial load was a lie.
 //
-// ONE PAGER AT A TIME. `DeviceInventoryService` is an actor, but `loadNextPage` reads the
+// One pager at a time. `DeviceInventoryService` is an actor, but `loadNextPage` reads the
 // next link, suspends on the fetch, then appends, so two concurrent callers read the same
 // link and append the same page twice. While a fill is running it must be the only thing
 // paging; the list model enforces that by making its manual "load more" a no-op meanwhile.

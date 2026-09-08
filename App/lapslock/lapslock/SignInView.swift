@@ -3,7 +3,7 @@ import AuthKit
 
 // Build Spec §4, §8, the first screen anyone sees.
 //
-// DESIGN DECISION: the explainer is the sign-in screen, not a separate interstitial.
+// The explainer is the sign-in screen, not a separate interstitial.
 // An extra screen before a button gets skipped or resented. Here the same information
 // is read while the person is deciding whether to tap, at zero added friction.
 //

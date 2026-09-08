@@ -1,31 +1,26 @@
 import Foundation
 import AuthKit
 
-// Build Spec §2.4, macOS LAPS. REVEAL UNAVAILABLE (verified empirically).
+// Build Spec §2.4, macOS LAPS. Reveal is unavailable; verified against a live tenant.
 //
-// HOW TO ENABLE macOS REVEAL WHEN MICROSOFT SHIPS IT
-// Everything needed is in this one file. No UI, view-model, or other module changes.
-//   1. Re-run tools/Verify-MacOSLapsGraph.ps1 against a live tenant.
-//   2. If a documented endpoint returns a password value:
-//        a. set `supportsReveal: true` in `capabilities` below
-//        b. clear `unavailabilityReason`
-//        c. set `usesBetaAPI` to reflect the endpoint's status (false only once GA)
-//        d. implement `reveal(for:)`, replace the thrown error with the real request,
-//           parsing straight into SensitiveValue exactly as WindowsLapsProvider does
-//        e. put the required scope in `revealScopes`
-//   3. Run the CredentialKitTests capability tests; they assert the declared shape.
-//
-// WHY IT'S OFF (evidence, tested against a licensed production tenant):
-//   * The Entra store used by Windows LAPS returns 200 OK with NO credentials array for
-//     ADE-enrolled Macs, macOS passwords are not kept there. Consistent with Microsoft's
+// Why it is off:
+//   * The Entra store Windows LAPS uses returns 200 with no credentials array for
+//     ADE-enrolled Macs. macOS passwords are not kept there, which matches Microsoft's
 //     "stored and encrypted by Intune" statement.
-//   * The documented beta function is specified to return only
-//     passwordLastRotationDateTime. There is no password field in the contract:
+//   * The only documented macOS function returns passwordLastRotationDateTime and nothing
+//     else; there is no password field in the contract:
 //     GET /beta/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail
-//   * That function also returns HTTP 500 from Intune's DeviceFE backend on every
-//     ADE-enrolled, LAPS-managed Mac tested (multiple devices, multiple users, one
-//     tenant). The portal displays these passwords, so retrieval is
-//     portal-internal. Per §2.4 we do NOT ship on undocumented/internal endpoints.
+//   * That function also answers HTTP 500 for every ADE-enrolled, LAPS-managed Mac tested,
+//     while the admin center displays the same passwords. Retrieval is portal-internal, and
+//     this app does not build on undocumented endpoints.
+//
+// To enable reveal if Microsoft ships an API, everything is in this file:
+//   1. Re-run tools/Verify-MacOSLapsGraph.ps1 against a live tenant.
+//   2. If a documented endpoint returns a password value: set `supportsReveal: true` in
+//      `capabilities`, clear `unavailabilityReason`, set `usesBetaAPI` to match the
+//      endpoint's status, implement `reveal(for:)` parsing into SensitiveValue as
+//      WindowsLapsProvider does, and put the required scope in `revealScopes`.
+//   3. Run the CredentialKitTests capability tests; they assert the declared shape.
 
 public struct MacOSLapsProvider: LocalAdminCredentialProviding {
     public let platform: DevicePlatform = .macOS

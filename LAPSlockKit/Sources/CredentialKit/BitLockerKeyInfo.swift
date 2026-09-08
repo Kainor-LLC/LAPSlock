@@ -1,35 +1,28 @@
 import Foundation
 import AuthKit
 
-// BitLocker recovery keys, the most-requested adjacent feature in this category.
+// BitLocker recovery keys.
 //
-// WHY THIS BELONGS IN CredentialKit
-// A BitLocker recovery key is a secret of the same weight as a local admin password: it
-// decrypts the disk. So it lives behind the same isolation boundary (§3.1), flows through
-// SensitiveValue, and gets the same biometric gate and bounded reveal window. It is not
-// "device metadata."
+// A recovery key decrypts the disk, so it is a secret of the same weight as a local admin
+// password. It lives behind the same isolation boundary (§3.1), flows through SensitiveValue,
+// and gets the same biometric gate and bounded reveal window.
 //
-// THE API (verified against Microsoft Learn, v1.0 GA)
+// The API (Microsoft Graph v1.0, GA):
 //   List for a device:
 //     GET /v1.0/informationProtection/bitlocker/recoveryKeys?$filter=deviceId eq '{entraDeviceId}'
-//     Returns key metadata WITHOUT the key value. Note: $top is not supported here.
+//     Returns key metadata without the key value. $top is not supported.
 //   Reveal one key:
 //     GET /v1.0/informationProtection/bitlocker/recoveryKeys/{id}?$select=key
-//     The `key` property is only returned when explicitly $select-ed.
+//     The `key` property is returned only when explicitly selected, and selecting it writes
+//     a KeyManagement entry to the tenant's Entra audit log.
 //
-// Two properties of this API that fit the product unusually well:
-//   1. Delegated only, application permissions are NOT supported for retrieving the key.
-//      The same "acts as you, never on its own" story as LAPS, enforced by Microsoft.
-//   2. Adding $select=key triggers a Microsoft Entra audit entry (KeyManagement category).
-//      The audit claim we already make for LAPS holds here for the same reason.
+// Retrieving the key is delegated-only; application permissions are not supported. Roles
+// that can read keys, least privileged first: Cloud Device Administrator, Helpdesk
+// Administrator, Intune Service Administrator, Security Administrator, Security Reader,
+// Global Reader. A device's registered owner can read its own key.
 //
-// Roles that can read keys (least privileged first): Cloud Device Administrator,
-// Helpdesk Administrator, Intune Service Administrator, Security Administrator,
-// Security Reader, Global Reader. A signed-in user who is the registered owner of the
-// device can also read its own key.
-//
-// KEYED BY THE ENTRA DEVICE ID, the same identifier Windows LAPS reveal uses, which
-// InventoryKit already carries on every device. No new lookup, no new join.
+// Keyed by the Entra device ID, the same identifier Windows LAPS reveal uses and one that
+// InventoryKit already carries on every device.
 
 /// Which volume a recovery key unlocks. Shown because a device commonly has several keys
 /// and picking the wrong one wastes a trip to the machine.

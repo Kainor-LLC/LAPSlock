@@ -5,7 +5,7 @@ import Security
 
 // The customer organizations an MSP has added, so domains are typed once rather than daily.
 //
-// WHAT THIS LIST IS, AND WHY IT IS TREATED CAREFULLY.
+// What this list is, and why it is treated carefully.
 //
 // Individually these values are public: any domain's tenant GUID is returned by
 // unauthenticated OIDC discovery, which is the same fact the entitlement contract relies on

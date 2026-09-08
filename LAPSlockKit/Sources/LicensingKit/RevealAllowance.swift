@@ -1,31 +1,22 @@
 import Foundation
 
-// Build Spec, free tier metering.
+// Free-tier metering.
 //
-// WHAT THIS MODULE IS FOR
+// The free tier exists for evaluation. An administrator has to be able to search a device,
+// reveal a password and watch the read land in their own Entra audit log before paying, so
+// reveals are metered rather than blocked, and convenience is what the paid tiers add.
 //
-// The free tier is for EVALUATION, not traction. Nobody buys a credential tool without
-// testing it against their own tenant, so reveal has to be free: an admin needs to search
-// a device, reveal a password, and watch the read land in their own Entra audit log.
-// Convenience is what gets gated. Reveals are metered rather than blocked.
+// The count lives on the device and never on a server. A server-side counter would mean
+// learning how often each tenant retrieves passwords, which is usage telemetry, and the
+// privacy policy says none is collected.
 //
-// WHY THE COUNT LIVES ON THE DEVICE AND NEVER ON A SERVER
+// This is a nudge, not DRM. The ledger lives in the Keychain rather than UserDefaults so a
+// reinstall does not reset it; a device wipe or a new phone does, and moving the system
+// clock can age entries out early. All of that is accepted rather than hardened against.
 //
-// Server side counting is the obvious implementation and it would quietly destroy the best
-// claim this product has. A server counter means learning how often each tenant retrieves
-// passwords. That is usage telemetry, the privacy policy says none is collected, and
-// "we count your reveals" is a worse sentence than anything unbeatable enforcement buys.
-//
-// THIS IS A NUDGE, NOT DRM. Say it out loud so nobody sinks a week into hardening it.
-// The ledger lives in the Keychain rather than UserDefaults so a reinstall does not reset
-// it, but a device wipe or a new phone does, and moving the system clock can age entries
-// out early. All of that is accepted. Somebody willing to wipe their phone monthly to
-// dodge twenty dollars was never a customer, and chasing them would cost the privacy
-// claim that wins enterprise deals.
-//
-// ISOLATION (§3.1): this module imports Foundation and CryptoKit only. It must never
-// import CredentialKit, and CredentialKit must never import it. The meter counts EVENTS.
-// It cannot hold a credential because no type in here has anywhere to put one.
+// Isolation (§3.1): this module imports Foundation and CryptoKit only. It never imports
+// CredentialKit and CredentialKit never imports it. The meter counts events; no type here
+// has anywhere to hold a credential.
 
 /// The rules of the free tier. Injected rather than hardcoded so tests can use small
 /// numbers and short windows instead of waiting thirty days.

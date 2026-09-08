@@ -3,7 +3,7 @@ import CredentialKit
 
 // Build Spec §2.2, §2.5, §5, device inventory models.
 //
-// EVERYTHING HERE IS NON-SENSITIVE. Device names, OS versions, compliance state, and
+// Everything here is non-sensitive. Device names, OS versions, compliance state, and
 // identifiers are ordinary management metadata: cacheable, loggable, and safe to keep in
 // memory. Passwords never touch this module, that is CredentialKit's job, and the
 // separation is deliberate (§3.1).

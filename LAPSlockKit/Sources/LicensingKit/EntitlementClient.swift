@@ -2,7 +2,7 @@ import Foundation
 
 // Build Spec, the one call this app makes to a Kainor server. Contract sections 2 to 4.
 //
-// EVERYTHING THAT GOES ON THE WIRE IS DECIDED HERE, NOT BY THE HTTP STACK.
+// Everything that goes on the wire is decided here, not by the HTTP stack.
 //
 // The request body is a version and a tenant ID. The headers are the four in contract
 // section 2. URLSession's default User-Agent carries the bundle identifier, build number and

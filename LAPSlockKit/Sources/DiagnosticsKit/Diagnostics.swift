@@ -222,7 +222,7 @@ public struct DiagnosticEnvironment: Sendable, Codable {
 
 /// In-memory ring buffer of recent events.
 ///
-/// DELIBERATELY NOT PERSISTED. Writing diagnostics to disk would create a file that
+/// Not persisted, on purpose. Writing diagnostics to disk would create a file that
 /// outlives the app session and could be swept up by a backup or a file-sharing
 /// mistake. The cost is that a crash loses the log and the user has to reproduce the
 /// problem before exporting, an acceptable trade for a tool that handles administrator

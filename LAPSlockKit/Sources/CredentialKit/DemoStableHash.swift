@@ -6,7 +6,7 @@ import Foundation
 /// Foundation and AuthKit and nothing else. Nothing here needs cryptographic strength, 
 /// only stability.
 ///
-/// WHY THIS EXISTS. The demo providers derived their fake values from `String.hashValue`,
+/// The demo providers derived their fake values from `String.hashValue`,
 /// which Swift seeds randomly per process. Two consequences, both wrong:
 ///
 ///   1. The values were NOT stable across launches, contradicting the comments beside them

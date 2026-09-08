@@ -9,7 +9,7 @@ import LocalAuthentication
 // no device, no simulator prompt, and no user interaction. `BiometricGateOutcome` and
 // `BiometricAvailability` are pure values; only `BiometricGate` touches the framework.
 //
-// POLICY CHOICE: `.deviceOwnerAuthentication`, not `.deviceOwnerAuthenticationWithBiometrics`.
+// Policy: `.deviceOwnerAuthentication`, not `.deviceOwnerAuthenticationWithBiometrics`.
 // The former falls back to the device passcode when Face ID fails or isn't enrolled.
 // Rationale: an admin standing in a server room with a mask on, or holding a device whose
 // Face ID is temporarily locked out, still needs to get the password. Refusing entirely

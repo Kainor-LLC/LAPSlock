@@ -580,9 +580,9 @@ final class DeviceDetailModel: ObservableObject {
         statusNote = "Username copied."
     }
 
-    // COPY IS NOT GATED, AND THAT IS A DECISION RATHER THAN AN OMISSION.
+    // Copy is not gated, by design.
     //
-    // It was gated behind Pro for one commit and reverted the same day. The
+    // Gating it behind Pro was tried and reverted. The
     // reason is a security argument, not a generosity one: **a free user who cannot copy a
     // 48-digit BitLocker recovery key will get it out of the app another way.** They will
     // photograph the screen with a second phone, or transcribe it into Notes, or read it
@@ -597,7 +597,7 @@ final class DeviceDetailModel: ObservableObject {
     //
     // The metered reveal count is the free-tier limit, and it is enough: five reveals per 30
     // days is genuinely binding for a working administrator, which is where Pro earns its
-    // money. Founder's read, and correct, "the limit is the bigger catch".
+    // money. The limit is the bigger catch.
     //
     // Pro therefore means unmetered reveals. Future conveniences may be gated (favourites,
     // app lock) as long as they do not make credential HANDLING worse.

@@ -9,12 +9,12 @@ import Foundation
 // JSON describing what it wants, typically an `acr` value of `c1`. The client decodes that,
 // hands it to MSAL as a claims request, re-authenticates, and retries.
 //
-// WHY THIS IS CORRECT AND NOT AN OBSTACLE TO ROUTE AROUND. It is the mechanism that stops
+// This is correct behaviour, not an obstacle to route around. It is the mechanism that stops
 // this app quietly escalating its own privilege. An app that could activate a role from a
 // stale token would be a worse app. The right response to a claims challenge is always to
 // re-authenticate, never to retry harder or to fall back to some other path.
 //
-// THE PARSING IS THE SECURITY-RELEVANT PART. The header is attacker-influenceable in
+// The parsing is the security-relevant part. The header is attacker-influenceable in
 // principle, and its contents are passed into MSAL, so this file treats it as untrusted
 // input: the blob must be valid base64, must decode to a JSON OBJECT, and must be small.
 // A hostile challenge should at worst cause one unnecessary sign-in prompt, never anything

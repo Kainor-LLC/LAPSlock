@@ -202,32 +202,16 @@ public actor DeviceInventoryService {
 /// Client-side search. Graph's managedDevices resource has no dependable server-side
 /// substring search on deviceName, so filtering happens locally over the cached page set.
 ///
-/// KNOWN LIMITATION: "the cached page set" means the pages loaded so far. On a tenant
-/// large enough that the admin has not scrolled to the end, a device that exists will not
-/// be found, which reads as a broken app rather than an incomplete load. `loadAll` exists
-/// for this but nothing calls it on the search path yet.
+/// Known limitation: "the cached page set" means the pages loaded so far. A device that
+/// exists but has not been paged in will not be found. `InventoryFill` pages the rest in
+/// the background for this reason.
 ///
-/// PERFORMANCE NOTE, this runs on the main thread on every keystroke.
-///
-/// The obvious implementation is quadratically worse than it looks, and shipped once:
-///
-///   * `range(of:options:[.caseInsensitive, .diacriticInsensitive])` performs full
-///     Unicode folding on EVERY call. It is not a cheap substring check.
-///   * Calling a ranking function from inside a sort comparator evaluates it O(n log n)
-///     times, twice per comparison, rather than once per device.
-///
-/// Together, over seven searchable fields at three match strengths, that is roughly
-/// 100,000 Unicode folding operations per keystroke on a 500-device tenant. It felt
-/// exactly like what it was.
-///
-/// So: fold each field and the query ONCE, then compare with plain `==`, `hasPrefix`, and
-/// `contains`, which operate on already-normalised strings. And score every device in a
-/// single pass, sorting on the precomputed rank. Same results, same ordering, about two
-/// orders of magnitude less work.
-///
-/// If this ever needs to get faster again, the next step is caching folded fields keyed by
-/// device id rather than folding per keystroke. That trades memory and cache-invalidation
-/// complexity for speed, so it is not worth doing until measurement says so.
+/// Performance: this runs on the main thread on every keystroke. Each field and the query
+/// are folded once (case and diacritics), then compared with plain `==`, `hasPrefix` and
+/// `contains`, and every device is scored in a single pass before one sort on the
+/// precomputed rank. Folding inside the comparator instead costs roughly 100,000 Unicode
+/// folds per keystroke on a 500-device tenant. If it ever needs to be faster, cache folded
+/// fields by device id; not before measurement says so.
 public enum DeviceSearch {
 
     private static let foldOptions: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]

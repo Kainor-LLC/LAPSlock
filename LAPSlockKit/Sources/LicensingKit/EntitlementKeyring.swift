@@ -3,7 +3,7 @@ import CryptoKit
 
 // Build Spec, entitlement verification keys.
 //
-// THE PUBLIC KEYS ARE COMPILED IN, AND THE CLIENT NEVER FETCHES ONE.
+// The public keys are compiled in; the client never fetches one.
 //
 // Contract section 6.1. Fetching keys from the same server that signs the tokens would mean
 // that server could hand a client any key it liked, and it would make a licensing decision

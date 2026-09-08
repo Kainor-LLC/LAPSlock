@@ -8,7 +8,7 @@ import Foundation
 // instead of with sleeps. The app layer drives `tick()` from a SwiftUI timer and wires
 // `onExpire` to SensitiveValue.wipe().
 //
-// WHY A TIMER AT ALL: the realistic threat isn't a remote attacker, it's the phone
+// Why a timer at all: the realistic threat isn't a remote attacker, it's the phone
 // sitting unlocked on a workbench with a domain admin password on screen. A bounded
 // window means walking away is survivable.
 

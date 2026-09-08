@@ -2,12 +2,12 @@ import Foundation
 
 // Graph's `request-id`, captured so a support case can name it.
 //
-// WHY THIS MATTERS. When Microsoft Graph fails, `request-id` is the first thing Microsoft
+// When Microsoft Graph fails, `request-id` is the first thing Microsoft
 // support asks for, it is how they find the request in their own logs. Without it a support
 // case starts with "something failed sometime", and the diagnostics report was carrying a
 // `graphRequestId` field that nothing ever populated.
 //
-// WHY A SIDE CHANNEL AND NOT AN ERROR PAYLOAD. Adding the id to every case of every error
+// Why a side channel rather than an error payload: adding the id to every case of every error
 // enum would change `InventoryError` and `CredentialError`, both `Equatable` and both
 // compared by value throughout the tests, for a field that is pure diagnostics and never
 // affects a decision. The app already uses exactly this pattern for MSAL failures

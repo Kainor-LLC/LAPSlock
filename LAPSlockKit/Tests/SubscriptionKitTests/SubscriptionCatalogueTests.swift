@@ -8,7 +8,7 @@ final class SubscriptionCatalogueTests: XCTestCase {
 
     func test_productIdentifiersArePinned() {
         // Apple does not allow a product ID to be renamed or reused, in this app or any
-        // other, ever. A typo shipped once is a product line that must be abandoned and
+        // other, ever. A typo that ships is a product line that must be abandoned and
         // recreated under a new name, and existing subscribers do not follow. These strings
         // must match App Store Connect exactly, so they are asserted rather than trusted.
         XCTAssertEqual(SubscriptionProduct.proMonthly.rawValue, "com.kainor.lapslock.pro.monthly")

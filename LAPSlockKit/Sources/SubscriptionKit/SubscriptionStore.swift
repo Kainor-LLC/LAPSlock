@@ -3,13 +3,13 @@ import StoreKit
 
 // The live StoreKit layer: what Apple says this Apple ID owns, and how to buy.
 //
-// DELIBERATELY THIN. Every decision worth testing lives in `SubscriptionCatalogue` as a pure
+// Kept thin. Every decision worth testing lives in `SubscriptionCatalogue` as a pure
 // function over plain values, because StoreKit's types cannot be faked, `Transaction` and
 // `Product` are concrete, not protocols, so a unit test cannot manufacture one. What is left
 // here is the minimum glue, and it is verified against a local StoreKit configuration file
 // rather than by unit tests. Anything that can be decided without StoreKit belongs next door.
 //
-// THE RULE THAT MATTERS: an UNVERIFIED transaction grants nothing. StoreKit hands back
+// The rule that matters: an unverified transaction grants nothing. StoreKit hands back
 // `VerificationResult`, and the `.unverified` case exists because a receipt can be forged or
 // replayed on a jailbroken device. Reading the payload without checking is the standard way
 // apps get their paid tier unlocked for free, and it is one `case .unverified` away.

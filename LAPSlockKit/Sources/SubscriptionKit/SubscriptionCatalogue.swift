@@ -9,14 +9,14 @@ import LicensingKit
 // `EntitlementManager.isPro(signedInTenantId:storeKitEntitlementActive:)` already took the
 // Apple side as a plain input it never computes itself. This module computes it.
 //
-// AND IT MUST NEVER SEE A CREDENTIAL. The guard forbids SubscriptionKit from importing
+// It must never see a credential. The guard forbids SubscriptionKit from importing
 // CredentialKit, for the same reason LicensingKit is forbidden: a receipt and a local
 // administrator password have no business in one link graph.
 
 /// The subscriptions LAPSlock sells through Apple.
 ///
 /// **Product IDs are permanent.** Apple does not allow an ID to be renamed or reused, in this
-/// app or any other, ever. They are pinned by a test for that reason: a typo shipped once is
+/// app or any other, ever. They are pinned by a test for that reason: a typo that ships is
 /// a product line that has to be abandoned and recreated under a new name.
 public enum SubscriptionProduct: String, CaseIterable, Sendable {
     case proMonthly = "com.kainor.lapslock.pro.monthly"

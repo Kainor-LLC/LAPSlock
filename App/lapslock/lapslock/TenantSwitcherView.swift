@@ -3,7 +3,7 @@ import AuthKit
 
 // The MSP tenant picker.
 //
-// WRITTEN FOR A USER NOBODY CAN HELP.
+// Written for a user nobody can help.
 //
 // The end-to-end MSP path cannot be tested here: guest access needs a second tenant that
 // has invited this account, and GDAP needs a real partner relationship. So the first person

@@ -10,7 +10,7 @@ import StoreKit
 
 // Settings. Three toggles, each with a deliberate design decision behind it.
 //
-// WHERE THIS LIVES: a gear in the device list toolbar, opening a sheet. Not on the device
+// Where this lives: a gear in the device list toolbar, opening a sheet. Not on the device
 // list itself, that screen's job is find-a-device-fast, and controls there compete with
 // the search field and get tapped by accident.
 
@@ -38,7 +38,7 @@ final class AppSettings: ObservableObject {
     }
 
     /// Whether to look up primary users' display names in Entra when Intune leaves the
-    /// field empty. Decision: the UPN is the default and is enough;
+    /// field empty. The UPN is the default;
     /// names are optional because they cost a permission, `User.ReadBasic.All` on the
     /// consent screen, that a customer should choose, not inherit.
     @Published var userNamesEnabled: Bool {
@@ -653,8 +653,8 @@ struct SettingsView: View {
 
     /// What just changed, and where to find it.
     ///
-    /// Founder bought MSP on device and the tenant switcher appeared with nothing to explain
-    /// it, a purchase that silently alters the toolbar reads as either broken or magic. This
+    /// After an MSP purchase the tenant switcher appeared with nothing to explain it, and
+    /// a purchase that silently alters the toolbar reads as either broken or magic. This
     /// is deliberately NOT a tutorial: it names the capability and the one place it lives,
     /// once, at the moment it becomes true.
     static func unlockedMessage(for plan: SubscriptionProduct) -> String {

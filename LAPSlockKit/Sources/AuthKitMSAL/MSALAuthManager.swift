@@ -9,31 +9,23 @@ import UIKit
 import MSAL
 import AuthKit
 
-// Build Spec §4, §2.1, §3.3, §9. The ONLY file that imports MSAL.
+// Build Spec §4, §2.1, §3.3, §9. The only file that imports MSAL.
 //
 // Responsibilities:
 //   * interactive account-selection sign-in on /common (§2.1)
 //   * per-account tenant-specific authority for silent acquisition (§2.1)
-//   * tenant pinning: the token's tid MUST match the account's tenant (§3.3 guard)
+//   * tenant pinning: the token's tid must match the account's tenant (§3.3)
 //   * ThisDeviceOnly, non-synced keychain for the MSAL token cache (§4)
 //   * config injection for BYO registration (§9)
 //
-// CONCURRENCY NOTE, read this before changing anything in here.
-//
-// It is not enough to build MSALWebviewParameters on the main actor. MSAL dereferences
-// the presenting view controller AGAIN inside acquireToken, on whatever thread you called
-// acquireToken from. This actor's methods run on the cooperative thread pool, so calling
-// acquireToken directly from actor context reads UIViewController.view and UIView.window
-// off the main thread. Main Thread Checker flags it, and on a real device with Microsoft
-// Authenticator installed the broker return path then fails: the broker screen appears,
-// the user authenticates, and the completion never delivers a usable result.
-//
-// This was invisible in the simulator. Without a broker installed MSAL keeps the whole
-// flow in-process, so the fragile part never ran.
-//
-// Therefore: every MSAL call that can present UI (acquireToken, signout) is dispatched to
-// the main thread before it is made. Silent acquisition presents nothing and stays here.
-// If you add another MSAL entry point that can show a screen, dispatch it too.
+// Concurrency: MSAL dereferences the presenting view controller inside acquireToken, on
+// the calling thread. This actor runs on the cooperative pool, so calling acquireToken
+// from actor context touches UIKit off the main thread; with Microsoft Authenticator
+// installed the broker return path then fails silently. The simulator never showed it,
+// because without a broker the whole flow stays in-process. Every MSAL call that can
+// present UI (acquireToken, signout) is therefore dispatched to the main thread first.
+// Silent acquisition presents nothing and stays here. Any new MSAL entry point that can
+// show a screen must be dispatched the same way.
 
 /// Configuration for the app registration. `.vendorDefault` ships with the app;
 /// `.custom` is supplied by an enterprise using their own registration (§9 BYO).

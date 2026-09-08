@@ -3,17 +3,17 @@ import PrivilegedAccessKit
 
 // Just-in-time role activation.
 //
-// THE MOMENT THIS EXISTS FOR. An administrator taps reveal, gets "your account doesn't hold
+// The moment this exists for: an administrator taps reveal, gets "your account doesn't hold
 // a role that can read local administrator passwords", and is standing at a broken machine.
 // Before this screen the only route was: walk away, find a desktop, open the portal,
 // activate, walk back. This closes that loop without leaving the bench.
 //
-// WRITTEN FOR SOMEBODY WHO CANNOT ASK FOR HELP. Like the tenant switcher, the end-to-end
+// Written for somebody who cannot ask for help. Like the tenant switcher, the end-to-end
 // path depends on tenant policy nobody here can reproduce, approval requirements, MFA
 // configuration, which roles are eligible, so failures have to explain themselves on
 // screen.
 //
-// AND ONE RULE ABOVE THE REST: a PENDING approval must never look like success. If the
+// One rule above the rest: a pending approval must never look like success. If the
 // tenant requires approval, activation creates a request and grants nothing. An
 // administrator told "activated" who walks back to the machine and fails again has been
 // actively misled, which is worse than a clear "waiting for approval".

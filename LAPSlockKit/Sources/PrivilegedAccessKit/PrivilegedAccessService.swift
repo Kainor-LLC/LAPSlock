@@ -3,7 +3,7 @@ import AuthKit
 
 // The Graph client for PIM. Both surfaces, and the claims-challenge retry.
 //
-// THE RETRY IS THE WHOLE DESIGN. Graph refuses self-activation unless MFA was satisfied in
+// The retry is the whole design. Graph refuses self-activation unless MFA was satisfied in
 // the current session, and says so with a claims challenge. The flow is: attempt → 401 with
 // a challenge → re-authenticate carrying those claims, which triggers whatever MFA the
 // tenant requires → attempt once more. Exactly once more: a second challenge means

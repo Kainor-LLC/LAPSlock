@@ -1,26 +1,17 @@
 // swift-tools-version: 5.9
 // LAPSlockKit, module boundaries per Build Spec §3.1.
 //
-// THE CRITICAL RULE (§3.1): CredentialKit depends on AuthKit + Foundation ONLY.
-// Adding a licensing module, any analytics SDK, or any logging framework to
-// CredentialKit must remain a COMPILE ERROR. This is the primary defense against
-// accidental credential exfiltration and must survive refactors.
-// Enforced twice: here, and by scripts/isolation-check.sh in CI.
+// The rule that matters: CredentialKit depends on AuthKit and Foundation only. Adding a
+// licensing module, an analytics SDK or a logging framework to it must remain a compile
+// error. Enforced here and by scripts/isolation-check.sh.
 //
-// WHY MSAL LIVES IN ITS OWN TARGET (AuthKitMSAL):
-//   1. CredentialKit's link graph contains no third-party binary at all, the
-//      credential path depends only on the AuthManaging protocol.
-//   2. The test suite builds and runs with zero network access and zero
-//      Microsoft dependencies, so tests are fast and deterministic.
-//   3. MSAL API drift can only break one target, never the security core.
+// MSAL lives in its own target (AuthKitMSAL) so the credential path links no third-party
+// binary, the tests run with no network and no Microsoft dependency, and MSAL API drift
+// can break one target only.
 //
-// WHY macOS IS IN `platforms` FOR AN iOS APP:
-//   The shipping product is iOS-only. macOS is declared solely so the test suite can
-//   run on the "My Mac" destination (much faster than booting a simulator). All
-//   testable code, CredentialKit, AuthKit, is pure Foundation and platform-agnostic.
-//   AuthKitMSAL's implementation is wrapped in `#if os(iOS)` because MSAL's iOS flow
-//   uses UIKit; on macOS that target simply compiles to nothing.
-//   The macOS minimum must be >= 10.15 or the MSAL package product fails to resolve.
+// macOS is declared solely so the tests run on the "My Mac" destination. AuthKitMSAL is
+// wrapped in `#if os(iOS)` and compiles to nothing there. The macOS minimum must be at
+// least 10.15 or the MSAL package product fails to resolve.
 import PackageDescription
 
 let package = Package(
