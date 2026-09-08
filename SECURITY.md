@@ -8,7 +8,7 @@ we want to hear about it.
 Email **connor@kainor.com** with "LAPSlock security" in the subject.
 
 Please include what you did, what happened, and the app version. If you have a proof of
-concept, describe it in words rather than attaching a real credential — we don't want a
+concept, describe it in words rather than attaching a real credential, we don't want a
 password from your tenant in our inbox any more than you do.
 
 **Please don't** open a public GitHub issue for a vulnerability. Use email first.
@@ -40,7 +40,7 @@ Out of scope:
 - Findings that require an already-compromised device (jailbreak, malicious profile, or a
   device the attacker physically controls and has unlocked).
 - Screenshots. iOS does not allow apps to block them. LAPSlock detects them, hides the
-  credential, and recommends rotation — that is the best available behavior, not an
+  credential, and recommends rotation, that is the best available behavior, not an
   oversight.
 
 ## Design claims you're welcome to test
@@ -49,11 +49,11 @@ These are the properties the app is built to guarantee. If you can break one, th
 finding:
 
 1. **No credential reaches any server we control.** The app talks to
-   `login.microsoftonline.com`, `graph.microsoft.com`, and — only after an enterprise
-   license is activated — our entitlement endpoint. That endpoint receives a tenant ID and
+   `login.microsoftonline.com`, `graph.microsoft.com`, and, only after an enterprise
+   license is activated, our entitlement endpoint. That endpoint receives a tenant ID and
    nothing else: no credential, no Microsoft token, no user or device identity. The full
    wire format, what the server logs, and how to check both are published in
-   `docs/ENTITLEMENT-API.md`. Verify with a proxy — this is our strongest claim and the
+   `docs/ENTITLEMENT-API.md`. Verify with a proxy, this is our strongest claim and the
    easiest to check, and `docs/NETWORK-TRANSPARENCY.md` walks through doing it in ten
    minutes.
 2. **No credential is logged.** `CredentialKit` links no logging framework, analytics SDK,
@@ -69,7 +69,7 @@ finding:
 
 ## Source availability
 
-The source is published for review. It is **not** open source — see `LICENSE`. Commercial
+The source is published for review. It is **not** open source, see `LICENSE`. Commercial
 organizations are expressly permitted to copy and read it for security evaluation, which
 includes running it in a test tenant.
 

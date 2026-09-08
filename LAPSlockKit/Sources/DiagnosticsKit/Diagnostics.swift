@@ -36,11 +36,11 @@ public enum DiagnosticOperation: String, Sendable, Codable, CaseIterable {
     case credentialReveal
     case credentialRotate
     case biometricGate
-    /// Switching to a customer organization (MSP tiers). Added 2026-09-02 because that path
+    /// Switching to a customer organization (MSP tiers). Added because that path
     /// cannot be tested by the vendor — the first person to hit a failure is a customer, so
     /// the report has to carry enough to answer them.
     case tenantSwitch
-    /// Just-in-time PIM activation. Added 2026-09-02: the tenant policy that refuses one is
+    /// Just-in-time PIM activation. Added because the tenant policy that refuses one is
     /// not reproducible by the vendor, so the Microsoft error code is the only explanation
     /// a customer can hand over.
     case roleActivation
@@ -93,7 +93,7 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     /// Milliseconds the operation took, for diagnosing "Graph is slow" reports.
     public let durationMs: Int?
 
-    // Auth failure detail, added 2026-09-02 after the broker bug proved it necessary. Each
+    // Auth failure detail, added after the broker bug proved it necessary. Each
     // is allowlisted here again, independently of whoever produced it: this type does not
     // trust its callers to have sanitised. A description string is deliberately NOT among
     // them — an MSAL description can carry a redirect URL, and a redirect URL can carry an
@@ -116,7 +116,7 @@ public struct DiagnosticEvent: Sendable, Codable, Identifiable {
     /// on. Allowlisted to an identifier shape, so a code passes and the human-readable
     /// message that accompanies it cannot.
     ///
-    /// Added 2026-09-02 after a Graph 400 produced a report that said only "service
+    /// Added after a Graph 400 produced a report that said only "service
     /// unavailable". The status and the code are the whole difference between a report that
     /// answers the question and one that wastes a device cycle guessing.
     public let graphErrorCode: String?

@@ -34,7 +34,7 @@ public struct EntitlementKeyring: Sendable {
 
     /// The keys this build ships with.
     ///
-    /// `lapslock-ent-2026-09` was generated inside `kainor-lapslock-prod-kv` on 2026-09-02,
+    /// `lapslock-ent-2026-09` was generated inside `kainor-lapslock-prod-kv`,
     /// is marked non-exportable, and can only sign and verify. The bytes below are the X9.63
     /// uncompressed public point: `0x04` then the 32-byte X, then the 32-byte Y.
     ///

@@ -10,7 +10,7 @@ import AuthKit
 // renders from the declared capabilities, so a platform gaining a capability later is a
 // change in exactly one file.
 //
-// VERIFIED STATE (2026-08-14, tested against a live licensed tenant):
+// VERIFIED STATE (tested against a live licensed tenant):
 //   Windows : GET /v1.0/directory/deviceLocalCredentials/{entraDeviceId}?$select=credentials
 //             returns passwordBase64. GA, documented. FULLY SUPPORTED.
 //   macOS   : No documented Graph endpoint returns the password value. The documented

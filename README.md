@@ -1,115 +1,124 @@
-# LAPSlock — iOS LAPS administrator client
+# LAPSlock
 
-Native iOS client for viewing Windows and macOS LAPS local administrator passwords
-managed by Microsoft Entra ID and Intune. Delegated auth only. No backend in the
-credential path — passwords go Microsoft Graph → TLS → device and nowhere else.
+LAPSlock is an iOS app for IT administrators. It reads Windows LAPS local administrator
+passwords and BitLocker recovery keys from Microsoft Entra ID and Intune, on the phone the
+administrator already carries, using the permissions their account already holds.
 
-**LAPSlock™ is a trademark of Kainor LLC.**
+[Download on the App Store](https://apps.apple.com/us/app/lapslock/id6806470554) ·
+[How it works](https://kainor.com/how-it-works/) ·
+[Pricing](https://kainor.com/pricing/) ·
+[Privacy](https://kainor.com/privacy/)
 
-**Source-available, not open source.** The code is published so that security-conscious
-administrators can read and verify what an app handling local administrator passwords
-actually does. It is licensed under PolyForm Strict 1.0.0 plus an additional permission
-that expressly allows commercial organizations to copy and read it for security review.
-Redistribution, modification, and publishing builds are not permitted. See `LICENSE`.
+Built by [Kainor LLC](https://kainor.com). LAPSlock is a trademark of Kainor LLC. Kainor LLC
+is not affiliated with, endorsed by, or sponsored by Microsoft Corporation.
 
-> ⚠️ This is the security core (foundation) of the app, built first and on purpose.
-> There is no runnable UI yet. What's here is the tested, isolated engine everything
-> else stacks on. See `docs/BUILD-SPEC.md` for the full specification this implements.
+## Why the source is published
 
-## Architecture (Build Spec §3.1)
+An app that handles local administrator passwords should not ask for blind trust. The client
+source is published so that a security team can read what it does before anyone installs it.
 
-```
-AppTarget (SwiftUI — not yet built)
-└── LAPSlockKit (SwiftPM)
-    ├── AuthKit          AuthManaging protocol + models. NO third-party deps.
-    ├── AuthKitMSAL      the ONLY target linking MSAL; tenant pinning (§3.3), BYO (§9)
-    ├── InventoryKit     device list/detail; NON-sensitive; may cache   (not yet built)
-    ├── CredentialKit    LAPS providers + SensitiveValue   ⚠ ISOLATION BOUNDARY
-    │                    depends on: AuthKit + Foundation ONLY (no MSAL, no logging)
-    └── PlatformSecurity biometrics, app-switcher redaction   (not yet built)
-```
+The licence is PolyForm Strict 1.0.0 with an additional permission that expressly allows
+commercial organisations to copy and read the code for security review. Redistribution,
+modification and publishing builds are not permitted. See [LICENSE](LICENSE).
 
-### The critical rule
+## Five claims you can check
 
-`CredentialKit` links no logging framework, no analytics SDK, no crash reporter, and
-does not import the licensing layer. A developer who tries to send a credential to a
-server or a log gets a **compile error**. This is enforced two ways:
+1. **No vendor server in the credential path.** Passwords travel from Microsoft Graph to the
+   device over TLS. Kainor has no server that could see one. The app talks to exactly three
+   hosts, and the third only after an organisation activates a licence. The ten-minute proxy
+   recipe is in [NETWORK-TRANSPARENCY.md](docs/NETWORK-TRANSPARENCY.md).
+2. **Delegated permissions only.** The app can read what the signed-in account can read in
+   the admin center, and nothing else. Every reveal appears in the tenant's own Entra audit
+   log exactly as a read from the portal would.
+3. **Nothing collected.** No analytics, no telemetry, no crash reporting, no account. The
+   App Store privacy label says Data Not Collected. The reveal meter for the free tier is
+   counted in the device Keychain and never leaves it.
+4. **Credential handling is isolated by construction.** The module that touches passwords,
+   `CredentialKit`, imports Foundation and the auth protocol and nothing else. Adding a
+   logging framework, an analytics SDK or the licensing layer to it is a compile error, and
+   `scripts/isolation-check.sh` fails the build if anyone tries.
+5. **The licensing backend receives one value.** A tenant ID, roughly monthly, and it returns
+   a signed tier. The full request and response contract, including what is and is not
+   logged, is [ENTITLEMENT-API.md](docs/ENTITLEMENT-API.md).
 
-1. `Package.swift` — CredentialKit's dependency list is `AuthKit` only.
-2. `scripts/isolation-check.sh` — CI/pre-commit guard that greps CredentialKit's
-   imports and fails the build on any forbidden module. Proven to catch violations.
+If you find a way to make the app leak a credential, [SECURITY.md](SECURITY.md) explains how
+to report it.
 
-## What's implemented
+## What it does
 
-| Piece | File | Status |
+- Search every managed device in the tenant, with background paging.
+- Reveal the current Windows LAPS password and the password history Graph returns with it.
+- Reveal BitLocker recovery keys per volume.
+- Activate a PIM-eligible role from the phone, reading the tenant's own activation policy.
+- Switch between customer tenants (MSP plan), with per-tenant favourites and recents.
+- Optional biometric app lock and optional user display names, each an explicit choice.
+
+## Platform support
+
+| | Metadata | Reveal |
 |---|---|---|
-| SensitiveValue boundary type (§3.2) | `CredentialKit/SensitiveValue.swift` | ✅ + tests |
-| Platform provider seam + capabilities | `CredentialKit/LocalAdminCredentialProviding.swift` | ✅ |
-| **Windows LAPS reveal** (§2.3, v1.0 GA) | `CredentialKit/WindowsLapsProvider.swift` | ✅ |
-| macOS provider (reveal unavailable, see below) | `CredentialKit/MacOSLapsProvider.swift` | ✅ |
-| Provider routing | `CredentialKit/CredentialCoordinator.swift` | ✅ |
-| Auth protocol seam (§4) | `AuthKit/AuthManaging.swift` | ✅ |
-| MSAL implementation + tenant pinning (§3.3, BYO §9) | `AuthKitMSAL/MSALAuthManager.swift` | ⚠️ never compiled |
-| Security-core unit tests (§13) | `Tests/CredentialKitTests/` | ✅ (run in Xcode) |
-| Isolation CI guard (§13) | `scripts/isolation-check.sh` | ✅ verified working |
-| macOS §2.4 verification harness | `tools/Verify-MacOSLapsGraph.ps1` | ✅ run, conclusive |
-| macOS 500 diagnostic | `tools/Diagnose-MacOSLaps.ps1` | ✅ run, conclusive |
+| Windows LAPS | Yes, Graph v1.0 | Yes, Graph v1.0 |
+| BitLocker | Yes | Yes |
+| macOS LAPS | Rotation date only, Graph beta | No |
 
-**New here? Read `QUICKSTART.md`** for the 10-minute first run in Xcode.
+macOS passwords cannot be revealed because no Microsoft Graph endpoint returns them. The only
+macOS function returns a rotation timestamp and, at the time of writing, fails with HTTP 500
+for ADE-enrolled Macs. The evidence and the steps to enable reveal if Microsoft ships an API
+are in the header of `LAPSlockKit/Sources/CredentialKit/MacOSLapsProvider.swift`. LAPS
+backed up to on-premises Active Directory is out of scope; Entra-backed LAPS only.
 
-## Platform support (§2.4 — settled empirically 2026-08-14)
+## Architecture
 
-| | Metadata | Reveal | Rotate |
-|---|---|---|---|
-| **Windows LAPS** | ✅ v1.0 GA | ✅ **v1.0 GA, documented** | policy-driven (not an app action) |
-| **macOS LAPS** | ⚠️ beta API, currently 500s | ❌ **no documented endpoint** | ⚠️ beta, opt-in, off by default |
+```
+App/lapslock                      SwiftUI app target
+LAPSlockKit/Sources
+  AuthKit                         auth protocol and models, no third-party dependencies
+  AuthKitMSAL                     the only module that links MSAL
+  CredentialKit                   LAPS and BitLocker providers, SensitiveValue   (isolated)
+  InventoryKit                    device list, search, paging, favourites
+  PrivilegedAccessKit             PIM eligibility and activation
+  LicensingKit                    entitlement token verification
+  SubscriptionKit                 StoreKit 2 subscriptions
+  DiagnosticsKit                  the support report, structurally unable to carry a secret
+  PlatformSecurity                biometrics and app-switcher redaction
+```
 
-macOS reveal is off because it is not possible on public Graph today, not as a shortcut:
+`CredentialKit` depends on `AuthKit` and Foundation only. `LicensingKit` does not import
+`CredentialKit`. Both directions are enforced by `scripts/isolation-check.sh`.
 
-1. The Entra store used by Windows LAPS returns 200 OK with **no credentials array** for
-   ADE-enrolled Macs — macOS passwords aren't kept there.
-2. The documented beta function `retrieveDeviceLocalAdminAccountDetail` is specified to
-   return only `passwordLastRotationDateTime`. **There is no password field in the contract.**
-3. That function also returns **HTTP 500** from Intune's DeviceFE backend on every
-   ADE-enrolled, LAPS-managed Mac tested (multiple devices and users in a licensed
-   production tenant, 2026-08-14) — while the admin center displays those same passwords,
-   i.e. retrieval is portal-internal.
+## Building and testing
 
-**To enable macOS reveal when Microsoft ships it:** everything needed is documented in a
-header block at the top of `CredentialKit/MacOSLapsProvider.swift`. It's four edits in
-that one file plus a test update. No UI or other module changes.
+Requires Xcode 26 on macOS.
 
-## Running the checks
-
-**Isolation guard** (macOS/Linux, no deps):
-```bash
+```
 ./scripts/isolation-check.sh
-```
-
-**Unit tests** — open `LAPSlockKit` in Xcode and run the CredentialKitTests target
-(these need no Microsoft dependency by design), or on a Mac with the Swift toolchain:
-```bash
 cd LAPSlockKit && swift test
+open App/lapslock/lapslock.xcodeproj
 ```
-> Note: the full package won't `swift build` on Linux because MSAL is an Apple-platform
-> binary. The tests target pure CredentialKit logic and run fine in Xcode.
 
-**macOS LAPS verification** — settles the one open product question (§2.4):
-```powershell
-# PowerShell 7 on your Mac
-Install-Module Microsoft.Graph -Scope CurrentUser   # first time only
-./tools/Verify-MacOSLapsGraph.ps1
+The package tests run on macOS without a tenant or a network connection. The MSAL
+implementation is iOS-only, so building the app target is the check that covers it:
+
 ```
-Sign in as an admin holding the custom Intune "View macOS admin password" role. The
-script reports whether any documented Graph endpoint returns a macOS password value.
-It reads only, never rotates, and never prints a password.
+xcodebuild -project App/lapslock/lapslock.xcodeproj -scheme lapslock \
+  -destination 'generic/platform=iOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build
+```
 
-## Before this builds/ships (open items)
+Two PowerShell scripts in `tools/` reproduce the macOS LAPS findings against a live tenant
+using the Microsoft Graph PowerShell SDK. They read only and never print a password.
 
-- Replace `AuthConfiguration.vendorDefault.clientId` with the real Entra app
-  registration client ID (created in the Kainor tenant).
-- Confirm MSAL `MSALResult` property names against the resolved MSAL version.
-- Run the §2.4 harness and decide macOS reveal in/out per its verdict.
-- Confirm `passwordBase64` encoding (UTF-16LE assumed) against a known tenant value.
+## Documents
 
-See `docs/BUILD-SPEC.md` §15 for the complete verification checklist.
+- [SECURITY.md](SECURITY.md): disclosure policy and the testable design claims.
+- [docs/NETWORK-TRANSPARENCY.md](docs/NETWORK-TRANSPARENCY.md): the three hosts, the one
+  Kainor request byte for byte, and the proxy recipe.
+- [docs/ENTITLEMENT-API.md](docs/ENTITLEMENT-API.md): the licensing contract.
+- [docs/SECURITY-ONE-PAGER.md](docs/SECURITY-ONE-PAGER.md): a one-page summary for a
+  security team.
+- [docs/BUILD-SPEC.md](docs/BUILD-SPEC.md): the design specification the app was built from.
+- [CONTRIBUTING.md](CONTRIBUTING.md): issues are welcome; pull requests are not accepted,
+  and the file explains why.
+
+## Contact
+
+connor@kainor.com

@@ -38,7 +38,7 @@ final class AppSettings: ObservableObject {
     }
 
     /// Whether to look up primary users' display names in Entra when Intune leaves the
-    /// field empty. Founder decision 2026-09-03: the UPN is the default and is enough;
+    /// field empty. Decision: the UPN is the default and is enough;
     /// names are optional because they cost a permission — `User.ReadBasic.All` on the
     /// consent screen — that a customer should choose, not inherit.
     @Published var userNamesEnabled: Bool {
@@ -550,7 +550,7 @@ struct SettingsView: View {
     /// **This section shows prices and the organization licence section does not, which looks
     /// inconsistent and is not.** Guideline 3.1.3 forbids pointing at outside purchasing from
     /// inside the app, which is why the licence section is a bare status readout with no price
-    /// and no link — see `docs/APP-STORE-3-1-3.md`. Apple's own in-app purchase is the one
+    /// and no link — see `App Store Review Guideline 3.1.3`. Apple's own in-app purchase is the one
     /// place selling is permitted, and Apple in fact requires the price to be shown. So the
     /// two sections follow opposite rules on purpose. Do not "harmonise" them.
     @ViewBuilder
@@ -1033,7 +1033,7 @@ struct SettingsView: View {
 
     /// Sign out, or leave demo.
     ///
-    /// This was missing entirely until 2026-09-02: `signOut()` existed on the root model and
+    /// This was missing entirely at first: `signOut()` existed on the root model and
     /// was only reachable from an error-recovery path, so there was no way for a user to end
     /// a session at all. For a tool that reveals administrator passwords that is not a
     /// missing convenience — you could not hand the phone back, and an MSP could not change

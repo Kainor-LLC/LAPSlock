@@ -45,12 +45,12 @@ User-Agent: LAPSlock/<app version> (iOS)
 {"version":1,"tenantId":"<your tenant GUID>"}
 ```
 
-No `Authorization` header. No cookies — the session is ephemeral and refuses them. The
+No `Authorization` header. No cookies, the session is ephemeral and refuses them. The
 `User-Agent` is set explicitly because URLSession's default would otherwise add the bundle
 build and OS version; the one we send names the app and its version and nothing else.
 
 The response is a signed token stating your organization's license tier. The app verifies
-the signature against a public key compiled into the app — it never downloads a key — so a
+the signature against a public key compiled into the app, it never downloads a key, so a
 hostile network can deny or downgrade the answer but cannot forge one. The complete
 specification, including what our server keeps and what it deliberately does not, is
 [`ENTITLEMENT-API.md`](ENTITLEMENT-API.md). Section 8 of that document is the honest account
@@ -59,13 +59,13 @@ only durable record is one row per *paying* organization.
 
 Why the tenant ID and not something stronger? Because anything stronger would mean sending
 your Microsoft token to us, and that would hand a vendor delegated access to your tenant. A
-tenant ID is public — any domain's is returned by unauthenticated OIDC discovery — so a
+tenant ID is public, any domain's is returned by unauthenticated OIDC discovery, so a
 stolen license token is useful only to someone already inside the licensed tenant, who is
 already covered by the license. That reasoning is spelled out in the contract, section 9.1.
 
 ## 4. Check it yourself, in ten minutes
 
-1. Install a TLS-intercepting proxy — Proxyman, Charles or mitmproxy — and trust its root
+1. Install a TLS-intercepting proxy, Proxyman, Charles or mitmproxy, and trust its root
    certificate on the iPhone.
 2. Sign in to LAPSlock and use it normally: search, open a device, reveal a Windows LAPS
    password, reveal a BitLocker key.

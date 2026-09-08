@@ -2,7 +2,7 @@ import Foundation
 
 // Build Spec — structured auth failure detail for the support report.
 //
-// WHY THIS EXISTS. On 2026-08-26 a device-only sign-in failure surfaced as "check your
+// WHY THIS EXISTS. A device-only sign-in failure surfaced as "check your
 // connection". Diagnosing it took a cable, Xcode and Console.app; the MSAL log named the
 // cause in one line. A customer hitting the same thing has none of those, and the support
 // report gave them nothing to send. This type is what the report was missing.
@@ -37,12 +37,12 @@ public struct AuthFailureDetail: Sendable, Equatable, Codable {
     public let correlationId: String?
     /// HTTP status of the token endpoint response, when there was one.
     public let httpStatus: Int?
-    /// Whether the Microsoft Authenticator broker ANSWERED the request. The 2026-08-26
+    /// Whether the Microsoft Authenticator broker ANSWERED the request. The broker
     /// failure was a broker-path bug, and knowing which path was taken is half the diagnosis.
     ///
     /// Answered, not opened. MSAL sets `MSALBrokerVersionKey` only on a response that came
     /// back through the broker, so launching Authenticator and abandoning it reads as
-    /// `false` — observed on device 2026-09-02. There is no signal for "opened", and the
+    /// `false` — observed on device. There is no signal for "opened", and the
     /// report label says `broker-responded` so nobody reads more into it than it knows.
     public let brokerInvolved: Bool?
 

@@ -10,7 +10,7 @@ import AuthKit
 // will ask why. So it sits behind a Settings toggle, off by default, exactly like BitLocker
 // rotation and role activation: a customer who never turns it on never sees the permission
 // requested, and the footer beside the toggle says what it adds. Founder decision,
-// 2026-09-03: "UPN should be enough" as the default, optional for those who want names.
+// Decision: "UPN should be enough" as the default, optional for those who want names.
 //
 // WHAT IT COSTS AND WHAT IT KEEPS. Lookups are by UPN, which the device record already
 // carries, so the inventory query is untouched — the `$select` there is fragile and one bad

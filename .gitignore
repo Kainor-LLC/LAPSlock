@@ -82,3 +82,7 @@ scratch/
 *-scratch.*
 *.tenant.json
 graph-response*.json
+
+## Local working notes; the planning repository is private (LAPSlock-internal)
+CLAUDE.md
+.claude/

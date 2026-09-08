@@ -1,7 +1,7 @@
-# Build-Ready Specification — Entra/Intune LAPS Administrator Client (iOS)
+# Build-Ready Specification, Entra/Intune LAPS Administrator Client (iOS)
 
 **Version:** 1.0
-**Status:** Design complete for Windows LAPS; macOS LAPS retrieval blocked on a verification item (see §2.4).
+**Status:** the design specification version 1.0 was built from. Items this document marks VERIFY were settled during development; the README and the code comments carry the outcomes, and section 2.4's macOS question is answered in `MacOSLapsProvider.swift`.
 **Audience:** A development-oriented session that will construct the application from this document alone.
 
 This spec is self-contained. It intentionally restates architecture and permissions so no external context is required.
@@ -27,7 +27,7 @@ This spec is self-contained. It intentionally restates architecture and permissi
 ## 1. Platform and technology decisions
 
 - **Language:** Swift 5.9+ (Swift 6 concurrency where practical).
-- **UI:** SwiftUI as primary. Use UIKit interop (`UIViewControllerRepresentable`) only where SwiftUI lacks a control — notably for robust app-switcher/screenshot handling and for the MSAL web session host.
+- **UI:** SwiftUI as primary. Use UIKit interop (`UIViewControllerRepresentable`) only where SwiftUI lacks a control, notably for robust app-switcher/screenshot handling and for the MSAL web session host.
 - **Min iOS:** iOS 16.0 (for `ASWebAuthenticationSession`, modern SwiftUI navigation, `LAContext` maturity). iOS 17+ features used behind availability checks.
 - **Auth library:** MSAL for iOS (`MSAL`, the official Microsoft Authentication Library). Do not hand-roll OAuth.
 - **Networking:** `URLSession` with async/await. No third-party networking SDK in the credential path.
@@ -42,13 +42,13 @@ This spec is self-contained. It intentionally restates architecture and permissi
 
 > Everything marked **VERIFIED** was confirmed against Microsoft Learn / the Graph docs repo as of 2026-08. Everything marked **VERIFY** must be re-confirmed in a real tenant before you build on it. Do not invent endpoints or permission names.
 
-### 2.1 Authentication model — VERIFIED direction
+### 2.1 Authentication model, VERIFIED direction
 
 - Use **delegated** permissions only. Do **not** request application (app-only) permissions for anything credential-adjacent; app-only credential read would let a background service read passwords with no user present, violating constraint #1.
 - Authority: the administrator's own tenant. After the account is selected, use the tenant-specific authority for silent token acquisition. Use `/common` (or `/organizations`) only for the initial account-selection interactive sign-in.
 - Use **incremental consent**: request browse scopes first; request the credential-read scope only at the moment the admin first attempts a reveal.
 
-### 2.2 Device inventory — VERIFIED
+### 2.2 Device inventory, VERIFIED
 
 - **Intune managed devices:** `GET /deviceManagement/managedDevices`
   - Permission (delegated): `DeviceManagementManagedDevices.Read.All`. Requires admin consent. Tenant-wide.
@@ -58,7 +58,7 @@ This spec is self-contained. It intentionally restates architecture and permissi
   - Permission (delegated): `Device.Read.All`. Requires admin consent. Tenant-wide.
   - Needed to obtain the **Entra deviceId** used by the Windows LAPS read (§2.3). Evaluate whether you need both `/devices` and `/deviceManagement/managedDevices`, or can satisfy the UI from one plus targeted per-device calls.
 
-### 2.3 Windows LAPS — VERIFIED (v1.0)
+### 2.3 Windows LAPS, VERIFIED (v1.0)
 
 - **List metadata (no password):** `GET /directory/deviceLocalCredentials`
   - Least-privileged permission: `DeviceLocalCredential.ReadBasic.All` (delegated or application). Admin consent required. Tenant-wide.
@@ -68,24 +68,24 @@ This spec is self-contained. It intentionally restates architecture and permissi
   - Permission: **`DeviceLocalCredential.Read.All`** (delegated). `DeviceLocalCredential.ReadBasic.All` is insufficient for the password.
   - In delegated scenarios the signed-in user must also hold a supporting **Entra directory role**. For the `credentials` (password) property specifically, the supported least-privileged roles are **Cloud Device Administrator** and **Intune Service Administrator**. (Broader metadata-only reads also allow Helpdesk Administrator, Security Administrator, Security Reader, Global Reader.)
   - Response `credentials[]` is a `deviceLocalCredential` with: `accountName`, `accountSid`, `backupDateTime`, `passwordBase64`.
-  - **`passwordBase64` is base64-encoded.** Decode it to recover the string. Windows LAPS values are typically **UTF-16LE** once base64-decoded — verify decoding against a known value in your tenant. The response may contain multiple entries (password history); the most recent `backupDateTime` is the current password.
+  - **`passwordBase64` is base64-encoded.** Decode it to recover the string. Windows LAPS values are typically **UTF-16LE** once base64-decoded, verify decoding against a known value in your tenant. The response may contain multiple entries (password history); the most recent `backupDateTime` is the current password.
   - The `{entraDeviceId}` path segment is the **Entra directory device id**, not the Intune `managedDeviceId`.
 
-### 2.4 macOS LAPS — PARTIALLY VERIFIED; **read is BLOCKED on verification**
+### 2.4 macOS LAPS, PARTIALLY VERIFIED; **read is BLOCKED on verification**
 
 - **Context (VERIFIED):** macOS LAPS shipped in Intune service release **2507 (July 2025)**. Requirements: macOS 12+, devices synced from Apple Business/School Manager, enrolled via **Automated Device Enrollment (ADE) after a factory reset**. Password is 15 chars. Auto-rotates every 180 days; a configurable rotation period of 1–180 days is also supported.
 - **Retrieval today (VERIFIED):** Microsoft documents viewing the macOS LAPS password **only through the Intune admin center** (Devices → macOS → device → **Passwords and keys**). Viewing/rotating requires a **custom Intune RBAC role** (category **Enrollment programs** → **View macOS admin password** = Yes, **Rotate macOS admin password** = Yes). These permissions are **not** in any built-in Intune role, nor in the Entra "Intune Administrator" role. Audit events are `Get AdminAccountDto` (view) and `rotateLocalAdminPassword ManagedDevice` (rotate).
-- **⚠️ VERIFY — the product-defining item:** There is **no confirmed documented public Microsoft Graph endpoint that returns the macOS LAPS password value.** Sources conflict on where it's stored (Microsoft's official doc: "stored and encrypted by Intune"; a third-party writeup: "stored with the Entra ID device object" like Windows, which would imply `deviceLocalCredentials` might surface it). **Before building macOS LAPS reveal:** in a real tenant with a custom Intune role granted, test (a) whether `GET /directory/deviceLocalCredentials/{entraDeviceId}?$select=credentials` returns the macOS account, and (b) whether any Intune `managedDevices` endpoint exposes it. If neither returns the password via documented Graph, **macOS LAPS reveal is not buildable on public Graph** and must be deferred. Do not ship a macOS reveal feature on an undocumented/internal endpoint.
+- **VERIFY, the product-defining item:** There is **no confirmed documented public Microsoft Graph endpoint that returns the macOS LAPS password value.** Sources conflict on where it's stored (Microsoft's official doc: "stored and encrypted by Intune"; a third-party writeup: "stored with the Entra ID device object" like Windows, which would imply `deviceLocalCredentials` might surface it). **Before building macOS LAPS reveal:** in a real tenant with a custom Intune role granted, test (a) whether `GET /directory/deviceLocalCredentials/{entraDeviceId}?$select=credentials` returns the macOS account, and (b) whether any Intune `managedDevices` endpoint exposes it. If neither returns the password via documented Graph, **macOS LAPS reveal is not buildable on public Graph** and must be deferred. Do not ship a macOS reveal feature on an undocumented/internal endpoint.
 - **Rotate (VERIFIED but BETA):** `POST /deviceManagement/managedDevices/{managedDeviceId}/rotateLocalAdminPassword`
   - Permission (delegated): `DeviceManagementConfiguration.Read.All` **or** `DeviceManagementManagedDevices.Read.All`. Also requires the custom Intune "Rotate macOS admin password" role.
-  - **Beta only** — Microsoft states beta APIs are subject to change and not supported for production. Ship rotate as optional, off by default, with a clear "beta API" note, and re-check for a v1.0 promotion.
+  - **Beta only**, Microsoft states beta APIs are subject to change and not supported for production. Ship rotate as optional, off by default, with a clear "beta API" note, and re-check for a v1.0 promotion.
   - The `{managedDeviceId}` here is the **Intune managed device id**.
 
-### 2.5 The two-identifier join — REQUIRED
+### 2.5 The two-identifier join, REQUIRED
 
 Carry both identifiers on every device model:
-- **Entra deviceId** — used for Windows LAPS reveal (`/directory/deviceLocalCredentials/{entraDeviceId}`).
-- **Intune managedDeviceId** — used for macOS rotate (`/deviceManagement/managedDevices/{managedDeviceId}/rotateLocalAdminPassword`).
+- **Entra deviceId**, used for Windows LAPS reveal (`/directory/deviceLocalCredentials/{entraDeviceId}`).
+- **Intune managedDeviceId**, used for macOS rotate (`/deviceManagement/managedDevices/{managedDeviceId}/rotateLocalAdminPassword`).
 
 Map between them using the `azureADDeviceId`/`deviceId` linkage on the Intune `managedDevice` and the Entra device object. Handle the case where only one identifier exists (unmanaged-but-directory-joined, or Intune-managed-but-not-directory-joined).
 
@@ -102,7 +102,7 @@ AppTarget
 │      ├── depends on: AuthKit, InventoryKit, CredentialKit, LicensingKit
 ├── AuthKit              (MSAL wrapper, token/session actor, tenant pinning)
 ├── InventoryKit         (device list/detail; NON-sensitive; may cache)
-├── CredentialKit        (LAPS reveal/rotate; SensitiveValue)   ⚠ isolation boundary
+├── CredentialKit        (LAPS reveal/rotate; SensitiveValue)   isolation boundary
 │      ├── depends on: AuthKit, Foundation ONLY
 │      ├── MUST NOT depend on: LicensingKit, any analytics, any logging module
 ├── LicensingKit         (entitlement checks against vendor backend; NON-sensitive)
@@ -177,7 +177,7 @@ Rules for `SensitiveValue`:
 
 ## 4. Authentication and session management
 
-- MSAL interactive sign-in via `ASWebAuthenticationSession`. Configure the redirect URI per your registration (or the customer's, in BYO mode — §9).
+- MSAL interactive sign-in via `ASWebAuthenticationSession`. Configure the redirect URI per your registration (or the customer's, in BYO mode, §9).
 - Silent token acquisition (`acquireTokenSilent`) for subsequent calls; fall back to interactive on `interaction_required`.
 - Store tokens in Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. **Disable iCloud Keychain sync** for these items. Never store refresh tokens on any backend.
 - Token/session store is an `actor` to serialize refreshes.
@@ -235,7 +235,7 @@ Order of operations:
 
 ## 8. Error and authorization-recovery states
 
-Enumerate and design each: network offline; Graph 5xx; throttling (429 — honor `Retry-After`); token expired; consent not granted; consent revoked mid-session; role missing; device not LAPS-enabled; no credentials returned; beta-API failure (macOS rotate). Each has a distinct message and, where possible, a one-tap recovery (retry, re-consent, re-auth, contact-admin copy).
+Enumerate and design each: network offline; Graph 5xx; throttling (429, honor `Retry-After`); token expired; consent not granted; consent revoked mid-session; role missing; device not LAPS-enabled; no credentials returned; beta-API failure (macOS rotate). Each has a distinct message and, where possible, a one-tap recovery (retry, re-consent, re-auth, contact-admin copy).
 
 ---
 
@@ -263,7 +263,7 @@ Enumerate and design each: network offline; Graph 5xx; throttling (429 — honor
 - **Individual paid (IAP, auto-renewing):** reveal + rotate + copy-with-expiry. Monthly and annual; lead with annual. Apple fee 15% (Small Business Program) or 30%.
 - **Business/seat licensing via web portal (Stripe/Paddle), NOT IAP:** org accounts, buy N seats, invite/assign by UPN, **reassign seats on employee departure**, billing-owner and admin roles, invoicing. The iOS app checks entitlement against the licensing backend using app/license identity only.
 - **Apple rule basis:** Guideline **3.1.3(c) Enterprise Services** permits non-IAP payment for org-only sales; consumer/single-user/family sales must use IAP. Document the org-only nature of the business tier in App Store Connect; expect possible App Review back-and-forth (apps have been flagged under 3.1.1/3.1.3 despite qualifying).
-- **US external-link rules are recent and unevenly enforced — VERIFY at submission.** Exact external-link placement and disclosure UI must be confirmed against current App Store Connect guidance; budget for rejection rounds.
+- **US external-link rules are recent and unevenly enforced, VERIFY at submission.** Exact external-link placement and disclosure UI must be confirmed against current App Store Connect guidance; budget for rejection rounds.
 - **Lifetime purchase: not recommended** for a security tool with ongoing Graph/OS-compat maintenance and security liability.
 - **ABM/VPP:** consider for managed enterprise distribution; it is a distribution mechanism, not a billing one.
 
@@ -275,16 +275,16 @@ Enumerate and design each: network offline; Graph 5xx; throttling (429 — honor
 |---|---|---|
 | Malicious vendor/developer | Client-only credential handling; **BYO app registration** removes vendor from consent; verifiable/reproducible builds; published egress allowlist | Low if BYO used; medium if vendor registration + closed binary |
 | Compromised vendor backend | Backend never holds credentials/tokens; `CredentialKit` isolated from `LicensingKit` | Low for credentials; licensing data exposure possible |
-| Compromised iOS device (malware/jailbreak) | Assume client is readable; it holds only the user's own delegated access; biometric gate; no persisted credentials | Medium — a fully compromised device can capture a revealed value on screen |
+| Compromised iOS device (malware/jailbreak) | Assume client is readable; it holds only the user's own delegated access; biometric gate; no persisted credentials | Medium, a fully compromised device can capture a revealed value on screen |
 | Lost/stolen unlocked device | Biometric gate on reveal; auto-remask; short session; no persistence; `ThisDeviceOnly` keychain | Low-medium |
-| Malicious/compromised tenant admin | Out of app's control — Microsoft RBAC governs; app adds Microsoft-side audit (`Get AdminAccountDto`, LAPS read audit) | Inherent to admin trust; unchanged by app |
+| Malicious/compromised tenant admin | Out of app's control, Microsoft RBAC governs; app adds Microsoft-side audit (`Get AdminAccountDto`, LAPS read audit) | Inherent to admin trust; unchanged by app |
 | Cross-tenant authorization mistake | `tenantId`-scoped everything; full teardown on switch; authority pinned per account | Very low |
 | Token theft | `ThisDeviceOnly` non-synced keychain; short-lived tokens; no refresh token on backend; actor-serialized refresh | Low |
 | Clipboard exposure | Copy default-off/opt-in; `.expirationDate` + `.localOnly`; user warning | Low if configured; do not ship unconditional copy |
 | Logging/telemetry leakage | Credential module links no logger/analytics; Graph credential bodies never logged | Very low if module boundary holds |
 | Crash-report leakage | No crash SDK in `CredentialKit`; credentials never in `@State`/restoration | Very low |
 | Supply-chain/dependency compromise | SPM only; zero third-party deps in `CredentialKit`; pin versions; review | Low for credential path |
-| Reverse engineering of the app | Acceptable — client holds no secrets, only user's delegated access | Low (by design) |
+| Reverse engineering of the app | Acceptable, client holds no secrets, only user's delegated access | Low (by design) |
 | Screenshots / UI-state disclosure | App-switcher redaction; screen-capture detection; screenshot warning; state-restoration disabled | Medium (screenshots not fully blockable) |
 | Backend compromise | Minimal backend; no credential/token data; standard hardening | Low for credentials |
 
@@ -311,7 +311,7 @@ Enumerate and design each: network offline; Graph 5xx; throttling (429 — honor
 
 ## 15. Open verification checklist (do these before/at build)
 
-- [ ] **§2.4 macOS LAPS read via Graph** — confirm a documented public endpoint returns the macOS password, or defer the feature.
+- [ ] **§2.4 macOS LAPS read via Graph**, confirm a documented public endpoint returns the macOS password, or defer the feature.
 - [ ] Windows LAPS `passwordBase64` decoding (confirm UTF-16LE vs other) against a known tenant value.
 - [ ] Exact `$filter`/`$search` support on `managedDevices` in your target tenants.
 - [ ] Entra device role requirements for the `credentials` property in delegated mode (Cloud Device Administrator / Intune Service Administrator) as of build date.

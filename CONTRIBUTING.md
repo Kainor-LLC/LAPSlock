@@ -8,7 +8,7 @@ Thank you for looking. Here is how this repository works, and why.
 accepted and are closed automatically.
 
 That is not a comment on anyone's code. LAPSlock is source-available under PolyForm Strict
-with an additional permission for security review — it is not open source, and Kainor LLC
+with an additional permission for security review, it is not open source, and Kainor LLC
 must remain the sole copyright holder so the license can be enforced and, if ever necessary,
 changed without tracking down every past contributor for consent. Accepting a patch would
 compromise that, however small the patch.
@@ -20,7 +20,7 @@ been, and it will be credited in the release notes if you want.
 
 This app handles local administrator passwords and BitLocker recovery keys. **Never paste
 one into an Issue**, not even a redacted one, not even from a test tenant. Do not paste
-tenant IDs, device names, user principal names, or Graph responses either — describe them
+tenant IDs, device names, user principal names, or Graph responses either, describe them
 instead. The issue templates ask you to confirm this, and an Issue containing a credential
 will be deleted rather than edited, because GitHub keeps edit history.
 
@@ -34,7 +34,7 @@ instead.
 - Whether you were in demo mode or signed in.
 - What you did, what you expected, what happened.
 - If it is an auth or Graph failure: the diagnostics report from Settings → *Gather
-  diagnostics*. It is designed to be safe to share — it structurally cannot contain a
+  diagnostics*. It is designed to be safe to share, it structurally cannot contain a
   credential, a device name or a user name, and you can read the whole thing before
   sending it. It does contain Microsoft request IDs, which are what actually lets a failure
   be traced.

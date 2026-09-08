@@ -53,9 +53,9 @@
   p{margin-bottom:14px;color:var(--ink-soft)}
   ul,ol{margin:0 0 16px 22px;color:var(--ink-soft)}
   li{margin-bottom:8px}
-  code{font-family:'IBM Plex Mono',monospace;font-size:14px;background:rgba(0,0,0,.05);
+  code{font-family:'IBM Plex Mono',monospace;font-size:14px;background:rgba(0,0,0.05);
     padding:2px 5px;border-radius:3px;overflow-wrap:anywhere}
-  .note{background:rgba(217,72,15,.07);border-radius:8px;padding:16px 18px;margin:22px 0;
+  .note{background:rgba(217,72,15.07);border-radius:8px;padding:16px 18px;margin:22px 0;
     font-size:15.5px;color:var(--ink-soft)}
   .table-scroll{overflow-x:auto;margin:16px 0 24px}
   table{width:100%;border-collapse:collapse;font-size:15.5px;min-width:520px}
@@ -105,11 +105,11 @@
       <h2>The short version</h2>
       <p><strong>LAPSlock retrieves Windows LAPS local administrator passwords and BitLocker recovery
       keys from Microsoft Entra ID and Microsoft Intune, on the phone in your pocket.</strong> It signs
-      you in with your own Microsoft account and acts as you — if you cannot read a password in the
+      you in with your own Microsoft account and acts as you, if you cannot read a password in the
       Microsoft admin center, LAPSlock cannot read it either.</p>
       <p>There is no Kainor server in that path. Your device data and credentials travel between your
       iPhone and Microsoft, and nowhere else. Everything below explains exactly which permissions are
-      requested, when, and why — and how to verify all of it yourself rather than take our word.</p>
+      requested, when, and why, and how to verify all of it yourself rather than take our word.</p>
     </div>
 
     <h2 class="sec">What you need</h2>
@@ -117,7 +117,7 @@
       <li><strong>Microsoft Entra ID and Microsoft Intune.</strong> LAPSlock reads device inventory
       from Intune and credentials from Entra.</li>
       <li><strong>Windows LAPS configured to back up to Microsoft Entra ID.</strong> This is the part
-      most worth checking first — see the limits section below.</li>
+      most worth checking first, see the limits section below.</li>
       <li><strong>An Entra role that can read local administrator passwords.</strong> Cloud Device
       Administrator is the least-privileged one that can. Intune Administrator, Security
       Administrator, Security Reader and Global Administrator also work.</li>
@@ -152,7 +152,7 @@
         <h3>BitLocker recovery keys, and older passwords</h3>
         <p>Recovery keys for a device are listed by volume with the first characters of each key
         identifier, so you can match the key the locked machine is asking for rather than guessing.
-        Where your tenant has kept previous LAPS passwords, those are available too — which matters
+        Where your tenant has kept previous LAPS passwords, those are available too, which matters
         when a device stopped checking in and is still using an older one.</p>
       </li>
       <li>
@@ -215,7 +215,7 @@
         <tr>
           <td><code>DeviceManagementManagedDevices.ReadWrite.All</code></td>
           <td>Only if you enable BitLocker key rotation</td>
-          <td>The one write permission. Off by default — leave it off and LAPSlock only ever asks
+          <td>The one write permission. Off by default, leave it off and LAPSlock only ever asks
           for read access.</td>
         </tr>
         <tr>
@@ -244,7 +244,7 @@
     iCloud backup, and never sent anywhere except between your device and Microsoft.</p>
     <p>What LAPSlock does keep locally: your preferences, the device list for the current session,
     the identifiers of devices you pinned, and a count of how many free reveals you have used. That
-    count lives on your device and on no server — a server-side counter would mean recording how often
+    count lives on your device and on no server, a server-side counter would mean recording how often
     each organization retrieves passwords, which is exactly the thing this app is built not to do.</p>
     <p>Optionally, you can lock the whole app behind Face ID. That protects the device list itself,
     which is worth something to an attacker even with no password on screen.</p>
@@ -254,7 +254,7 @@
     word for anything:</p>
     <ul>
       <li><strong>LAPSlock talks to three hosts.</strong> Microsoft for sign-in, Microsoft Graph for
-      your data, and — only after you activate an organization license — a Kainor endpoint that
+      your data, and, only after you activate an organization license, a Kainor endpoint that
       returns a licence token and receives no device data. Point a proxy at your phone and watch;
       the <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/NETWORK-TRANSPARENCY.md">network
       transparency document</a> walks through it in about ten minutes.</li>
@@ -263,7 +263,7 @@
       that handles credentials. You are welcome to review it, and security teams are explicitly
       permitted to copy it for that purpose.</li>
       <li><strong>The credential path is structurally isolated.</strong> The module that handles
-      passwords cannot import the licensing code, the analytics code — there is none — or anything
+      passwords cannot import the licensing code, the analytics code, there is none, or anything
       else. A build script enforces it, so it is a property of the code rather than a promise in a
       document.</li>
     </ul>
@@ -273,7 +273,7 @@
     <ul>
       <li><strong>Windows LAPS backed up to Active Directory is invisible to it.</strong> LAPSlock
       reads Entra-backed LAPS. Entra-joined and hybrid-joined devices are both fine <em>provided the
-      policy backs up to Entra ID</em> — but a device whose policy targets Windows Server Active
+      policy backs up to Entra ID</em>, but a device whose policy targets Windows Server Active
       Directory instead cannot be read, because Microsoft exposes no API for it.</li>
       <li><strong>macOS local administrator passwords cannot be revealed.</strong> Microsoft does not
       currently offer an API that returns them; Intune keeps them encrypted on its own service and
@@ -288,14 +288,14 @@
 
     <h2 class="sec">Free use and subscriptions</h2>
     <p>LAPSlock is free to download and free to use, with a limit on how many credentials you can
-    reveal in a rolling thirty-day period. Everything else — searching, BitLocker keys, password
-    history, copying, PIM activation, app lock — works on the free tier without restriction.</p>
+    reveal in a rolling thirty-day period. Everything else, searching, BitLocker keys, password
+    history, copying, PIM activation, app lock, works on the free tier without restriction.</p>
     <p>Subscriptions that remove the reveal limit are available inside the app, on the Settings screen.
     Organizations that would rather license the whole tenant can email us.</p>
 
     <h2 class="sec">Getting help</h2>
     <p>Email <a href="mailto:connor@kainor.com">connor@kainor.com</a>. If something failed, Settings
-    includes a diagnostics report you can send with it — it carries Microsoft error codes and request
+    includes a diagnostics report you can send with it, it carries Microsoft error codes and request
     identifiers and is structurally incapable of containing a password, a recovery key, a device name
     or a user name. You can read the whole thing before you send it.</p>
   </div>

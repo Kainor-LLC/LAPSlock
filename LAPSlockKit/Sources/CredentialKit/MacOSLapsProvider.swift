@@ -1,7 +1,7 @@
 import Foundation
 import AuthKit
 
-// Build Spec §2.4 — macOS LAPS. REVEAL UNAVAILABLE (verified empirically 2026-08-14).
+// Build Spec §2.4 — macOS LAPS. REVEAL UNAVAILABLE (verified empirically).
 //
 // ═══════════════════════════════════════════════════════════════════════════════
 // HOW TO ENABLE macOS REVEAL WHEN MICROSOFT SHIPS IT
@@ -26,7 +26,7 @@ import AuthKit
 //     GET /beta/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail
 //   * That function also returns HTTP 500 from Intune's DeviceFE backend on every
 //     ADE-enrolled, LAPS-managed Mac tested (multiple devices, multiple users, one
-//     tenant, 2026-08-14). The portal displays these passwords, so retrieval is
+//     tenant). The portal displays these passwords, so retrieval is
 //     portal-internal. Per §2.4 we do NOT ship on undocumented/internal endpoints.
 // ═══════════════════════════════════════════════════════════════════════════════
 

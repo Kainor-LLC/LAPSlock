@@ -9,7 +9,7 @@ import CredentialKit
 // separation is deliberate (§3.1).
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// FINDING (2026-08-14, verified against a live tenant): §2.5's "two-identifier
+// FINDING (verified against a live tenant): §2.5's "two-identifier
 // join" is NOT a join. The Intune v1.0 managedDevices resource returns
 // `azureADDeviceId` directly, so the Entra device id that Windows LAPS reveal keys
 // on arrives in the same response as the Intune managedDeviceId. No second call to

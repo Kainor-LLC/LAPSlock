@@ -582,7 +582,7 @@ final class DeviceDetailModel: ObservableObject {
 
     // COPY IS NOT GATED, AND THAT IS A DECISION RATHER THAN AN OMISSION.
     //
-    // It was gated behind Pro for one commit on 2026-09-03 and reverted the same day. The
+    // It was gated behind Pro for one commit and reverted the same day. The
     // reason is a security argument, not a generosity one: **a free user who cannot copy a
     // 48-digit BitLocker recovery key will get it out of the app another way.** They will
     // photograph the screen with a second phone, or transcribe it into Notes, or read it
@@ -1131,7 +1131,7 @@ struct DeviceDetailView: View {
             // `primaryUserLabel`, the same field the device row shows, so a name that
             // appears in the list does not turn back into an address one tap later. This
             // row read `userPrincipalName` directly and so ignored display names entirely
-            // — found on device 2026-09-03.
+            // Found on device.
             //
             // The UPN then follows on its own line whenever a name is displayed above it.
             // It is the sign-in identifier an admin pastes into a ticket, so showing the

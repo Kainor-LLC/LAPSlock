@@ -1,4 +1,4 @@
-# LAPSlock entitlement API — version 1
+# LAPSlock entitlement API, version 1
 
 **Status:** frozen for implementation. Nothing here may change without a version bump
 except the additive changes listed under [Versioning](#12-versioning-and-compatibility).
@@ -52,7 +52,7 @@ them rather than the other way around:
 | Method | `POST` |
 | Path | `/entitlement` |
 | Host (v1) | `kainor-lapslock-prod-func.azurewebsites.net` |
-| Scheme | `https`. A plain-HTTP request gets a 301 redirect to the HTTPS URL rather than a refusal — see below. |
+| Scheme | `https`. A plain-HTTP request gets a 301 redirect to the HTTPS URL rather than a refusal, see below. |
 | TLS | Standard public PKI, Azure-managed certificate. No certificate pinning. |
 | Authentication | **None.** No API key, no bearer token, no function key. |
 | Request content type | `application/json; charset=utf-8` |
@@ -73,8 +73,8 @@ detail anyone can check is not worth much on the details they cannot.
 
 What the redirect does and does not buy: a client that mistakenly used `http://` would have
 already put its request on the wire in plaintext before the redirect arrived. The shipping
-client cannot do this — it uses a compiled-in `https://` URL and iOS App Transport Security
-refuses plaintext — but a hand-written client could.
+client cannot do this, it uses a compiled-in `https://` URL and iOS App Transport Security
+refuses plaintext, but a hand-written client could.
 
 The exposure if one did is a tenant ID, which is not a secret. It is returned by
 unauthenticated OIDC discovery for any domain, which is exactly why §9.1 accepts that a bare
@@ -105,7 +105,7 @@ Content-Length: <n>
   goes to this host.
 - **No cookies.** The request is made on an ephemeral `URLSession` with no cookie store and
   no cache, so there is no persistent client identifier and no cross-request linkage.
-- **The `User-Agent` carries the app version and nothing else** — no device model, no OS
+- **The `User-Agent` carries the app version and nothing else**, no device model, no OS
   build, no install identifier. The client MUST set it explicitly, because `URLSession`'s
   default carries the bundle identifier, the build number and the OS version. Overriding it
   is the difference between deciding what goes on the wire and letting the HTTP stack decide
@@ -132,7 +132,7 @@ Servers MUST ignore request headers not listed here. Clients MUST NOT add any.
 | `assertion` | string \| null | no | **Reserved, phase 2.** Base64 App Attest assertion. v1 servers ignore it. |
 
 That is the entire request. There is no user object, no device object, no counter, no
-timestamp, no telemetry block, and no room for one — a server that starts requiring more
+timestamp, no telemetry block, and no room for one, a server that starts requiring more
 has broken this contract and needs `"version": 2`.
 
 `attestation` and `assertion` are defined now, and specified as ignored now, so that adding
@@ -157,7 +157,7 @@ deliberately phase 2; §9.6 says why.
 
 ## 4. Response
 
-### 4.1 Success — always `200`, always a token
+### 4.1 Success, always `200`, always a token
 
 ```json
 {
@@ -202,7 +202,7 @@ never lets it override a verified `exp`. A server that returns a `refreshAfter` 
 | `503` | `signing_unavailable` | Key Vault unreachable or the key is unavailable. | Retry once with backoff, then give up quietly. |
 
 `message` is for a human reading a diagnostic report. It MUST NOT echo the request body and
-MUST NOT vary based on whether the tenant holds a license — the difference between "no
+MUST NOT vary based on whether the tenant holds a license, the difference between "no
 license" and "a license" is only ever expressed as a `tier` inside a signed token.
 
 Every error path leaves the app working. §7.6 defines what "give up quietly" means.
@@ -264,7 +264,7 @@ quoting a token from the diagnostics screen is quoting something unambiguous.
 
 | `tier` | Sold as | Capabilities |
 |---|---|---|
-| `free` | — | Metered reveals (5 per rolling 30 days), full search, browse, detail, metadata. |
+| `free` |, | Metered reveals (5 per rolling 30 days), full search, browse, detail, metadata. |
 | `pro` | Individual Pro | Unlimited reveals, copy to clipboard, BitLocker rotation, recents and favorites, biometric app lock. |
 | `enterprise` | Enterprise, tenant-keyed | Everything in `pro`, for one tenant. |
 | `msp` | MSP org, tenant-keyed | Everything in `pro`, plus tenant switching. See §7.4. |
@@ -281,7 +281,7 @@ audit problem and no client-side mechanism honestly solves it.
 
 ### 5.4 Lifetime, and what a 30-day token actually costs
 
-30 days, so **revocation lags up to 30 days** — a customer who cancels keeps Pro features
+30 days, so **revocation lags up to 30 days**, a customer who cancels keeps Pro features
 until their current token expires, and with the offline grace in §7.5 that stretches to 37.
 
 That is accepted. At $1.99/month and $299/year, a mechanism to shorten it would need
@@ -310,7 +310,7 @@ datacenter is still a licensed phone.
 
 ### 6.1 Key distribution
 
-The **public** keys are compiled into the app as a keyring — a map from `kid` to a P-256
+The **public** keys are compiled into the app as a keyring, a map from `kid` to a P-256
 public key. The client accepts a token whose header `kid` names any key in that ring, and
 rejects any token whose `kid` it does not know.
 
@@ -361,8 +361,8 @@ in seconds: unactivated, talking to two Microsoft hosts and nothing else; or act
 talking to those two plus this one, roughly monthly.
 
 > **Automatic activation on tenant switch was considered and rejected.** It is the obvious
-> convenience — an administrator signing into a new tenant could have their entitlement
-> resolved without tapping anything — and it would violate §7.2 by making sign-in trigger a
+> convenience, an administrator signing into a new tenant could have their entitlement
+> resolved without tapping anything, and it would violate §7.2 by making sign-in trigger a
 > request. The deciding argument is sharper than the rule, though: for an MSP it would send
 > Kainor the identifier of every customer tenant they sign into, accumulating a list of who
 > that MSP's customers are. That list is commercially sensitive, it is not ours, and no
@@ -370,7 +370,7 @@ talking to those two plus this one, roughly monthly.
 > binding one license to the MSP's own tenant and letting it travel (§7.4).
 >
 > This is a design choice, not a wire-format requirement, and it is reversible without a
-> version bump. The alternative — every install checking in on launch — is simpler to build
+> version bump. The alternative, every install checking in on launch, is simpler to build
 > and would give Kainor a list of every tenant running the app. That list has no use that
 > justifies collecting it, and its existence would be very hard to explain to the same
 > administrator we are asking to trust §1.
@@ -397,14 +397,14 @@ The call rate must remain a function of the calendar, never of what the administ
   license has been activated.
 - Failures back off: one immediate retry, then no further automatic attempt for 24 hours.
 - Activation is sticky per tenant. Once activated, the app keeps refreshing on this schedule
-  even if the server starts returning `free` — a lapsed renewal that is later paid should
+  even if the server starts returning `free`, a lapsed renewal that is later paid should
   recover on its own. It stops only when the user signs out of that tenant or taps
   **Remove license**.
 
 ### 7.4 Verification, in order
 
 A client MUST perform all of these, in this order, and MUST treat any failure as "no valid
-token" — which means `free`, not an error dialog:
+token", which means `free`, not an error dialog:
 
 1. Split the compact JWS into exactly three segments.
 2. Decode the header. **`alg` MUST equal `ES256` exactly.** Reject `none`, reject any RSA
@@ -417,7 +417,7 @@ token" — which means `free`, not an error dialog:
 7. `nbf <= now` and `now < exp`, allowing 120 seconds of clock skew in each direction.
 8. `sub` equals the tenant the license was activated against, compared lowercase.
    For `free`, `pro`, and `enterprise`, that tenant MUST also be the tenant currently
-   signed in. For `msp` it need not be — see below.
+   signed in. For `msp` it need not be, see below.
 9. Map `tier` through §5.3. Anything unrecognized is `free`.
 
 **The `msp` exception.** An MSP signs into their customers' tenants, so requiring
@@ -475,7 +475,7 @@ this endpoint, and this endpoint failing does not consult StoreKit.
 ### 7.8 Where this lives in the app
 
 `LicensingKit`, alongside the reveal meter. It imports Foundation, CryptoKit, and Security
-only — `URLSession` is Foundation and `CryptoKit.P256.Signing` covers ES256 verification, so
+only, `URLSession` is Foundation and `CryptoKit.P256.Signing` covers ES256 verification, so
 no new dependency and no third-party JWT library is needed. `scripts/isolation-check.sh`
 already enforces that allowlist and already enforces, in both directions, that
 `LicensingKit` and `CredentialKit` cannot reach each other. **Neither boundary moves for
@@ -487,7 +487,7 @@ the design is wrong, not the check.
 ## 8. What the server stores, what it costs, and why both are tiny
 
 Stated at this length because a claim about what is *not* collected is only credible next to
-a complete account of what is. **No device information reaches this service at all** — not a
+a complete account of what is. **No device information reaches this service at all**, not a
 count, not a name, not an identifier, not a model, not an OS version, not a compliance
 state. There is no field for one in §3 and no place to put one if there were.
 
@@ -521,21 +521,20 @@ therefore holds no personal data.**
 
 ### 8.2 Logs: platform HTTP logs only, with no tenant ID in them
 
-- Standard Azure HTTP request logs — timestamp, source IP, method, path, status code —
-  retained for the platform minimum. Every HTTP service has these and pretending otherwise
+- Standard Azure HTTP request logs, timestamp, source IP, method, path, status code, retained for the platform minimum. Every HTTP service has these and pretending otherwise
   would be dishonest. Source IP is personal data in some jurisdictions; short retention is
   the honest answer, not a claim of zero.
 - **The tenant ID is not logged.** It travels only in the request body, and no request body
   is logged.
 - **This is the reason §3.1 forbids ever accepting the tenant ID in a URL.** A tenant ID in
   a path or query string is captured automatically and permanently by platform logging, by
-  Application Insights, and by any proxy or WAF in front of the app — no code required, and
+  Application Insights, and by any proxy or WAF in front of the app, no code required, and
   no way to notice it happening. In a body it is captured by nothing unless somebody writes
   a line of code to capture it, and that line is not written.
 - **No custom telemetry.** No Application Insights custom events, no per-tenant counters
   written anywhere, no logging added by the Function beyond unhandled faults. Application
   Insights stays on failures and platform metrics; request and response body collection
-  stays off. **Verify this after deploying** — the Flex Consumption template wires
+  stays off. **Verify this after deploying**, the Flex Consumption template wires
   Application Insights up by default and its default retention is 90 days.
 - **No cookies, no session identifier, no correlation identifier carried between requests.**
   Two calls from the same install are not linkable server-side beyond what a source IP
@@ -553,8 +552,8 @@ spike is visible; the tenants inside it are not.
 
 ### 8.4 Answering a support ticket without logs
 
-"My license says free and I paid" is answered from the license table — does a row exist for
-that tenant, and is the term current — plus the token claims, which the customer can read
+"My license says free and I paid" is answered from the license table, does a row exist for
+that tenant, and is the term current, plus the token claims, which the customer can read
 out of the app's own diagnostics screen and quote. Neither requires a server-side record of
 who called when, which is why none is kept.
 
@@ -566,7 +565,7 @@ earn its keep by collecting something.
 - The license table is a few hundred rows of a few hundred bytes. Table Storage bills that
   in fractions of a cent per month.
 - A licensed install makes roughly 12 requests a year (§7.3) and an unlicensed one makes
-  none. A hundred enterprise customers is on the order of 1,200 requests a year — a rounding
+  none. A hundred enterprise customers is on the order of 1,200 requests a year, a rounding
   error against any serverless plan.
 - **The two knobs that could actually cost money are Application Insights ingestion left at
   defaults, and always-ready instance count on the Flex Consumption plan set above zero.**
@@ -577,7 +576,7 @@ earn its keep by collecting something.
 
 They show that some address checked a license roughly monthly. They cannot show which tenant
 did it (§8.2), how often anyone revealed a password, which devices were looked at, or who
-did the looking — §7.2 forbids the client from tying a request to any of those, and the
+did the looking, §7.2 forbids the client from tying a request to any of those, and the
 request body has nowhere to carry them. That is the difference between knowing licenses get
 checked and knowing how the tool is used, and it is the line the product refuses to cross.
 
@@ -588,17 +587,17 @@ checked and knowing how the tool is used, and it is the line the product refuses
 Since 2026-09-04 a second endpoint on the same Function, `/stripe-webhook`, writes the
 licence table when Stripe reports a payment. It changes nothing in §8.1: the row it writes has
 the fields listed there and no others, and the purchaser's name, email and address stay in
-Stripe as a billing record — the webhook reads a tenant domain from a checkout custom field,
+Stripe as a billing record, the webhook reads a tenant domain from a checkout custom field,
 resolves it to a GUID through Microsoft's public OIDC discovery document, and stores the GUID,
 the tier, the plan, the term and the Stripe subscription reference. Nothing else is retained.
 
 Three properties worth a reviewer's attention:
 
 - **Receive-only.** The Function holds the webhook signing secret and no Stripe API key. A
-  forged event could grant a tier to a tenant the forger names — visible in the table,
+  forged event could grant a tier to a tenant the forger names, visible in the table,
   bounded, recoverable. It could not refund, charge, or read a customer record.
 - **Signature-verified, closed-vocabulary tier.** Every event's signature is checked, and
-  the tier comes from Payment Link metadata validated against a closed list — `pro`, `msp`,
+  the tier comes from Payment Link metadata validated against a closed list, `pro`, `msp`,
   `enterprise`, and the price-band name `enterprise500`, which maps to `enterprise`;
   anything else grants nothing rather than defaulting to a paid tier.
 - **§8.2 applies unchanged.** The webhook logs the Stripe event type, event ID and an outcome
@@ -608,7 +607,7 @@ Three properties worth a reviewer's attention:
 
 ### 9.1 A tenant ID is not a secret, and this design accepts that
 
-Tenant GUIDs are discoverable — they are returned by unauthenticated OIDC discovery for any
+Tenant GUIDs are discoverable, they are returned by unauthenticated OIDC discovery for any
 domain. Anyone can therefore request an entitlement token for a tenant they do not belong to,
 and if that tenant has an enterprise license, they get a valid Pro token.
 
@@ -626,7 +625,7 @@ The realistic abuse is therefore: an employee of a licensed organization uses th
 personal phone without asking. The cost of that is zero, because the organization already
 paid for the tenant.
 
-The alternative — proving tenant membership — requires the app to send something derived
+The alternative, proving tenant membership, requires the app to send something derived
 from the user's Microsoft session to a Kainor server. That would trade a threat that costs
 nothing for one that costs the product's entire positioning.
 
@@ -654,7 +653,7 @@ channel whose compromise already yields nothing.
 
 ### 9.4 Replay
 
-A token is a bearer statement, and replay within its 30 days is possible by design — that
+A token is a bearer statement, and replay within its 30 days is possible by design, that
 is what makes offline operation work. `sub` binding limits replay to the tenant it was
 issued for, and §9.1 covers why that limit is sufficient.
 
@@ -677,19 +676,18 @@ because the person rebuilding it uses their own bundle ID.
 
 It costs CBOR decoding, X.509 chain validation to Apple's App Attest root, nonce handling,
 `rpId` hash checks, per-install public key storage, and a monotonic counter per key for
-replay protection — several hundred lines of security-critical code where a subtle error
+replay protection, several hundred lines of security-critical code where a subtle error
 means believing you are verifying something you are not. It does not exist in the simulator,
 so it is another device-only path in a project that has already shipped four bugs which were
 unreachable in the simulator.
 
 And it has an expensive failure mode: attestation fails at first launch behind a captive
 portal or during an Apple service blip, a paying customer sees "unlicensed", so a soft-fail
-path gets written — and a soft-fail path is a bypass.
+path gets written, and a soft-fail path is a bypass.
 
 The request and the contract are shaped for it (§3), so adding it later is additive. The
 cheaper interim measure ships with v1: rate limiting that keeps nothing (§8.3), with anomaly
-watching on aggregate counts only. Per-tenant request counts were considered and rejected —
-they are the one piece of data this service could plausibly have justified accumulating, and
+watching on aggregate counts only. Per-tenant request counts were considered and rejected, they are the one piece of data this service could plausibly have justified accumulating, and
 a stored history of which tenants check in when is precisely the sort of file the product
 promises not to build.
 
@@ -707,8 +705,7 @@ Nothing above needs to be taken on faith.
    `login.microsoftonline.com` and `graph.microsoft.com`. **A free-tier install never
    contacts a Kainor host** (§7.1).
 4. If you hold an enterprise license, tap **Activate license** and watch the third host
-   appear. Confirm the request body is exactly `{"version":1,"tenantId":"<your tenant>"}` —
-   no token, no user, no device, no counter — and that nothing else is sent to it while you
+   appear. Confirm the request body is exactly `{"version":1,"tenantId":"<your tenant>"}`, no token, no user, no device, no counter, and that nothing else is sent to it while you
    keep using the app.
 5. Search the entire capture for a password or a recovery key you revealed. It appears only
    in the Graph response, over TLS, to Microsoft.
@@ -716,7 +713,7 @@ Nothing above needs to be taken on faith.
 Steps 3 and 5 are the ones that matter, and they are the reason this document exists: we
 would rather tell you how to check than ask you to believe a policy page.
 
-Report anything that contradicts this document to connor@kainor.com — see `SECURITY.md`.
+Report anything that contradicts this document to connor@kainor.com, see `SECURITY.md`.
 
 ---
 
@@ -773,4 +770,4 @@ stale client must degrade to `free`, never to broken.
 | 2026-09-01 | Version 1. Initial published contract. |
 | 2026-09-01 | §8 tightened before implementation: tenant IDs out of request logs, purchaser contact details out of the license table, rate limiting moved to ephemeral state, running cost stated. No wire-format change. |
 | 2026-09-02 | §7.1 records why automatic activation on tenant switch is rejected: it would send Kainor the identifier of every customer tenant an MSP signs into. No wire-format change. |
-| 2026-09-02 | §2 corrected after measuring the deployed endpoint: plain HTTP is redirected, not refused. No wire-format change. The implementation was corrected to match this document in two other places rather than the reverse — the Functions host's default `/api` route prefix was removed so the path is `/entitlement` as published, and a non-POST now returns 405 as the error table promises instead of the host's default 404. |
+| 2026-09-02 | §2 corrected after measuring the deployed endpoint: plain HTTP is redirected, not refused. No wire-format change. The implementation was corrected to match this document in two other places rather than the reverse, the Functions host's default `/api` route prefix was removed so the path is `/entitlement` as published, and a non-POST now returns 405 as the error table promises instead of the host's default 404. |

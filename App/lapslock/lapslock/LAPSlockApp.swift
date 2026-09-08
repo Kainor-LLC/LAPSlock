@@ -244,7 +244,7 @@ final class AppRootModel: ObservableObject {
     /// `@Published` emits in `willSet` — the publisher fires BEFORE the stored property is
     /// updated. So a sink that reacted by reading `subscriptions.entitlement` read the
     /// PREVIOUS value, and buying MSP left `canSwitchTenants` false until the next launch
-    /// recomputed it from scratch. Observed on device 2026-09-03: the tenant switcher only
+    /// recomputed it from scratch. Observed on device: the tenant switcher only
     /// appeared after force-quitting the app.
     ///
     /// Combine hands the new value to the closure. Use that; never re-read the source.
@@ -455,7 +455,7 @@ final class AppRootModel: ObservableObject {
 
     /// Records a sign-in failure with whatever allowlisted detail MSAL left behind.
     ///
-    /// This is the change the 2026-08-26 broker bug asked for: the user still sees a plain
+    /// This is the change the broker bug asked for: the user still sees a plain
     /// sentence, but the support report now carries the MSAL code, the AADSTS code, the
     /// correlation ID and whether the broker was in the path — and nothing else, because
     /// `AuthFailureDetail` and `DiagnosticEvent` each refuse anything that is not a number,

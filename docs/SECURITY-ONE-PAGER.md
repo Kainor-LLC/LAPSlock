@@ -1,4 +1,4 @@
-# LAPSlock — security and data handling, on one page
+# LAPSlock, security and data handling, on one page
 
 For the person who has to approve this before anyone installs it. Everything here is
 checkable; the last section says how. **Kainor LLC · Spring Hill, Kansas, USA ·
@@ -48,7 +48,7 @@ For a **free-tier** installation: nothing. The app contacts `login.microsoftonli
 For an **organization with a paid license**, after an administrator taps Activate: a request
 to one Kainor endpoint containing your Microsoft tenant ID and a version number, about once
 a month. No Microsoft token, no user identity, no device data, no usage counts. Our record
-of a paying organization is its tenant ID, tier, term and order reference — no names, no
+of a paying organization is its tenant ID, tier, term and order reference, no names, no
 email addresses. Our server does not log tenant IDs. Full specification:
 `docs/ENTITLEMENT-API.md`.
 

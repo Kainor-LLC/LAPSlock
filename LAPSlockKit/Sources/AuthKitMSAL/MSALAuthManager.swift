@@ -58,7 +58,7 @@ public struct AuthConfiguration: Sendable {
     /// shipped build references it, and every customer tenant's consent creates a service
     /// principal pointing at this object. Changing or deleting it breaks every install.
     ///
-    /// Registration facts (created 2026-08-14):
+    /// Registration facts:
     ///   * Audience: AzureADMultipleOrgs (any work/school tenant, no personal accounts)
     ///   * Public client, allow public client flows = Yes, no client secret
     ///   * Delegated Graph scopes only: DeviceManagementManagedDevices.Read.All,
