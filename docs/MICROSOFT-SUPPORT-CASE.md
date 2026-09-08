@@ -18,9 +18,15 @@ address.
 
 **2. Only cite request IDs that came from the Kainor tenant.** A Graph `request-id` is opaque
 to us but not to Microsoft: it identifies the tenant, the user and the device behind the call.
-The request ID recorded in `MASTER-TODO.md` (`d4576653-…`, 2026-08-14) is usable in this case
-**only if** the verification that produced it ran in the Kainor tenant. If it came from any
-other tenant, do not include it, and file Variant B below.
+The 2026-08-14 verification ran in a different tenant, so its request IDs are not Kainor's to
+cite and were removed from this repository on 2026-09-08. Kainor files Variant B.
+
+**2a. Two tracks, and they never reference each other.** The tenant that owns the Macs may
+file its own defect ticket, through its own support channel, with its own reproduction — that
+is that organisation's ticket about that organisation's problem, and it is the one most likely
+to get the 500 fixed. Kainor's track is the public question below. Kainor never quotes,
+numbers, or alludes to the other ticket; Post 3 draws only on Kainor's own thread. A fix that
+lands because of someone else's ticket benefits Kainor the way it benefits every customer.
 
 **3. Two variants, pick by what Kainor can reproduce today.**
 
@@ -198,6 +204,43 @@ and delete the attempts table. Keep Requests A and C, the contract finding, and 
 asks. Ask 1 and ask 3 need no reproduction at all.
 
 ---
+
+## Kainor's filing, ready to paste — Microsoft Q&A (Variant B)
+
+Sign in to https://learn.microsoft.com/answers with a kainor.com account → **Ask a question**.
+Tags: *Microsoft Graph*, *Microsoft Intune*. Public, so the redaction checklist below applies.
+
+**Title**
+
+> Is there a supported Microsoft Graph API that returns the macOS LAPS local administrator password? The only macOS function returns rotation metadata and 500s
+
+**Body**
+
+> I build tooling on Microsoft Graph for Intune tenants that use Windows LAPS and macOS LAPS, delegated permissions only, documented endpoints only. Disclosure: I'm the developer of a commercial admin app in this space; the question is about the API surface, not the app.
+>
+> **Windows LAPS** works as documented: `GET /v1.0/directory/deviceLocalCredentials/{id}?$select=credentials` returns the password and history to an authorised caller.
+>
+> **macOS LAPS** (Intune service release 2507) appears to have no equivalent:
+>
+> 1. The only macOS-specific function, `GET /beta/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail`, is documented to return a `microsoft.graph.macOSDeviceLocalAdminAccountDetail` with a single property, `passwordLastRotationDateTime`. There is no password property in the contract. (Reference: https://learn.microsoft.com/en-us/graph/api/intune-devices-manageddevice-retrievedevicelocaladminaccountdetail?view=graph-rest-beta)
+> 2. `deviceLocalCredentials/{entraDeviceId}?$select=credentials` returns `200 OK` with no `credentials` property for ADE-enrolled Macs, consistent with the docs saying macOS passwords are "stored and encrypted by Intune" rather than in the Entra store.
+> 3. In practice I have also seen the beta function return `500 Internal Server Error` for ADE-enrolled, LAPS-managed Macs where the same user can view the password in the admin center. I can't reproduce that in my own tenant today (no ADE-enrolled Mac), so I'm not asking for that to be debugged here — noting it in case it's known.
+>
+> The admin center can display and rotate these passwords (custom RBAC: *View macOS admin password* / *Rotate macOS admin password* under Enrollment programs), so the capability exists server-side.
+>
+> **Questions**
+>
+> 1. Is there a supported Graph API, now or on the roadmap, that returns the macOS LAPS password to an authorised delegated caller, the way `deviceLocalCredentials` does for Windows?
+> 2. If not planned, could the `retrieveDeviceLocalAdminAccountDetail` reference page state explicitly that the password value is not returned by any API? People find this function, assume it's the macOS equivalent of the Windows one, and only learn otherwise by calling it.
+>
+> I'm not looking for an internal or undocumented endpoint and wouldn't use one. Just the supported surface, or confirmation that there isn't one yet.
+
+**Docs issue, filed the same day** — https://github.com/microsoftgraph/microsoft-graph-docs-contrib
+→ Issues → New issue. Title: *retrieveDeviceLocalAdminAccountDetail: state that the password
+value is not returned*. Body: two sentences pointing at
+`api-reference/beta/api/intune-devices-manageddevice-retrievedevicelocaladminaccountdetail.md`,
+quoting the single-property response, and asking for a note that no API returns the macOS
+password. Link the Q&A thread.
 
 ## Redaction checklist before submitting anywhere public (Q&A, GitHub, Post 3)
 

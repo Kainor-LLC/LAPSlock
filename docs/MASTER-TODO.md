@@ -2151,8 +2151,12 @@ requests per `tid` so anomalies surface. Revisit if that data shows abuse.
   days between them; blocked on App Review approval, and Post 3 on the Microsoft support
   case. Two hard rules in the file: never name or hint at the employer, and disclose the
   commercial interest in the first paragraph every time.
-- 🔵 File the Microsoft support case for the macOS 500 (request ID
-  `d4576653-30f5-44ae-8790-06fff930667f`) — the only path to macOS ever working
+- 🔵 File the Microsoft support case for the macOS 500 — the only path to macOS ever working.
+  Drafted 2026-09-08 in `docs/MICROSOFT-SUPPORT-CASE.md`. Two tracks that never cite each
+  other: the tenant that has the Macs files the defect with its own request IDs through its
+  own support channel; Kainor asks the public API-surface question on Microsoft Q&A and a
+  docs issue. The request ID that used to sit here belonged to the other tenant and was
+  removed on purpose.
 
 ---
 
@@ -2232,8 +2236,8 @@ buyer at exactly the moment they are frustrated. The post ranks indefinitely, co
 evening, and markets nothing directly — it establishes domain authority, and the tool
 mention at the bottom is almost incidental.
 
-Pairs with 🔵 filing the Microsoft support case for the macOS 500 (request ID
-`d4576653-30f5-44ae-8790-06fff930667f`). Do the support case first: "I reported this to
+Pairs with 🔵 filing the Microsoft support case for the macOS 500 (see
+`docs/MICROSOFT-SUPPORT-CASE.md`). Do the support case first: "I reported this to
 Microsoft and here is what happened" is a stronger post than "this is broken".
 
 ## The rest, in order of value
@@ -2399,8 +2403,7 @@ without the thing in 1.
 
 Neither is on the critical path, both are small:
 
-- **File the Microsoft support case for the macOS LAPS 500** (request ID
-  `d4576653-30f5-44ae-8790-06fff930667f`). Do this before the write-up so the post can say
+- **File the Microsoft support case for the macOS LAPS 500** (see `docs/MICROSOFT-SUPPORT-CASE.md`). Do this before the write-up so the post can say
   what Microsoft's response was, which is a stronger article than "this is broken".
 - **Register nothing else.** `lapslock.com` and `.app` are done, USPTO and App Store
   searches are clear, and the trademark filing waits for the attorney pass so name
