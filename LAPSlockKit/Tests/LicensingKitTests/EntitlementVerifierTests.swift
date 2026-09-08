@@ -6,7 +6,7 @@ import CryptoKit
 ///
 /// These tests build and sign tokens at runtime with a throwaway key rather than embedding
 /// fixture strings. Two reasons: a literal token in the repo would be flagged by
-/// `pre-push-scan.sh` as a JWT-shaped string, correctly, and a fixture would freeze a moment
+/// the release scanner as a JWT-shaped string, correctly, and a fixture would freeze a moment
 /// in time while the thing worth testing is the algorithm.
 final class EntitlementVerifierTests: XCTestCase {
 

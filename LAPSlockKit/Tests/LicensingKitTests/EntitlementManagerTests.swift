@@ -5,7 +5,7 @@ import CryptoKit
 // MARK: - test support
 
 /// Signs tokens with a throwaway key, standing in for the Function. Tokens are built at
-/// runtime rather than embedded, because pre-push-scan.sh flags JWT-shaped strings.
+/// runtime rather than embedded, because the release scanner flags JWT-shaped strings.
 struct TestTokenFactory {
     let key = P256.Signing.PrivateKey()
     let kid = "test-key"
