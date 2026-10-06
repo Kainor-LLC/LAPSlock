@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How LAPSlock was built · Kainor LLC</title>
+<meta name="description" content="The architecture, authentication model, Graph API usage, on-device security and dead ends behind LAPSlock, an iOS app that reads Windows LAPS passwords and BitLocker keys from Entra ID and Intune with no server in the credential path.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131E2E'/%3E%3Ctext x='32' y='45' font-family='Arial Narrow, Arial, sans-serif' font-size='38' font-weight='700' fill='%23D9480F' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F4F7; --card:#FFFFFF; --ink:#131E2E; --ink-soft:#22314A;
+    --steel:#51617A; --mist:#A9B6C6; --signal:#D9480F; --line:#C9D2DD; --line-dark:#2C3C58;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);
+    font-family:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:0 24px}
+  a{color:var(--signal)}
+  a:hover{color:#BF3E0C}
+  a:focus-visible{outline:3px solid var(--signal);outline-offset:3px;border-radius:2px}
+  .display{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;
+    line-height:1.05;letter-spacing:.2px;text-transform:uppercase}
+  .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--signal);font-weight:500}
+
+  header.top{background:var(--ink);color:#F4F7FB}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:22px 0;border-bottom:1px solid var(--line-dark)}
+  .brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
+  .brand .k{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;
+    letter-spacing:.06em;text-transform:uppercase}
+  .brand .llc{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:var(--mist)}
+  nav a{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;text-decoration:none;color:var(--mist);margin-left:22px}
+  nav a:hover{color:#fff}
+  nav a[aria-current]{color:#fff}
+  .head-main{padding:56px 0 44px}
+  h1{font-size:clamp(34px,5.6vw,56px);text-wrap:balance}
+  .byline{margin-top:16px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+    letter-spacing:.1em;color:var(--mist)}
+  .lede{margin-top:18px;font-size:19px;color:#D5DDE8;max-width:640px}
+
+  main{padding:48px 0 24px}
+  .toc{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--signal);
+    border-radius:8px;padding:20px 24px;margin-bottom:40px}
+  .toc h2{font-size:14px;font-family:'IBM Plex Mono',monospace;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--steel);font-weight:500;margin-bottom:10px}
+  .toc ol{margin:0 0 0 20px;color:var(--ink-soft);font-size:15.5px}
+  .toc li{margin-bottom:4px}
+  .toc a{text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  h2.sec{font-size:clamp(24px,3.4vw,32px);margin:48px 0 14px;scroll-margin-top:24px}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin-bottom:14px;color:var(--ink-soft)}
+  ul,ol{margin:0 0 16px 22px;color:var(--ink-soft)}
+  li{margin-bottom:8px}
+  code{font-family:'IBM Plex Mono',monospace;font-size:14px;background:rgba(0,0,0,.05);
+    padding:2px 5px;border-radius:3px;overflow-wrap:anywhere}
+  pre{font-family:'IBM Plex Mono',monospace;font-size:13.5px;line-height:1.5;background:var(--ink);
+    color:#E6ECF4;padding:16px 18px;border-radius:8px;overflow-x:auto;margin:14px 0 20px}
+  pre code{background:none;padding:0;color:inherit;font-size:inherit}
+  .note{background:rgba(217,72,15,.07);border-radius:8px;padding:16px 18px;margin:22px 0;
+    font-size:15.5px;color:var(--ink-soft)}
+  .table-scroll{overflow-x:auto;margin:16px 0 24px}
+  table{width:100%;border-collapse:collapse;font-size:15px;min-width:560px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--steel);font-weight:500}
+  td code{font-size:13px}
+  .steps{list-style:none;margin-left:0;counter-reset:step}
+  .steps > li{counter-increment:step;position:relative;padding-left:46px;margin-bottom:14px}
+  .steps > li::before{content:counter(step,decimal-leading-zero);position:absolute;left:0;top:2px;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--signal);font-weight:500;
+    letter-spacing:.08em}
+  .endnote{border-top:1px solid var(--line);margin-top:48px;padding-top:22px;font-size:15px;color:var(--steel)}
+
+  footer{background:var(--ink);color:var(--mist);margin-top:64px}
+  .foot-inner{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+    padding:32px 0;font-size:14px}
+  .foot-inner a{color:var(--mist);text-decoration:none}
+  .foot-inner a:hover{color:#fff}
+  .foot-links a{margin-left:22px}
+  @media (max-width:640px){ .foot-links a{margin:0 22px 0 0} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="/"><span class="k">Kainor</span><span class="llc">LLC</span></a>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/blog/" aria-current="page">Blog</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+      </nav>
+    </div>
+    <div class="head-main">
+      <span class="eyebrow">Engineering</span>
+      <h1 class="display">How LAPSlock was built</h1>
+      <p class="lede">An iOS app that reads Windows LAPS passwords and BitLocker recovery keys from Entra ID and Intune, with no server in the credential path. The architecture, the authentication model, every Graph call, the on-device controls, and the dead ends.</p>
+      <p class="byline">Connor Johnson, CISSP · Kainor LLC · 5 October 2026 · about 25 minutes</p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+
+    <div class="toc">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#problem">The problem</a></li>
+        <li><a href="#architecture">Architecture, and whether there is a backend</a></li>
+        <li><a href="#auth">Authentication</a></li>
+        <li><a href="#graph">Graph API usage</a></li>
+        <li><a href="#device">On-device security</a></li>
+        <li><a href="#threats">Security decisions and the threats behind them</a></li>
+        <li><a href="#deadends">Challenges and dead ends</a></li>
+        <li><a href="#timeline">Timeline</a></li>
+        <li><a href="#next">What I would do differently, and what is next</a></li>
+      </ol>
+    </div>
+
+    <p>This is written for people who run Entra ID and Intune. It assumes you know what Windows LAPS, delegated permissions and PIM are, and it is more interested in the decisions and the mistakes than in the feature list. Where I state what Microsoft Graph does, I have checked it against the reference documentation or against a live tenant, and I say which. Where I was unsure, I say that too.</p>
+
+    <h2 class="sec" id="problem">1. The problem</h2>
+    <p>You are standing at a Windows machine that will not log in. The local administrator password is in Entra, backed up by Windows LAPS. The admin center is open on a laptop somewhere else, behind a lock screen, possibly on another floor. Your phone is in your pocket, and your account already holds the role that can read the password. The gap between those two facts is the whole product.</p>
+    <p>LAPSlock is a native iOS app that, using the administrator's own delegated permissions, searches every managed device in the tenant, reveals the current LAPS password and the password history Graph returns with it, reveals BitLocker recovery keys per volume, requests just-in-time PIM activation when the role is eligible rather than active, and lets a managed service provider switch between customer tenants. Each reveal is a live Graph call under the user's own token, and it lands in the tenant's audit log exactly as a read from the portal would. The app grants nothing. Without a directory role that can read LAPS passwords, it cannot read them either.</p>
+    <p>The password history turned out to matter more than I expected. A device that stopped checking in weeks ago is still on an older password, and that is precisely the machine you are standing at.</p>
+    <p>One sentence on the business model, because the design depends on it: there is a free tier metered on the device, Apple subscriptions, and tenant-keyed organisation licences. Nothing in that model required a server to see a credential, and the architecture was shaped to keep it that way.</p>
+
+    <h2 class="sec" id="architecture">2. Architecture, and whether there is a backend</h2>
+    <h3>Modules as the security design</h3>
+    <p>The app is one Xcode target plus a Swift package split into modules whose boundaries <em>are</em> the security design. The module that touches passwords, <code>CredentialKit</code>, imports Foundation and the authentication protocol and nothing else. Adding a logging framework, an analytics SDK, a crash reporter or the licensing layer to it is a compile error, enforced twice: by the package manifest's dependency lists, and by a shell script that greps the imports and fails the build on any forbidden module. That script runs before every commit. The licensing and subscription modules are forbidden from importing <code>CredentialKit</code> in the other direction, so a receipt and a local administrator password never share a link graph.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Module</th><th>Role</th><th>Allowed imports</th></tr></thead>
+        <tbody>
+          <tr><td><code>AuthKit</code></td><td>Auth protocol and models, the tenant pin, consent helpers, Graph request-id tracer</td><td>Foundation</td></tr>
+          <tr><td><code>AuthKitMSAL</code></td><td>The only module that links MSAL; its implementation is entirely inside <code>#if os(iOS)</code></td><td>AuthKit, MSAL</td></tr>
+          <tr><td><code>CredentialKit</code></td><td>LAPS and BitLocker providers, the <code>SensitiveValue</code> type</td><td><strong>Foundation, AuthKit</strong></td></tr>
+          <tr><td><code>InventoryKit</code></td><td>Device list, paging, search, background fill, favourites, optional user names</td><td>AuthKit, CredentialKit types</td></tr>
+          <tr><td><code>PrivilegedAccessKit</code></td><td>PIM eligibility, policy, activation, claims-challenge parsing</td><td>Foundation, AuthKit</td></tr>
+          <tr><td><code>LicensingKit</code></td><td>Entitlement token verification, the reveal meter, keychain stores</td><td>Foundation, CryptoKit, Security</td></tr>
+          <tr><td><code>SubscriptionKit</code></td><td>StoreKit 2 catalogue and entitlement merge</td><td>Foundation, StoreKit, LicensingKit</td></tr>
+          <tr><td><code>DiagnosticsKit</code></td><td>The support report, structurally unable to carry a credential</td><td>Foundation</td></tr>
+          <tr><td><code>PlatformSecurity</code></td><td>Biometric gate, reveal window, app-switcher cover, screenshot detection, clipboard</td><td>Foundation, UIKit, LocalAuthentication</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>MSAL arrives as a checksum-pinned binary target, Microsoft's own signed XCFramework. It is the only third-party dependency in the app, and the credential path's link graph contains no third-party binary at all.</p>
+
+    <h3>One reveal, start to finish</h3>
+    <ol class="steps">
+      <li>The user taps Reveal on a device.</li>
+      <li>The free-tier meter is checked. It is a ledger of reveal timestamps in the device Keychain. If it is exhausted the user is told now, before anything else happens.</li>
+      <li>The biometric gate runs: <code>LAContext</code> with <code>.deviceOwnerAuthentication</code>, so Face ID, Touch ID or the passcode. A cancelled prompt stops here. No network call, no audit event in the tenant.</li>
+      <li>MSAL acquires a token silently for the required scope against the pinned tenant authority. The token's <code>tid</code> is compared to the tenant the app deliberately selected.</li>
+      <li>One Graph GET over an ephemeral <code>URLSession</code>: no cache, no cookie store.</li>
+      <li>The response is parsed with <code>JSONSerialization</code> into a <code>SensitiveValue</code>, a final class that is not <code>Codable</code>, has no value-exposing description, and wipes itself on deinit.</li>
+      <li>The meter is charged, now that the fetch has succeeded. Checking before the gate and charging after the response are two separate calls on purpose: nobody completes Face ID only to learn they are out of reveals, and a cancelled prompt costs nothing.</li>
+      <li>The credential is published to the screen only once the scene is active, so the app-switcher cover can never race it. A sixty-second window starts. On timeout, hide, backgrounding or screen-capture detection, the value is wiped.</li>
+    </ol>
+
+    <h3>Is there a backend?</h3>
+    <p>In the credential path, no. The app talks to exactly three hosts, and the third only in one circumstance.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Host</th><th>When</th><th>What crosses the wire</th></tr></thead>
+        <tbody>
+          <tr><td><code>login.microsoftonline.com</code></td><td>Sign-in and refresh</td><td>Standard Entra delegated authentication through MSAL</td></tr>
+          <tr><td><code>graph.microsoft.com</code></td><td>Browsing, reveals, PIM</td><td>Graph requests carrying the user's delegated token</td></tr>
+          <tr><td>Kainor's entitlement endpoint (Azure Functions)</td><td><strong>Only after an organisation licence is activated</strong>, then roughly monthly</td><td>A version number and the tenant GUID. It returns a signed tier.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>A free-tier install or an Apple-subscription install never contacts Kainor. The entitlement endpoint never receives a Microsoft token, a user, a device or a credential, and it cannot act in anyone's tenant because it holds nothing that could. Its request and response format, and what the server does and does not log, are published as a contract in the repository, and the <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/NETWORK-TRANSPARENCY.md">network transparency document</a> is a ten-minute proxy recipe for checking all of this yourself. iOS has no practical reproducible builds, so observed network behaviour is the verifiable claim, and the published source explains the binary rather than proving it.</p>
+
+    <h2 class="sec" id="auth">3. Authentication</h2>
+    <h3>Delegated, not application permissions</h3>
+    <p>This was the first decision and everything else follows from it.</p>
+    <ul>
+      <li><strong>Authorization stays Microsoft's.</strong> The app can read what the signed-in account can read in the admin center and nothing more. An application permission would mean an app identity holding tenant-wide read over every LAPS password, with a vendor somewhere holding the secret that unlocks it.</li>
+      <li><strong>The audit trail is the tenant's.</strong> A delegated read is attributed to the human and appears in the Entra audit log like a portal read. An application-permission read is attributed to the app.</li>
+      <li><strong>There is nothing to steal from the vendor.</strong> The app is a public client using PKCE. There is no client secret and no certificate, so there is no credential whose theft would open every customer.</li>
+      <li><strong>Microsoft forces it for BitLocker anyway.</strong> Retrieving a BitLocker recovery key value is delegated-only. Application permissions are not supported for it.</li>
+      <li><strong>No human present, no credential.</strong> Every reveal requires an unlocked phone, a biometric check and a current token.</li>
+    </ul>
+
+    <h3>How MSAL is configured</h3>
+    <ul>
+      <li>One multi-tenant app registration, public client, PKCE, no secret. The redirect URI uses the <code>msauth.&lt;bundle-id&gt;://auth</code> form and is registered as the iOS/macOS platform.</li>
+      <li>Interactive sign-in uses the <code>/common</code> authority with the account-selection prompt. After sign-in the app builds a <strong>tenant-specific authority</strong> for that account and uses it for every silent acquisition. The home tenant GUID, or a deliberately selected customer tenant for an MSP, becomes a pin.</li>
+      <li>The pin check (token <code>tid</code> must equal the pinned tenant) lives in the Foundation-only module, not in the MSAL module. The MSAL module compiles to nothing on macOS, so nothing inside it can be unit tested there. The single most security-relevant comparison in the auth path therefore runs on every <code>swift test</code>.</li>
+      <li>The token cache is MSAL's keychain cache with the sharing group set to the app's own bundle identifier, which is MSAL's documented way to disable sharing. MSAL's implementation hard-codes <code>kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly</code> on every cache item and offers no knob to change it. I checked that in the source of the common library, and the constant is present in the shipped binary. So the cache is private to the app, never synced to iCloud Keychain, and readable after first unlock. That is one notch weaker than the when-unlocked class the app uses for its own items, and I would rather say so than imply otherwise.</li>
+      <li>Microsoft Authenticator is supported as the broker. Its return arrives as a URL open, which a scene-based SwiftUI app receives through <code>onOpenURL</code> and never through the application delegate. MSAL validates broker responses with a nonce, so the missing source application on that path is fine.</li>
+      <li>Every MSAL call that can present UI is dispatched to the main thread. The auth manager is an actor, and MSAL dereferences the presenting view controller inside <code>acquireToken</code>, not just while you build the parameters. More on how I learned that in section 7.</li>
+      <li>Session restore at launch is silent: a cached account is proven by a silent token acquisition before the app shows anything, and failure drops to the sign-in screen.</li>
+      <li>Bring-your-own app registration, where an enterprise substitutes its own registration and the vendor disappears from the consent screen entirely, is supported in configuration (the client ID and redirect URI are injectable) and not yet exposed in the UI.</li>
+    </ul>
+
+    <h3>The scopes, and when each is requested</h3>
+    <p>Consent is incremental. The app asks for the minimum at sign-in and adds scopes only when a feature is first used or explicitly enabled. The <code>ReadBasic</code> variants return LAPS and BitLocker metadata, rotation dates and which volumes have keys, without the secret. That is all the device list needs, so a user who only browses never consents to credential read.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>When</th><th>Scopes</th></tr></thead>
+        <tbody>
+          <tr><td>Sign-in (read-only baseline)</td><td><code>DeviceManagementManagedDevices.Read.All</code>, <code>Device.Read.All</code>, <code>DeviceLocalCredential.ReadBasic.All</code>, <code>BitLockerKey.ReadBasic.All</code></td></tr>
+          <tr><td>First reveal</td><td><code>DeviceLocalCredential.Read.All</code>, <code>BitLockerKey.Read.All</code></td></tr>
+          <tr><td>Rotation toggle enabled</td><td><code>DeviceManagementManagedDevices.ReadWrite.All</code></td></tr>
+          <tr><td>User display names toggle (off by default; the toggle names the permission it adds)</td><td><code>User.ReadBasic.All</code></td></tr>
+          <tr><td>PIM toggle enabled</td><td><code>RoleEligibilitySchedule.Read.Directory</code>, <code>RoleAssignmentSchedule.ReadWrite.Directory</code>, <code>RoleManagementPolicy.Read.Directory</code>, <code>PrivilegedEligibilitySchedule.Read.AzureADGroup</code>, <code>PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup</code>, <code>RoleManagementPolicy.Read.AzureADGroup</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Admin consent in other tenants</h3>
+    <p>There is no LAPSlock account system. It is ordinary Entra consent. A user whose tenant permits user consent sees the Microsoft prompt the first time each scope is needed. Where tenant policy requires an administrator, Entra answers with one of <code>AADSTS65001</code>, <code>AADSTS90094</code> or <code>AADSTS900971</code>. The app recognises those, explains the state in plain words, and offers a shareable admin-consent link, the standard <code>/adminconsent</code> URL for that tenant, together with a short message the user can send to their administrator. Approving from the link grants the organisation; approving inside the app grants the user.</p>
+    <p>For MSPs the same thing applies per customer. Each customer tenant's administrator consents once, and the technician's access there is whatever their guest, GDAP or dedicated account can already do. Switching tenants changes the pinned authority, clears the device list, discards any credential on screen, and on relaunch the app returns to the home tenant on purpose. Operating inside a customer should be a decision made now, not inherited from last week.</p>
+
+    <h2 class="sec" id="graph">4. Graph API usage</h2>
+    <p>Everything is v1.0 and documented unless marked beta. The credential path parses with <code>JSONSerialization</code> rather than <code>Codable</code>, because a synthesized <code>Codable</code> conformance drags a description and a memberwise initialiser along with it, and a credential type must have neither.</p>
+
+    <h3>Inventory</h3>
+    <ul>
+      <li><code>GET /v1.0/deviceManagement/managedDevices</code> with <code>$select</code> and <code>@odata.nextLink</code> paging. The first page renders immediately and a background fill continues to a cap of fifty pages, about five thousand devices, honouring <code>Retry-After</code> on throttling.</li>
+      <li>The specification assumed a join between Intune's managed device and the Entra device object. It is not a join: <code>managedDevices</code> returns <code>azureADDeviceId</code> directly. The real work was absence. It is null or the all-zeros GUID for devices that are not Entra-joined, which cannot have Windows LAPS, so the UI says so rather than sending a request that 404s.</li>
+      <li>Server-side search was not usable. <code>$filter</code> on this resource supports <code>eq</code> and a little <code>startswith</code>, not <code>contains</code>, and <code>$search</code> is unsupported. Search is client-side over the loaded set, which is why the background fill exists.</li>
+    </ul>
+
+    <h3>Windows LAPS</h3>
+    <ul>
+      <li>Metadata: <code>GET /v1.0/directory/deviceLocalCredentials/{entraDeviceId}</code> returns the backup and refresh dates without the secret.</li>
+      <li>Reveal: the same resource with <code>?$select=credentials</code>. The <code>credentials</code> array carries <strong>every backed-up version</strong>, each with <code>accountName</code>, <code>backupDateTime</code> and <code>passwordBase64</code>. The app decodes the base64, detects the string encoding (Windows LAPS values are typically UTF-16LE once decoded), sorts newest first and keeps up to ten. Password history therefore cost nothing on the wire. It was already in the response, which I verified against Microsoft's documentation and against <code>Get-LapsAADPassword -IncludeHistory</code> after a search summary had told me, wrongly, that history was on-premises only.</li>
+      <li>Rotation is policy-driven in Windows LAPS and is not an app action.</li>
+    </ul>
+
+    <h3>BitLocker</h3>
+    <ul>
+      <li>List: <code>GET /v1.0/informationProtection/bitlocker/recoveryKeys?$filter=deviceId eq '{entraDeviceId}'</code> returns key metadata without the key. <code>$top</code> is not supported here.</li>
+      <li>Reveal: <code>GET .../recoveryKeys/{keyId}?$select=key</code>. The <code>key</code> property comes back only when explicitly selected, and selecting it writes a KeyManagement entry to the tenant's audit log.</li>
+      <li>Rotate: <code>POST /beta/deviceManagement/managedDevices/{id}/rotateBitLockerKeys</code>, beta, behind the rotation toggle.</li>
+    </ul>
+
+    <h3>macOS LAPS</h3>
+    <p>The only macOS-specific function is <code>GET /beta/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail</code>. Its documented response type has exactly one property, <code>passwordLastRotationDateTime</code>. There is no password in the contract. In practice the function also returned HTTP 500 for every ADE-enrolled, LAPS-managed Mac I tested, on two dates four weeks apart, while the same user could view the password in the admin center. The Entra store that Windows LAPS uses returns 200 with no credentials for Macs. The conclusion is that macOS passwords are viewable only in the admin center today. The app shows the rotation date when the call succeeds, degrades cleanly when it does not, and offers rotation (<code>POST .../rotateLocalAdminPassword</code>, beta) behind the toggle. I have an open question with Microsoft about this on <a href="https://learn.microsoft.com/en-us/answers/questions/5997863/is-there-a-supported-graph-api-that-returns-the-ma">Microsoft Q&amp;A</a>, and two read-only PowerShell scripts in the repository reproduce the findings against any tenant.</p>
+
+    <h3>PIM</h3>
+    <ul>
+      <li>Eligibility is read from two surfaces, because tenants use both: <code>roleManagement/directory/roleEligibilitySchedules/filterByCurrentUser(on='principal')</code> for directory roles, and <code>identityGovernance/privilegedAccess/group/eligibilitySchedules/filterByCurrentUser(on='principal')</code> for PIM for Groups.</li>
+      <li>Policy is read from <code>policies/roleManagementPolicies</code> to learn the maximum activation duration, whether justification or a ticket number is required, and whether an authentication context is required. The activation sheet offers only durations the policy allows. This replaced a hard-coded duration and then a fixed picker, both wrong for the same reason.</li>
+      <li>Activation posts to <code>roleAssignmentScheduleRequests</code> or the group equivalent with <code>selfActivate</code>. The response status is classified into five outcomes: activated, provisioning (an ordinary delay), pending approval, requested, and refused. A pending approval must never look like success, and a provisioning delay must never look like a pending approval. Both misreadings shipped once. A Check again button polls the request by its ID without re-prompting.</li>
+    </ul>
+    <p>Then the claims challenge. The documented form is a 401 with a <code>WWW-Authenticate</code> header carrying base64-encoded claims. Under a PIM policy that requires a Conditional Access authentication context, Graph answers something else entirely: <strong>400</strong>, error code <code>RoleAssignmentRequestAcrsValidationFailed</code>, with the claims sitting as raw JSON inside the error message string.</p>
+<pre><code>RoleAssignmentRequestAcrsValidationFailed claims={"access_token":{"acrs":{"essential":true,"value":"c1"}}}</code></pre>
+    <p>Anything watching 401 and 403 for challenges never fires, and activation dies as a bare bad request. I could not find this documented. The app parses both forms, treats the blob as untrusted input because it is going straight into MSAL (it must be a small JSON object or it is dropped), hands it over as a claims request, re-authenticates, and retries once. A plain 401 deliberately never takes that path, or you loop people behind a prompt they cannot satisfy. And when the policy pre-read already says an authentication context is required, the claims go on the first attempt and the 400 is the fallback rather than the normal path.</p>
+
+    <h3>Optional user names and error handling</h3>
+    <p>Display names come from <code>GET /v1.0/users?$filter=userPrincipalName in (...)</code>, fifteen UPNs per request because that is the most the <code>in</code> operator takes, off by default because it adds a permission to every customer's consent screen. Errors are mapped to specific states with their own copy: role missing (which offers PIM if enabled), consent required (which offers the link), throttled, service unavailable, device not Entra-joined. Graph's <code>request-id</code> header from the last failed call is captured because it is the first thing Microsoft support asks for, and the diagnostics report carries request IDs, AADSTS codes, correlation IDs and HTTP statuses through an allowlist, never a message string, because MSAL error descriptions can carry URLs and a broker redirect URL can carry an authorization code.</p>
+
+    <h2 class="sec" id="device">5. On-device security</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Concern</th><th>What the app does</th></tr></thead>
+        <tbody>
+          <tr><td>Token storage</td><td>MSAL's keychain cache in the app's private access group, this device only, after first unlock. Refresh is MSAL's and is serialised through the auth actor. A token leaves the device only to Microsoft.</td></tr>
+          <tr><td>The app's own Keychain items</td><td>Tenant list and reveal-meter ledger: <code>kSecAttrAccessibleWhenUnlockedThisDeviceOnly</code>. Entitlement token: <code>kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly</code>. Nothing syncs to iCloud Keychain.</td></tr>
+          <tr><td>Credential caching</td><td>None. A credential lives in a <code>SensitiveValue</code> in memory for at most the sixty-second window, then is wiped. Nothing reaches disk, <code>UserDefaults</code>, state restoration or a backup. Credential requests use an ephemeral session with no cache and no cookie store.</td></tr>
+          <tr><td>Biometric gate</td><td><code>.deviceOwnerAuthentication</code>, so Face ID, Touch ID or passcode, <strong>before</strong> the Graph call. An abandoned prompt produces no audit event in the tenant.</td></tr>
+          <tr><td>Reveal window</td><td>Sixty seconds with a countdown. Re-masked and wiped on expiry, hide, backgrounding and screen capture. Published to the screen only once the scene is active.</td></tr>
+          <tr><td>App switcher</td><td>A privacy cover replaces the content in the multitasking snapshot. Verified on hardware for both credential types; two cleverer implementations failed in the dangerous direction and were reverted.</td></tr>
+          <tr><td>Screenshots and recording</td><td>iOS cannot block them. The app observes the screenshot and capture notifications, hides the credential, and recommends rotation. Stated as a limitation in the security policy rather than hidden.</td></tr>
+          <tr><td>Clipboard</td><td>Copying a credential uses <code>UIPasteboard</code> with <code>.localOnly</code>, so no Universal Clipboard handoff, and an <code>.expirationDate</code> ninety seconds out. The app clears the pasteboard itself if the value is still there. Copying was gated behind the paid tier for one commit and reverted the same day: a user who cannot copy will retype or photograph the password, which is worse.</td></tr>
+          <tr><td>App lock</td><td>Optional Face ID over the device list itself, because hostnames and primary users are reconnaissance for a whole tenant. Only backgrounding starts the clock, with a five-minute grace period and suppression during sign-in, so a round trip to Authenticator never locks the app mid-flow.</td></tr>
+          <tr><td>Diagnostics</td><td>In memory only, deliberately not persisted. Typed fields through an allowlist with no place for a password, a key, a device name or a user name. The user can read the whole report before sending it.</td></tr>
+          <tr><td>Telemetry</td><td>None. No analytics, no crash reporting, no account. The privacy manifest declares one required-reason API, <code>UserDefaults</code>, for the app's own settings. The App Store label is Data Not Collected.</td></tr>
+          <tr><td>Free-tier meter</td><td>A Keychain ledger of reveal timestamps, on the device only. It is a nudge, not DRM. A device wipe resets it, and the privacy claim is worth more than enforcement.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="sec" id="threats">6. Security decisions and the threats behind them</h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Decision</th><th>Threat addressed</th><th>Residual</th></tr></thead>
+        <tbody>
+          <tr><td>Delegated permissions only; no app identity with tenant-wide read</td><td>A vendor or attacker reading credentials without a human present</td><td>None for the app; Microsoft RBAC governs</td></tr>
+          <tr><td>No server in the credential path; three-host egress, published and proxy-verifiable</td><td>A compromised or malicious vendor backend</td><td>Licensing endpoint exposure is limited to tenant GUIDs</td></tr>
+          <tr><td>Credential module isolation enforced at build time</td><td>A future change leaking a credential to a log, SDK or the licensing layer</td><td>The guard runs on every commit; it must keep running</td></tr>
+          <tr><td><code>SensitiveValue</code> that cannot be serialised or described; no <code>Codable</code> in the credential path</td><td>Accidental serialisation, logging or UI echo of a secret</td><td>None known</td></tr>
+          <tr><td>Biometric gate before Graph; meter before the gate, charged after</td><td>A lost or borrowed unlocked phone; abandoned reveals polluting the tenant's audit log</td><td>A fully compromised device can read what its user can read</td></tr>
+          <tr><td>Sixty-second window, wipe on background and capture, switcher cover</td><td>A phone left on a bench with a password on screen; multitasking snapshots</td><td>Screenshots cannot be blocked on iOS</td></tr>
+          <tr><td>Tenant pin: token <code>tid</code> must equal the deliberately selected tenant</td><td>Cross-tenant authorization mistakes, especially for MSPs</td><td>Very low; the comparison is unit-tested on every build</td></tr>
+          <tr><td>This-device-only Keychain classes, no sync</td><td>Token or state replication to other devices</td><td>Low</td></tr>
+          <tr><td>Clipboard local-only with expiry and self-clearing</td><td>Universal Clipboard handoff; a stale credential in the pasteboard</td><td>Low</td></tr>
+          <tr><td>Claims-challenge blob treated as untrusted input</td><td>Attacker-influenced content passed into MSAL</td><td>Low</td></tr>
+          <tr><td>Entitlement endpoint receives a tenant GUID only; the token is an ES256 JWS verified against compiled-in public keys, never a fetched key set</td><td>Backend compromise; token forgery; licence replay across tenants</td><td>A stolen licence token is useful only inside the licensed tenant</td></tr>
+          <tr><td>Reveal count on the device, never on a server</td><td>The vendor learning how often each tenant retrieves passwords</td><td>The meter is evadable by design</td></tr>
+          <tr><td>Source published for review</td><td>Blind trust in a credential-handling binary</td><td>No reproducible builds on iOS</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="sec" id="deadends">7. Challenges and dead ends</h2>
+    <p><strong>macOS LAPS has no API, and the one function 500s.</strong> The specification flagged this as the product-defining open question and it was settled against a live tenant on the second day of the project: no password in the contract, 500 in practice, nothing in the Entra store. macOS reveal was declared impossible rather than pending, the App Store listing says so up front, and the question is with Microsoft.</p>
+    <p><strong>The first run on a real phone found two auth bugs the simulator cannot show.</strong> With Microsoft Authenticator installed, the broker's redirect arrived as a URL open that nothing handled, and MSAL reported that the application did not receive a response from the broker. Separately, MSAL's interactive calls were being made from an actor on the cooperative thread pool, and MSAL touches the presenting view controller inside <code>acquireToken</code>. Without a broker, MSAL keeps the whole flow in-process and the fragile part never runs, so the simulator was green. Both bugs produced the same generic error. I wrote two fixes before reading a log, and both were wrong; the MSAL log named the cause in one line once I captured it. The lesson stuck: for a device-only failure, read the console before writing code.</p>
+    <p><strong>The MSAL module is invisible to the package tests.</strong> Its whole implementation is inside <code>#if os(iOS)</code>, so a file added without that guard broke the macOS test build while the iOS app stayed healthy, and later a wrong MSAL API label passed 262 green tests and failed the iOS build immediately. The two checks cover opposite halves, and the project now runs both before any commit.</p>
+    <p><strong>The tenant guard was wrong for MSPs.</strong> The original check compared the token's <code>tid</code> to the account's home tenant, which is right for a single-organisation admin and breaks an MSP operating in a customer tenant. Deleting the check would have removed the only thing stopping a token for the wrong organisation being used against it. The fix made the expectation explicit: the token must match the tenant the app deliberately selected.</p>
+    <p><strong>Testing MSP switching and PIM needed licences and a second tenant.</strong> PIM needs Entra ID P2, which I bought for the test tenant. Switching needs a second tenant that has invited the account; building one from scratch was investigated and abandoned in favour of a guest invitation. Because the real path depends on tenant policy nobody can reproduce in a lab, each of the switcher's ten failure cases explains itself on screen.</p>
+    <p><strong>The claims challenge that arrived as a 400</strong>, described in section 4. Activation under an authentication-context policy died as a bare bad request until the error body was parsed.</p>
+    <p><strong>Provisioning versus pending approval.</strong> The first PIM build reported an ordinary provisioning delay as waiting for approval, in a tenant with no approval step, and sent someone looking for an approver who did not exist.</p>
+    <p><strong>The privacy cover flashed, and two fixes exposed the credential.</strong> After Face ID the scene is still inactive when the secret is published, so the Hidden cover showed for two seconds. Two attempts to track the transition more precisely both failed on hardware by showing the credential in the app switcher. The condition that errs toward hiding stayed, and the real fix was elsewhere: publish the credential only once the scene is active.</p>
+    <p><strong>A search regression you could feel.</strong> Widening search used <code>range(of:options:)</code> with case and diacritic insensitivity, which performs full Unicode folding on every call, and called a ranking function from inside the sort comparator. On a tenant of a few hundred devices that was on the order of a hundred thousand folds per keystroke. Fold each field once, score once, sort on the precomputed rank.</p>
+    <p><strong>Search only covered loaded pages.</strong> On a tenant with several pages of devices, a device that existed was not found. Hence the background fill.</p>
+    <p><strong>Three bugs a 262-test suite did not catch</strong> surfaced in one afternoon on hardware: licence state leaking across tenants, no sign-out button anywhere in the UI, and an Activate button that did not name the organisation it would bind to. A green suite is not proof.</p>
+    <p><strong><code>@Published</code> emits in <code>willSet</code>.</strong> A sink that re-read the property saw the old value, so buying the MSP subscription did not show the tenant switcher until relaunch. Use the value the closure hands you.</p>
+    <p><strong>Two subscription groups became one.</strong> Separate groups would have allowed double-paying, two free trials and no upgrade path.</p>
+    <p><strong>App Store review</strong> rejected the first submission for a missing EULA link in the description. Guideline 3.1.3 shaped the website more than the app: the support page the app links to carries no pricing and no purchase links. iPad was removed from 1.0 rather than shipped as a stretched phone app, because the reveal path's scene-phase behaviour under multitasking needs its own verification on an iPad.</p>
+
+    <h2 class="sec" id="timeline">8. Timeline</h2>
+    <p>From the public repository's history: 153 commits, first on 13 August 2026, release on 8 September 2026. The licensing backend lives in a separate repository and is not counted.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Date</th><th>Milestone</th></tr></thead>
+        <tbody>
+          <tr><td>13 Aug</td><td>First commit.</td></tr>
+          <tr><td>14 Aug</td><td>Security core (<code>SensitiveValue</code>, providers, auth seam, isolation guard), MSAL sign-in verified end to end, inventory with paging and search, biometric gate and reveal window, consent onboarding, device list and gated reveal. macOS LAPS verified impossible the same day.</td></tr>
+          <tr><td>17 Aug</td><td>BitLocker, settings, diagnostics export, privacy policy and terms, app icon, source-available licence.</td></tr>
+          <tr><td>26 to 27 Aug</td><td>First run on a real phone. Broker redirect and main-thread fixes. First TestFlight builds. Entitlement backend infrastructure provisioned.</td></tr>
+          <tr><td>28 to 29 Aug</td><td>Pricing and metering decided: free tier metered on the device, never on a server. Product renamed. Licensing module and reveal meter.</td></tr>
+          <tr><td>1 Sep</td><td>Entitlement API contract written first, then implemented: signing key published, server retention tightened, tokens verified on device. Network transparency document and security one-pager.</td></tr>
+          <tr><td>2 Sep</td><td>MSP tenant switcher, tenant guard re-pointed, sign-out added, Entra ID P2 purchased, switching verified. PIM: claims challenge, directory roles and groups, policy read, the 400 form, provisioning versus approval.</td></tr>
+          <tr><td>3 Sep</td><td>Background inventory fill, optional display names, LAPS password history, Apple subscriptions, favourites and recents, session restore, app lock, support page, site moved to Cloudflare Pages. <strong>1.0 submitted.</strong></td></tr>
+          <tr><td>4 to 5 Sep</td><td>Review rejection fixed. Organisation licensing automated end to end.</td></tr>
+          <tr><td>8 Sep</td><td><strong>1.0 released on the App Store.</strong> Microsoft Q&amp;A question filed. Source tagged.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Twenty-one days from first commit to submission, twenty-six to release, with 379 package tests at release.</p>
+
+    <h2 class="sec" id="next">9. What I would do differently, and what is next</h2>
+    <h3>Differently</h3>
+    <ul>
+      <li><strong>Run on a real phone on day one, not day thirteen.</strong> Four bugs were unreachable in the simulator: demo providers reachable from the live path, MSAL off the main thread, the unhandled broker redirect, and the search regression.</li>
+      <li><strong>Read the log before writing code</strong>, every time a device-only failure has a generic message.</li>
+      <li><strong>Write the server contract before the server.</strong> The entitlement contract caught the deployed endpoint disagreeing with it and forced the retention decisions before any code existed. That worked and I would repeat it.</li>
+      <li><strong>Test security changes in the direction that matters first.</strong> The app-switcher regression shipped because the change was tested for the flash it fixed, not for the exposure it risked.</li>
+      <li><strong>Trust primary documentation over summaries.</strong> It would have found password history a week earlier and never flagged macOS as a roadmap item.</li>
+      <li><strong>On tooling:</strong> this was built with heavy use of AI coding tools. Every line was reviewed, every claim above was tested on hardware, and the network claim is verifiable with a proxy regardless of who typed the code. The mistakes in section 7 are mine either way.</li>
+    </ul>
+    <h3>Next</h3>
+    <ul>
+      <li>iPad as a real 1.1 with a split view, with the multitasking behaviour of the reveal path re-verified on an iPad as a blocking test.</li>
+      <li>Four lifecycle scenarios that are true by construction but not yet run as scripted tests: role removal mid-session, PIM activation expiry, offline behaviour, and session revocation in Entra, which without Continuous Access Evaluation takes effect at access-token expiry rather than instantly. I will write up the results.</li>
+      <li>Showing the tenant's device count against the licensed plan, computed on the phone and never sent.</li>
+      <li>Exposing bring-your-own app registration in the UI, so an enterprise can remove the vendor from the consent screen entirely.</li>
+      <li>App Attest on the entitlement call, deliberately a later phase: it defends against a forged client, which the threat model rates low because the client holds nothing worth forging for.</li>
+      <li>macOS reveal the day Microsoft ships an API. The steps to enable it are in one file.</li>
+    </ul>
+
+    <p class="endnote">LAPSlock is on the <a href="https://apps.apple.com/us/app/lapslock/id6806470554">App Store</a>, and the client source is published for review on <a href="https://github.com/Kainor-LLC/LAPSlock">GitHub</a> under a source-available licence. The <a href="/how-it-works/">how it works</a> page is the plain-language version of this post, including the permissions table. Corrections and findings to <a href="mailto:connor@kainor.com">connor@kainor.com</a>; the <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/SECURITY.md">security policy</a> explains how to report a vulnerability. Kainor LLC is not affiliated with, endorsed by, or sponsored by Microsoft Corporation.</p>
+
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <span>© 2026 Kainor LLC · Spring Hill, Kansas · LAPSlock&trade; is a trademark of Kainor LLC.</span>
+      <span class="foot-links">
+        <a href="/">Home</a><a href="/how-it-works/">How it works</a><a href="/blog/">Blog</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="mailto:connor@kainor.com">Contact</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

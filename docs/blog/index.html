@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blog · Kainor LLC</title>
+<meta name="description" content="Engineering notes from Kainor LLC on building security tooling for Microsoft Entra ID and Intune.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131E2E'/%3E%3Ctext x='32' y='45' font-family='Arial Narrow, Arial, sans-serif' font-size='38' font-weight='700' fill='%23D9480F' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F4F7; --card:#FFFFFF; --ink:#131E2E; --ink-soft:#22314A;
+    --steel:#51617A; --mist:#A9B6C6; --signal:#D9480F; --line:#C9D2DD; --line-dark:#2C3C58;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);
+    font-family:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:0 24px}
+  a{color:var(--signal)}
+  a:hover{color:#BF3E0C}
+  a:focus-visible{outline:3px solid var(--signal);outline-offset:3px;border-radius:2px}
+  .display{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;
+    line-height:1.05;letter-spacing:.2px;text-transform:uppercase}
+  .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--signal);font-weight:500}
+  header.top{background:var(--ink);color:#F4F7FB}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:22px 0;border-bottom:1px solid var(--line-dark)}
+  .brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
+  .brand .k{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;
+    letter-spacing:.06em;text-transform:uppercase}
+  .brand .llc{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:var(--mist)}
+  nav a{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;text-decoration:none;color:var(--mist);margin-left:22px}
+  nav a:hover{color:#fff}
+  nav a[aria-current]{color:#fff}
+  .head-main{padding:56px 0 44px}
+  h1{font-size:clamp(36px,6vw,60px)}
+  .lede{margin-top:18px;max-width:640px;font-size:19px;color:#D5DDE8}
+  main{padding:48px 0 24px}
+  .post{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:24px 26px;margin-bottom:18px}
+  .post .meta{font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--steel);margin-bottom:8px}
+  .post h2{font-size:24px;margin-bottom:8px;text-wrap:balance}
+  .post h2 a{text-decoration:none;color:var(--ink)}
+  .post h2 a:hover{color:var(--signal)}
+  .post p{color:var(--ink-soft);margin-bottom:10px}
+  .post .more{font-weight:600}
+  footer{background:var(--ink);color:var(--mist);margin-top:64px}
+  .foot-inner{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+    padding:32px 0;font-size:14px}
+  .foot-inner a{color:var(--mist);text-decoration:none}
+  .foot-inner a:hover{color:#fff}
+  .foot-links a{margin-left:22px}
+  @media (max-width:640px){ .foot-links a{margin:0 22px 0 0} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="/"><span class="k">Kainor</span><span class="llc">LLC</span></a>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/blog/" aria-current="page">Blog</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+      </nav>
+    </div>
+    <div class="head-main">
+      <span class="eyebrow">Kainor LLC</span>
+      <h1 class="display">Blog</h1>
+      <p class="lede">Engineering notes on building security tooling for Microsoft Entra ID and Intune. Written for the people who run them.</p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <article class="post">
+      <div class="meta">5 October 2026 · Connor Johnson, CISSP · Engineering</div>
+      <h2><a href="/blog/how-lapslock-was-built/">How LAPSlock was built</a></h2>
+      <p>The architecture, authentication model, every Graph call, the on-device controls, a short threat model, and the dead ends behind an iOS app that reads Windows LAPS passwords and BitLocker keys from Entra ID and Intune with no server in the credential path. Including the PIM claims challenge that arrives as an HTTP 400, and why macOS passwords cannot be retrieved by any Graph API today.</p>
+      <p><a class="more" href="/blog/how-lapslock-was-built/">Read the post</a></p>
+    </article>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <span>© 2026 Kainor LLC · Spring Hill, Kansas · LAPSlock&trade; is a trademark of Kainor LLC.</span>
+      <span class="foot-links">
+        <a href="/">Home</a><a href="/how-it-works/">How it works</a><a href="/blog/">Blog</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="mailto:connor@kainor.com">Contact</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
