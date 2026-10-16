@@ -37,6 +37,13 @@
   /* type roles */
   .display{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;line-height:1.02;letter-spacing:.2px;text-transform:uppercase}
   .mono{font-family:'IBM Plex Mono',ui-monospace,Menlo,monospace}
+  .products{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:22px}
+  .product-tile{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px}
+  .product-tile h3{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;text-transform:uppercase;font-size:24px;margin:6px 0}
+  .product-tile .state{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--steel)}
+  .product-tile p{color:var(--ink-soft);margin:8px 0 12px;font-size:16px}
+  .product-tile a{font-weight:600;color:var(--signal);text-decoration:none}
+  .product-tile a:hover{text-decoration:underline}
   .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--signal);font-weight:500}
 
   /* ============ hero (pit wall) ============ */
@@ -140,6 +147,7 @@
         <a href="#about">About</a>
         <a href="/how-it-works/">How it works</a>
         <a href="/pricing/">Pricing</a>
+        <a href="https://tenantkeep.com">Tenantkeep</a>
         <a href="/blog/">Blog</a>
         <a href="#contact">Contact</a>
         <a href="/privacy/">Privacy</a>
@@ -171,6 +179,33 @@
 </header>
 
 <main>
+  <section class="section" id="products">
+    <div class="wrap">
+      <span class="eyebrow">Products</span>
+      <h2 class="display">Three tools for Microsoft-first teams</h2>
+      <div class="products">
+        <article class="product-tile">
+          <span class="state">Available on the App Store</span>
+          <h3>LAPSlock</h3>
+          <p>LAPS passwords and BitLocker recovery keys on the phone admins carry, through Entra ID and Intune. No Kainor server.</p>
+          <a href="#product">How LAPSlock works</a>
+        </article>
+        <article class="product-tile">
+          <span class="state">Available</span>
+          <h3>Tenantkeep Posture</h3>
+          <p>A read-only collection from your Microsoft 365 tenant becomes a branded security posture report with a risk register, Copilot readiness and Conditional Access documented and diffed. Nothing leaves your tenant.</p>
+          <a href="https://tenantkeep.com">tenantkeep.com</a>
+        </article>
+        <article class="product-tile">
+          <span class="state">In development</span>
+          <h3>Tenantkeep On-Call</h3>
+          <p>The on-call companion for the people who answer the phone when something breaks in Microsoft 365.</p>
+          <a href="https://tenantkeep.com/#products">Details when it ships</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <section class="section" id="product">
     <div class="wrap">
       <div class="sec-head">
@@ -262,6 +297,7 @@
         <a href="#principles">Security</a>
         <a href="/how-it-works/">How it works</a>
         <a href="/pricing/">Pricing</a>
+        <a href="https://tenantkeep.com">Tenantkeep</a>
         <a href="/blog/">Blog</a>
         <a href="https://apps.apple.com/us/app/lapslock/id6806470554">App Store</a>
         <a href="/privacy/">Privacy</a>
