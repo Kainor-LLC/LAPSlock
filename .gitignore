@@ -80,3 +80,5 @@ graph-response*.json
 ## Local working notes; the planning repository is private (LAPSlock-internal)
 CLAUDE.md
 .claude/
+CLAUDE.local.md
+workshop/
