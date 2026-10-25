@@ -1,5 +1,6 @@
 import SwiftUI
 import InventoryKit
+import ConditionalAccessKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -24,27 +25,31 @@ import InventoryKit
 enum AppModule: String, CaseIterable, Identifiable {
     case credentials
     case privilegedAccess
+    case conditionalAccess
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .credentials:      return "LAPSlock"
-        case .privilegedAccess: return "Privileged access"
+        case .credentials:       return "LAPSlock"
+        case .privilegedAccess:  return "Privileged access"
+        case .conditionalAccess: return "Conditional Access"
         }
     }
 
     var subtitle: String {
         switch self {
-        case .credentials:      return "LAPS passwords and BitLocker keys"
-        case .privilegedAccess: return "Activate an eligible role or group"
+        case .credentials:       return "LAPS passwords and BitLocker keys"
+        case .privilegedAccess:  return "Activate an eligible role or group"
+        case .conditionalAccess: return "Policies, read-only, and what changed"
         }
     }
 
     var symbol: String {
         switch self {
-        case .credentials:      return "key.horizontal"
-        case .privilegedAccess: return "person.badge.key"
+        case .credentials:       return "key.horizontal"
+        case .privilegedAccess:  return "person.badge.key"
+        case .conditionalAccess: return "checkmark.shield"
         }
     }
 
@@ -52,8 +57,9 @@ enum AppModule: String, CaseIterable, Identifiable {
     /// rather than vanishing, so a reviewer still sees that it exists.
     var availableInDemo: Bool {
         switch self {
-        case .credentials:      return true
-        case .privilegedAccess: return false
+        case .credentials:       return true
+        case .privilegedAccess:  return false
+        case .conditionalAccess: return true
         }
     }
 
@@ -86,6 +92,16 @@ extension Notification.Name {
     static let revealMeterDidChange = Notification.Name("lapslock.revealMeterDidChange")
 }
 
+/// What the Conditional Access module needs from the root, built once per session.
+struct ConditionalAccessColumns {
+    let makeListModel: @MainActor () -> ConditionalAccessListModel
+    let makeDetailModel: @MainActor (ConditionalAccessPolicy) -> ConditionalAccessDetailModel
+    /// Interactive consent for the module's scopes. Nil in demo.
+    var requestConsent: (() async -> String?)? = nil
+    /// Interactive consent for the audit-log scope. Nil in demo.
+    var requestChangesConsent: (() async -> String?)? = nil
+}
+
 /// What the credentials module needs from the root, built once per session.
 struct CredentialsColumns {
     /// Deferred so the shell can own the model as state and build it exactly once.
@@ -99,14 +115,17 @@ struct CredentialsColumns {
 struct ModuleShell: View {
     let isDemo: Bool
     private let credentials: CredentialsColumns
+    private let conditionalAccess: ConditionalAccessColumns
     private let settingsBuilder: () -> SettingsView
     /// The privileged access column. Nil in demo, where there is no account to activate
     /// anything for, and the column says so.
     private let privilegedColumn: (() -> PrivilegedAccessView)?
 
     @StateObject private var listModel: DeviceListModel
+    @StateObject private var policyModel: ConditionalAccessListModel
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
+    @State private var selectedPolicyId: String?
     /// All three columns from the first frame. The default is `.automatic`, which on an
     /// iPad in portrait opens with the sidebar and the list both collapsed and only "No
     /// device selected" on screen, two taps from anything useful. Ignored on iPhone, where
@@ -120,14 +139,17 @@ struct ModuleShell: View {
     init(
         isDemo: Bool,
         credentials: CredentialsColumns,
+        conditionalAccess: ConditionalAccessColumns,
         settingsBuilder: @escaping () -> SettingsView,
         privilegedColumn: (() -> PrivilegedAccessView)?
     ) {
         self.isDemo = isDemo
         self.credentials = credentials
+        self.conditionalAccess = conditionalAccess
         self.settingsBuilder = settingsBuilder
         self.privilegedColumn = privilegedColumn
         _listModel = StateObject(wrappedValue: credentials.makeListModel())
+        _policyModel = StateObject(wrappedValue: conditionalAccess.makeListModel())
         _selectedModule = State(initialValue: AppModule.lastUsed)
     }
 
@@ -148,6 +170,7 @@ struct ModuleShell: View {
             // sidebar selection clears when the stack pops to it, which is not a change
             // of mind, so nil is not remembered.
             selectedDeviceId = nil
+            selectedPolicyId = nil
             if let module { AppModule.lastUsed = module }
         }
         .onChange(of: selectedDeviceId) { _, id in
@@ -216,6 +239,13 @@ struct ModuleShell: View {
                 // the list where it has always been. Regular width shows one gear, not two.
                 settingsBuilder: sizeClass == .compact ? settingsBuilder : nil
             )
+        case .conditionalAccess?:
+            ConditionalAccessListView(
+                model: policyModel,
+                isDemo: isDemo,
+                selection: $selectedPolicyId,
+                requestConsent: conditionalAccess.requestConsent
+            )
         case .privilegedAccess?:
             if let privilegedColumn {
                 privilegedColumn()
@@ -247,6 +277,22 @@ struct ModuleShell: View {
                     Label("No device selected", systemImage: "laptopcomputer")
                 } description: {
                     Text("Pick a device from the list, or search for one.")
+                }
+            }
+        case .conditionalAccess?:
+            if let id = selectedPolicyId, let policy = policyModel.policy(id) {
+                ConditionalAccessDetailView(
+                    model: conditionalAccess.makeDetailModel(policy),
+                    name: { policyModel.name(for: $0) },
+                    isDemo: isDemo,
+                    requestChangesConsent: conditionalAccess.requestChangesConsent
+                )
+                .id(id)
+            } else {
+                ContentUnavailableView {
+                    Label("No policy selected", systemImage: "checkmark.shield")
+                } description: {
+                    Text("Pick a policy from the list. Nothing here can change one.")
                 }
             }
         case .privilegedAccess?:

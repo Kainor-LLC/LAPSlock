@@ -9,6 +9,7 @@ import InventoryKit
 import LicensingKit
 import PrivilegedAccessKit
 import SubscriptionKit
+import ConditionalAccessKit
 
 // App root. Owns the one decision the rest of the app depends on: which data source
 // is in play, a live tenant, or demo mode.
@@ -145,6 +146,22 @@ final class AppRootModel: ObservableObject {
         /// Display-name lookups, in memory for the session. Only consulted when the
         /// Settings toggle is on; constructing it costs nothing and requests nothing.
         let names: UserNameResolver
+        /// The one Graph client for the read-only modules. Its observer feeds the
+        /// diagnostics report with the path template, version, status and duration, and
+        /// nothing else.
+        let graph: GraphClient
+        let conditionalAccess: ConditionalAccessService
+
+        init(auth: MSALAuthManager) {
+            self.auth = auth
+            self.inventory = DeviceInventoryService(auth: auth)
+            self.names = UserNameResolver(auth: auth)
+            let graph = GraphClient(auth: auth, observer: { record in
+                Task { await DiagnosticsRecorder.shared.record(GraphDiagnostics.event(for: record)) }
+            })
+            self.graph = graph
+            self.conditionalAccess = ConditionalAccessService(graph: graph)
+        }
 
         /// Live credential provider for one platform, sharing the authenticated session.
         func provider(for platform: DevicePlatform) -> any LocalAdminCredentialProviding {
@@ -324,6 +341,7 @@ final class AppRootModel: ObservableObject {
         }
 
         await session.inventory.reset()
+        await session.conditionalAccess.reset()
         operatingTenantId = await session.auth.operatingTenantId
         return nil
     }
@@ -370,11 +388,7 @@ final class AppRootModel: ObservableObject {
         defer { isRestoringSession = false }
 
         guard let account = await auth.restoreSession() else { return }
-        liveSession = LiveSession(
-            auth: auth,
-            inventory: DeviceInventoryService(auth: auth),
-            names: UserNameResolver(auth: auth)
-        )
+        liveSession = LiveSession(auth: auth)
         mode = .live(account)
         recomputeEntitlement()
         await refreshTenants()
@@ -389,11 +403,7 @@ final class AppRootModel: ObservableObject {
 
         do {
             let account = try await auth.signIn()
-            liveSession = LiveSession(
-                auth: auth,
-                inventory: DeviceInventoryService(auth: auth),
-                names: UserNameResolver(auth: auth)
-            )
+            liveSession = LiveSession(auth: auth)
             mode = .live(account)
             recomputeEntitlement()
         } catch let error as AuthError {
@@ -480,6 +490,7 @@ final class AppRootModel: ObservableObject {
         }
         // Tenant-scoped data must not survive an account change (§7).
         await liveSession?.inventory.reset()
+        await liveSession?.conditionalAccess.reset()
         liveSession = nil
         mode = .signedOut
         consentState = nil
@@ -512,6 +523,37 @@ final class AppRootModel: ObservableObject {
             if ConsentDiagnostics.state(from: error) != nil {
                 return "Your organization hasn't approved permission for LAPSlock to request role activation. An Entra administrator needs to grant it."
             }
+            if case .userCancelled = error { return "Permission wasn't granted." }
+            return "Couldn't request permission. Check your connection and try again."
+        } catch {
+            return "Couldn't request permission. Check your connection and try again."
+        }
+    }
+
+    /// Requests the Conditional Access module's scopes, the first time the module is opened
+    /// in an organization that has not consented yet. Read-only scopes, requested when the
+    /// module is opened and not at sign-in, so an organization that only wants LAPS never
+    /// sees them.
+    func requestConditionalAccessConsent() async -> String? {
+        await requestConsent(scopes: ConditionalAccessScopes.module,
+                             deniedMessage: "Your organization hasn't approved permission for LAPSlock to read Conditional Access policies. An Entra administrator needs to grant it.")
+    }
+
+    /// Requests the audit-log scope, only when "who changed this" is tapped.
+    func requestConditionalAccessChangesConsent() async -> String? {
+        await requestConsent(scopes: ConditionalAccessScopes.changes,
+                             deniedMessage: "Your organization hasn't approved permission for LAPSlock to read the audit log. An Entra administrator needs to grant it.")
+    }
+
+    /// One consent request, the same shape every module uses: nil on success, or a
+    /// sentence the screen can show.
+    private func requestConsent(scopes: [String], deniedMessage: String) async -> String? {
+        guard let auth else { return "Sign in first." }
+        do {
+            _ = try await auth.token(scopes: scopes, allowInteractive: true)
+            return nil
+        } catch let error as AuthError {
+            if ConsentDiagnostics.state(from: error) != nil { return deniedMessage }
             if case .userCancelled = error { return "Permission wasn't granted." }
             return "Couldn't request permission. Check your connection and try again."
         } catch {
@@ -738,6 +780,12 @@ struct AppRootView: View {
                         )
                     }
                 ),
+                conditionalAccess: ConditionalAccessColumns(
+                    makeListModel: { ConditionalAccessListModel(provider: DemoConditionalAccessProvider()) },
+                    makeDetailModel: { policy in
+                        ConditionalAccessDetailModel(policy: policy, provider: DemoConditionalAccessProvider())
+                    }
+                ),
                 settingsBuilder: {
                     SettingsView(
                         settings: AppSettings.shared,
@@ -812,6 +860,14 @@ struct AppRootView: View {
                                 }
                             )
                         }
+                    ),
+                    conditionalAccess: ConditionalAccessColumns(
+                        makeListModel: { ConditionalAccessListModel(provider: session.conditionalAccess) },
+                        makeDetailModel: { policy in
+                            ConditionalAccessDetailModel(policy: policy, provider: session.conditionalAccess)
+                        },
+                        requestConsent: { await root.requestConditionalAccessConsent() },
+                        requestChangesConsent: { await root.requestConditionalAccessChangesConsent() }
                     ),
                     settingsBuilder: {
                         SettingsView(
@@ -928,6 +984,35 @@ struct AppRootView: View {
         }
     }
 
+}
+
+// MARK: - Graph diagnostics
+
+/// Turns a GraphClient call record into a diagnostics event. Typed fields only: the
+/// template never carries an identifier, and nothing here sees a body.
+enum GraphDiagnostics {
+    static func event(for record: GraphCallRecord) -> DiagnosticEvent {
+        DiagnosticEvent(
+            operation: .graphRead,
+            outcome: outcome(for: record.httpStatus),
+            httpStatus: record.httpStatus,
+            endpointTemplate: "/" + record.version.rawValue + record.template,
+            durationMs: record.durationMs)
+    }
+
+    static func outcome(for status: Int?) -> DiagnosticOutcome {
+        guard let status else { return .transportError }
+        switch status {
+        case 200...299: return .success
+        case 401:       return .consentRequired
+        case 403:       return .notAuthorized
+        case 404:       return .notFound
+        case 429:       return .throttled
+        case 400:       return .badRequest
+        case 500...599: return .serviceUnavailable
+        default:        return .unknown
+        }
+    }
 }
 
 // MARK: - previews

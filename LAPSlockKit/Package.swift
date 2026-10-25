@@ -35,7 +35,8 @@ let package = Package(
         .library(name: "DiagnosticsKit", targets: ["DiagnosticsKit"]),
         .library(name: "LicensingKit", targets: ["LicensingKit"]),
         .library(name: "PrivilegedAccessKit", targets: ["PrivilegedAccessKit"]),
-        .library(name: "SubscriptionKit", targets: ["SubscriptionKit"])
+        .library(name: "SubscriptionKit", targets: ["SubscriptionKit"]),
+        .library(name: "ConditionalAccessKit", targets: ["ConditionalAccessKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -84,6 +85,11 @@ let package = Package(
 
         .target(name: "PlatformSecurity"),
 
+        // Conditional Access, read-only. Foundation + AuthKit only, and it must NEVER import
+        // CredentialKit: it reads policy, and policy must stay structurally unable to see a
+        // password. Same argument as PrivilegedAccessKit, enforced by isolation-check.
+        .target(name: "ConditionalAccessKit", dependencies: ["AuthKit"]),
+
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
         // the credential path. The isolation guard enforces this.
@@ -108,6 +114,7 @@ let package = Package(
         .testTarget(name: "DiagnosticsKitTests", dependencies: ["DiagnosticsKit"]),
         .testTarget(name: "LicensingKitTests", dependencies: ["LicensingKit"]),
         .testTarget(name: "PrivilegedAccessKitTests", dependencies: ["PrivilegedAccessKit", "AuthKit"]),
-        .testTarget(name: "SubscriptionKitTests", dependencies: ["SubscriptionKit", "LicensingKit"])
+        .testTarget(name: "SubscriptionKitTests", dependencies: ["SubscriptionKit", "LicensingKit"]),
+        .testTarget(name: "ConditionalAccessKitTests", dependencies: ["ConditionalAccessKit", "AuthKit"])
     ]
 )

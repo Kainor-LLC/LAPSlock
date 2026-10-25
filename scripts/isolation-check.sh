@@ -109,6 +109,15 @@ check_module "PrivilegedAccessKit" "Foundation|AuthKit" \
   "InventoryKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# ConditionalAccessKit reads policy. A module that can see what the tenant enforces must
+# not be able to see a credential, so it is capped like PrivilegedAccessKit.
+check_module "ConditionalAccessKit" "Foundation|AuthKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "PrivilegedAccessKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 check_module "LicensingKit" "Foundation|CryptoKit|Security" \
   "CredentialKit" \
   "InventoryKit" \

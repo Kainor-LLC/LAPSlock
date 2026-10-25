@@ -42,6 +42,10 @@ public enum DiagnosticOperation: String, Sendable, Codable, CaseIterable {
     /// not reproducible by the vendor, so the Microsoft error code is the only explanation
     /// a customer can hand over.
     case roleActivation
+    /// A read through the shared GraphClient (the read-only modules). The endpoint
+    /// template says which; the operation stays generic so adding a module does not mean
+    /// adding a case here.
+    case graphRead
 }
 
 /// Why it failed. Mirrors the error taxonomies without carrying their payloads.
