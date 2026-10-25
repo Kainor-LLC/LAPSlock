@@ -684,6 +684,15 @@ struct AppRootView: View {
             .task {
                 appLock.armAtLaunch(enabled: settings.appLockEnabled)
                 root.prepare()
+                #if DEBUG
+                // Straight into demo mode for simulator screenshots and UI automation, which
+                // cannot tap the button on the sign-in screen. Debug builds only, and it
+                // reaches the same `.demo` branch the button does, so nothing new is exposed.
+                if ProcessInfo.processInfo.arguments.contains("-LAPSlockDemo") {
+                    root.enterDemoMode()
+                    return
+                }
+                #endif
                 // Before the entitlement refresh: restoring is what decides which screen is
                 // shown, and the entitlement read does not depend on it.
                 await root.restoreSession()
