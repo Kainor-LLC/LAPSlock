@@ -107,7 +107,11 @@ struct ModuleShell: View {
     @StateObject private var listModel: DeviceListModel
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    /// All three columns from the first frame. The default is `.automatic`, which on an
+    /// iPad in portrait opens with the sidebar and the list both collapsed and only "No
+    /// device selected" on screen, two taps from anything useful. Ignored on iPhone, where
+    /// the split view is collapsed regardless.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var compactColumn: NavigationSplitViewColumn = .content
     @State private var showingSettings = false
     @State private var searchPresented = false
@@ -222,6 +226,7 @@ struct ModuleShell: View {
                     Text("Demo data has no roles to activate. Sign in to use this module.")
                 }
                 .navigationTitle(AppModule.privilegedAccess.title)
+                .safeAreaInset(edge: .top) { DemoBanner() }
             }
         case nil:
             ContentUnavailableView("Choose a module", systemImage: "square.grid.2x2")
