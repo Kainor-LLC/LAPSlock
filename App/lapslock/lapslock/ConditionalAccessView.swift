@@ -18,6 +18,23 @@ import DiagnosticsKit
 final class ConditionalAccessListModel: ObservableObject {
     @Published private(set) var policies: [ConditionalAccessPolicy] = []
     @Published var query = ""
+    /// Last change first, or by name. Remembered between launches.
+    @Published var sortOrder: SortOrder {
+        didSet { UserDefaults.standard.set(sortOrder.rawValue, forKey: Self.sortKey) }
+    }
+    static let sortKey = "settings.conditionalAccessSort"
+
+    enum SortOrder: String, CaseIterable, Identifiable {
+        case lastChanged
+        case name
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .lastChanged: return "Last changed"
+            case .name:        return "Name"
+            }
+        }
+    }
     @Published private(set) var visible: [ConditionalAccessPolicy] = []
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
@@ -32,8 +49,12 @@ final class ConditionalAccessListModel: ObservableObject {
 
     init(provider: any ConditionalAccessProviding) {
         self.provider = provider
-        Publishers.CombineLatest($policies, $query.removeDuplicates().debounce(for: .milliseconds(150), scheduler: DispatchQueue.main))
-            .map { policies, query in Self.filter(policies, query: query) }
+        self.sortOrder = SortOrder(rawValue: UserDefaults.standard.string(forKey: Self.sortKey) ?? "") ?? .lastChanged
+        Publishers.CombineLatest3(
+            $policies,
+            $query.removeDuplicates().debounce(for: .milliseconds(150), scheduler: DispatchQueue.main),
+            $sortOrder.removeDuplicates())
+            .map { policies, query, order in Self.sorted(Self.filter(policies, query: query), by: order) }
             .assign(to: &$visible)
     }
 
@@ -41,6 +62,14 @@ final class ConditionalAccessListModel: ObservableObject {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return policies }
         return policies.filter { $0.displayName.localizedCaseInsensitiveContains(trimmed) }
+    }
+
+    /// The provider already delivers last-change order; by name is applied here.
+    static func sorted(_ policies: [ConditionalAccessPolicy], by order: SortOrder) -> [ConditionalAccessPolicy] {
+        switch order {
+        case .lastChanged: return policies
+        case .name:        return policies.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        }
     }
 
     func policy(_ id: String) -> ConditionalAccessPolicy? {
@@ -185,6 +214,20 @@ struct ConditionalAccessListView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $model.query, prompt: "Policy name")
         .refreshable { await model.load() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Picker("Sort by", selection: $model.sortOrder) {
+                        ForEach(ConditionalAccessListModel.SortOrder.allCases) { order in
+                            Text(order.label).tag(order)
+                        }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down")
+                }
+                .accessibilityLabel("Sort policies")
+            }
+        }
         .task {
             if model.policies.isEmpty { await model.load() }
         }
@@ -202,7 +245,9 @@ struct ConditionalAccessListView: View {
                     }
                 }
             } footer: {
-                Text("Read-only. Policies are sorted by their last change; anything changed in the last \(ConditionalAccessListModel.recentWindowDays) days carries a badge.")
+                Text(model.sortOrder == .name
+                     ? "Read-only. Sorted by name; anything changed in the last \(ConditionalAccessListModel.recentWindowDays) days carries a badge."
+                     : "Read-only. Sorted by last change, newest first; anything changed in the last \(ConditionalAccessListModel.recentWindowDays) days carries a badge.")
             }
             if !model.query.isEmpty && model.visible.isEmpty {
                 Text("No policies match \"\(model.query)\"")

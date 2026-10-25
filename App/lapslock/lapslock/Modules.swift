@@ -1,6 +1,7 @@
 import SwiftUI
 import InventoryKit
 import ConditionalAccessKit
+import TenantPulseKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -25,6 +26,7 @@ import ConditionalAccessKit
 enum AppModule: String, CaseIterable, Identifiable {
     case credentials
     case privilegedAccess
+    case tenantPulse
     case conditionalAccess
 
     var id: String { rawValue }
@@ -33,6 +35,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "LAPSlock"
         case .privilegedAccess:  return "Privileged access"
+        case .tenantPulse:       return "Tenant pulse"
         case .conditionalAccess: return "Conditional Access"
         }
     }
@@ -41,6 +44,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "LAPS passwords and BitLocker keys"
         case .privilegedAccess:  return "Activate an eligible role or group"
+        case .tenantPulse:       return "Health, Message Center, expiring items, Secure Score"
         case .conditionalAccess: return "Policies, read-only, and what changed"
         }
     }
@@ -49,6 +53,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "key.horizontal"
         case .privilegedAccess:  return "person.badge.key"
+        case .tenantPulse:       return "waveform.path.ecg"
         case .conditionalAccess: return "checkmark.shield"
         }
     }
@@ -59,6 +64,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return true
         case .privilegedAccess:  return false
+        case .tenantPulse:       return true
         case .conditionalAccess: return true
         }
     }
@@ -92,6 +98,13 @@ extension Notification.Name {
     static let revealMeterDidChange = Notification.Name("lapslock.revealMeterDidChange")
 }
 
+/// What the Tenant pulse module needs from the root, built once per session.
+struct TenantPulseColumns {
+    let makeModel: @MainActor () -> TenantPulseModel
+    /// Interactive consent for the module's scopes. Nil in demo.
+    var requestConsent: (() async -> String?)? = nil
+}
+
 /// What the Conditional Access module needs from the root, built once per session.
 struct ConditionalAccessColumns {
     let makeListModel: @MainActor () -> ConditionalAccessListModel
@@ -116,6 +129,7 @@ struct ModuleShell: View {
     let isDemo: Bool
     private let credentials: CredentialsColumns
     private let conditionalAccess: ConditionalAccessColumns
+    private let tenantPulse: TenantPulseColumns
     private let settingsBuilder: () -> SettingsView
     /// The privileged access column. Nil in demo, where there is no account to activate
     /// anything for, and the column says so.
@@ -123,9 +137,11 @@ struct ModuleShell: View {
 
     @StateObject private var listModel: DeviceListModel
     @StateObject private var policyModel: ConditionalAccessListModel
+    @StateObject private var pulseModel: TenantPulseModel
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
     @State private var selectedPolicyId: String?
+    @State private var selectedPulseItem: String?
     /// All three columns from the first frame. The default is `.automatic`, which on an
     /// iPad in portrait opens with the sidebar and the list both collapsed and only "No
     /// device selected" on screen, two taps from anything useful. Ignored on iPhone, where
@@ -140,16 +156,19 @@ struct ModuleShell: View {
         isDemo: Bool,
         credentials: CredentialsColumns,
         conditionalAccess: ConditionalAccessColumns,
+        tenantPulse: TenantPulseColumns,
         settingsBuilder: @escaping () -> SettingsView,
         privilegedColumn: (() -> PrivilegedAccessView)?
     ) {
         self.isDemo = isDemo
         self.credentials = credentials
         self.conditionalAccess = conditionalAccess
+        self.tenantPulse = tenantPulse
         self.settingsBuilder = settingsBuilder
         self.privilegedColumn = privilegedColumn
         _listModel = StateObject(wrappedValue: credentials.makeListModel())
         _policyModel = StateObject(wrappedValue: conditionalAccess.makeListModel())
+        _pulseModel = StateObject(wrappedValue: tenantPulse.makeModel())
         _selectedModule = State(initialValue: AppModule.lastUsed)
     }
 
@@ -171,6 +190,7 @@ struct ModuleShell: View {
             // of mind, so nil is not remembered.
             selectedDeviceId = nil
             selectedPolicyId = nil
+            selectedPulseItem = nil
             if let module { AppModule.lastUsed = module }
         }
         .onChange(of: selectedDeviceId) { _, id in
@@ -239,6 +259,13 @@ struct ModuleShell: View {
                 // the list where it has always been. Regular width shows one gear, not two.
                 settingsBuilder: sizeClass == .compact ? settingsBuilder : nil
             )
+        case .tenantPulse?:
+            TenantPulseView(
+                model: pulseModel,
+                isDemo: isDemo,
+                selection: $selectedPulseItem,
+                requestConsent: tenantPulse.requestConsent
+            )
         case .conditionalAccess?:
             ConditionalAccessListView(
                 model: policyModel,
@@ -277,6 +304,17 @@ struct ModuleShell: View {
                     Label("No device selected", systemImage: "laptopcomputer")
                 } description: {
                     Text("Pick a device from the list, or search for one.")
+                }
+            }
+        case .tenantPulse?:
+            if let item = selectedPulseItem {
+                TenantPulseDetailView(model: pulseModel, selection: item)
+                    .id(item)
+            } else {
+                ContentUnavailableView {
+                    Label("Tenant pulse", systemImage: "waveform.path.ecg")
+                } description: {
+                    Text("Tap an incident, a Message Center post or an expiring item for the detail.")
                 }
             }
         case .conditionalAccess?:

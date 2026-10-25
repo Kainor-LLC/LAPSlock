@@ -10,6 +10,7 @@ import LicensingKit
 import PrivilegedAccessKit
 import SubscriptionKit
 import ConditionalAccessKit
+import TenantPulseKit
 
 // App root. Owns the one decision the rest of the app depends on: which data source
 // is in play, a live tenant, or demo mode.
@@ -151,6 +152,7 @@ final class AppRootModel: ObservableObject {
         /// nothing else.
         let graph: GraphClient
         let conditionalAccess: ConditionalAccessService
+        let tenantPulse: TenantPulseService
 
         init(auth: MSALAuthManager) {
             self.auth = auth
@@ -161,6 +163,7 @@ final class AppRootModel: ObservableObject {
             })
             self.graph = graph
             self.conditionalAccess = ConditionalAccessService(graph: graph)
+            self.tenantPulse = TenantPulseService(graph: graph)
         }
 
         /// Live credential provider for one platform, sharing the authenticated session.
@@ -539,6 +542,12 @@ final class AppRootModel: ObservableObject {
                              deniedMessage: "Your organization hasn't approved permission for LAPSlock to read Conditional Access policies. An Entra administrator needs to grant it.")
     }
 
+    /// Requests the Tenant pulse module's five read scopes, the first time it is opened.
+    func requestTenantPulseConsent() async -> String? {
+        await requestConsent(scopes: TenantPulseScopes.module,
+                             deniedMessage: "Your organization hasn't approved permission for LAPSlock to read service health, Message Center, app credentials, Intune configuration and Secure Score. An Entra administrator needs to grant it.")
+    }
+
     /// Requests the audit-log scope, only when "who changed this" is tapped.
     func requestConditionalAccessChangesConsent() async -> String? {
         await requestConsent(scopes: ConditionalAccessScopes.changes,
@@ -786,6 +795,9 @@ struct AppRootView: View {
                         ConditionalAccessDetailModel(policy: policy, provider: DemoConditionalAccessProvider())
                     }
                 ),
+                tenantPulse: TenantPulseColumns(
+                    makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider()) }
+                ),
                 settingsBuilder: {
                     SettingsView(
                         settings: AppSettings.shared,
@@ -868,6 +880,10 @@ struct AppRootView: View {
                         },
                         requestConsent: { await root.requestConditionalAccessConsent() },
                         requestChangesConsent: { await root.requestConditionalAccessChangesConsent() }
+                    ),
+                    tenantPulse: TenantPulseColumns(
+                        makeModel: { TenantPulseModel(provider: session.tenantPulse) },
+                        requestConsent: { await root.requestTenantPulseConsent() }
                     ),
                     settingsBuilder: {
                         SettingsView(
