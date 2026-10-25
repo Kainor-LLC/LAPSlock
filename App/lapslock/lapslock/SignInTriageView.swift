@@ -171,7 +171,7 @@ struct SignInTriageView: View {
                 signInsSection
             }
         }
-        .navigationTitle("Sign-in triage")
+        .navigationTitle("Sign-in Triage")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $model.searchText, prompt: "Name or sign-in address")

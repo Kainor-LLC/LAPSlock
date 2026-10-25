@@ -92,7 +92,7 @@ struct PrivilegedAccessView: View {
                 if isEmbedded { startOverSection }
             }
         }
-        .navigationTitle("Activate access")
+        .navigationTitle("Activate Access")
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             if !isEmbedded {

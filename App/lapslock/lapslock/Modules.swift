@@ -36,9 +36,9 @@ enum AppModule: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .credentials:       return "LAPSlock"
-        case .privilegedAccess:  return "Privileged access"
-        case .signInTriage:      return "Sign-in triage"
-        case .tenantPulse:       return "Tenant pulse"
+        case .privilegedAccess:  return "Privileged Access"
+        case .signInTriage:      return "Sign-in Triage"
+        case .tenantPulse:       return "Tenant Pulse"
         case .conditionalAccess: return "Conditional Access"
         }
     }
@@ -300,7 +300,7 @@ struct ModuleShell: View {
                 )
             } else {
                 ProGateView(
-                    title: "Sign-in triage is part of Pro",
+                    title: "Sign-in Triage is part of Pro",
                     detail: "Search a person, see their last sign-ins, and read why each one failed with the policy that blocked it named. Pro also removes the reveal limit.",
                     openSettings: { showingSettings = true }
                 )
@@ -359,7 +359,7 @@ struct ModuleShell: View {
                     .id(id)
             } else {
                 ContentUnavailableView {
-                    Label("Sign-in triage", systemImage: "person.crop.circle.badge.questionmark")
+                    Label("Sign-in Triage", systemImage: "person.crop.circle.badge.questionmark")
                 } description: {
                     Text(isPro || isDemo
                          ? "Find a person, then tap a sign-in to see why it went the way it did."
@@ -372,7 +372,7 @@ struct ModuleShell: View {
                     .id(item)
             } else {
                 ContentUnavailableView {
-                    Label("Tenant pulse", systemImage: "waveform.path.ecg")
+                    Label("Tenant Pulse", systemImage: "waveform.path.ecg")
                 } description: {
                     Text("Tap an incident, a Message Center post or an expiring item for the detail.")
                 }
@@ -395,7 +395,7 @@ struct ModuleShell: View {
             }
         case .privilegedAccess?:
             ContentUnavailableView {
-                Label("Privileged access", systemImage: "person.badge.key")
+                Label("Privileged Access", systemImage: "person.badge.key")
             } description: {
                 Text("Activate an eligible Entra role or PIM group from the list. Your organization's policy applies exactly as it would in the portal: justification, ticket, approval and identity verification.")
             }

@@ -160,7 +160,7 @@ struct TenantPulseView: View {
             expiringSection
             scoreSection
         }
-        .navigationTitle("Tenant pulse")
+        .navigationTitle("Tenant Pulse")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .refreshable { await model.load() }
