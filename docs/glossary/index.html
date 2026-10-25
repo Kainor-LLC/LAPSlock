@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign-in error glossary · Kainor LLC</title>
+<meta name="description" content="Plain-English explanations of the Microsoft Entra sign-in error codes an on-call administrator meets most, with what to do about each. The same glossary ships inside LAPSlock.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131E2E'/%3E%3Ctext x='32' y='45' font-family='Arial Narrow, Arial, sans-serif' font-size='38' font-weight='700' fill='%23D9480F' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F4F7; --card:#FFFFFF; --ink:#131E2E; --ink-soft:#22314A;
+    --steel:#51617A; --mist:#A9B6C6; --signal:#D9480F; --line:#C9D2DD; --line-dark:#2C3C58;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);
+    font-family:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:0 24px}
+  a{color:var(--signal)}
+  a:hover{color:#BF3E0C}
+  a:focus-visible{outline:3px solid var(--signal);outline-offset:3px;border-radius:2px}
+  .display{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;
+    line-height:1.05;letter-spacing:.2px;text-transform:uppercase}
+  .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--signal);font-weight:500}
+
+  header.top{background:var(--ink);color:#F4F7FB}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:22px 0;border-bottom:1px solid var(--line-dark)}
+  .brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
+  .brand .k{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;
+    letter-spacing:.06em;text-transform:uppercase}
+  .brand .llc{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:var(--mist)}
+  nav a{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;text-decoration:none;color:var(--mist);margin-left:22px}
+  nav a:hover{color:#fff}
+  .head-main{padding:56px 0 44px}
+  h1{font-size:clamp(36px,6vw,60px)}
+  .updated{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+    letter-spacing:.1em;color:var(--mist)}
+
+  main{padding:48px 0 24px}
+  .summary{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--signal);
+    border-radius:8px;padding:22px 24px;margin-bottom:40px}
+  .summary h2{font-size:19px;margin-bottom:10px}
+  .summary p{color:var(--ink-soft)}
+  .summary p + p{margin-top:10px}
+  h2.sec{font-size:clamp(24px,3.4vw,32px);margin:40px 0 14px}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin-bottom:14px;color:var(--ink-soft)}
+  ul,ol{margin:0 0 16px 22px;color:var(--ink-soft)}
+  li{margin-bottom:8px}
+  code{font-family:'IBM Plex Mono',monospace;font-size:14px;background:rgba(0,0,0,.05);
+    padding:2px 5px;border-radius:3px;overflow-wrap:anywhere}
+  .note{background:rgba(217,72,15,.07);border-radius:8px;padding:16px 18px;margin:22px 0;
+    font-size:15.5px;color:var(--ink-soft)}
+  .table-scroll{overflow-x:auto;margin:16px 0 24px}
+  table{width:100%;border-collapse:collapse;font-size:15.5px;min-width:520px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--steel);font-weight:500}
+  td code{white-space:nowrap;overflow-wrap:normal}
+  .steps{list-style:none;margin-left:0;counter-reset:step}
+  .steps > li{counter-increment:step;position:relative;padding-left:46px;margin-bottom:22px}
+  .steps > li::before{content:counter(step,decimal-leading-zero);position:absolute;left:0;top:2px;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--signal);font-weight:500;
+    letter-spacing:.08em}
+  .steps h3{margin:0 0 4px}
+
+  footer{background:var(--ink);color:var(--mist);margin-top:64px}
+  .foot-inner{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+    padding:32px 0;font-size:14px}
+  .foot-inner a{color:var(--mist);text-decoration:none}
+  .foot-inner a:hover{color:#fff}
+  .foot-links a{margin-left:22px}
+  @media (max-width:640px){ .foot-links a{margin:0 22px 0 0} }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="/"><span class="k">Kainor</span><span class="llc">LLC</span></a>
+      <nav>
+        <a href="/">Home</a>
+        <a href="/how-it-works/">How it works</a>
+        <a href="/blog/">Blog</a>
+        <a href="/privacy/">Privacy</a>
+        <a href="/terms/">Terms</a>
+      </nav>
+    </div>
+    <div class="head-main">
+      <span class="eyebrow">Sign-in triage</span>
+      <h1 class="display">Sign-in error glossary</h1>
+      <p class="updated">Built from the glossary inside the app</p>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="summary">
+      <h2>What this is</h2>
+      <p><strong>The error codes Microsoft Entra returns when a sign-in fails, in plain English, with
+      what to do about each.</strong> LAPSlock shows the same line beside every failed sign-in in its
+      Sign-in triage module, so the person on call gets the answer without a search. This page is the
+      same glossary, published for everyone.</p>
+      <p>Each code links directly: add <code>#50074</code> to the address to share one entry. Microsoft's
+      full reference is the authority; this is the one-line version for 2 am.</p>
+    </div>
+
+    <h2 class="sec" id="codes">Codes</h2>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Code</th><th>What it means</th><th>What to do</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code id="0">0</code></td>
+          <td><strong>Success</strong><br>The sign-in succeeded.</td>
+          <td>Nothing to fix here. If the person still cannot get in, the problem is after sign-in: a licence, an app assignment, or the app itself.</td>
+        </tr>
+        <tr>
+          <td><code id="50053">50053</code></td>
+          <td><strong>Account locked</strong><br>Too many wrong passwords, or Microsoft locked the account after seeing a pattern it associates with attackers.</td>
+          <td>If the person was not trying repeatedly, treat it as an attack and look at the source IP before unlocking. Otherwise wait for the lockout to clear or unlock the account in Entra.</td>
+        </tr>
+        <tr>
+          <td><code id="50055">50055</code></td>
+          <td><strong>Password expired</strong><br>The password has passed its expiry date.</td>
+          <td>Reset or change the password. Check the password policy if this is a surprise.</td>
+        </tr>
+        <tr>
+          <td><code id="50056">50056</code></td>
+          <td><strong>No password or invalid password</strong><br>The sign-in arrived with no password or an unusable one. Common with federation or single sign-on misconfiguration.</td>
+          <td>Check the federation or SSO setup for this user&#x27;s domain rather than the password itself.</td>
+        </tr>
+        <tr>
+          <td><code id="50057">50057</code></td>
+          <td><strong>Account disabled</strong><br>The account is disabled in Entra.</td>
+          <td>If that was not intended, enable it. If it was, the person should not be trying to sign in.</td>
+        </tr>
+        <tr>
+          <td><code id="50058">50058</code></td>
+          <td><strong>Silent sign-in interrupted</strong><br>An app tried to sign in without showing anything and Entra needed the person to interact.</td>
+          <td>Usually harmless. The app shows a prompt next and the sign-in completes. Only investigate if it repeats without a successful sign-in after it.</td>
+        </tr>
+        <tr>
+          <td><code id="50072">50072</code></td>
+          <td><strong>MFA registration required</strong><br>The person has to register for multifactor authentication before continuing.</td>
+          <td>Have them complete MFA registration. If a registration campaign or policy is new, expect many of these.</td>
+        </tr>
+        <tr>
+          <td><code id="50074">50074</code></td>
+          <td><strong>Strong authentication required</strong><br>A policy required a second factor and this sign-in did not provide one yet.</td>
+          <td>Expected once, as the first prompt. If it repeats without a success after it, the person is cancelling the prompt or their method is broken.</td>
+        </tr>
+        <tr>
+          <td><code id="50076">50076</code></td>
+          <td><strong>MFA required again</strong><br>Entra asked for a second factor because something changed: a new device, a new location, or an administrator changed MFA settings.</td>
+          <td>Expected after a change. If nothing changed and it keeps happening, look at the device and location on the sign-in.</td>
+        </tr>
+        <tr>
+          <td><code id="50079">50079</code></td>
+          <td><strong>MFA registration required</strong><br>The person has to register a multifactor authentication method before this app will let them in.</td>
+          <td>Have them register a method, then sign in again.</td>
+        </tr>
+        <tr>
+          <td><code id="50097">50097</code></td>
+          <td><strong>Device authentication required</strong><br>A policy requires a known device and this sign-in came from one Entra does not recognise.</td>
+          <td>Register or join the device, or sign in from a device that already is.</td>
+        </tr>
+        <tr>
+          <td><code id="50105">50105</code></td>
+          <td><strong>Not assigned to the app</strong><br>The app requires assignment and this person is not assigned to it.</td>
+          <td>Assign the person, or a group they are in, to the enterprise application.</td>
+        </tr>
+        <tr>
+          <td><code id="50126">50126</code></td>
+          <td><strong>Wrong username or password</strong><br>The username or password did not match.</td>
+          <td>Have them try again carefully. Many of these in a short time from one address is a password spray, not a typo.</td>
+        </tr>
+        <tr>
+          <td><code id="50131">50131</code></td>
+          <td><strong>Blocked by Conditional Access</strong><br>A Conditional Access policy blocked the sign-in, often a location or device rule.</td>
+          <td>Read the applied policies on this sign-in. The one marked as failed is the reason.</td>
+        </tr>
+        <tr>
+          <td><code id="50133">50133</code></td>
+          <td><strong>Session no longer valid</strong><br>The password was changed or reset, which invalidated existing sessions.</td>
+          <td>Sign in again. Nothing to fix unless the change was not expected.</td>
+        </tr>
+        <tr>
+          <td><code id="50140">50140</code></td>
+          <td><strong>Keep me signed in prompt</strong><br>The sign-in paused on the stay signed in question.</td>
+          <td>Harmless. The person answers the prompt and continues.</td>
+        </tr>
+        <tr>
+          <td><code id="50144">50144</code></td>
+          <td><strong>On-premises password expired</strong><br>The Active Directory password has expired and the sign-in was validated against it.</td>
+          <td>Change the password in Active Directory, then let it sync.</td>
+        </tr>
+        <tr>
+          <td><code id="50155">50155</code></td>
+          <td><strong>Device authentication failed</strong><br>The device tried to prove itself to Entra and could not, usually a broken device registration or certificate.</td>
+          <td>Re-register the device, or check its join state in Entra and Intune.</td>
+        </tr>
+        <tr>
+          <td><code id="50158">50158</code></td>
+          <td><strong>External security challenge not satisfied</strong><br>A third-party MFA provider or an authentication strength requirement was not met.</td>
+          <td>Check the external MFA integration, or the authentication strength on the policy that applied.</td>
+        </tr>
+        <tr>
+          <td><code id="50173">50173</code></td>
+          <td><strong>Fresh sign-in required</strong><br>The token the app held has expired or been revoked and a new sign-in is needed.</td>
+          <td>Sign in again. If sessions are being revoked unexpectedly, check for a sign-in frequency policy.</td>
+        </tr>
+        <tr>
+          <td><code id="50199">50199</code></td>
+          <td><strong>Confirmation needed</strong><br>Entra asked the person to confirm the sign-in was really them, for example when switching organizations.</td>
+          <td>Harmless. They confirm and continue.</td>
+        </tr>
+        <tr>
+          <td><code id="53000">53000</code></td>
+          <td><strong>Device not compliant</strong><br>A Conditional Access policy requires a compliant device and Intune reports this one as not compliant.</td>
+          <td>Open the device in Intune and see which compliance setting failed. That setting is the fix.</td>
+        </tr>
+        <tr>
+          <td><code id="53001">53001</code></td>
+          <td><strong>Device not domain joined</strong><br>A policy requires a Microsoft Entra hybrid joined device and this one is not.</td>
+          <td>Join the device, or sign in from one that is.</td>
+        </tr>
+        <tr>
+          <td><code id="53002">53002</code></td>
+          <td><strong>Device not registered</strong><br>A policy requires a registered or managed device and this one is neither.</td>
+          <td>Register or enrol the device, then sign in again.</td>
+        </tr>
+        <tr>
+          <td><code id="53003">53003</code></td>
+          <td><strong>Blocked by Conditional Access</strong><br>A Conditional Access policy blocked this sign-in outright.</td>
+          <td>The applied policies on this sign-in name the one that blocked it. Fix the condition or exclude the person, deliberately.</td>
+        </tr>
+        <tr>
+          <td><code id="53004">53004</code></td>
+          <td><strong>MFA registration required</strong><br>The person must finish registering for multifactor authentication before this content opens.</td>
+          <td>Have them complete registration.</td>
+        </tr>
+        <tr>
+          <td><code id="65001">65001</code></td>
+          <td><strong>Consent missing</strong><br>The app needs permissions this person or organization has not consented to.</td>
+          <td>Grant admin consent for the application, or let the person consent if that is allowed.</td>
+        </tr>
+        <tr>
+          <td><code id="70044">70044</code></td>
+          <td><strong>Session expired</strong><br>The refresh token expired, so the app has to sign in again.</td>
+          <td>Sign in again. A short session lifetime policy will cause more of these.</td>
+        </tr>
+        <tr>
+          <td><code id="81010">81010</code></td>
+          <td><strong>Seamless SSO failed</strong><br>The Kerberos ticket used for seamless single sign-on was invalid or expired.</td>
+          <td>The next sign-in falls back to a normal prompt. Investigate only if seamless SSO fails for everyone.</td>
+        </tr>
+        <tr>
+          <td><code id="90072">90072</code></td>
+          <td><strong>Account not in this organization</strong><br>The account belongs to another organization and has not been invited here.</td>
+          <td>Invite the person as a guest, or have them pick the right organization at sign-in.</td>
+        </tr>
+        <tr>
+          <td><code id="500121">500121</code></td>
+          <td><strong>MFA not completed</strong><br>The second factor failed: it timed out, was denied, or the code was wrong.</td>
+          <td>If the person did not start this sign-in, treat it as push bombing and look at the source. Otherwise have them retry with their method ready.</td>
+        </tr>
+        <tr>
+          <td><code id="530032">530032</code></td>
+          <td><strong>Blocked by a security policy</strong><br>A Conditional Access policy with a security control, such as an authentication strength or a risk condition, blocked the sign-in.</td>
+          <td>Read the applied policies. If it is risk based, check the person&#x27;s risk state.</td>
+        </tr>
+        <tr>
+          <td><code id="700016">700016</code></td>
+          <td><strong>Application not found</strong><br>The application ID in the request does not exist in this organization.</td>
+          <td>The app is misconfigured or pointed at the wrong tenant. Not a user problem.</td>
+        </tr>
+        <tr>
+          <td><code id="7000218">7000218</code></td>
+          <td><strong>Public client flow required</strong><br>The app sent a request that needs either a client secret or the public client setting on its registration.</td>
+          <td>Enable public client flows on the app registration, or fix the app&#x27;s authentication code. Not a user problem.</td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="note">
+      <strong>Missing one?</strong> The glossary grows from real tickets. If a code you meet is not
+      here, send it with one line about what fixed it and it goes in the next release of the app and
+      this page together.
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <span>© 2026 Kainor LLC · Spring Hill, Kansas · LAPSlock&trade; is a trademark of Kainor LLC.</span>
+      <span class="foot-links">
+        <a href="/">Home</a><a href="/how-it-works/">How it works</a><a href="/blog/">Blog</a><a href="/privacy/">Privacy</a><a href="/terms/">Terms</a><a href="mailto:connor@kainor.com">Contact</a>
+      </span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

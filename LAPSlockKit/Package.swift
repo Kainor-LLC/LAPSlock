@@ -37,7 +37,8 @@ let package = Package(
         .library(name: "PrivilegedAccessKit", targets: ["PrivilegedAccessKit"]),
         .library(name: "SubscriptionKit", targets: ["SubscriptionKit"]),
         .library(name: "ConditionalAccessKit", targets: ["ConditionalAccessKit"]),
-        .library(name: "TenantPulseKit", targets: ["TenantPulseKit"])
+        .library(name: "TenantPulseKit", targets: ["TenantPulseKit"]),
+        .library(name: "SignInTriageKit", targets: ["SignInTriageKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -95,6 +96,14 @@ let package = Package(
         // Secure Score. Foundation + AuthKit only, never CredentialKit.
         .target(name: "TenantPulseKit", dependencies: ["AuthKit"]),
 
+        // Sign-in triage, read-only, with the error glossary bundled as a resource so it
+        // works with no network. Foundation + AuthKit only, never CredentialKit.
+        .target(
+            name: "SignInTriageKit",
+            dependencies: ["AuthKit"],
+            resources: [.process("Resources")]
+        ),
+
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
         // the credential path. The isolation guard enforces this.
@@ -121,6 +130,7 @@ let package = Package(
         .testTarget(name: "PrivilegedAccessKitTests", dependencies: ["PrivilegedAccessKit", "AuthKit"]),
         .testTarget(name: "SubscriptionKitTests", dependencies: ["SubscriptionKit", "LicensingKit"]),
         .testTarget(name: "ConditionalAccessKitTests", dependencies: ["ConditionalAccessKit", "AuthKit"]),
-        .testTarget(name: "TenantPulseKitTests", dependencies: ["TenantPulseKit", "AuthKit"])
+        .testTarget(name: "TenantPulseKitTests", dependencies: ["TenantPulseKit", "AuthKit"]),
+        .testTarget(name: "SignInTriageKitTests", dependencies: ["SignInTriageKit", "AuthKit"])
     ]
 )

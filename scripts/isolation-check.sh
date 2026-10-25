@@ -126,6 +126,14 @@ check_module "TenantPulseKit" "Foundation|AuthKit" \
   "PrivilegedAccessKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# SignInTriageKit reads the sign-in log. Same cap.
+check_module "SignInTriageKit" "Foundation|AuthKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "PrivilegedAccessKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 check_module "LicensingKit" "Foundation|CryptoKit|Security" \
   "CredentialKit" \
   "InventoryKit" \

@@ -11,6 +11,7 @@ import PrivilegedAccessKit
 import SubscriptionKit
 import ConditionalAccessKit
 import TenantPulseKit
+import SignInTriageKit
 
 // App root. Owns the one decision the rest of the app depends on: which data source
 // is in play, a live tenant, or demo mode.
@@ -153,6 +154,7 @@ final class AppRootModel: ObservableObject {
         let graph: GraphClient
         let conditionalAccess: ConditionalAccessService
         let tenantPulse: TenantPulseService
+        let signInTriage: SignInTriageService
 
         init(auth: MSALAuthManager) {
             self.auth = auth
@@ -164,6 +166,7 @@ final class AppRootModel: ObservableObject {
             self.graph = graph
             self.conditionalAccess = ConditionalAccessService(graph: graph)
             self.tenantPulse = TenantPulseService(graph: graph)
+            self.signInTriage = SignInTriageService(graph: graph)
         }
 
         /// Live credential provider for one platform, sharing the authenticated session.
@@ -548,6 +551,12 @@ final class AppRootModel: ObservableObject {
                              deniedMessage: "Your organization hasn't approved permission for LAPSlock to read service health, Message Center, app credentials, Intune configuration and Secure Score. An Entra administrator needs to grant it.")
     }
 
+    /// Requests the Sign-in triage scopes, the first time it is opened.
+    func requestSignInTriageConsent() async -> String? {
+        await requestConsent(scopes: SignInTriageScopes.module,
+                             deniedMessage: "Your organization hasn't approved permission for LAPSlock to read the sign-in log, Conditional Access policies and basic user details. An Entra administrator needs to grant it.")
+    }
+
     /// Requests the audit-log scope, only when "who changed this" is tapped.
     func requestConditionalAccessChangesConsent() async -> String? {
         await requestConsent(scopes: ConditionalAccessScopes.changes,
@@ -769,6 +778,7 @@ struct AppRootView: View {
         case .demo:
             ModuleShell(
                 isDemo: true,
+                isPro: true,
                 credentials: CredentialsColumns(
                     makeListModel: {
                         DeviceListModel(
@@ -795,6 +805,9 @@ struct AppRootView: View {
                         ConditionalAccessDetailModel(policy: policy, provider: DemoConditionalAccessProvider())
                     }
                 ),
+                signInTriage: SignInTriageColumns(
+                    makeModel: { SignInTriageModel(provider: DemoSignInTriageProvider()) }
+                ),
                 tenantPulse: TenantPulseColumns(
                     makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider()) }
                 ),
@@ -819,6 +832,7 @@ struct AppRootView: View {
             if let session = root.liveSession {
                 ModuleShell(
                     isDemo: false,
+                    isPro: root.isPro,
                     credentials: CredentialsColumns(
                         makeListModel: {
                             DeviceListModel(
@@ -880,6 +894,10 @@ struct AppRootView: View {
                         },
                         requestConsent: { await root.requestConditionalAccessConsent() },
                         requestChangesConsent: { await root.requestConditionalAccessChangesConsent() }
+                    ),
+                    signInTriage: SignInTriageColumns(
+                        makeModel: { SignInTriageModel(provider: session.signInTriage) },
+                        requestConsent: { await root.requestSignInTriageConsent() }
                     ),
                     tenantPulse: TenantPulseColumns(
                         makeModel: { TenantPulseModel(provider: session.tenantPulse) },

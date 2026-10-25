@@ -1,0 +1,63 @@
+import Foundation
+import AuthKit
+
+// Sign-in triage over Microsoft Graph, through the shared GraphClient. Read-only.
+//
+//   GET /auditLogs/signIns?$filter=...&$top=N   AuditLog.Read.All (+ Policy.Read.All for the
+//                                               applied policies to be present)
+//   GET /users?$filter=startswith(...)          User.ReadBasic.All
+//
+// The log is returned newest first by default and $orderby is not supported on it, so the
+// order is taken as delivered. Report-only policy results need the unknown-enum header or
+// Graph hides them, and a report-only block is exactly what a triage wants to see.
+
+public actor SignInTriageService: SignInTriageProviding {
+
+    private let graph: GraphClient
+
+    public init(graph: GraphClient) {
+        self.graph = graph
+    }
+
+    public static let signInsPath = "/auditLogs/signIns"
+    public static let usersPath = "/users"
+
+    public func searchUsers(prefix: String) async throws -> [DirectoryUser] {
+        let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return [] }
+        let escaped = SignInQuery.escape(trimmed)
+        let request = GraphRequest(
+            path: Self.usersPath,
+            template: Self.usersPath + "?search",
+            query: [
+                URLQueryItem(name: "$filter", value: "startswith(displayName,'" + escaped + "') or startswith(userPrincipalName,'" + escaped + "')"),
+                URLQueryItem(name: "$select", value: "id,displayName,userPrincipalName,mail"),
+                URLQueryItem(name: "$top", value: "10")
+            ],
+            scopes: [SignInTriageScopes.users])
+        do {
+            let page = try await graph.collection(DirectoryUser.self, from: request, maxPages: 1)
+            return page.items.sorted { ($0.displayName ?? "") .localizedCaseInsensitiveCompare($1.displayName ?? "") == .orderedAscending }
+        } catch let error as GraphError {
+            throw SignInTriageError(error)
+        }
+    }
+
+    public func signIns(_ query: SignInQuery) async throws -> [SignInEvent] {
+        let request = GraphRequest(
+            path: Self.signInsPath,
+            template: Self.signInsPath + "?user",
+            query: [
+                URLQueryItem(name: "$filter", value: query.filter()),
+                URLQueryItem(name: "$top", value: String(query.fetchCount))
+            ],
+            headers: ["Prefer": "include-unknown-enum-members"],
+            scopes: [SignInTriageScopes.signIns, SignInTriageScopes.policies])
+        do {
+            let page = try await graph.collection(SignInEvent.self, from: request, maxPages: 1)
+            return query.apply(page.items)
+        } catch let error as GraphError {
+            throw SignInTriageError(error)
+        }
+    }
+}

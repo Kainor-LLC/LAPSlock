@@ -15,6 +15,7 @@
 		8769AA963048CB430093ADD6 /* PrivilegedAccessKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8769AA953048CB430093ADD6 /* PrivilegedAccessKit */; };
 		87CA00013052000100000002 /* ConditionalAccessKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000001 /* ConditionalAccessKit */; };
 		87CA00013052000100000004 /* TenantPulseKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000003 /* TenantPulseKit */; };
+		87CA00013052000100000006 /* SignInTriageKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000005 /* SignInTriageKit */; };
 		8769AA9A304A023D0093ADD6 /* SubscriptionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8769AA99304A023D0093ADD6 /* SubscriptionKit */; };
 		87C94BB73042981F009D768F /* LicensingKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87C94BB63042981F009D768F /* LicensingKit */; };
 		87C94BB930429849009D768F /* AuthKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87C94BB830429849009D768F /* AuthKit */; };
@@ -54,6 +55,7 @@
 				8769AA963048CB430093ADD6 /* PrivilegedAccessKit in Frameworks */,
 				87CA00013052000100000002 /* ConditionalAccessKit in Frameworks */,
 				87CA00013052000100000004 /* TenantPulseKit in Frameworks */,
+				87CA00013052000100000006 /* SignInTriageKit in Frameworks */,
 				87C94BB73042981F009D768F /* LicensingKit in Frameworks */,
 				8769AA9A304A023D0093ADD6 /* SubscriptionKit in Frameworks */,
 				87177D8C302FCD330009BB78 /* InventoryKit in Frameworks */,
@@ -124,6 +126,7 @@
 				8769AA99304A023D0093ADD6 /* SubscriptionKit */,
 				87CA00013052000100000001 /* ConditionalAccessKit */,
 				87CA00013052000100000003 /* TenantPulseKit */,
+				87CA00013052000100000005 /* SignInTriageKit */,
 			);
 			productName = lapslock;
 			productReference = 8734CC50302FB6650056D699 /* lapslock.app */;
@@ -467,6 +470,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = TenantPulseKit;
+		};
+		87CA00013052000100000005 /* SignInTriageKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = SignInTriageKit;
 		};
 		87C94BB63042981F009D768F /* LicensingKit */ = {
 			isa = XCSwiftPackageProductDependency;

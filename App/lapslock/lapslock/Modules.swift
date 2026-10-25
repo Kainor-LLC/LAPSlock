@@ -2,6 +2,7 @@ import SwiftUI
 import InventoryKit
 import ConditionalAccessKit
 import TenantPulseKit
+import SignInTriageKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -26,6 +27,7 @@ import TenantPulseKit
 enum AppModule: String, CaseIterable, Identifiable {
     case credentials
     case privilegedAccess
+    case signInTriage
     case tenantPulse
     case conditionalAccess
 
@@ -35,6 +37,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "LAPSlock"
         case .privilegedAccess:  return "Privileged access"
+        case .signInTriage:      return "Sign-in triage"
         case .tenantPulse:       return "Tenant pulse"
         case .conditionalAccess: return "Conditional Access"
         }
@@ -44,7 +47,8 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "LAPS passwords and BitLocker keys"
         case .privilegedAccess:  return "Activate an eligible role or group"
-        case .tenantPulse:       return "Health, Message Center, expiring items, Secure Score"
+        case .signInTriage:      return "Why a sign-in failed, and which policy blocked it"
+        case .tenantPulse:       return "Health, Message Center, expiries, Secure Score"
         case .conditionalAccess: return "Policies, read-only, and what changed"
         }
     }
@@ -53,6 +57,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "key.horizontal"
         case .privilegedAccess:  return "person.badge.key"
+        case .signInTriage:      return "person.crop.circle.badge.questionmark"
         case .tenantPulse:       return "waveform.path.ecg"
         case .conditionalAccess: return "checkmark.shield"
         }
@@ -64,8 +69,17 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return true
         case .privilegedAccess:  return false
+        case .signInTriage:      return true
         case .tenantPulse:       return true
         case .conditionalAccess: return true
+        }
+    }
+
+    /// Pro-only modules, decision D2. Demo mode shows them so App Review can evaluate.
+    var requiresPro: Bool {
+        switch self {
+        case .signInTriage: return true
+        default:            return false
         }
     }
 
@@ -98,6 +112,12 @@ extension Notification.Name {
     static let revealMeterDidChange = Notification.Name("lapslock.revealMeterDidChange")
 }
 
+/// What the Sign-in triage module needs from the root, built once per session.
+struct SignInTriageColumns {
+    let makeModel: @MainActor () -> SignInTriageModel
+    var requestConsent: (() async -> String?)? = nil
+}
+
 /// What the Tenant pulse module needs from the root, built once per session.
 struct TenantPulseColumns {
     let makeModel: @MainActor () -> TenantPulseModel
@@ -127,7 +147,10 @@ struct CredentialsColumns {
 
 struct ModuleShell: View {
     let isDemo: Bool
+    /// Pro-only modules show their gate when false. Demo passes true.
+    let isPro: Bool
     private let credentials: CredentialsColumns
+    private let signInTriage: SignInTriageColumns
     private let conditionalAccess: ConditionalAccessColumns
     private let tenantPulse: TenantPulseColumns
     private let settingsBuilder: () -> SettingsView
@@ -138,10 +161,12 @@ struct ModuleShell: View {
     @StateObject private var listModel: DeviceListModel
     @StateObject private var policyModel: ConditionalAccessListModel
     @StateObject private var pulseModel: TenantPulseModel
+    @StateObject private var triageModel: SignInTriageModel
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
     @State private var selectedPolicyId: String?
     @State private var selectedPulseItem: String?
+    @State private var selectedSignInId: String?
     /// All three columns from the first frame. The default is `.automatic`, which on an
     /// iPad in portrait opens with the sidebar and the list both collapsed and only "No
     /// device selected" on screen, two taps from anything useful. Ignored on iPhone, where
@@ -154,14 +179,18 @@ struct ModuleShell: View {
 
     init(
         isDemo: Bool,
+        isPro: Bool,
         credentials: CredentialsColumns,
         conditionalAccess: ConditionalAccessColumns,
+        signInTriage: SignInTriageColumns,
         tenantPulse: TenantPulseColumns,
         settingsBuilder: @escaping () -> SettingsView,
         privilegedColumn: (() -> PrivilegedAccessView)?
     ) {
         self.isDemo = isDemo
+        self.isPro = isPro
         self.credentials = credentials
+        self.signInTriage = signInTriage
         self.conditionalAccess = conditionalAccess
         self.tenantPulse = tenantPulse
         self.settingsBuilder = settingsBuilder
@@ -169,6 +198,7 @@ struct ModuleShell: View {
         _listModel = StateObject(wrappedValue: credentials.makeListModel())
         _policyModel = StateObject(wrappedValue: conditionalAccess.makeListModel())
         _pulseModel = StateObject(wrappedValue: tenantPulse.makeModel())
+        _triageModel = StateObject(wrappedValue: signInTriage.makeModel())
         _selectedModule = State(initialValue: AppModule.lastUsed)
     }
 
@@ -191,6 +221,7 @@ struct ModuleShell: View {
             selectedDeviceId = nil
             selectedPolicyId = nil
             selectedPulseItem = nil
+            selectedSignInId = nil
             if let module { AppModule.lastUsed = module }
         }
         .onChange(of: selectedDeviceId) { _, id in
@@ -259,6 +290,22 @@ struct ModuleShell: View {
                 // the list where it has always been. Regular width shows one gear, not two.
                 settingsBuilder: sizeClass == .compact ? settingsBuilder : nil
             )
+        case .signInTriage?:
+            if isPro || isDemo {
+                SignInTriageView(
+                    model: triageModel,
+                    isDemo: isDemo,
+                    selection: $selectedSignInId,
+                    requestConsent: signInTriage.requestConsent
+                )
+            } else {
+                ProGateView(
+                    title: "Sign-in triage is part of Pro",
+                    detail: "Search a person, see their last sign-ins, and read why each one failed with the policy that blocked it named. Pro also removes the reveal limit.",
+                    openSettings: { showingSettings = true }
+                )
+                .navigationTitle(AppModule.signInTriage.title)
+            }
         case .tenantPulse?:
             TenantPulseView(
                 model: pulseModel,
@@ -304,6 +351,19 @@ struct ModuleShell: View {
                     Label("No device selected", systemImage: "laptopcomputer")
                 } description: {
                     Text("Pick a device from the list, or search for one.")
+                }
+            }
+        case .signInTriage?:
+            if let id = selectedSignInId, let event = triageModel.signIn(id) {
+                SignInDetailView(event: event, glossary: triageModel.glossary)
+                    .id(id)
+            } else {
+                ContentUnavailableView {
+                    Label("Sign-in triage", systemImage: "person.crop.circle.badge.questionmark")
+                } description: {
+                    Text(isPro || isDemo
+                         ? "Find a person, then tap a sign-in to see why it went the way it did."
+                         : "Available with Pro.")
                 }
             }
         case .tenantPulse?:
