@@ -39,6 +39,10 @@ struct PrivilegedAccessView: View {
     /// Re-reads a request PIM already created, for the "Check again" button. Optional so a
     /// preview or a caller that cannot re-check simply does not offer one.
     var recheck: ((String, EligibleAccess) async -> Result<ActivationOutcome, PrivilegedAccessError>)?
+    /// True when this is a column of the module shell rather than a sheet. A column has no
+    /// Cancel or Done, the shell's navigation bar is already there, and a nested
+    /// NavigationStack inside a collapsed split view is the one thing SwiftUI refuses.
+    var isEmbedded: Bool = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -64,31 +68,50 @@ struct PrivilegedAccessView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                switch phase {
-                case .loading:
-                    Section { HStack { ProgressView(); Text("Checking what you can activate").padding(.leading, 6) } }
-                case .ready, .activating:
-                    if let failure { failureSection(failure) }
-                    if !eligible.isEmpty {
-                        rolesSection
-                        justificationSection
-                        activateSection
-                    }
-                case .finished:
-                    outcomeSection
+        if isEmbedded {
+            form
+        } else {
+            NavigationStack { form }
+        }
+    }
+
+    private var form: some View {
+        Form {
+            switch phase {
+            case .loading:
+                Section { HStack { ProgressView(); Text("Checking what you can activate").padding(.leading, 6) } }
+            case .ready, .activating:
+                if let failure { failureSection(failure) }
+                if !eligible.isEmpty {
+                    rolesSection
+                    justificationSection
+                    activateSection
                 }
+            case .finished:
+                outcomeSection
+                if isEmbedded { startOverSection }
             }
-            .navigationTitle("Activate access")
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
+        }
+        .navigationTitle("Activate access")
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            if !isEmbedded {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(phase == .finished ? "Done" : "Cancel") { dismiss() }
                 }
             }
-            .task { await load() }
-            .disabled(phase == .activating)
+        }
+        .task { await load() }
+        .disabled(phase == .activating)
+    }
+
+    /// A column has no Done to tap, so the way back to the list of eligible access is a row.
+    private var startOverSection: some View {
+        Section {
+            Button("Activate something else") {
+                outcome = nil
+                Task { await load() }
+            }
         }
     }
 
@@ -437,7 +460,9 @@ struct PrivilegedAccessView: View {
         if let deviceName, !deviceName.isEmpty {
             return "Retrieving the local administrator password for \(deviceName)"
         }
-        return "Retrieving a local administrator password"
+        // From the module rather than from a device: the reason is whatever the shift
+        // needs, and a LAPS-shaped default would be wrong more often than right.
+        return isEmbedded ? "On-call work" : "Retrieving a local administrator password"
     }
 
     private func performActivation() async {

@@ -176,15 +176,17 @@ final class DeviceListModel: ObservableObject {
         shortcuts = shortcutStore.toggleFavourite(device.id, tenantId: tenantId)
     }
 
-    /// Records that a device was opened. Called from the detail screen's disappearance,
-    /// alongside the meter refresh, so one hook covers both.
+    /// Records that a device was opened. Called by the shell when the selection changes,
+    /// which is the one event that means the same thing on iPhone and on iPad. The detail
+    /// screen's disappearance used to be the hook, and in a split view it never disappears.
     func recordVisit(_ device: ManagedDeviceSummary) {
         guard let shortcutStore, let tenantId else { return }
         shortcuts = shortcutStore.recordVisit(device.id, tenantId: tenantId)
     }
 
-    /// Re-reads the meter. Called when the list appears, which includes popping back
-    /// from a detail screen where a reveal may have just been spent.
+    /// Re-reads the meter. Called by the shell on selection change and whenever the meter
+    /// announces a charge, so the count beside the list is right while a detail screen
+    /// stays open on iPad.
     func refreshRemaining() {
         remainingReveals = meter.remaining(isPro: isPro)
     }
@@ -359,67 +361,64 @@ final class DeviceListModel: ObservableObject {
 }
 
 struct DeviceListView: View {
-    @StateObject var model: DeviceListModel
+    /// Owned by the shell, which also owns the selection, so the list and the detail column
+    /// read one model and one answer to which device is open.
+    @ObservedObject var model: DeviceListModel
     let isDemo: Bool
+    /// The open device, by id. Set by a tap here, cleared by the shell when the module
+    /// changes, and cleared by the system on the way back on iPhone.
+    @Binding var selection: String?
+    /// Driven by Cmd-K from the shell. `searchable(isPresented:)` is what lets a keyboard
+    /// shortcut land in the search field at all.
+    @Binding var searchPresented: Bool
 
     /// The MSP organization picker, or nil when this tier cannot switch. Passing nil rather
-
     /// than disabling a visible control is deliberate: a single-organization admin should
-
     /// not see chrome for a feature that does not apply to them.
-
     var tenantSwitcher: (() -> TenantSwitcherView)? = nil
-
-    /// Refreshes tenant state when the list appears. Note the NavigationStack does not
-
-    /// disappear when a detail view is pushed, so this fires once at launch, which is
-
-    /// enough here, because switching organizations happens through the sheet below.
-
+    /// Refreshes tenant state when the list first appears. Once is enough here, because
+    /// switching organizations happens through the sheet below.
     var onAppearRefresh: (() async -> Void)? = nil
     /// Which organization's devices these are, and whether that is the account's own.
     /// Nil in demo, where the demo banner already says there is no tenant.
     var tenantBanner: (label: String, isAwayFromHome: Bool)? = nil
-    /// Opens Settings. Injected so the list doesn't need to know how consent is requested.
-    let settingsBuilder: () -> SettingsView
-    /// Builds the detail screen for a device. Injected so the list doesn't need to know
-    /// how credentials are provided.
-    let detailBuilder: (ManagedDeviceSummary) -> DeviceDetailView
+    /// Opens Settings. Nil whenever the shell's sidebar is on screen with its own gear,
+    /// which is every regular-width layout. In a compact stack the sidebar is a swipe
+    /// away, so the gear stays here where it has always been.
+    var settingsBuilder: (() -> SettingsView)? = nil
 
     @State private var showingSettings = false
-
-
     @State private var showingTenantSwitcher = false
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if model.isLoading && model.devices.isEmpty {
-                    loadingState
-                } else if let error = model.errorMessage, model.devices.isEmpty {
-                    errorState(error)
-                } else if model.devices.isEmpty {
-                    emptyState
-                } else {
-                    deviceList
+        Group {
+            if model.isLoading && model.devices.isEmpty {
+                loadingState
+            } else if let error = model.errorMessage, model.devices.isEmpty {
+                errorState(error)
+            } else if model.devices.isEmpty {
+                emptyState
+            } else {
+                deviceList
+            }
+        }
+        .navigationTitle("Devices")
+        // Opaque nav bar: otherwise list rows scroll visibly behind the title.
+        .toolbarBackground(.visible, for: .navigationBar)
+        .searchable(text: $model.query, isPresented: $searchPresented, prompt: "Device, user, or serial")
+        .refreshable { await model.load() }
+        .toolbar {
+            if tenantSwitcher != nil {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingTenantSwitcher = true
+                    } label: {
+                        Image(systemName: "building.2")
+                    }
+                    .accessibilityLabel("Switch organization")
                 }
             }
-            .navigationTitle("Devices")
-            // Opaque nav bar: otherwise list rows scroll visibly behind the title.
-            .toolbarBackground(.visible, for: .navigationBar)
-            .searchable(text: $model.query, prompt: "Device, user, or serial")
-            .refreshable { await model.load() }
-            .toolbar {
-                if tenantSwitcher != nil {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            showingTenantSwitcher = true
-                        } label: {
-                            Image(systemName: "building.2")
-                        }
-                        .accessibilityLabel("Switch organization")
-                    }
-                }
+            if settingsBuilder != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showingSettings = true
@@ -429,35 +428,30 @@ struct DeviceListView: View {
                     .accessibilityLabel("Settings")
                 }
             }
-            .sheet(isPresented: $showingSettings) {
-                settingsBuilder()
-            }
-            .sheet(isPresented: $showingTenantSwitcher) {
-                if let tenantSwitcher { tenantSwitcher() }
-            }
-            .task { await onAppearRefresh?() }
-            .safeAreaInset(edge: .top) {
-                if isDemo {
-                    DemoBanner()
-                } else if let tenantBanner {
-                    TenantBanner(label: tenantBanner.label, isAwayFromHome: tenantBanner.isAwayFromHome)
-                }
-            }
         }
+        .sheet(isPresented: $showingSettings) {
+            if let settingsBuilder { settingsBuilder() }
+        }
+        .sheet(isPresented: $showingTenantSwitcher) {
+            if let tenantSwitcher { tenantSwitcher() }
+        }
+        .task { await onAppearRefresh?() }
         .task {
             if model.devices.isEmpty { await model.load() }
         }
-        .onAppear {
-            // Also fires on the way back from a detail screen, which is exactly when
-            // the count may have changed.
-            model.refreshRemaining()
+        .safeAreaInset(edge: .top) {
+            if isDemo {
+                DemoBanner()
+            } else if let tenantBanner {
+                TenantBanner(label: tenantBanner.label, isAwayFromHome: tenantBanner.isAwayFromHome)
+            }
         }
     }
 
     // MARK: - states
 
     private var deviceList: some View {
-        List {
+        List(selection: $selection) {
             // Scrolls away with the content rather than pinning to the top. Present on
             // arrival so nobody is surprised at a broken machine, absent once you are
             // working, because this audience is unusually allergic to being sold to.
@@ -477,18 +471,10 @@ struct DeviceListView: View {
             }
 
             ForEach(model.visibleDevices) { device in
-                NavigationLink {
-                    // Refresh on the way BACK, not on the list's onAppear. A
-                    // NavigationStack does not disappear when a detail is pushed onto
-                    // it, so onAppear on the stack fires once at launch and never again.
-                    // The detail view's disappearance is the actual moment a reveal may
-                    // have been spent.
-                    detailBuilder(device)
-                        .onDisappear {
-                            model.refreshRemaining()
-                            model.recordVisit(device)
-                        }
-                } label: {
+                // A value link, not a destination link: the shell owns the selection and
+                // builds the detail column from it, which is what makes the same row work
+                // beside a detail pane on iPad and above a pushed one on iPhone.
+                NavigationLink(value: device.id) {
                     DeviceRow(device: device)
                 }
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
@@ -545,13 +531,7 @@ struct DeviceListView: View {
         if !devices.isEmpty {
             Section {
                 ForEach(devices) { device in
-                    NavigationLink {
-                        detailBuilder(device)
-                            .onDisappear {
-                                model.refreshRemaining()
-                                model.recordVisit(device)
-                            }
-                    } label: {
+                    NavigationLink(value: device.id) {
                         DeviceRow(device: device)
                     }
                 }

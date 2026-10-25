@@ -707,12 +707,28 @@ struct AppRootView: View {
             signedOut
 
         case .demo:
-            DeviceListView(
-                model: DeviceListModel(
-                    inventory: DemoInventoryProvider(),
-                    meter: RevealMeters.demo
-                ),
+            ModuleShell(
                 isDemo: true,
+                credentials: CredentialsColumns(
+                    makeListModel: {
+                        DeviceListModel(
+                            inventory: DemoInventoryProvider(),
+                            meter: RevealMeters.demo
+                        )
+                    },
+                    detailBuilder: { device in
+                        DeviceDetailView(
+                            model: DeviceDetailModel(
+                                device: device,
+                                provider: DemoLapsProvider(platform: device.platform),
+                                bitLocker: DemoBitLockerService(),
+                                isDemo: true,
+                                rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
+                                meter: RevealMeters.demo
+                            )
+                        )
+                    }
+                ),
                 settingsBuilder: {
                     SettingsView(
                         settings: AppSettings.shared,
@@ -726,57 +742,68 @@ struct AppRootView: View {
                         subscriptions: root.subscriptions
                     )
                 },
-                detailBuilder: { device in
-                    DeviceDetailView(
-                        model: DeviceDetailModel(
-                            device: device,
-                            provider: DemoLapsProvider(platform: device.platform),
-                            bitLocker: DemoBitLockerService(),
-                            isDemo: true,
-                            rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
-                            meter: RevealMeters.demo
-                        )
-                    )
-                }
+                // No account, nothing to activate. The column says so rather than hiding.
+                privilegedColumn: nil
             )
 
         case .live:
             if let session = root.liveSession {
-                DeviceListView(
-                    model: DeviceListModel(
-                        inventory: session.inventory,
-                        meter: RevealMeters.live,
-                        isPro: root.isPro,
-                        nameResolver: session.names,
-                        settings: AppSettings.shared,
-                        shortcutStore: DeviceShortcutStores.live,
-                        // Keyed by the tenant being OPERATED in, not the signed-in one, so an
-                        // MSP's favourites follow the customer they switched to.
-                        tenantId: root.operatingTenantId ?? root.signedInTenantId
-                    ),
+                ModuleShell(
                     isDemo: false,
-                    tenantSwitcher: root.canSwitchTenants ? {
-                        TenantSwitcherView(
-                            homeTenantId: root.signedInTenantId ?? "",
-                            homeLabel: root.signedInDomain ?? "Your organization",
-                            operatingTenantId: root.operatingTenantId ?? root.signedInTenantId,
-                            saved: root.savedTenants,
-                            resolve: { await root.resolveTenant($0) },
-                            switchTo: { await root.switchTenant(to: $0) },
-                            remember: { root.rememberTenant($0) },
-                            forget: { root.forgetTenant($0) },
-                            consentURL: { tenant in
-                                AdminConsentLink.url(
-                                    clientId: AuthConfiguration.vendorDefault.clientId,
-                                    tenant: tenant
-                                )
-                            }
-                        )
-                    } : nil,
-                    onAppearRefresh: { await root.refreshTenants() },
-                    tenantBanner: root.operatingTenantLabel.map {
-                        (label: $0, isAwayFromHome: root.isOperatingAwayFromHome)
-                    },
+                    credentials: CredentialsColumns(
+                        makeListModel: {
+                            DeviceListModel(
+                                inventory: session.inventory,
+                                meter: RevealMeters.live,
+                                isPro: root.isPro,
+                                nameResolver: session.names,
+                                settings: AppSettings.shared,
+                                shortcutStore: DeviceShortcutStores.live,
+                                // Keyed by the tenant being OPERATED in, not the signed-in
+                                // one, so an MSP's favourites follow the customer they
+                                // switched to.
+                                tenantId: root.operatingTenantId ?? root.signedInTenantId
+                            )
+                        },
+                        tenantSwitcher: root.canSwitchTenants ? {
+                            TenantSwitcherView(
+                                homeTenantId: root.signedInTenantId ?? "",
+                                homeLabel: root.signedInDomain ?? "Your organization",
+                                operatingTenantId: root.operatingTenantId ?? root.signedInTenantId,
+                                saved: root.savedTenants,
+                                resolve: { await root.resolveTenant($0) },
+                                switchTo: { await root.switchTenant(to: $0) },
+                                remember: { root.rememberTenant($0) },
+                                forget: { root.forgetTenant($0) },
+                                consentURL: { tenant in
+                                    AdminConsentLink.url(
+                                        clientId: AuthConfiguration.vendorDefault.clientId,
+                                        tenant: tenant
+                                    )
+                                }
+                            )
+                        } : nil,
+                        onAppearRefresh: { await root.refreshTenants() },
+                        tenantBanner: root.operatingTenantLabel.map {
+                            (label: $0, isAwayFromHome: root.isOperatingAwayFromHome)
+                        },
+                        detailBuilder: { device in
+                            DeviceDetailView(
+                                model: DeviceDetailModel(
+                                    device: device,
+                                    provider: session.provider(for: device.platform),
+                                    bitLocker: session.bitLocker(),
+                                    isDemo: false,
+                                    rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
+                                    meter: RevealMeters.live,
+                                    isPro: root.isPro
+                                ),
+                                privilegedSheet: {
+                                    privilegedAccessView(deviceName: device.deviceName, embedded: false)
+                                }
+                            )
+                        }
+                    ),
                     settingsBuilder: {
                         SettingsView(
                             settings: AppSettings.shared,
@@ -793,52 +820,13 @@ struct AppRootView: View {
                             requestPrivilegedConsent: { await root.requestPrivilegedActivationConsent() },
                             requestUserNamesConsent: { await root.requestUserNamesConsent() },
                             privilegedSheet: {
-                                PrivilegedAccessView(
-                                    deviceName: nil,
-                                    loadEligible: { await root.loadEligibleAccess() },
-                                    activate: { access, justification, ticket, duration in
-                                        await root.activatePrivilegedAccess(
-                                            access, justification: justification,
-                                            ticketNumber: ticket, duration: duration)
-                                    },
-                                    requestConsent: { await root.requestPrivilegedActivationConsent() },
-                                    policy: { await root.privilegedPolicy(for: $0) },
-                                    recheck: { requestId, access in
-                                        await root.recheckPrivilegedRequest(requestId, for: access)
-                                    }
-                                )
+                                privilegedAccessView(deviceName: nil, embedded: false)
                             },
                             subscriptions: root.subscriptions
                         )
                     },
-                    detailBuilder: { device in
-                        DeviceDetailView(
-                            model: DeviceDetailModel(
-                                device: device,
-                                provider: session.provider(for: device.platform),
-                                bitLocker: session.bitLocker(),
-                                isDemo: false,
-                                rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
-                                meter: RevealMeters.live,
-                                isPro: root.isPro
-                            ),
-                            privilegedSheet: {
-                                PrivilegedAccessView(
-                                    deviceName: device.deviceName,
-                                    loadEligible: { await root.loadEligibleAccess() },
-                                    activate: { access, justification, ticket, duration in
-                                        await root.activatePrivilegedAccess(
-                                            access, justification: justification,
-                                            ticketNumber: ticket, duration: duration)
-                                    },
-                                    requestConsent: { await root.requestPrivilegedActivationConsent() },
-                                    policy: { await root.privilegedPolicy(for: $0) },
-                                    recheck: { requestId, access in
-                                        await root.recheckPrivilegedRequest(requestId, for: access)
-                                    }
-                                )
-                            }
-                        )
+                    privilegedColumn: {
+                        privilegedAccessView(deviceName: nil, embedded: true)
                     }
                 )
             } else {
@@ -847,6 +835,26 @@ struct AppRootView: View {
                 ProgressView().task { await root.signOut() }
             }
         }
+    }
+
+    /// One construction for the three places PIM activation appears: the module column,
+    /// the sheet from a device, and the sheet from Settings. Same closures, same root.
+    private func privilegedAccessView(deviceName: String?, embedded: Bool) -> PrivilegedAccessView {
+        PrivilegedAccessView(
+            deviceName: deviceName,
+            loadEligible: { await root.loadEligibleAccess() },
+            activate: { access, justification, ticket, duration in
+                await root.activatePrivilegedAccess(
+                    access, justification: justification,
+                    ticketNumber: ticket, duration: duration)
+            },
+            requestConsent: { await root.requestPrivilegedActivationConsent() },
+            policy: { await root.privilegedPolicy(for: $0) },
+            recheck: { requestId, access in
+                await root.recheckPrivilegedRequest(requestId, for: access)
+            },
+            isEmbedded: embedded
+        )
     }
 
     @ViewBuilder
@@ -916,24 +924,14 @@ struct AppRootView: View {
 // MARK: - previews
 
 #Preview("Device list (demo)") {
-    DeviceListView(
-        model: DeviceListModel(inventory: DemoInventoryProvider(latency: .milliseconds(1))),
-        isDemo: true,
-        settingsBuilder: {
-            SettingsView(settings: AppSettings.shared, requestRotationConsent: { nil }, isDemo: true, tenantId: nil)
-        },
-        detailBuilder: { device in
-            DeviceDetailView(
-                model: DeviceDetailModel(
-                    device: device,
-                    provider: DemoLapsProvider(platform: device.platform),
-                    bitLocker: DemoBitLockerService(),
-                    isDemo: true,
-                    rotationEnabled: AppSettings.shared.bitLockerRotationEnabled
-                )
-            )
-        }
-    )
+    NavigationStack {
+        DeviceListView(
+            model: DeviceListModel(inventory: DemoInventoryProvider(latency: .milliseconds(1))),
+            isDemo: true,
+            selection: .constant(nil),
+            searchPresented: .constant(false)
+        )
+    }
 }
 
 #Preview("Windows detail (demo)") {

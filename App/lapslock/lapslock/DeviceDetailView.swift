@@ -402,6 +402,7 @@ final class DeviceDetailModel: ObservableObject {
             // failure must never cost a credit, the user pays for reveals that actually
             // produced a password, and nothing else.
             remainingReveals = meter.recordReveal(deviceIdentifier: device.id, isPro: isPro)
+            NotificationCenter.default.post(name: .revealMeterDidChange, object: nil)
             await Self.record(.credentialReveal, .success,
                               endpoint: DiagnosticEndpoint.deviceLocalCredentials,
                               platform: device.platform, since: fetchStarted)
@@ -478,6 +479,7 @@ final class DeviceDetailModel: ObservableObject {
             revealedItem = .bitLockerKey(id: info.id)
             beginVisibleWindow()
             remainingReveals = meter.recordReveal(deviceIdentifier: device.id, isPro: isPro)
+            NotificationCenter.default.post(name: .revealMeterDidChange, object: nil)
             await Self.record(.credentialReveal, .success,
                               endpoint: "/v1.0/informationProtection/bitlocker/recoveryKeys/{id}",
                               platform: device.platform, since: started)
