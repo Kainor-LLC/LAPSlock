@@ -437,7 +437,7 @@ struct ConditionalAccessDetailView: View {
     }
 
     private var applicationsSection: some View {
-        Section("Target resources") {
+        Section("Target Resources") {
             assignmentRows("Include", keywords: policy.conditions.applications.includeApplications, label: ConditionalAccessVocabulary.applicationLabel, kind: .application)
             assignmentRows("Exclude", keywords: policy.conditions.applications.excludeApplications, label: ConditionalAccessVocabulary.applicationLabel, kind: .application)
             if !policy.conditions.applications.includeUserActions.isEmpty {

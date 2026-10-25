@@ -262,7 +262,7 @@ struct PrivilegedAccessView: View {
                 }
                 checkAgainButton(requestId)
             } header: {
-                Text("Accepted — no approval needed")
+                Text("Accepted, No Approval Needed")
             } footer: {
                 Text("""
                     Microsoft accepted the activation and is applying it now. Nobody has to \
@@ -280,7 +280,7 @@ struct PrivilegedAccessView: View {
                     .foregroundStyle(.secondary)
                 checkAgainButton(requestId)
             } header: {
-                Text("Requested, not yet active")
+                Text("Requested, Not Yet Active")
             } footer: {
                 Text("""
                     Your organization requires someone to approve this activation, so nothing \
@@ -299,7 +299,7 @@ struct PrivilegedAccessView: View {
                 }
                 checkAgainButton(requestId)
             } header: {
-                Text("Requested, not yet active")
+                Text("Requested, Not Yet Active")
             } footer: {
                 Text("""
                     Microsoft created the request but has not reported it as active. If your \
@@ -315,7 +315,7 @@ struct PrivilegedAccessView: View {
                     Text(detail).font(.footnote).foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Nothing was activated")
+                Text("Nothing Was Activated")
             } footer: {
                 Text("""
                     Microsoft created the request and then refused it, so nothing is active \
@@ -415,7 +415,7 @@ struct PrivilegedAccessView: View {
                 .disabled(isRequestingConsent)
             }
         } header: {
-            Text("Couldn't activate")
+            Text("Couldn't Activate")
         }
     }
 

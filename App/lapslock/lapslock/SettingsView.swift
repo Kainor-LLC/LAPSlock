@@ -256,7 +256,7 @@ struct SettingsView: View {
         Section {
             Toggle("Require Face ID to open LAPSlock", isOn: $settings.appLockEnabled)
         } header: {
-            Text("App lock")
+            Text("App Lock")
         } footer: {
             Text("""
                 Off by default. Separate from the check before each password reveal, which \
@@ -307,7 +307,7 @@ struct SettingsView: View {
                     .foregroundStyle(.red)
             }
         } header: {
-            Text("Device list")
+            Text("Device List")
         } footer: {
             Text("""
                 Off by default. Intune often leaves a device's primary user as a sign-in \
@@ -450,7 +450,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Privileged access")
+                Text("Privileged Access")
             } footer: {
                 Text("""
                     If your role is eligible through Privileged Identity Management rather than permanently assigned, LAPSlock can activate it here instead of sending you to the portal.
@@ -774,7 +774,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             } header: {
-                Text("Organization license")
+                Text("Organization License")
             } footer: {
                 Text(licenseIsForAnotherOrganization
                     ? """

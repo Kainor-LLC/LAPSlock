@@ -67,7 +67,7 @@ struct TenantSwitcherView: View {
         Section {
             row(label: homeLabel, tenantId: homeTenantId, isHome: true)
         } header: {
-            Text("Your organization")
+            Text("Your Organization")
         }
     }
 
@@ -112,7 +112,7 @@ struct TenantSwitcherView: View {
             }
             .disabled(entry.trimmingCharacters(in: .whitespaces).isEmpty || isWorking)
         } header: {
-            Text("Add a customer organization")
+            Text("Add a Customer Organization")
         } footer: {
             Text("A domain such as contoso.com, or a tenant ID if you have it.")
         }
@@ -138,7 +138,7 @@ struct TenantSwitcherView: View {
                 }
             }
         } header: {
-            Text("Couldn't switch")
+            Text("Couldn't Switch")
         }
     }
 
@@ -157,7 +157,7 @@ struct TenantSwitcherView: View {
                         }
                 }
             } header: {
-                Text("Customer organizations")
+                Text("Customer Organizations")
             } footer: {
                 Text("""
                     Kept on this device only. LAPSlock never sends this list anywhere — \

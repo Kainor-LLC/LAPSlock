@@ -911,7 +911,7 @@ struct DeviceDetailView: View {
                 }
             }
         } header: {
-            Text("Local administrator password")
+            Text("Local Administrator Password")
         } footer: {
             credentialFooter
         }
@@ -1041,7 +1041,7 @@ struct DeviceDetailView: View {
                     }
                 }
             } header: {
-                Text("BitLocker recovery keys")
+                Text("BitLocker Recovery Keys")
             } footer: {
                 bitLockerFooter
             }

@@ -200,7 +200,7 @@ struct TenantPulseView: View {
 
     @ViewBuilder
     private var healthSection: some View {
-        Section("Service health") {
+        Section("Service Health") {
             switch model.health {
             case .idle, .loading:
                 loadingRow("Checking service health…")
