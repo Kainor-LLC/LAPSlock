@@ -101,8 +101,17 @@ enum HingeLayout {
     /// inset on both sides, and half of the inset width landed the boundary 42 points
     /// short of the fold on the first run. The column starts at the leading inset, so its
     /// width is half the full width less that inset.
-    static func contentWidth(fullWidth: CGFloat, leadingInset: CGFloat, open: Bool, ideal: CGFloat) -> CGFloat {
+    ///
+    /// When the sidebar is shown as well, it is part of the left half too: the boundary
+    /// that matters is the one against the detail, so the content column gives up the
+    /// sidebar's width rather than pushing the detail into a sliver, which is what the
+    /// first Device Hub pass showed.
+    static let sidebarWidth: CGFloat = 260
+    static let minimumContent: CGFloat = 180
+
+    static func contentWidth(fullWidth: CGFloat, leadingInset: CGFloat, sidebarShown: Bool, open: Bool, ideal: CGFloat) -> CGFloat {
         guard open else { return ideal }
-        return max(200, (fullWidth / 2 - leadingInset).rounded(.down))
+        let half = (fullWidth / 2 - leadingInset).rounded(.down)
+        return max(minimumContent, sidebarShown ? half - sidebarWidth : half)
     }
 }

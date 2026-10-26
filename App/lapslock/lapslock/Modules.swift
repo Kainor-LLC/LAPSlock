@@ -250,16 +250,26 @@ struct ModuleShell: View {
     var body: some View {
         GeometryReader { geometry in
             let fullWidth = geometry.size.width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing
-            let hingeWidth = HingeLayout.contentWidth(fullWidth: fullWidth, leadingInset: geometry.safeAreaInsets.leading, open: true, ideal: 380)
+            let hingeWidth = HingeLayout.contentWidth(
+                fullWidth: fullWidth,
+                leadingInset: geometry.safeAreaInsets.leading,
+                sidebarShown: columnVisibility == .all,
+                open: true,
+                ideal: 380)
             NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
                 sidebar
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+                    .navigationSplitViewColumnWidth(
+                        min: hingeOpen ? HingeLayout.sidebarWidth : 220,
+                        ideal: HingeLayout.sidebarWidth,
+                        max: hingeOpen ? HingeLayout.sidebarWidth : 320)
             } content: {
                 contentColumn
                     .navigationSplitViewColumnWidth(
                         min: hingeOpen ? hingeWidth : 320,
                         ideal: hingeOpen ? hingeWidth : 380,
                         max: hingeOpen ? hingeWidth : nil)
+                    // The sidebar's own width is read from the same rule, so the two
+                    // columns add up to the left half whether or not it is shown.
             } detail: {
                 // On the phone idiom the split view lays the detail out across the whole
                 // window and slides the content column over it, so without this a
