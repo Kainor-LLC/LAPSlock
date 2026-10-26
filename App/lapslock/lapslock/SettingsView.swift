@@ -1,5 +1,6 @@
 import SwiftUI
 import ActionGateKit
+import NotificationsKit
 import Combine
 import AuthKit
 import CredentialKit
@@ -117,6 +118,10 @@ struct SettingsView: View {
     var shiftLog: (any ShiftLogging)? = nil
     /// The tenant whose lines the export shows.
     var shiftLogTenantId: String? = nil
+    /// The organizations the Notifications section offers a switch for, and where the
+    /// choices are kept. Empty when signed out.
+    var notificationTenants: [NotificationTenant] = []
+    var notificationsStore: (any NotificationPreferencesStoring)? = nil
     /// Tenant id of the signed-in account, offered as an opt-in field in the report.
     let tenantId: String?
     /// Free-tier meter, shared with the list and detail screens so all three read one
@@ -199,6 +204,12 @@ struct SettingsView: View {
                 appLockSection
                 if hasSession {
                     userNamesSection
+                    if let notificationsStore, !notificationTenants.isEmpty {
+                        NotificationsSettingsSection(
+                            model: NotificationsSettingsModel(tenants: notificationTenants, store: notificationsStore),
+                            isPro: isPro,
+                            isDemo: isDemo)
+                    }
                     deviceActionsSection
                     privilegedAccessSection
                     shiftLogSection

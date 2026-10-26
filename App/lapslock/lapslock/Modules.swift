@@ -320,6 +320,13 @@ struct ModuleShell: View {
         .onReceive(NotificationCenter.default.publisher(for: .revealMeterDidChange)) { _ in
             listModel.refreshRemaining()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openModuleFromAlert)) { note in
+            // A tapped notification opens its module in the tenant on screen. (verify) on
+            // device whether an MSP wants the tap to switch tenant as well; today it does not.
+            if let raw = note.userInfo?["module"] as? String, let module = AppModule(rawValue: raw), module.isEnabled {
+                selectedModule = module
+            }
+        }
         .background { keyboardShortcuts }
     }
 

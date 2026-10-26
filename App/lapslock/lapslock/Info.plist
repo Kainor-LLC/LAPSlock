@@ -18,5 +18,13 @@
 		<string>msauthv2</string>
 		<string>msauthv3</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.kainor.lapslock.notifications.refresh</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 </dict>
 </plist>

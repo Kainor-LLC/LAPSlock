@@ -14,6 +14,8 @@ import SecurityKit
 import ThreatDigestKit
 import ActionGateKit
 import DeviceActionsKit
+import NotificationsKit
+import UserNotifications
 import TenantPulseKit
 import SignInTriageKit
 
@@ -46,6 +48,10 @@ struct LAPSlockApp: App {
                     MSALRedirect.handle(url, sourceApplication: nil)
                 }
         }
+        // The notification check. iOS decides when; see AlertsRunner.
+        .backgroundTask(.appRefresh(AlertsRunner.taskIdentifier)) {
+            await AlertsRunner.run()
+        }
     }
 }
 
@@ -73,6 +79,15 @@ struct LAPSlockApp: App {
 /// validates broker responses with a nonce instead (the logs show V2-broker-nonce), which
 /// is what makes nil acceptable here rather than merely tolerated.
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // Alerts while the app is open, and a tap routed to its module.
+        UNUserNotificationCenter.current().delegate = AlertsNotificationDelegate.shared
+        return true
+    }
+
     func application(
         _ app: UIApplication,
         open url: URL,
@@ -302,10 +317,26 @@ final class AppRootModel: ObservableObject {
             organizationTier: Entitlements.live.state(signedInTenantId: signedInTenantId).tier)
         isPro = merged.isPro
         canSwitchTenants = merged.allowsTenantSwitching
+        // Notifications are Pro. A lapsed subscription turns the switches off rather than
+        // leaving a background check running that the admin is no longer paying for.
+        if case .live = mode, !merged.isPro { AlertsRunner.disableAll() }
     }
 
     /// Customer organizations, most recently used first.
     @Published private(set) var savedTenants: [TenantReference] = []
+
+    /// The organizations Notifications offers a switch for: the admin's own, then every
+    /// customer organization an MSP has saved.
+    var notificationTenants: [NotificationTenant] {
+        var list: [NotificationTenant] = []
+        if let home = signedInTenantId {
+            list.append(NotificationTenant(id: home.lowercased(), label: signedInDomain ?? "Your organization"))
+        }
+        for tenant in savedTenants where !list.contains(where: { $0.id == tenant.tenantId }) {
+            list.append(NotificationTenant(id: tenant.tenantId, label: tenant.label))
+        }
+        return list
+    }
     /// The tenant being operated in, which differs from the account's own only for an MSP.
     @Published private(set) var operatingTenantId: String?
 
@@ -404,6 +435,7 @@ final class AppRootModel: ObservableObject {
         guard auth == nil else { return }
         do {
             auth = try MSALAuthManager(config: .vendorDefault)
+            SessionAuth.shared.auth = auth
         } catch {
             signInError = "TenantKeep couldn't start its sign-in system. Reinstalling the app usually fixes this."
         }
@@ -422,6 +454,7 @@ final class AppRootModel: ObservableObject {
         guard let account = await auth.restoreSession() else { return }
         liveSession = LiveSession(auth: auth)
         mode = .live(account)
+        AlertsRunner.unpauseAll()
         recomputeEntitlement()
         await refreshTenants()
     }
@@ -437,6 +470,7 @@ final class AppRootModel: ObservableObject {
             let account = try await auth.signIn()
             liveSession = LiveSession(auth: auth)
             mode = .live(account)
+            AlertsRunner.unpauseAll()
             recomputeEntitlement()
         } catch let error as AuthError {
             // Consent problems get a recovery path, not just an error (§8).
@@ -763,6 +797,10 @@ final class AppRootModel: ObservableObject {
 /// devices.
 private let demoDeviceActions = DemoDeviceActionsProvider()
 
+/// Demo notification choices: in memory, never the Keychain, and never checked in the
+/// background because there is no tenant to check.
+private let demoNotificationPreferences = InMemoryNotificationPreferencesStore()
+
 struct AppRootView: View {
     @StateObject private var root = AppRootModel()
     @StateObject private var appLock = AppLockModel()
@@ -799,6 +837,7 @@ struct AppRootView: View {
                 await root.refreshEntitlementIfDue()
             }
             .onChange(of: scenePhase) { _, phase in
+                if phase == .background { AlertsRunner.scheduleIfNeeded() }
                 // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
                 // grace period, waiting on an Authenticator push, must not return to a lock
                 // screen sitting on top of MSAL's flow.
@@ -865,6 +904,8 @@ struct AppRootView: View {
                         isDemo: true,
                         shiftLog: demoDeviceActions.shiftLog,
                         shiftLogTenantId: DemoDeviceActionsProvider.tenant,
+                        notificationTenants: [NotificationTenant(id: "demo", label: "Demo organization")],
+                        notificationsStore: demoNotificationPreferences,
                         tenantId: nil,
                         meter: RevealMeters.demo,
                         endSession: { await root.signOut() },
@@ -967,6 +1008,8 @@ struct AppRootView: View {
                             isDemo: false,
                             shiftLog: session.shiftLog,
                             shiftLogTenantId: root.operatingTenantId ?? root.signedInTenantId,
+                            notificationTenants: root.notificationTenants,
+                            notificationsStore: AlertsRunner.preferencesStore,
                             tenantId: root.signedInTenantId,
                             meter: RevealMeters.live,
                             isPro: root.isPro,

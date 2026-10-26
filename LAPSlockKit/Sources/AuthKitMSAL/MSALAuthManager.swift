@@ -244,6 +244,20 @@ public actor MSALAuthManager: AuthManaging {
         }
     }
 
+    /// Silent acquisition for one named tenant, leaving `activeTenant` exactly where it
+    /// was. The same §3.3 guard applies: the tenant asked for is the tenant accepted. A
+    /// token that needs interaction is a failure here, never a prompt.
+    public func silentToken(scopes: [String], tenantId: String) async throws -> String {
+        guard let account = pinnedAccount else { throw AuthError.noAccount }
+        guard let pin = TenantPin(expected: tenantId) else { throw AuthError.tenantMismatch }
+        let msalAccount = try application.account(forIdentifier: account.id)
+        let silent = MSALSilentTokenParameters(scopes: scopes, account: msalAccount)
+        silent.authority = try MSALAADAuthority(url: pin.authorityURL)
+        let result = try await recording(.tokenSilent) { try await acquireSilent(silent) }
+        try pin.validate(returnedTenantId: Self.tenantId(of: result))
+        return result.accessToken
+    }
+
     public func signOut(account: AdminAccount) async throws {
         // A throw here means nothing is cached for this account, which is
         // indistinguishable from "already signed out", so absorb it.

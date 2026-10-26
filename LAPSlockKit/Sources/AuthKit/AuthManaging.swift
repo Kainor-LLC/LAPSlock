@@ -42,6 +42,13 @@ public struct AdminAccount: Sendable, Equatable, Identifiable {
 // error and not some other one that happens to also fail the call.
 public extension AuthManaging {
 
+    /// Default: only the tenant already being operated in, silently. Test doubles and the
+    /// demo path get this; `MSALAuthManager` overrides it with a real per-tenant silent
+    /// acquisition.
+    func silentToken(scopes: [String], tenantId: String) async throws -> String {
+        try await token(scopes: scopes, allowInteractive: false)
+    }
+
     /// Default: ignore the challenge and fall through.
     ///
     /// Graph refuses privileged operations, PIM self-activation above all, unless MFA was
@@ -90,6 +97,13 @@ public protocol AuthManaging: Sendable {
     /// carries a default implementation below, so existing conformances and test doubles
     /// still satisfy it without change.
     func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String
+
+    /// A silent token for one named tenant, without changing which tenant the app is
+    /// operating in. Never interactive: this is for the background notification run,
+    /// which has no window to show a prompt in and must not move the foreground's tenant
+    /// under it. A requirement with a default, for the same dispatch reason as the claims
+    /// method above.
+    func silentToken(scopes: [String], tenantId: String) async throws -> String
 
     /// Interactive account selection sign-in (uses /common or /organizations, §2.1).
     @discardableResult

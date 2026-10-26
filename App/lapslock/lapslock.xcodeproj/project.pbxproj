@@ -23,6 +23,7 @@
 		87CA0001305200010000000A /* ThreatDigestKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000009 /* ThreatDigestKit */; };
 		87CA0001305200010000000C /* ActionGateKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000000B /* ActionGateKit */; };
 		87CA0001305200010000000E /* DeviceActionsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000000D /* DeviceActionsKit */; };
+		87CA00013052000100000010 /* NotificationsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000000F /* NotificationsKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -64,6 +65,7 @@
 				87CA0001305200010000000A /* ThreatDigestKit in Frameworks */,
 				87CA0001305200010000000C /* ActionGateKit in Frameworks */,
 				87CA0001305200010000000E /* DeviceActionsKit in Frameworks */,
+				87CA00013052000100000010 /* NotificationsKit in Frameworks */,
 				87C94BB73042981F009D768F /* LicensingKit in Frameworks */,
 				8769AA9A304A023D0093ADD6 /* SubscriptionKit in Frameworks */,
 				87177D8C302FCD330009BB78 /* InventoryKit in Frameworks */,
@@ -139,6 +141,7 @@
 				87CA00013052000100000009 /* ThreatDigestKit */,
 				87CA0001305200010000000B /* ActionGateKit */,
 				87CA0001305200010000000D /* DeviceActionsKit */,
+				87CA0001305200010000000F /* NotificationsKit */,
 			);
 			productName = lapslock;
 			productReference = 8734CC50302FB6650056D699 /* lapslock.app */;
@@ -517,6 +520,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = DeviceActionsKit;
+		};
+		87CA0001305200010000000F /* NotificationsKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = NotificationsKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

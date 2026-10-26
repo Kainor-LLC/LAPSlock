@@ -42,7 +42,8 @@ let package = Package(
         .library(name: "SecurityKit", targets: ["SecurityKit"]),
         .library(name: "ThreatDigestKit", targets: ["ThreatDigestKit"]),
         .library(name: "ActionGateKit", targets: ["ActionGateKit"]),
-        .library(name: "DeviceActionsKit", targets: ["DeviceActionsKit"])
+        .library(name: "DeviceActionsKit", targets: ["DeviceActionsKit"]),
+        .library(name: "NotificationsKit", targets: ["NotificationsKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -129,6 +130,10 @@ let package = Package(
         // hold credential code in its link graph.
         .target(name: "DeviceActionsKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
 
+        // Notifications: what to post and the preferences, from opaque keys the app hands
+        // in. Foundation and Security only; it never sees Graph, a token or a payload.
+        .target(name: "NotificationsKit"),
+
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
         // the credential path. The isolation guard enforces this.
@@ -160,6 +165,7 @@ let package = Package(
         .testTarget(name: "SecurityKitTests", dependencies: ["SecurityKit", "AuthKit"]),
         .testTarget(name: "ThreatDigestKitTests", dependencies: ["ThreatDigestKit"]),
         .testTarget(name: "ActionGateKitTests", dependencies: ["ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
-        .testTarget(name: "DeviceActionsKitTests", dependencies: ["DeviceActionsKit", "ActionGateKit", "AuthKit"])
+        .testTarget(name: "DeviceActionsKitTests", dependencies: ["DeviceActionsKit", "ActionGateKit", "AuthKit"]),
+        .testTarget(name: "NotificationsKitTests", dependencies: ["NotificationsKit"])
     ]
 )

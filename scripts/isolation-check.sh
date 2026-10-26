@@ -159,6 +159,18 @@ check_module "DeviceActionsKit" "Foundation|AuthKit|ActionGateKit|PrivilegedAcce
   "ThreatDigestKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# NotificationsKit decides what reaches the lock screen. Foundation and Security only, so
+# nothing from Graph, no token and no payload can reach a notification's text.
+check_module "NotificationsKit" "Foundation|Security" \
+  "AuthKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "PrivilegedAccessKit" \
+  "SecurityKit" \
+  "SignInTriageKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \

@@ -157,7 +157,21 @@
         <td>Overwritten when you hide it, when the timer expires, or when the app leaves the foreground</td>
       </tr>
       <tr>
-        <td>Your settings (appearance, whether rotation is enabled)</td>
+        <td>Your notification choices (which organizations, which kinds) and the break-glass
+        accounts you ask to be told about, only once you turn notifications on</td>
+        <td>iOS Keychain, marked device-only so it is not synced to iCloud or restored to another
+        device, readable after the phone is first unlocked so the background check can run</td>
+        <td>Until you change them in Settings or delete the app</td>
+      </tr>
+      <tr>
+        <td>What the background check has already told you about: opaque identifiers of incidents,
+        posts and policies, and a scrambled form of each break-glass sign-in's id, never a name or
+        an address</td>
+        <td>Standard iOS app preferences</td>
+        <td>The newest 500 per kind, per organization</td>
+      </tr>
+      <tr>
+        <td>Your settings (appearance, whether device actions are enabled)</td>
         <td>Standard iOS app preferences</td>
         <td>Until you change them or delete the app</td>
       </tr>
@@ -172,6 +186,10 @@
         <td>Until you remove the license in Settings; refreshed about monthly</td>
       </tr>
     </table>
+    <p>Notifications are made on your phone, by your phone, from what it reads from Microsoft
+    Graph as you. There is no server sending them. A notification names the kind of event and the
+    organization, never a person, an incident title or a policy name, so nothing sensitive sits on
+    a lock screen.</p>
     <p>Credentials are never written to disk, never included in an iOS or iCloud backup, and never
     written to a log file.</p>
 
