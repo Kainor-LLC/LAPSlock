@@ -10,6 +10,7 @@ import LicensingKit
 import PrivilegedAccessKit
 import SubscriptionKit
 import ConditionalAccessKit
+import SecurityKit
 import TenantPulseKit
 import SignInTriageKit
 
@@ -155,6 +156,7 @@ final class AppRootModel: ObservableObject {
         let conditionalAccess: ConditionalAccessService
         let tenantPulse: TenantPulseService
         let signInTriage: SignInTriageService
+        let security: SecurityService
 
         init(auth: MSALAuthManager) {
             self.auth = auth
@@ -167,6 +169,7 @@ final class AppRootModel: ObservableObject {
             self.conditionalAccess = ConditionalAccessService(graph: graph)
             self.tenantPulse = TenantPulseService(graph: graph)
             self.signInTriage = SignInTriageService(graph: graph)
+            self.security = SecurityService(graph: graph)
         }
 
         /// Live credential provider for one platform, sharing the authenticated session.
@@ -348,6 +351,7 @@ final class AppRootModel: ObservableObject {
 
         await session.inventory.reset()
         await session.conditionalAccess.reset()
+        await session.security.reset()
         operatingTenantId = await session.auth.operatingTenantId
         return nil
     }
@@ -497,6 +501,7 @@ final class AppRootModel: ObservableObject {
         // Tenant-scoped data must not survive an account change (§7).
         await liveSession?.inventory.reset()
         await liveSession?.conditionalAccess.reset()
+        await liveSession?.security.reset()
         liveSession = nil
         mode = .signedOut
         consentState = nil
@@ -555,6 +560,12 @@ final class AppRootModel: ObservableObject {
     func requestSignInTriageConsent() async -> String? {
         await requestConsent(scopes: SignInTriageScopes.module,
                              deniedMessage: "Your organization hasn't approved permission for TenantKeep to read the sign-in log, Conditional Access policies and basic user details. An Entra administrator needs to grant it.")
+    }
+
+    /// Requests the Security module's one read scope, the first time it is opened.
+    func requestSecurityConsent() async -> String? {
+        await requestConsent(scopes: SecurityScopes.module,
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to read security incidents and alerts. An Entra administrator needs to grant it.")
     }
 
     /// Requests the audit-log scope, only when "who changed this" is tapped.
@@ -811,6 +822,9 @@ struct AppRootView: View {
                 tenantPulse: TenantPulseColumns(
                     makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider()) }
                 ),
+                security: SecurityColumns(
+                    makeModel: { SecurityListModel(provider: DemoSecurityProvider()) }
+                ),
                 settingsBuilder: {
                     SettingsView(
                         settings: AppSettings.shared,
@@ -902,6 +916,10 @@ struct AppRootView: View {
                     tenantPulse: TenantPulseColumns(
                         makeModel: { TenantPulseModel(provider: session.tenantPulse) },
                         requestConsent: { await root.requestTenantPulseConsent() }
+                    ),
+                    security: SecurityColumns(
+                        makeModel: { SecurityListModel(provider: session.security) },
+                        requestConsent: { await root.requestSecurityConsent() }
                     ),
                     settingsBuilder: {
                         SettingsView(

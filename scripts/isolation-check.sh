@@ -118,6 +118,15 @@ check_module "ConditionalAccessKit" "Foundation|AuthKit" \
   "PrivilegedAccessKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# SecurityKit reads incidents and the people and devices in their evidence. Same cap: it
+# must never be able to see a credential.
+check_module "SecurityKit" "Foundation|AuthKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "PrivilegedAccessKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \

@@ -3,6 +3,7 @@ import InventoryKit
 import ConditionalAccessKit
 import TenantPulseKit
 import SignInTriageKit
+import SecurityKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -30,6 +31,7 @@ enum AppModule: String, CaseIterable, Identifiable {
     case signInTriage
     case tenantPulse
     case conditionalAccess
+    case security
 
     var id: String { rawValue }
 
@@ -40,6 +42,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .signInTriage:      return "Sign-in Triage"
         case .tenantPulse:       return "Tenant Pulse"
         case .conditionalAccess: return "Conditional Access"
+        case .security:          return "Security"
         }
     }
 
@@ -50,6 +53,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .signInTriage:      return "Why a sign-in failed, and which policy blocked it"
         case .tenantPulse:       return "Health, Message Center, expiries, Secure Score"
         case .conditionalAccess: return "Policies, read-only, and what changed"
+        case .security:          return "Incidents, alerts and who was involved"
         }
     }
 
@@ -60,6 +64,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .signInTriage:      return "person.crop.circle.badge.questionmark"
         case .tenantPulse:       return "waveform.path.ecg"
         case .conditionalAccess: return "checkmark.shield"
+        case .security:          return "exclamationmark.shield"
         }
     }
 
@@ -72,6 +77,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         case .signInTriage:      return true
         case .tenantPulse:       return true
         case .conditionalAccess: return true
+        case .security:          return true
         }
     }
 
@@ -79,6 +85,7 @@ enum AppModule: String, CaseIterable, Identifiable {
     var requiresPro: Bool {
         switch self {
         case .signInTriage: return true
+        case .security:     return true
         default:            return false
         }
     }
@@ -135,6 +142,13 @@ struct ConditionalAccessColumns {
     var requestChangesConsent: (() async -> String?)? = nil
 }
 
+/// What the Security module needs from the root, built once per session.
+struct SecurityColumns {
+    let makeModel: @MainActor () -> SecurityListModel
+    /// Interactive consent for the module's scope. Nil in demo.
+    var requestConsent: (() async -> String?)? = nil
+}
+
 /// What the credentials module needs from the root, built once per session.
 struct CredentialsColumns {
     /// Deferred so the shell can own the model as state and build it exactly once.
@@ -153,6 +167,7 @@ struct ModuleShell: View {
     private let signInTriage: SignInTriageColumns
     private let conditionalAccess: ConditionalAccessColumns
     private let tenantPulse: TenantPulseColumns
+    private let security: SecurityColumns
     private let settingsBuilder: () -> SettingsView
     /// The privileged access column. Nil in demo, where there is no account to activate
     /// anything for, and the column says so.
@@ -162,11 +177,13 @@ struct ModuleShell: View {
     @StateObject private var policyModel: ConditionalAccessListModel
     @StateObject private var pulseModel: TenantPulseModel
     @StateObject private var triageModel: SignInTriageModel
+    @StateObject private var securityModel: SecurityListModel
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
     @State private var selectedPolicyId: String?
     @State private var selectedPulseItem: String?
     @State private var selectedSignInId: String?
+    @State private var selectedIncidentId: String?
     /// All three columns from the first frame. The default is `.automatic`, which on an
     /// iPad in portrait opens with the sidebar and the list both collapsed and only "No
     /// device selected" on screen, two taps from anything useful. Ignored on iPhone, where
@@ -184,6 +201,7 @@ struct ModuleShell: View {
         conditionalAccess: ConditionalAccessColumns,
         signInTriage: SignInTriageColumns,
         tenantPulse: TenantPulseColumns,
+        security: SecurityColumns,
         settingsBuilder: @escaping () -> SettingsView,
         privilegedColumn: (() -> PrivilegedAccessView)?
     ) {
@@ -193,12 +211,14 @@ struct ModuleShell: View {
         self.signInTriage = signInTriage
         self.conditionalAccess = conditionalAccess
         self.tenantPulse = tenantPulse
+        self.security = security
         self.settingsBuilder = settingsBuilder
         self.privilegedColumn = privilegedColumn
         _listModel = StateObject(wrappedValue: credentials.makeListModel())
         _policyModel = StateObject(wrappedValue: conditionalAccess.makeListModel())
         _pulseModel = StateObject(wrappedValue: tenantPulse.makeModel())
         _triageModel = StateObject(wrappedValue: signInTriage.makeModel())
+        _securityModel = StateObject(wrappedValue: security.makeModel())
         _selectedModule = State(initialValue: AppModule.lastUsed)
     }
 
@@ -222,6 +242,7 @@ struct ModuleShell: View {
             selectedPolicyId = nil
             selectedPulseItem = nil
             selectedSignInId = nil
+            selectedIncidentId = nil
             if let module { AppModule.lastUsed = module }
         }
         .onChange(of: selectedDeviceId) { _, id in
@@ -253,6 +274,9 @@ struct ModuleShell: View {
                         Image(systemName: module.symbol)
                     }
                 }
+                // Open high-severity incidents, once the module has loaded this session.
+                // Zero hides the badge, so no module pays for a count it does not have.
+                .badge(module == .security ? securityModel.openHighCount : 0)
                 .accessibilityLabel(module.title)
                 .accessibilityHint(module.subtitle)
             }
@@ -320,6 +344,22 @@ struct ModuleShell: View {
                 selection: $selectedPolicyId,
                 requestConsent: conditionalAccess.requestConsent
             )
+        case .security?:
+            if isPro || isDemo {
+                SecurityListView(
+                    model: securityModel,
+                    isDemo: isDemo,
+                    selection: $selectedIncidentId,
+                    requestConsent: security.requestConsent
+                )
+            } else {
+                ProGateView(
+                    title: "Security is part of Pro",
+                    detail: "See the open incidents, every alert's recommended actions, and the users, devices, mailboxes and addresses involved, read-only. Pro also removes the reveal limit.",
+                    openSettings: { showingSettings = true }
+                )
+                .navigationTitle(AppModule.security.title)
+            }
         case .privilegedAccess?:
             if let privilegedColumn {
                 privilegedColumn()
@@ -391,6 +431,33 @@ struct ModuleShell: View {
                     Label("No policy selected", systemImage: "checkmark.shield")
                 } description: {
                     Text("Pick a policy from the list. Nothing here can change one.")
+                }
+            }
+        case .security?:
+            if let id = selectedIncidentId, let incident = securityModel.incident(id) {
+                SecurityDetailView(
+                    incident: incident,
+                    isDemo: isDemo,
+                    openUser: { upn in
+                        // Read-only to read-only, so no gate: the search box fills and
+                        // the person's row is one tap away.
+                        triageModel.searchText = upn
+                        selectedModule = .signInTriage
+                    },
+                    openDevice: { host in
+                        listModel.query = host
+                        selectedModule = .credentials
+                    },
+                    refresh: { await securityModel.refresh(id: id) }
+                )
+                .id(id)
+            } else {
+                ContentUnavailableView {
+                    Label("Security", systemImage: "exclamationmark.shield")
+                } description: {
+                    Text(isPro || isDemo
+                         ? "Pick an incident for its alerts, the recommended actions and who was involved."
+                         : "Available with Pro.")
                 }
             }
         case .privilegedAccess?:
