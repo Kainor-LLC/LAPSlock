@@ -107,9 +107,70 @@ enum HingeLayout {
     static let sidebarWidth: CGFloat = 260
     static let minimumContent: CGFloat = 180
 
-    static func contentWidth(fullWidth: CGFloat, leadingInset: CGFloat, sidebarShown: Bool, open: Bool, ideal: CGFloat) -> CGFloat {
+    static func contentWidth(fullWidth: CGFloat, leadingInset: CGFloat, sidebarShown: Bool, open: Bool, ideal: CGFloat, fraction: CGFloat = 0.5) -> CGFloat {
         guard open else { return ideal }
-        let half = (fullWidth / 2 - leadingInset).rounded(.down)
-        return max(minimumContent, sidebarShown ? half - sidebarWidth : half)
+        let share = (fullWidth * fraction - leadingInset).rounded(.down)
+        return max(minimumContent, sidebarShown ? share - sidebarWidth : share)
+    }
+}
+
+/// How wide the list column is, chosen from the menu and remembered. Balanced is the
+/// default everywhere: on an open device it is the hinge, on iPad the width the list has
+/// always had. The other two are for people who want the detail or the list to breathe.
+enum ListWidthPreset: String, CaseIterable, Identifiable {
+    case compact
+    case narrow
+    case balanced
+    case wide
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .compact:  return "Compact list"
+        case .narrow:   return "Narrow list"
+        case .balanced: return "Balanced"
+        case .wide:     return "Wide list"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .compact:  return "rectangle.leadingthird.inset.filled"
+        case .narrow:   return "rectangle.lefthalf.inset.filled"
+        case .balanced: return "rectangle.split.2x1"
+        case .wide:     return "rectangle.righthalf.inset.filled"
+        }
+    }
+
+    /// The share of the display the list takes when the device is open. Balanced is the
+    /// fold itself; the others move the boundary off it, which is the person's choice.
+    var openFraction: CGFloat {
+        switch self {
+        case .compact:  return 0.28
+        case .narrow:   return 0.38
+        case .balanced: return 0.5
+        case .wide:     return 0.62
+        }
+    }
+
+    /// The ideal width of the content column in the three-column layout.
+    var tiledIdeal: CGFloat {
+        switch self {
+        case .compact:  return 250
+        case .narrow:   return 300
+        case .balanced: return 380
+        case .wide:     return 480
+        }
+    }
+
+    static let key = "settings.listWidthPreset"
+
+    static var stored: ListWidthPreset {
+        ListWidthPreset(rawValue: UserDefaults.standard.string(forKey: key) ?? "") ?? .balanced
+    }
+
+    func store() {
+        UserDefaults.standard.set(rawValue, forKey: Self.key)
     }
 }

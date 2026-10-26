@@ -214,6 +214,8 @@ struct ModuleShell: View {
     @State private var hinge: HingePosture = .unknown
     /// The open-posture split view's own visibility; kept at all columns.
     @State private var openVisibility: NavigationSplitViewVisibility = .all
+    /// How wide the list column is, from the menu, remembered between launches.
+    @State private var listWidth: ListWidthPreset = ListWidthPreset.stored
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     /// Open across the fold with room for two columns: the layout puts a boundary on the
@@ -257,7 +259,8 @@ struct ModuleShell: View {
                 leadingInset: geometry.safeAreaInsets.leading,
                 sidebarShown: false,
                 open: true,
-                ideal: 380)
+                ideal: 380,
+                fraction: listWidth.openFraction)
             if hingeOpen {
                 // Open across the fold. A two-column split view, which tiles on the
                 // phone idiom; the three-column one only ever overlays the list on the
@@ -281,7 +284,7 @@ struct ModuleShell: View {
                         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
                 } content: {
                     contentColumn
-                        .navigationSplitViewColumnWidth(min: 320, ideal: 380)
+                        .navigationSplitViewColumnWidth(min: 250, ideal: listWidth.tiledIdeal)
                 } detail: {
                     detailColumn
                 }
@@ -294,6 +297,7 @@ struct ModuleShell: View {
             if !open { columnVisibility = .all }
             openVisibility = .all
         }
+        .onChange(of: listWidth) { _, preset in preset.store() }
         .sheet(isPresented: $showingSettings) { settingsBuilder() }
         .onChange(of: selectedModule) { _, module in
             // A module change closes whatever the previous one had open. On iPhone the
@@ -332,6 +336,8 @@ struct ModuleShell: View {
                 }
             }
             Divider()
+            listWidthPicker
+            Divider()
             Button {
                 showingSettings = true
             } label: {
@@ -341,6 +347,20 @@ struct ModuleShell: View {
             Image(systemName: "square.grid.2x2")
         }
         .accessibilityLabel("Modules")
+    }
+
+    /// Compact, narrow, balanced or wide list, as a submenu so the menu that holds it
+    /// stays short. Balanced is the hinge on an open device.
+    private var listWidthPicker: some View {
+        Menu {
+            Picker("List Width", selection: $listWidth) {
+                ForEach(ListWidthPreset.allCases) { preset in
+                    Label(preset.label, systemImage: preset.symbol).tag(preset)
+                }
+            }
+        } label: {
+            Label("List Width", systemImage: listWidth.symbol)
+        }
     }
 
     private var sidebar: some View {
@@ -369,12 +389,18 @@ struct ModuleShell: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingSettings = true
+                Menu {
+                    listWidthPicker
+                    Divider()
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
                 } label: {
                     Image(systemName: "gearshape")
                 }
-                .accessibilityLabel("Settings")
+                .accessibilityLabel("Settings and layout")
             }
         }
         .safeAreaInset(edge: .top) {
