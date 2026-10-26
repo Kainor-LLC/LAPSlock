@@ -212,6 +212,8 @@ struct ModuleShell: View {
     @State private var searchPresented = false
     /// The fold, on a device that has one. Unknown everywhere else.
     @State private var hinge: HingePosture = .unknown
+    /// The open-posture split view's own visibility; kept at all columns.
+    @State private var openVisibility: NavigationSplitViewVisibility = .all
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     /// Open across the fold with room for two columns: the layout puts a boundary on the
@@ -253,60 +255,44 @@ struct ModuleShell: View {
             let hingeWidth = HingeLayout.contentWidth(
                 fullWidth: fullWidth,
                 leadingInset: geometry.safeAreaInsets.leading,
-                sidebarShown: columnVisibility == .all,
+                sidebarShown: false,
                 open: true,
                 ideal: 380)
-            NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
-                sidebar
-                    .navigationSplitViewColumnWidth(
-                        min: hingeOpen ? HingeLayout.sidebarWidth : 220,
-                        ideal: HingeLayout.sidebarWidth,
-                        max: hingeOpen ? HingeLayout.sidebarWidth : 320)
-            } content: {
-                contentColumn
-                    .navigationSplitViewColumnWidth(
-                        min: hingeOpen ? hingeWidth : 320,
-                        ideal: hingeOpen ? hingeWidth : 380,
-                        max: hingeOpen ? hingeWidth : nil)
-                    // The sidebar's own width is read from the same rule, so the two
-                    // columns add up to the left half whether or not it is shown.
-            } detail: {
-                // On the phone idiom the split view lays the detail out across the whole
-                // window and slides the content column over it, so without this a
-                // credential card would start under the list. When the detail is found to
-                // span the window while the device is open, its safe area moves to the
-                // right half; where the columns tile, as on iPad, the detail is already
-                // half the width and nothing is added.
-                GeometryReader { detail in
+            if hingeOpen {
+                // Open across the fold. A two-column split view, which tiles on the
+                // phone idiom; the three-column one only ever overlays the list on the
+                // detail there, and the one state where the detail could be tapped was
+                // the detail alone, with the left half empty. The list takes the left
+                // half to the pixel of the hinge, the detail the right. Modules move to
+                // a menu in the list's toolbar, and the sidebar toggle is removed so
+                // nothing can put the detail across the fold.
+                NavigationSplitView(columnVisibility: $openVisibility) {
+                    contentColumn
+                        .toolbar(removing: .sidebarToggle)
+                        .toolbar { ToolbarItem(placement: .topBarLeading) { modulesMenu } }
+                        .navigationSplitViewColumnWidth(min: hingeWidth, ideal: hingeWidth, max: hingeWidth)
+                } detail: {
                     detailColumn
-                        .safeAreaPadding(.leading, hingeOpen && detail.size.width > fullWidth * 0.75 ? hingeWidth : 0)
                 }
+                .navigationSplitViewStyle(.balanced)
+            } else {
+                NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
+                    sidebar
+                        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+                } content: {
+                    contentColumn
+                        .navigationSplitViewColumnWidth(min: 320, ideal: 380)
+                } detail: {
+                    detailColumn
+                }
+                .navigationSplitViewStyle(.balanced)
             }
-            .navigationSplitViewStyle(.balanced)
         }
         .background { HingeMonitor(posture: $hinge) }
         .onChange(of: hingeOpen) { _, open in
-            // Open: the sidebar goes, so the one boundary left is content against
-            // detail, at half the width, which is where the hinge is. Closed again: all
-            // three columns come back as they were at launch.
-            columnVisibility = open ? .doubleColumn : .all
-        }
-        .onChange(of: columnVisibility) { _, visibility in
-            // Hiding the sidebar from three columns lands on "detail only", which left
-            // the whole left half of an open Duo empty while the detail sat on the
-            // right. Open, the toggle goes between all three columns and list plus
-            // detail, and never to the detail alone. The correction waits for the
-            // split view's own transition to finish: setting it back inside the change
-            // fought the animation, the sidebar bounced back and its dimming scrim was
-            // left over the detail.
-            if hingeOpen, visibility == .detailOnly {
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(450))
-                    if hingeOpen, columnVisibility == .detailOnly {
-                        withAnimation { columnVisibility = .doubleColumn }
-                    }
-                }
-            }
+            // Back from the fold, all three columns come back as they were at launch.
+            if !open { columnVisibility = .all }
+            openVisibility = .all
         }
         .sheet(isPresented: $showingSettings) { settingsBuilder() }
         .onChange(of: selectedModule) { _, module in
@@ -334,6 +320,28 @@ struct ModuleShell: View {
     }
 
     // MARK: - columns
+
+    /// The module list as a menu, for the open posture where there is no sidebar.
+    private var modulesMenu: some View {
+        Menu {
+            Picker("Module", selection: Binding(
+                get: { selectedModule ?? .credentials },
+                set: { selectedModule = $0 })) {
+                ForEach(AppModule.enabled) { module in
+                    Label(module.title, systemImage: module.symbol).tag(module)
+                }
+            }
+            Divider()
+            Button {
+                showingSettings = true
+            } label: {
+                Label("Settings", systemImage: "gearshape")
+            }
+        } label: {
+            Image(systemName: "square.grid.2x2")
+        }
+        .accessibilityLabel("Modules")
+    }
 
     private var sidebar: some View {
         List(selection: $selectedModule) {

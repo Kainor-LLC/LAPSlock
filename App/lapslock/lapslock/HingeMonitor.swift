@@ -102,10 +102,8 @@ enum HingeLayout {
     /// short of the fold on the first run. The column starts at the leading inset, so its
     /// width is half the full width less that inset.
     ///
-    /// When the sidebar is shown as well, it is part of the left half too: the boundary
-    /// that matters is the one against the detail, so the content column gives up the
-    /// sidebar's width rather than pushing the detail into a sliver, which is what the
-    /// first Device Hub pass showed.
+    /// `sidebarShown` is kept for a layout that tiles a sidebar beside the list; the open
+    /// posture today has no sidebar column, the modules are a menu, so it is false.
     static let sidebarWidth: CGFloat = 260
     static let minimumContent: CGFloat = 180
 
