@@ -24,6 +24,17 @@ public enum ActionTier: String, Sendable, Codable, Equatable {
     /// lock re-prompted, and a ten-second window to change your mind before the call.
     case destructive
 
+    /// The tier after an organization's strict confirmation policy: every tier moves one
+    /// step up, and destructive stays destructive.
+    public func effective(strict: Bool) -> ActionTier {
+        guard strict else { return self }
+        switch self {
+        case .none:        return .confirm
+        case .confirm:     return .destructive
+        case .destructive: return .destructive
+        }
+    }
+
     /// What the screen has to collect, in order.
     public var requirements: [ConfirmationRequirement] {
         switch self {

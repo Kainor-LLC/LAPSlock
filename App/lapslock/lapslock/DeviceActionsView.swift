@@ -6,6 +6,7 @@ import PrivilegedAccessKit
 import InventoryKit
 import CredentialKit
 import ManagedConfigKit
+import PlatformSecurity
 
 // Device actions on the device screen. Spec section 3.3 and section 4.
 //
@@ -28,6 +29,13 @@ final class DeviceActionsModel: ObservableObject {
     @Published private(set) var pendingChallenge: (kind: DeviceActionKind, challenge: ClaimsChallenge)?
     @Published private(set) var lastEntry: ShiftLogEntry?
     @Published var confirming: DeviceActionKind?
+    /// The destructive tier's first step: the sheet asking for the device name.
+    @Published var destructive: DeviceActionKind?
+    @Published var typedName = ""
+    /// The ten seconds between confirming and sending, with what is pending.
+    @Published private(set) var undoing: DeviceActionKind?
+    @Published private(set) var undoRemaining = 0
+    private var undoWindow: UndoWindow?
 
     private(set) var target: DeviceActionTarget
     private let provider: any DeviceActionsProviding
@@ -37,7 +45,11 @@ final class DeviceActionsModel: ObservableObject {
         self.provider = provider
     }
 
-    var kinds: [DeviceActionKind] { DeviceActionKind.allCases }
+    /// Every action, less retire and wipe when the organization switched those off.
+    var kinds: [DeviceActionKind] {
+        let config = ManagedConfigStore.read()
+        return DeviceActionKind.allCases.filter { !$0.isDestructive || !config.isDisabled("destructiveActions") }
+    }
 
     func reason(for kind: DeviceActionKind) -> String? {
         kind.unavailableReason(for: target)
@@ -61,14 +73,66 @@ final class DeviceActionsModel: ObservableObject {
     /// The tap. Sync runs; anything else asks first.
     func tapped(_ kind: DeviceActionKind) {
         guard reason(for: kind) == nil, working == nil else { return }
-        // Strict confirmation from the organization: even sync asks first. The destructive
-        // tier's typed name and undo window arrive with retire and wipe.
+        // An organization's strict policy moves every tier up one.
         let strict = ManagedConfigStore.read().confirmationLevel == .strict
-        if kind.tier == .none && !strict {
+        switch kind.tier.effective(strict: strict) {
+        case .none:
             Task { await run(kind) }
-        } else {
+        case .confirm:
             confirming = kind
+        case .destructive:
+            typedName = ""
+            destructive = kind
         }
+    }
+
+    /// The name typed back matches, ignoring case and the spaces around it.
+    var typedNameMatches: Bool {
+        typedName.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(target.deviceName) == .orderedSame
+    }
+
+    /// The destructive tier's second and third steps: the app lock asked again, even if it
+    /// just passed, then ten seconds in which one tap undoes it. Only then the one send.
+    func destructiveConfirmed(_ kind: DeviceActionKind) async {
+        destructive = nil
+        guard typedNameMatches else { return }
+        errorMessage = nil
+        note = nil
+        switch await BiometricGate().authenticate(deviceName: target.deviceName) {
+        case .authenticated:
+            break
+        case .unavailable(let reason):
+            errorMessage = reason
+            return
+        default:
+            errorMessage = "Not confirmed. Nothing was sent."
+            return
+        }
+        let window = UndoWindow()
+        undoWindow = window
+        undoing = kind
+        undoRemaining = UndoWindow.standardSeconds
+        let started = Date()
+        let ticker = Task { @MainActor [weak self] in
+            while let self, self.undoing != nil {
+                self.undoRemaining = max(0, UndoWindow.standardSeconds - Int(Date().timeIntervalSince(started)))
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+        let proceed = await window.wait()
+        ticker.cancel()
+        undoing = nil
+        undoWindow = nil
+        if proceed {
+            await run(kind)
+        } else {
+            note = kind.title + " cancelled. Nothing was sent."
+        }
+    }
+
+    func undo() {
+        guard let window = undoWindow else { return }
+        Task { await window.cancel() }
     }
 
     func confirmed(_ kind: DeviceActionKind) {
@@ -176,6 +240,9 @@ struct DeviceActionsSections: View {
 
     private var actionsSection: some View {
         Section {
+            if let pending = model.undoing {
+                undoRow(pending)
+            }
             ForEach(model.kinds) { kind in
                 actionRow(kind)
             }
@@ -228,6 +295,35 @@ struct DeviceActionsSections: View {
                 Text(kind.confirmation)
             }
         }
+        .sheet(item: $model.destructive) { kind in
+            DestructiveActionSheet(model: model, kind: kind)
+        }
+    }
+
+    private func undoRow(_ kind: DeviceActionKind) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(kind.title + " " + model.target.deviceName)
+                    .font(.body.weight(.semibold))
+                Text("Sending in \(model.undoRemaining) s")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            Spacer()
+            Button {
+                model.undo()
+            } label: {
+                Text("Undo")
+                    .font(.body.weight(.bold))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityLabel("Undo " + kind.title)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -249,7 +345,7 @@ struct DeviceActionsSections: View {
                 }
             }
         }
-        .disabled(reason != nil || model.working != nil)
+        .disabled(reason != nil || model.working != nil || model.undoing != nil)
         .foregroundStyle(reason == nil ? .primary : .secondary)
         .accessibilityLabel(kind.title)
         .accessibilityHint(reason ?? kind.confirmation)
@@ -303,5 +399,52 @@ extension DeviceActionTarget {
             else { platform = .other }
         }
         self.init(managedDeviceId: summary.id, deviceName: summary.deviceName, platform: platform, ownerType: nil)
+    }
+}
+
+/// The destructive tier's first step: what the action does, in full, and the device's name
+/// typed back before anything else can happen.
+struct DestructiveActionSheet: View {
+    @ObservedObject var model: DeviceActionsModel
+    let kind: DeviceActionKind
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(kind.confirmation)
+                } header: {
+                    Text(kind.title + " " + model.target.deviceName)
+                }
+                Section {
+                    TextField(model.target.deviceName, text: $model.typedName)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .focused($focused)
+                        .font(.body.monospaced())
+                } header: {
+                    Text("Type the Device Name to Continue")
+                } footer: {
+                    Text("Then Face ID, then ten seconds in which you can undo before anything is sent.")
+                }
+            }
+            .navigationTitle(kind.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Continue", role: .destructive) {
+                        Task { await model.destructiveConfirmed(kind) }
+                    }
+                    .disabled(!model.typedNameMatches)
+                }
+            }
+            .onAppear { focused = true }
+        }
+        .presentationDetents([.medium, .large])
     }
 }

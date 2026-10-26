@@ -32,7 +32,7 @@ public struct ManagedConfiguration: Sendable, Equatable {
     /// Module and feature ids an organization may switch off.
     public static let switchableIds: [String] = [
         "credentials", "privilegedAccess", "signInTriage", "tenantPulse", "conditionalAccess",
-        "security", "deviceActions", "userActions", "groupWrites", "notifications"
+        "security", "deviceActions", "destructiveActions", "userActions", "groupWrites", "notifications"
     ]
 
     public var disabledIds: Set<String> = []
@@ -189,6 +189,7 @@ public struct ManagedConfiguration: Sendable, Equatable {
         case "conditionalAccess": return "Conditional Access"
         case "security":          return "Security"
         case "deviceActions":     return "Device actions"
+        case "destructiveActions": return "Retire and wipe"
         case "userActions":       return "User actions"
         case "groupWrites":       return "Group changes"
         case "notifications":     return "Notifications"

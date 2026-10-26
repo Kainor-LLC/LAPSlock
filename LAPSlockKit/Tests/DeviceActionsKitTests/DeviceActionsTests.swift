@@ -57,6 +57,33 @@ final class DeviceActionsTests: XCTestCase {
         XCTAssertNil(DeviceActionKind.locate.unavailableReason(for: unknownOwner), "unknown ownership is not a refusal; Graph decides")
     }
 
+    func test_retireAndWipeAreDestructiveOnThePrivilegedScope() {
+        for kind in [DeviceActionKind.retire, .wipe] {
+            XCTAssertEqual(kind.tier, .destructive)
+            XCTAssertTrue(kind.isDestructive)
+            XCTAssertEqual(kind.version, .v1_0)
+            XCTAssertEqual(kind.scope, "DeviceManagementManagedDevices.PrivilegedOperations.All")
+        }
+        XCTAssertFalse(DeviceActionKind.restart.isDestructive)
+        let wipe = DeviceActionKind.wipe.action(for: windows)
+        XCTAssertEqual(wipe.request.path, "/deviceManagement/managedDevices/dev-1/wipe")
+        let body = try! JSONSerialization.jsonObject(with: wipe.request.body!) as! [String: Bool]
+        XCTAssertEqual(body, ["keepEnrollmentData": false, "keepUserData": false])
+        XCTAssertNil(DeviceActionKind.retire.action(for: windows).request.body, "retire takes no body")
+    }
+
+    func test_wipeIsCorporateOnlyAndNeverGuessesOwnership() {
+        XCTAssertNil(DeviceActionKind.wipe.unavailableReason(for: windows))
+        XCTAssertEqual(DeviceActionKind.wipe.unavailableReason(for: personalPhone), "A personal device can be retired, not wiped.")
+        XCTAssertNil(DeviceActionKind.retire.unavailableReason(for: personalPhone), "retire is what a personal device gets instead")
+        var unknown = windows
+        unknown.ownerType = nil
+        XCTAssertNotNil(DeviceActionKind.wipe.unavailableReason(for: unknown))
+        let mac = DeviceActionTarget(managedDeviceId: "m", deviceName: "MBP", platform: .macOS, ownerType: "company")
+        XCTAssertNotNil(DeviceActionKind.wipe.unavailableReason(for: mac))
+        XCTAssertEqual(DeviceActionKind.wipe.unavailableReason(for: unmanaged), "Not managed by Intune.")
+    }
+
     func test_everySuccessCopySaysRequested() {
         for kind in DeviceActionKind.allCases {
             XCTAssertTrue(kind.successCopy.lowercased().contains("requested"), kind.rawValue)

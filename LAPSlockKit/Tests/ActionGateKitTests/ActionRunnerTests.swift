@@ -200,6 +200,13 @@ final class ActionRunnerTests: XCTestCase {
         XCTAssertEqual(entries.count, 4)
     }
 
+    func test_strictMovesEveryTierUpOne() {
+        XCTAssertEqual(ActionTier.none.effective(strict: false), .none)
+        XCTAssertEqual(ActionTier.none.effective(strict: true), .confirm)
+        XCTAssertEqual(ActionTier.confirm.effective(strict: true), .destructive)
+        XCTAssertEqual(ActionTier.destructive.effective(strict: true), .destructive)
+    }
+
     func test_tiersDeclareTheirRequirements() {
         XCTAssertEqual(ActionTier.none.requirements, [])
         XCTAssertEqual(ActionTier.confirm.requirements, [.confirmSheet])

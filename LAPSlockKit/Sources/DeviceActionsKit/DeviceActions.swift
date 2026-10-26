@@ -3,9 +3,10 @@ import AuthKit
 import ActionGateKit
 import PrivilegedAccessKit
 
-// Device actions. Spec section 3.3, the phase 2 half: sync, restart, remote lock, locate
-// and BitLocker key rotation, the five whose worst outcome is a rebooted laptop. Retire and
-// wipe are phase 3 and are not here.
+// Device actions. Spec section 3.3: sync, restart, remote lock, locate and the two key
+// rotations, whose worst outcome is a rebooted laptop, and since phase 3 retire and wipe,
+// which are the destructive tier: the device name typed back, the app lock asked again,
+// ten seconds to change your mind, then one send.
 //
 // Every action is a WriteAction run by ActionGateKit's runner. This target builds them and
 // reads the device's management record; it never sends anything itself. It takes the
@@ -65,8 +66,14 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
     case locate
     case rotateBitLockerKeys
     case rotateLocalAdminPassword
+    case retire
+    case wipe
 
     public var id: String { rawValue }
+
+    /// The two that remove data. An organization can switch these off on their own with
+    /// the managed configuration id `destructiveActions`, leaving the rest.
+    public var isDestructive: Bool { self == .retire || self == .wipe }
 
     public var title: String {
         switch self {
@@ -76,6 +83,8 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .locate:               return "Locate"
         case .rotateBitLockerKeys:  return "Rotate BitLocker keys"
         case .rotateLocalAdminPassword: return "Rotate local admin password"
+        case .retire:               return "Retire"
+        case .wipe:                 return "Wipe"
         }
     }
 
@@ -87,14 +96,17 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .locate:               return "location"
         case .rotateBitLockerKeys:  return "key"
         case .rotateLocalAdminPassword: return "key.horizontal"
+        case .retire:               return "rectangle.portrait.and.arrow.right"
+        case .wipe:                 return "trash"
         }
     }
 
     /// Spec section 4: sync fires on the tap; the rest confirm.
     public var tier: ActionTier {
         switch self {
-        case .sync: return .none
-        default:    return .confirm
+        case .sync:           return .none
+        case .retire, .wipe:  return .destructive
+        default:              return .confirm
         }
     }
 
@@ -108,6 +120,8 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .locate:               return "locateDevice"
         case .rotateBitLockerKeys:  return "rotateBitLockerKeys"
         case .rotateLocalAdminPassword: return "rotateLocalAdminPassword"
+        case .retire:               return "retire"
+        case .wipe:                 return "wipe"
         }
     }
 
@@ -123,7 +137,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
     /// shipped in 1.0 on the read-write scope and keeps it until the page says otherwise.
     public var scope: String {
         switch self {
-        case .sync, .restart, .remoteLock:  return DeviceActionScopes.privilegedOperations
+        case .sync, .restart, .remoteLock, .retire, .wipe: return DeviceActionScopes.privilegedOperations
         case .locate, .rotateBitLockerKeys, .rotateLocalAdminPassword: return DeviceActionScopes.readWrite
         }
     }
@@ -137,6 +151,8 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .locate:               return "Ask the device for its location? The person is notified on the device."
         case .rotateBitLockerKeys:  return "Rotate the BitLocker recovery keys? The old keys stop working once the device checks in."
         case .rotateLocalAdminPassword: return "Rotate the local administrator password? The current password stops working once the device checks in."
+        case .retire:               return "Retire removes your organization's data, apps and settings from the device and stops managing it. The person's own data stays."
+        case .wipe:                 return "Wipe restores the device to factory settings and erases everything on it, your organization's data and the person's. It cannot be undone once the device receives it."
         }
     }
 
@@ -148,6 +164,8 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .locate:               return "Location requested. It appears on the device's page in the Intune admin center once the device answers."
         case .rotateBitLockerKeys:  return "Rotation requested. The device generates a new key at its next check-in, then the new key appears above."
         case .rotateLocalAdminPassword: return "Rotation requested. Intune sets a new password at the device's next check-in."
+        case .retire:               return "Retire requested. Intune removes your organization's data at the device's next check-in."
+        case .wipe:                 return "Wipe requested. The device erases itself at its next check-in."
         }
     }
 
@@ -161,6 +179,17 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
             return nil
         case .rotateBitLockerKeys:
             return target.platform == .windows ? nil : "BitLocker is a Windows feature."
+        case .retire:
+            return nil
+        case .wipe:
+            // Spec section 4: wipe is replaced by retire on personal devices. Unknown
+            // ownership is a refusal here, unlike locate: the cost of guessing is the
+            // person's own data.
+            guard let owner = target.ownerType?.lowercased() else { return "Waiting for the management record to say who owns this device." }
+            guard owner == "company" else { return "A personal device can be retired, not wiped." }
+            // (verify) A Mac wipe can need a six-digit recovery PIN the app does not collect.
+            if target.platform == .macOS { return "Wipe a Mac from the Intune admin center; it can need a recovery PIN." }
+            return nil
         case .rotateLocalAdminPassword:
             // Windows LAPS rotates on its own schedule and after each use when the policy
             // says so; the app action is for macOS, where 1.0 offered it. (verify) whether
@@ -170,6 +199,12 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
             return nil
         }
     }
+
+    /// The wipe body: Microsoft's defaults, said out loud. Enrollment and user data are not
+    /// kept; the eSIM plan is left to Microsoft's default by not sending it.
+    static let wipeBody: Data = {
+        (try? JSONSerialization.data(withJSONObject: ["keepEnrollmentData": false, "keepUserData": false], options: [.sortedKeys])) ?? Data("{}".utf8)
+    }()
 
     /// The write, as data, for the runner.
     public func action(for target: DeviceActionTarget) -> WriteAction {
@@ -183,6 +218,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
                 version: version,
                 path: "/deviceManagement/managedDevices/" + target.managedDeviceId + "/" + pathSegment,
                 template: "/deviceManagement/managedDevices/{id}/" + pathSegment,
+                body: self == .wipe ? Self.wipeBody : nil,
                 scopes: [scope]),
             requiredRoleTemplateIds: DeviceActionRoles.known,
             successCopy: successCopy)

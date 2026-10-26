@@ -99,6 +99,13 @@ final class ManagedConfigurationTests: XCTestCase {
         for line in config.summaryLines { XCTAssertFalse(line.contains("\u{2014}")) }
     }
 
+    func test_destructiveActionsCanBeSwitchedOffAlone() {
+        let config = ManagedConfiguration.parse(["modules.disabled": ["destructiveActions"]])
+        XCTAssertTrue(config.isDisabled("destructiveActions"))
+        XCTAssertFalse(config.isDisabled("deviceActions"))
+        XCTAssertEqual(config.summaryLines, ["Turned off: Retire and wipe"])
+    }
+
     func test_intuneOwnKeysAreNotReportedAsTypos() {
         let config = ManagedConfiguration.parse(["IntuneMAMUPN": "x@y.com"])
         XCTAssertTrue(config.problems.isEmpty)

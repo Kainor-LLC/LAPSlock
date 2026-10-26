@@ -15,8 +15,8 @@ app under Settings, Managed by Your Organization, so a typo is visible instead o
 
 | Key | Type | Values | Default | What it does |
 |---|---|---|---|---|
-| `modules.disabled` | string array, or a comma-separated string | `credentials`, `privilegedAccess`, `signInTriage`, `tenantPulse`, `conditionalAccess`, `security`, `deviceActions`, `userActions`, `groupWrites`, `notifications` | none | Removes the module from the app. `deviceActions` also hides the Settings switch that would enable them |
-| `confirmation.level` | string | `standard`, `strict` | `standard` | `strict` makes every write ask at least once more than standard: sync, which normally runs on a tap, asks first |
+| `modules.disabled` | string array, or a comma-separated string | `credentials`, `privilegedAccess`, `signInTriage`, `tenantPulse`, `conditionalAccess`, `security`, `deviceActions`, `destructiveActions`, `userActions`, `groupWrites`, `notifications` | none | Removes the module from the app. `deviceActions` also hides the Settings switch that would enable them. `destructiveActions` removes retire and wipe only, and leaves the other device actions |
+| `confirmation.level` | string | `standard`, `strict` | `standard` | `strict` moves every write up one tier: sync, which normally runs on a tap, asks first, and restart, lock, locate and key rotation take the full destructive confirmation (the device name typed back, Face ID, ten seconds to undo) |
 | `tenant.pin` | string | your tenant ID, a GUID | none | The app works only in this tenant. An account from any other tenant is signed straight back out, and the MSP organization switcher is not offered |
 | `appLock.required` | boolean, or the strings `true` and `false` | `true`, `false` | `false` | Face ID (or the passcode) to open the app, and the switch in Settings is replaced by "Required" |
 | `breakGlass.upns` | string array, or a comma-separated string | sign-in addresses | none | Emergency access accounts watched by the break-glass notification for your own tenant, added to any the user lists |
