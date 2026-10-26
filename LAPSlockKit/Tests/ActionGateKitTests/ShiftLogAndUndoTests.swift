@@ -1,0 +1,78 @@
+import XCTest
+@testable import ActionGateKit
+
+final class ShiftLogAndUndoTests: XCTestCase {
+
+    private var directory: URL!
+
+    override func setUp() {
+        super.setUp()
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("shiftlog-" + UUID().uuidString, isDirectory: true)
+    }
+
+    override func tearDown() {
+        try? FileManager.default.removeItem(at: directory)
+        super.tearDown()
+    }
+
+    private func entry(_ n: Int, tenant: String = "t1") -> ShiftLogEntry {
+        ShiftLogEntry(at: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(n)), tenantId: tenant, actionId: "device.sync", actionTitle: "Sync", targetLabel: "DEV-\(n)", targetId: "id-\(n)", outcome: "requested", requestId: "r\(n)")
+    }
+
+    func test_fileLogPersistsAcrossInstancesNewestFirst() async {
+        let log = FileShiftLog(directory: directory)
+        await log.append(entry(1))
+        await log.append(entry(2))
+        let reopened = FileShiftLog(directory: directory)
+        let entries = await reopened.entries(tenantId: "t1")
+        XCTAssertEqual(entries.map(\.targetLabel), ["DEV-2", "DEV-1"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directory.appendingPathComponent(FileShiftLog.fileName).path))
+    }
+
+    func test_tenantsNeverSeeEachOther() async {
+        let log = FileShiftLog(directory: directory)
+        await log.append(entry(1, tenant: "t1"))
+        await log.append(entry(2, tenant: "t2"))
+        let t1 = await log.entries(tenantId: "t1")
+        XCTAssertEqual(t1.map(\.targetLabel), ["DEV-1"])
+        let export = await log.export(tenantId: "t2", now: Date(timeIntervalSince1970: 1_800_000_100))
+        XCTAssertTrue(export.contains("Tenant t2"))
+        XCTAssertTrue(export.contains("DEV-2"))
+        XCTAssertFalse(export.contains("DEV-1"))
+        await log.clear(tenantId: "t2")
+        let t2 = await log.entries(tenantId: "t2")
+        XCTAssertTrue(t2.isEmpty)
+        let still = await log.entries(tenantId: "t1")
+        XCTAssertEqual(still.count, 1, "clearing one tenant leaves the other")
+    }
+
+    func test_theCapDropsTheOldest() async {
+        let log = FileShiftLog(directory: directory)
+        for n in 0..<(FileShiftLog.cap + 5) { await log.append(entry(n)) }
+        let entries = await log.entries(tenantId: "t1")
+        XCTAssertEqual(entries.count, FileShiftLog.cap)
+        XCTAssertEqual(entries.last?.targetLabel, "DEV-5")
+    }
+
+    func test_exportHeaderAndEmptyForm() async {
+        let log = InMemoryShiftLog()
+        let empty = await log.export(tenantId: "t1", now: Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertTrue(empty.hasPrefix("TenantKeep On-Call shift log\nTenant t1\nExported 2027-01-15 08:00:00Z"))
+        XCTAssertTrue(empty.hasSuffix("No actions recorded."))
+        XCTAssertFalse(empty.contains("\u{2014}"))
+    }
+
+    func test_undoWindowElapsesOrCancels() async {
+        let elapsed = UndoWindow()
+        let ok = await elapsed.wait(seconds: 1, sleep: { _ in })
+        XCTAssertTrue(ok)
+        let again = await elapsed.wait(seconds: 1, sleep: { _ in })
+        XCTAssertFalse(again, "a window fires once")
+
+        let cancelled = UndoWindow()
+        let result = await cancelled.wait(seconds: 2, sleep: { _ in await cancelled.cancel() })
+        XCTAssertFalse(result)
+        let flag = await cancelled.isCancelled
+        XCTAssertTrue(flag)
+    }
+}

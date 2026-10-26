@@ -40,7 +40,8 @@ let package = Package(
         .library(name: "TenantPulseKit", targets: ["TenantPulseKit"]),
         .library(name: "SignInTriageKit", targets: ["SignInTriageKit"]),
         .library(name: "SecurityKit", targets: ["SecurityKit"]),
-        .library(name: "ThreatDigestKit", targets: ["ThreatDigestKit"])
+        .library(name: "ThreatDigestKit", targets: ["ThreatDigestKit"]),
+        .library(name: "ActionGateKit", targets: ["ActionGateKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -115,6 +116,12 @@ let package = Package(
         // or anything else of the tenant's to a host that is not Microsoft Graph.
         .target(name: "ThreatDigestKit"),
 
+        // The gate every write goes through: role gate, one send, the shift log. AuthKit for
+        // the Graph client, PrivilegedAccessKit for eligibility and the claims challenge.
+        // Never CredentialKit, in either direction: a target that performs writes must be
+        // structurally unable to see a credential.
+        .target(name: "ActionGateKit", dependencies: ["AuthKit", "PrivilegedAccessKit"]),
+
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
         // the credential path. The isolation guard enforces this.
@@ -144,6 +151,7 @@ let package = Package(
         .testTarget(name: "TenantPulseKitTests", dependencies: ["TenantPulseKit", "AuthKit"]),
         .testTarget(name: "SignInTriageKitTests", dependencies: ["SignInTriageKit", "AuthKit"]),
         .testTarget(name: "SecurityKitTests", dependencies: ["SecurityKit", "AuthKit"]),
-        .testTarget(name: "ThreatDigestKitTests", dependencies: ["ThreatDigestKit"])
+        .testTarget(name: "ThreatDigestKitTests", dependencies: ["ThreatDigestKit"]),
+        .testTarget(name: "ActionGateKitTests", dependencies: ["ActionGateKit", "AuthKit", "PrivilegedAccessKit"])
     ]
 )

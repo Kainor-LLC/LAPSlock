@@ -60,6 +60,9 @@ public struct GraphRequest: Sendable, Equatable {
     /// Silent by default. A module turns this on for exactly one call, the first after the
     /// user opened it, so the consent prompt appears at a moment that makes sense.
     public var allowInteractive: Bool
+    /// A claims challenge to satisfy when acquiring the token, as the JSON Graph sent.
+    /// Set by a write's explicit resume after a challenge and by nothing else.
+    public var claims: String?
 
     public init(
         method: Method = .get,
@@ -70,7 +73,8 @@ public struct GraphRequest: Sendable, Equatable {
         headers: [String: String] = [:],
         body: Data? = nil,
         scopes: [String],
-        allowInteractive: Bool = false
+        allowInteractive: Bool = false,
+        claims: String? = nil
     ) {
         self.method = method
         self.version = version
@@ -81,6 +85,7 @@ public struct GraphRequest: Sendable, Equatable {
         self.body = body
         self.scopes = scopes
         self.allowInteractive = allowInteractive
+        self.claims = claims
     }
 }
 
@@ -132,6 +137,16 @@ public struct GraphResponse: Sendable {
     public let data: Data
     /// Graph's `request-id`, for a support case.
     public let requestId: String?
+    /// The response headers, for the one caller that needs them: a write reading a claims
+    /// challenge out of `WWW-Authenticate`. Empty on the validated path.
+    public let headers: [String: String]
+
+    public init(status: Int, data: Data, requestId: String?, headers: [String: String] = [:]) {
+        self.status = status
+        self.data = data
+        self.requestId = requestId
+        self.headers = headers
+    }
 }
 
 /// Items gathered across pages, and whether the walk stopped before the end.
@@ -237,6 +252,13 @@ public final class GraphClient: Sendable {
         try await perform(url: url(for: request), request: request)
     }
 
+    /// One call whose status is handed back rather than judged, for a write that must
+    /// read a 401's claims challenge or a 403 itself. Transport and token failures still
+    /// throw; nothing is retried, whatever the status.
+    public func sendUnvalidated(_ request: GraphRequest) async throws -> GraphResponse {
+        try await perform(url: url(for: request), request: request, validate: false)
+    }
+
     /// One call decoded into a model with the Graph date rules applied.
     public func decode<T: Decodable>(_ type: T.Type, from request: GraphRequest) async throws -> T {
         let response = try await send(request)
@@ -293,7 +315,7 @@ public final class GraphClient: Sendable {
         }
     }
 
-    private func perform(url: URL, request: GraphRequest) async throws -> GraphResponse {
+    private func perform(url: URL, request: GraphRequest, validate: Bool = true) async throws -> GraphResponse {
         let started = Date()
         var retries = 0
         var lastStatus: Int?
@@ -340,12 +362,19 @@ public final class GraphClient: Sendable {
                     continue
                 }
 
-                try Self.validate(http, data: data)
+                if validate { try Self.validate(http, data: data) }
                 record(request, status: http.statusCode, started: started, retries: retries)
+                var headers: [String: String] = [:]
+                if !validate {
+                    for (key, value) in http.allHeaderFields {
+                        if let key = key as? String, let value = value as? String { headers[key] = value }
+                    }
+                }
                 return GraphResponse(
                     status: http.statusCode,
                     data: data,
-                    requestId: http.value(forHTTPHeaderField: "request-id"))
+                    requestId: http.value(forHTTPHeaderField: "request-id"),
+                    headers: headers)
             }
         } catch let error as GraphError {
             record(request, status: lastStatus, started: started, retries: retries)
@@ -359,6 +388,9 @@ public final class GraphClient: Sendable {
 
     private func token(for request: GraphRequest) async throws -> String {
         do {
+            if let claims = request.claims {
+                return try await auth.token(scopes: request.scopes, claims: claims, allowInteractive: request.allowInteractive)
+            }
             return try await auth.token(scopes: request.scopes, allowInteractive: request.allowInteractive)
         } catch let error as AuthError {
             switch error {

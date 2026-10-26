@@ -1,0 +1,214 @@
+import XCTest
+import AuthKit
+import PrivilegedAccessKit
+@testable import ActionGateKit
+
+// MARK: - doubles
+
+private final class RecordingAuth: AuthManaging, @unchecked Sendable {
+    var account = AdminAccount(
+        id: "aaaaaaaa-1111-2222-3333-444455556666.4470dc21-a4b7-4729-a232-56d4c0eedf73",
+        tenantId: "4470dc21-a4b7-4729-a232-56d4c0eedf73",
+        username: "admin@example.com",
+        objectId: "aaaaaaaa-1111-2222-3333-444455556666")
+    private(set) var calls: [(scopes: [String], claims: String?, interactive: Bool)] = []
+    var currentAccount: AdminAccount? { get async { account } }
+    func token(scopes: [String], allowInteractive: Bool) async throws -> String {
+        calls.append((scopes, nil, allowInteractive)); return "token"
+    }
+    func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String {
+        calls.append((scopes, claims, allowInteractive)); return "token-with-claims"
+    }
+    func signIn() async throws -> AdminAccount { account }
+    func signOut(account: AdminAccount) async throws {}
+}
+
+private final class StubProtocol: URLProtocol {
+    struct Reply { var status: Int; var body: String; var headers: [String: String] = [:] }
+    nonisolated(unsafe) static var replies: [String: [Reply]] = [:]
+    nonisolated(unsafe) static var requests: [URLRequest] = []
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.requests.append(request)
+        let url = request.url?.absoluteString ?? ""
+        let key = Self.replies.keys.first { url.contains($0) }
+        let reply = key.flatMap { k -> Reply? in
+            guard var queue = Self.replies[k], !queue.isEmpty else { return nil }
+            let next = queue.removeFirst(); Self.replies[k] = queue; return next
+        } ?? Reply(status: 599, body: "{}")
+        let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(reply.body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+    static func reset() { replies = [:]; requests = [] }
+    static func session() -> URLSession {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [StubProtocol.self]
+        return URLSession(configuration: cfg)
+    }
+}
+
+private struct StubGate: RoleGateChecking {
+    var active: Set<String>?
+    var eligible: [EligibleAccess] = []
+    func activeRoleTemplateIds() async throws -> Set<String> {
+        guard let active else { throw ActionGateError.gateUnavailable }
+        return active
+    }
+    func eligibleAccess() async -> [EligibleAccess] { eligible }
+}
+
+// MARK: - tests
+
+final class ActionRunnerTests: XCTestCase {
+
+    private let intuneAdmin = "3a2c62db-5318-420d-8d74-23affee5d9d5"
+    private let globalAdmin = "62e90394-69f5-4237-9190-012177145e10"
+    private let tenant = "4470dc21-a4b7-4729-a232-56d4c0eedf73"
+    private var auth: RecordingAuth!
+    private var log: InMemoryShiftLog!
+
+    override func setUp() {
+        super.setUp()
+        StubProtocol.reset()
+        auth = RecordingAuth()
+        log = InMemoryShiftLog()
+    }
+
+    private func runner(gate: StubGate) -> ActionRunner {
+        let graph = GraphClient(auth: auth, session: StubProtocol.session(), retryPolicy: .none, tracer: GraphResponseTracer(), sleep: { _ in })
+        return ActionRunner(graph: graph, gate: gate, log: log, tenantId: { [tenant] in tenant }, now: { Date(timeIntervalSince1970: 1_800_000_000) })
+    }
+
+    private func restart(required: [String] = []) -> WriteAction {
+        WriteAction(
+            id: "device.restart",
+            title: "Restart",
+            tier: .confirm,
+            target: ActionTarget(label: "LT-FIELD-207", id: "dev-1"),
+            request: GraphRequest(method: .post, path: "/deviceManagement/managedDevices/dev-1/rebootNow", template: "/deviceManagement/managedDevices/{id}/rebootNow", scopes: ["DeviceManagementManagedDevices.PrivilegedOperations.All"]),
+            requiredRoleTemplateIds: required,
+            successCopy: "Restart requested.")
+    }
+
+    private var eligibleIntune: EligibleAccess {
+        EligibleAccess(id: "elig-1", kind: .directoryRole(roleDefinitionId: intuneAdmin, directoryScopeId: "/"), displayName: "Intune Administrator", eligibilityEndsAt: nil)
+    }
+
+    func test_aSuccessfulPostIsRequestedOnceAndLogged() async {
+        StubProtocol.replies = ["rebootNow": [.init(status: 204, body: "", headers: ["request-id": "req-1"])]]
+        let outcome = await runner(gate: StubGate(active: [intuneAdmin])).run(restart(required: [intuneAdmin]))
+        XCTAssertEqual(outcome, .requested(requestId: "req-1"))
+        XCTAssertEqual(StubProtocol.requests.count, 1)
+        XCTAssertEqual(StubProtocol.requests.first?.httpMethod, "POST")
+        XCTAssertEqual(auth.calls.first?.interactive, false)
+        let entries = await log.entries(tenantId: tenant)
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries.first?.outcome, "requested")
+        XCTAssertEqual(entries.first?.requestId, "req-1")
+        XCTAssertEqual(entries.first?.line, "2027-01-15 08:00:00Z | Restart | LT-FIELD-207 (dev-1) | requested | request-id req-1")
+    }
+
+    func test_aGetIsRefusedBeforeSending() async {
+        let action = WriteAction(id: "x", title: "X", tier: .none, target: ActionTarget(label: "t", id: "1"),
+                                 request: GraphRequest(path: "/me", scopes: ["User.Read"]), successCopy: "")
+        let outcome = await runner(gate: StubGate(active: [])).run(action)
+        XCTAssertEqual(outcome, .failed(.refused(reason: "Only a POST can be a write action.")))
+        XCTAssertTrue(StubProtocol.requests.isEmpty)
+        let entries = await log.entries(tenantId: tenant)
+        XCTAssertEqual(entries.first?.outcome, "refused")
+    }
+
+    func test_theGateOffersActivationWhenTheRoleIsEligibleButNotActive() async {
+        let outcome = await runner(gate: StubGate(active: [], eligible: [eligibleIntune])).run(restart(required: [intuneAdmin, globalAdmin]))
+        XCTAssertEqual(outcome, .needsActivation(eligible: [eligibleIntune]))
+        XCTAssertTrue(StubProtocol.requests.isEmpty, "nothing is sent when the gate speaks")
+        let entries = await log.entries(tenantId: tenant)
+        XCTAssertEqual(entries.first?.outcome, "needsActivation")
+    }
+
+    func test_theGateLetsGraphDecideWhenItCannotReadOrNothingIsEligible() async {
+        StubProtocol.replies = ["rebootNow": [.init(status: 204, body: ""), .init(status: 204, body: "")]]
+        let unreadable = await runner(gate: StubGate(active: nil)).run(restart(required: [intuneAdmin]))
+        XCTAssertTrue(unreadable.isRequested)
+        let nothingEligible = await runner(gate: StubGate(active: [], eligible: [])).run(restart(required: [intuneAdmin]))
+        XCTAssertTrue(nothingEligible.isRequested)
+        XCTAssertEqual(StubProtocol.requests.count, 2)
+    }
+
+    func test_a403OffersWhateverIsEligible() async {
+        StubProtocol.replies = ["rebootNow": [.init(status: 403, body: "{}", headers: ["request-id": "req-403"])]]
+        let outcome = await runner(gate: StubGate(active: nil, eligible: [eligibleIntune])).run(restart())
+        XCTAssertEqual(outcome, .notAuthorized(eligible: [eligibleIntune]))
+        let entries = await log.entries(tenantId: tenant)
+        XCTAssertEqual(entries.first?.outcome, "notAuthorized")
+        XCTAssertEqual(entries.first?.requestId, "req-403")
+    }
+
+    func test_a401WithAClaimsChallengeIsHandedBackNotRetried() async throws {
+        let claims = #"{"access_token":{"acrs":{"essential":true,"value":"c1"}}}"#
+        let encoded = Data(claims.utf8).base64EncodedString()
+        StubProtocol.replies = ["rebootNow": [.init(status: 401, body: "", headers: ["WWW-Authenticate": "Bearer realm=\"\", error=\"insufficient_claims\", claims=\"\(encoded)\""])]]
+        let outcome = await runner(gate: StubGate(active: nil)).run(restart())
+        guard case .challenged(let challenge) = outcome else { return XCTFail("expected challenge, got \(outcome)") }
+        XCTAssertEqual(challenge.json, claims)
+        XCTAssertEqual(StubProtocol.requests.count, 1)
+    }
+
+    func test_a400WithClaimsInTheMessageIsAChallengeToo() async {
+        let body = #"{"error":{"code":"RoleAssignmentRequestAcrsValidationFailed","message":"The required claims are missing: claims={\"access_token\":{\"acrs\":{\"essential\":true,\"value\":\"c1\"}}}"}}"#
+        StubProtocol.replies = ["rebootNow": [.init(status: 400, body: body)]]
+        let outcome = await runner(gate: StubGate(active: nil)).run(restart())
+        guard case .challenged = outcome else { return XCTFail("expected challenge, got \(outcome)") }
+    }
+
+    func test_resumeSendsOnceWithClaimsInteractivelyAndStopsOnASecondChallenge() async {
+        let claims = #"{"access_token":{"acrs":{"essential":true,"value":"c1"}}}"#
+        let encoded = Data(claims.utf8).base64EncodedString()
+        let challengeReply = StubProtocol.Reply(status: 401, body: "", headers: ["WWW-Authenticate": "Bearer claims=\"\(encoded)\""])
+        StubProtocol.replies = ["rebootNow": [.init(status: 204, body: "", headers: ["request-id": "req-2"]), challengeReply]]
+        let r = runner(gate: StubGate(active: nil))
+        let challenge = ClaimsChallenge(json: claims)!
+        let first = await r.resume(restart(), satisfying: challenge)
+        XCTAssertEqual(first, .requested(requestId: "req-2"))
+        XCTAssertEqual(auth.calls.last?.claims, claims)
+        XCTAssertEqual(auth.calls.last?.interactive, true)
+        let second = await r.resume(restart(), satisfying: challenge)
+        guard case .failed(.refused) = second else { return XCTFail("a second challenge must stop, got \(second)") }
+        XCTAssertEqual(StubProtocol.requests.count, 2)
+    }
+
+    func test_a429IsNeverRetried() async {
+        StubProtocol.replies = ["rebootNow": [.init(status: 429, body: "", headers: ["Retry-After": "7"]), .init(status: 204, body: "")]]
+        let outcome = await runner(gate: StubGate(active: nil)).run(restart())
+        XCTAssertEqual(outcome, .failed(.throttled(retryAfter: 7)))
+        XCTAssertEqual(StubProtocol.requests.count, 1)
+    }
+
+    func test_otherStatusesMap() async {
+        StubProtocol.replies = ["rebootNow": [
+            .init(status: 404, body: ""), .init(status: 503, body: ""), .init(status: 400, body: #"{"error":{"code":"BadRequest","message":"x"}}"#), .init(status: 418, body: "")
+        ]]
+        let r = runner(gate: StubGate(active: nil))
+        var outcomes: [ActionOutcome] = []
+        for _ in 0..<4 { outcomes.append(await r.run(restart())) }
+        XCTAssertEqual(outcomes, [.failed(.notFound), .failed(.serviceUnavailable(status: 503)), .failed(.badRequest(code: "BadRequest")), .failed(.transport(status: 418))])
+        let entries = await log.entries(tenantId: tenant)
+        XCTAssertEqual(entries.count, 4)
+    }
+
+    func test_tiersDeclareTheirRequirements() {
+        XCTAssertEqual(ActionTier.none.requirements, [])
+        XCTAssertEqual(ActionTier.confirm.requirements, [.confirmSheet])
+        XCTAssertEqual(ActionTier.destructive.requirements, [.typedName, .appLockReprompt, .undoWindow(seconds: 10)])
+    }
+
+    func test_failureCopyNeverPromisesWhatDidNotHappen() {
+        for failure in [ActionFailure.serviceUnavailable(status: 503), .transport(status: -1)] {
+            XCTAssertTrue(failure.description.contains("Nothing was") , failure.description)
+        }
+    }
+}

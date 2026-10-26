@@ -139,6 +139,16 @@ check_module "ThreatDigestKit" "Foundation" \
   "SecurityKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# ActionGateKit performs writes. It must never be able to see a credential, so
+# CredentialKit is forbidden here, and CredentialKit's own cap keeps the other direction.
+check_module "ActionGateKit" "Foundation|AuthKit|PrivilegedAccessKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "SecurityKit" \
+  "ThreatDigestKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \
