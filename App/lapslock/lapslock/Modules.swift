@@ -295,9 +295,17 @@ struct ModuleShell: View {
             // Hiding the sidebar from three columns lands on "detail only", which left
             // the whole left half of an open Duo empty while the detail sat on the
             // right. Open, the toggle goes between all three columns and list plus
-            // detail, and never to the detail alone.
+            // detail, and never to the detail alone. The correction waits for the
+            // split view's own transition to finish: setting it back inside the change
+            // fought the animation, the sidebar bounced back and its dimming scrim was
+            // left over the detail.
             if hingeOpen, visibility == .detailOnly {
-                columnVisibility = .doubleColumn
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(450))
+                    if hingeOpen, columnVisibility == .detailOnly {
+                        withAnimation { columnVisibility = .doubleColumn }
+                    }
+                }
             }
         }
         .sheet(isPresented: $showingSettings) { settingsBuilder() }
