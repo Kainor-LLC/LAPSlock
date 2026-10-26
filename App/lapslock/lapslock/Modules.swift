@@ -5,6 +5,7 @@ import TenantPulseKit
 import SignInTriageKit
 import SecurityKit
 import ThreatDigestKit
+import ManagedConfigKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -91,9 +92,9 @@ enum AppModule: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The registry flag. Always on today; the managed app config read in phase 3 turns
-    /// modules off here and nowhere else.
-    var isEnabled: Bool { true }
+    /// The registry flag. The organization's managed app configuration turns modules off
+    /// here and nowhere else.
+    var isEnabled: Bool { !ManagedConfigStore.read().isDisabled(rawValue) }
 
     static var enabled: [AppModule] { allCases.filter(\.isEnabled) }
 
@@ -216,6 +217,8 @@ struct ModuleShell: View {
     @State private var openVisibility: NavigationSplitViewVisibility = .all
     /// How wide the list column is, from the menu, remembered between launches.
     @State private var listWidth: ListWidthPreset = ListWidthPreset.stored
+    /// Re-renders the sidebar when the organization pushes a new policy.
+    @ObservedObject private var managed = ManagedConfigStore.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     /// Open across the fold with room for two columns: the layout puts a boundary on the
@@ -298,6 +301,12 @@ struct ModuleShell: View {
             openVisibility = .all
         }
         .onChange(of: listWidth) { _, preset in preset.store() }
+        .onChange(of: managed.config) { _, _ in
+            // A module switched off while open closes; the first one still on opens.
+            if let module = selectedModule, !module.isEnabled {
+                selectedModule = AppModule.enabled.first
+            }
+        }
         .sheet(isPresented: $showingSettings) { settingsBuilder() }
         .onChange(of: selectedModule) { _, module in
             // A module change closes whatever the previous one had open. On iPhone the

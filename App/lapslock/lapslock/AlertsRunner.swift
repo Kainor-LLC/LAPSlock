@@ -8,6 +8,7 @@ import TenantPulseKit
 import ConditionalAccessKit
 import SignInTriageKit
 import SecurityKit
+import ManagedConfigKit
 
 // The background run. Spec section 3.11.
 //
@@ -48,13 +49,25 @@ enum AlertsRunner {
     @discardableResult
     static func run(auth suppliedAuth: (any AuthManaging)? = nil) async -> Int {
         defer { scheduleIfNeeded() }
+        let managed = ManagedConfigStore.read()
+        guard !managed.isDisabled("notifications") else { return 0 }
         guard var prefs = try? preferencesStore.load(), prefs.anythingToCheck else { return 0 }
         let resolved: (any AuthManaging)?
         if let suppliedAuth { resolved = suppliedAuth } else { resolved = await SessionAuth.shared.restoredAuth() }
         guard let auth = resolved else { return 0 }
 
+        // The organization's break-glass accounts apply to its own tenant: the pinned one,
+        // or the signed-in account's home tenant when nothing is pinned.
+        let homeTenant = await auth.currentAccount?.tenantId.lowercased()
+        let managedTenant = managed.tenantPin ?? homeTenant
+        if !managed.breakGlassUPNs.isEmpty, let managedTenant, var own = prefs.tenant(managedTenant) {
+            own.breakGlassUPNs = TenantAlertPreferences.cleanUPNs(own.breakGlassUPNs + managed.breakGlassUPNs)
+            prefs.upsert(own)
+        }
+
         var posted = 0
         for tenant in prefs.tenants where !tenant.activeKinds.isEmpty {
+            if let pin = managed.tenantPin, tenant.tenantId != pin { continue }
             if Task.isCancelled { break }
             let scoped = TenantScopedAuth(base: auth, tenantId: tenant.tenantId)
             // The probe: a scope consented at sign-in. If even this fails silently, the

@@ -302,6 +302,14 @@
       had used the Microsoft admin center. Your existing monitoring keeps working, unchanged.
     </div>
 
+    <h2 class="sec">For organizations that manage the app with Intune</h2>
+    <p>An Intune app configuration policy can switch modules off, require extra confirmation for
+    every action, keep the app to your own tenant, require the app lock, and name the break-glass
+    accounts to watch. A policy can only take things away or ask for more care; it cannot turn on a
+    write nobody turned on in the app. The keys, their defaults and a policy to paste are in the
+    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/MANAGED-CONFIG.md">managed
+    configuration reference</a>.</p>
+
     <h2 class="sec">What stays on your device</h2>
     <p>Passwords and recovery keys are held in memory only, for the length of the reveal window, and
     are overwritten when it ends. They are never written to disk, never included in an iPhone or

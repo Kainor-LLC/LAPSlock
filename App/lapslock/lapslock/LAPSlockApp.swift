@@ -15,6 +15,7 @@ import ThreatDigestKit
 import ActionGateKit
 import DeviceActionsKit
 import NotificationsKit
+import ManagedConfigKit
 import UserNotifications
 import TenantPulseKit
 import SignInTriageKit
@@ -316,7 +317,8 @@ final class AppRootModel: ObservableObject {
             subscription: subscription,
             organizationTier: Entitlements.live.state(signedInTenantId: signedInTenantId).tier)
         isPro = merged.isPro
-        canSwitchTenants = merged.allowsTenantSwitching
+        // A pinned tenant means one organization, whatever the subscription allows.
+        canSwitchTenants = merged.allowsTenantSwitching && ManagedConfigStore.read().tenantPin == nil
         // Notifications are Pro. A lapsed subscription turns the switches off rather than
         // leaving a background check running that the admin is no longer paying for.
         if case .live = mode, !merged.isPro { AlertsRunner.disableAll() }
@@ -328,6 +330,7 @@ final class AppRootModel: ObservableObject {
     /// The organizations Notifications offers a switch for: the admin's own, then every
     /// customer organization an MSP has saved.
     var notificationTenants: [NotificationTenant] {
+        if ManagedConfigStore.read().isDisabled("notifications") { return [] }
         var list: [NotificationTenant] = []
         if let home = signedInTenantId {
             list.append(NotificationTenant(id: home.lowercased(), label: signedInDomain ?? "Your organization"))
@@ -452,11 +455,23 @@ final class AppRootModel: ObservableObject {
         defer { isRestoringSession = false }
 
         guard let account = await auth.restoreSession() else { return }
+        if let refusal = await refuseIfOutsidePin(account, auth: auth) {
+            signInError = refusal
+            return
+        }
         liveSession = LiveSession(auth: auth)
         mode = .live(account)
         AlertsRunner.unpauseAll()
         recomputeEntitlement()
         await refreshTenants()
+    }
+
+    /// The organization pinned the app to its own tenant: an account from any other is
+    /// signed straight back out, with the reason, before any screen loads its data.
+    private func refuseIfOutsidePin(_ account: AdminAccount, auth: MSALAuthManager) async -> String? {
+        guard let pin = ManagedConfigStore.read().tenantPin, account.tenantId.lowercased() != pin else { return nil }
+        try? await auth.signOut(account: account)
+        return "Your organization has set TenantKeep to work only with its own Microsoft tenant. Sign in with your work account there."
     }
 
     func signIn() async {
@@ -468,6 +483,10 @@ final class AppRootModel: ObservableObject {
 
         do {
             let account = try await auth.signIn()
+            if let refusal = await refuseIfOutsidePin(account, auth: auth) {
+                signInError = refusal
+                return
+            }
             liveSession = LiveSession(auth: auth)
             mode = .live(account)
             AlertsRunner.unpauseAll()
@@ -820,7 +839,7 @@ struct AppRootView: View {
                 }
             }
             .task {
-                appLock.armAtLaunch(enabled: settings.appLockEnabled)
+                appLock.armAtLaunch(enabled: settings.appLockEffective)
                 root.prepare()
                 #if DEBUG
                 // Straight into demo mode for simulator screenshots and UI automation, which
@@ -843,7 +862,7 @@ struct AppRootView: View {
                 // screen sitting on top of MSAL's flow.
                 appLock.sceneChanged(
                     to: phase,
-                    enabled: settings.appLockEnabled,
+                    enabled: settings.appLockEffective,
                     isSigningIn: root.isSigningIn)
             }
     }
@@ -872,10 +891,10 @@ struct AppRootView: View {
                                 provider: DemoLapsProvider(platform: device.platform),
                                 bitLocker: DemoBitLockerService(),
                                 isDemo: true,
-                                actionsEnabled: AppSettings.shared.deviceActionsEnabled,
+                                actionsEnabled: AppSettings.shared.deviceActionsEffective,
                                 meter: RevealMeters.demo
                             ),
-                            actionsModel: AppSettings.shared.deviceActionsEnabled
+                            actionsModel: AppSettings.shared.deviceActionsEffective
                                 ? DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: demoDeviceActions)
                                 : nil
                         )
@@ -967,14 +986,14 @@ struct AppRootView: View {
                                     provider: session.provider(for: device.platform),
                                     bitLocker: session.bitLocker(),
                                     isDemo: false,
-                                    actionsEnabled: AppSettings.shared.deviceActionsEnabled,
+                                    actionsEnabled: AppSettings.shared.deviceActionsEffective,
                                     meter: RevealMeters.live,
                                     isPro: root.isPro
                                 ),
                                 privilegedSheet: {
                                     privilegedAccessView(deviceName: device.deviceName, embedded: false)
                                 },
-                                actionsModel: AppSettings.shared.deviceActionsEnabled
+                                actionsModel: AppSettings.shared.deviceActionsEffective
                                     ? DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: session.deviceActions)
                                     : nil
                             )

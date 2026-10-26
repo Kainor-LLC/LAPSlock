@@ -5,6 +5,7 @@ import DeviceActionsKit
 import PrivilegedAccessKit
 import InventoryKit
 import CredentialKit
+import ManagedConfigKit
 
 // Device actions on the device screen. Spec section 3.3 and section 4.
 //
@@ -60,7 +61,10 @@ final class DeviceActionsModel: ObservableObject {
     /// The tap. Sync runs; anything else asks first.
     func tapped(_ kind: DeviceActionKind) {
         guard reason(for: kind) == nil, working == nil else { return }
-        if kind.tier == .none {
+        // Strict confirmation from the organization: even sync asks first. The destructive
+        // tier's typed name and undo window arrive with retire and wipe.
+        let strict = ManagedConfigStore.read().confirmationLevel == .strict
+        if kind.tier == .none && !strict {
             Task { await run(kind) }
         } else {
             confirming = kind
@@ -263,10 +267,18 @@ struct DeviceActionsSections: View {
 
 /// Shown instead of the actions when the Settings toggle is off.
 struct DeviceActionsDisabledSection: View {
+    /// The organization switched device actions off in its app configuration policy, so
+    /// there is no Settings switch to point at.
+    var turnedOffByOrganization = ManagedConfigStore.read().isDisabled("deviceActions")
+
     var body: some View {
         Section {
             Label {
-                Text("Sync, restart, lock, locate and BitLocker key rotation are off until you turn on **Allow device actions** in Settings. Turning it on asks your organization for permission to modify devices; leaving it off keeps this app read-only.")
+                if turnedOffByOrganization {
+                    Text("Your organization has turned off device actions in this app. Sync, restart, lock, locate and key rotation stay in the Intune admin center.")
+                } else {
+                    Text("Sync, restart, lock, locate and BitLocker key rotation are off until you turn on **Allow device actions** in Settings. Turning it on asks your organization for permission to modify devices; leaving it off keeps this app read-only.")
+                }
             } icon: {
                 Image(systemName: "lock.shield")
             }

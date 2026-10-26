@@ -171,6 +171,14 @@ check_module "NotificationsKit" "Foundation|Security" \
   "SignInTriageKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# ManagedConfigKit parses what the organization pushes. Foundation only.
+check_module "ManagedConfigKit" "Foundation" \
+  "AuthKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \

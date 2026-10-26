@@ -43,7 +43,8 @@ let package = Package(
         .library(name: "ThreatDigestKit", targets: ["ThreatDigestKit"]),
         .library(name: "ActionGateKit", targets: ["ActionGateKit"]),
         .library(name: "DeviceActionsKit", targets: ["DeviceActionsKit"]),
-        .library(name: "NotificationsKit", targets: ["NotificationsKit"])
+        .library(name: "NotificationsKit", targets: ["NotificationsKit"]),
+        .library(name: "ManagedConfigKit", targets: ["ManagedConfigKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -134,6 +135,10 @@ let package = Package(
         // in. Foundation and Security only; it never sees Graph, a token or a payload.
         .target(name: "NotificationsKit"),
 
+        // Managed app configuration from Intune: parsing and the safe defaults. Foundation
+        // only; it can only take things away or ask for more care, never enable a write.
+        .target(name: "ManagedConfigKit"),
+
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
         // the credential path. The isolation guard enforces this.
@@ -166,6 +171,7 @@ let package = Package(
         .testTarget(name: "ThreatDigestKitTests", dependencies: ["ThreatDigestKit"]),
         .testTarget(name: "ActionGateKitTests", dependencies: ["ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
         .testTarget(name: "DeviceActionsKitTests", dependencies: ["DeviceActionsKit", "ActionGateKit", "AuthKit"]),
-        .testTarget(name: "NotificationsKitTests", dependencies: ["NotificationsKit"])
+        .testTarget(name: "NotificationsKitTests", dependencies: ["NotificationsKit"]),
+        .testTarget(name: "ManagedConfigKitTests", dependencies: ["ManagedConfigKit"])
     ]
 )

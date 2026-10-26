@@ -1,6 +1,7 @@
 import SwiftUI
 import ActionGateKit
 import NotificationsKit
+import ManagedConfigKit
 import Combine
 import AuthKit
 import CredentialKit
@@ -56,6 +57,13 @@ final class AppSettings: ObservableObject {
     @Published var appLockEnabled: Bool {
         didSet { UserDefaults.standard.set(appLockEnabled, forKey: Keys.appLock) }
     }
+
+    /// The organization can require the app lock; then it is on whatever the toggle says.
+    var appLockEffective: Bool { appLockEnabled || ManagedConfigStore.read().appLockRequired }
+
+    /// The organization can switch device actions off; then they are off whatever the
+    /// toggle says, and the toggle is not offered.
+    var deviceActionsEffective: Bool { deviceActionsEnabled && !ManagedConfigStore.read().isDisabled("deviceActions") }
 
     @Published var appearance: AppearancePreference {
         didSet { UserDefaults.standard.set(appearance.rawValue, forKey: Keys.appearance) }
@@ -200,6 +208,9 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if managed.config.isManaged {
+                    managedSection
+                }
                 appearanceSection
                 appLockSection
                 if hasSession {
@@ -275,11 +286,24 @@ struct SettingsView: View {
     /// there is no consent prompt and no new permission on anybody's consent screen.
     private var appLockSection: some View {
         Section {
-            Toggle("Require Face ID to open TenantKeep", isOn: $settings.appLockEnabled)
+            if managed.config.appLockRequired {
+                LabeledContent("Require Face ID to open TenantKeep", value: "Required")
+                Text("Your organization requires the app lock.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Toggle("Require Face ID to open TenantKeep", isOn: $settings.appLockEnabled)
+            }
         } header: {
             Text("App Lock")
         } footer: {
-            Text("""
+            Text(managed.config.appLockRequired ? """
+                Separate from the check before each password reveal, which always runs. This \
+                one protects the device list itself, and your organization requires it.
+
+                TenantKeep re-locks after a few minutes in the background, not instantly, so \
+                switching to Microsoft Authenticator and back does not ask twice.
+                """ : """
                 Off by default. Separate from the check before each password reveal, which \
                 always runs. This one protects the device list itself: hostnames, primary \
                 users and compliance state are worth something to an attacker even with no \
@@ -361,9 +385,45 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - managed by the organization
+
+    @ObservedObject private var managed = ManagedConfigStore.shared
+
+    private var managedSection: some View {
+        Section {
+            ForEach(managed.config.summaryLines, id: \.self) { line in
+                Text(line)
+            }
+            ForEach(managed.config.problems, id: \.self) { problem in
+                Label(problem, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+        } header: {
+            Text("Managed by Your Organization")
+        } footer: {
+            Text("These settings come from your organization's Intune app configuration policy and can't be changed here. A setting with a warning was not understood and is being ignored; tell whoever manages the policy.")
+        }
+    }
+
     // MARK: - device actions
 
+    @ViewBuilder
     private var deviceActionsSection: some View {
+        if managed.config.isDisabled("deviceActions") {
+            Section {
+                Text("Your organization has turned off device actions in this app.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Device Actions")
+            }
+        } else {
+            deviceActionsToggleSection
+        }
+    }
+
+    private var deviceActionsToggleSection: some View {
         Section {
             Toggle("Allow device actions", isOn: Binding(
                 get: { settings.deviceActionsEnabled },

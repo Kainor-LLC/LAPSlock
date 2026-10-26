@@ -8,6 +8,7 @@ import PlatformSecurity
 import DiagnosticsKit
 import LicensingKit
 import DeviceActionsKit
+import ManagedConfigKit
 
 // Build Spec §6, device detail and the credential reveal.
 //
@@ -1084,6 +1085,8 @@ struct DeviceDetailView: View {
             Label {
                 if model.actionsEnabled {
                     Text("Key rotation is under Actions below. It is queued and applies at the device's next Intune check-in.")
+                } else if ManagedConfigStore.read().isDisabled("deviceActions") {
+                    Text("Reading keys needs no write permission. Your organization has turned off device actions here, so rotate keys from the Intune admin center.")
                 } else {
                     Text("Reading keys needs no write permission. Rotating them does: turn on **Allow device actions** in Settings, or rotate from the Intune admin center.")
                 }
