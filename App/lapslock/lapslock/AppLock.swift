@@ -116,9 +116,9 @@ struct AppLockScreen: View {
             Image(systemName: "lock.fill")
                 .font(.system(size: 44))
                 .foregroundStyle(Brand.accent)
-            Text("LAPSlock is locked")
+            Text("TenantKeep is locked")
                 .font(.title3.weight(.semibold))
-            Text("Unlock to see your devices.")
+            Text("Unlock to continue.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 

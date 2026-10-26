@@ -254,7 +254,7 @@ struct SettingsView: View {
     /// there is no consent prompt and no new permission on anybody's consent screen.
     private var appLockSection: some View {
         Section {
-            Toggle("Require Face ID to open LAPSlock", isOn: $settings.appLockEnabled)
+            Toggle("Require Face ID to open TenantKeep", isOn: $settings.appLockEnabled)
         } header: {
             Text("App Lock")
         } footer: {
@@ -668,8 +668,8 @@ struct SettingsView: View {
 
     private func activePlanName(_ store: SubscriptionStore) -> String {
         switch store.entitlement.tier {
-        case .msp:  return "LAPSlock MSP"
-        case .pro:  return "LAPSlock Pro"
+        case .msp:  return "TenantKeep MSP"
+        case .pro:  return "TenantKeep Pro"
         default:    return "Active"
         }
     }
@@ -1023,7 +1023,7 @@ struct SettingsView: View {
             Link("Privacy policy", destination: URL(string: "https://kainor.com/privacy")!)
             Link("Terms", destination: URL(string: "https://kainor.com/terms")!)
             Link("Source code", destination: URL(string: "https://github.com/Kainor-LLC/LAPSlock")!)
-            Text("LAPSlock is not affiliated with, endorsed by, or sponsored by Microsoft Corporation.")
+            Text("TenantKeep On-Call is not affiliated with, endorsed by, or sponsored by Microsoft Corporation.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

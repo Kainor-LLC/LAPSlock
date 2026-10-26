@@ -530,7 +530,7 @@ struct PrivilegedFailure: Equatable {
                 """
         case .consentRequired:
             title = "Permission not granted yet"
-            explanation = "LAPSlock hasn't been granted permission in this organization yet. Consent is granted per organization, so signing in somewhere new needs it again. If Microsoft refuses, these are directory permissions and need an Entra administrator to approve them — an Intune Administrator cannot."
+            explanation = "TenantKeep hasn't been granted permission in this organization yet. Consent is granted per organization, so signing in somewhere new needs it again. If Microsoft refuses, these are directory permissions and need an Entra administrator to approve them — an Intune Administrator cannot."
         case .alreadyActive:
             title = "Already active"
             explanation = """

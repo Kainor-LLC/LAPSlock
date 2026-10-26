@@ -140,7 +140,7 @@ public struct PrivacyCoverModifier: ViewModifier {
                                 .font(.largeTitle)
                             Text("Hidden")
                                 .font(.headline)
-                            Text("LAPSlock hides credentials when it isn't in the foreground.")
+                            Text("TenantKeep hides credentials when it isn't in the foreground.")
                                 .font(.footnote)
                                 .multilineTextAlignment(.center)
                                 .foregroundStyle(.secondary)

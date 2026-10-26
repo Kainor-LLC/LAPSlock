@@ -257,7 +257,7 @@ struct ModuleShell: View {
                 .accessibilityHint(module.subtitle)
             }
         }
-        .navigationTitle("LAPSlock")
+        .navigationTitle("TenantKeep")
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

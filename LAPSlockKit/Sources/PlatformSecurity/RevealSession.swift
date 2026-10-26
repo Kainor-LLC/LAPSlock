@@ -52,7 +52,7 @@ public enum RevealRevocation: String, Sendable, Equatable {
     public var message: String {
         switch self {
         case .appBackgrounded:
-            return "Hidden because LAPSlock went to the background. Reveal it again when you're ready."
+            return "Hidden because the app went to the background. Reveal it again when you're ready."
         case .screenRecording:
             return "Hidden because this screen is being recorded or mirrored. Stop the recording to reveal it."
         case .screenshotTaken:

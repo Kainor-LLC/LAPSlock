@@ -79,7 +79,7 @@ enum DiagnosticsExport {
     }
 
     static func subject(appVersion: String) -> String {
-        "LAPSlock diagnostic report (\(appVersion))"
+        "TenantKeep On-Call diagnostic report (\(appVersion))"
     }
 
     /// Trims a report to the most recent events and states plainly that it was trimmed,

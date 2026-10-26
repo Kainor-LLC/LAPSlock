@@ -134,7 +134,7 @@ final class SignInTriageModel: ObservableObject {
         }
         switch e {
         case .consentRequired:
-            return "This organization hasn't granted LAPSlock permission to read the sign-in log yet."
+            return "This organization hasn't granted TenantKeep permission to read the sign-in log yet."
         case .notAuthorized:
             return "Your account can't read the sign-in log, or this tenant has no Entra ID P1. Reports Reader, Security Reader or Global Reader can read it."
         case .throttled(let retryAfter):

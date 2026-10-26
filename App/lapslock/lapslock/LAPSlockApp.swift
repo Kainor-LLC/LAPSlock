@@ -379,7 +379,7 @@ final class AppRootModel: ObservableObject {
         do {
             auth = try MSALAuthManager(config: .vendorDefault)
         } catch {
-            signInError = "LAPSlock couldn't start its sign-in system. Reinstalling the app usually fixes this."
+            signInError = "TenantKeep couldn't start its sign-in system. Reinstalling the app usually fixes this."
         }
     }
 
@@ -527,7 +527,7 @@ final class AppRootModel: ObservableObject {
             return nil
         } catch let error as AuthError {
             if ConsentDiagnostics.state(from: error) != nil {
-                return "Your organization hasn't approved permission for LAPSlock to request role activation. An Entra administrator needs to grant it."
+                return "Your organization hasn't approved permission for TenantKeep to request role activation. An Entra administrator needs to grant it."
             }
             if case .userCancelled = error { return "Permission wasn't granted." }
             return "Couldn't request permission. Check your connection and try again."
@@ -542,25 +542,25 @@ final class AppRootModel: ObservableObject {
     /// sees them.
     func requestConditionalAccessConsent() async -> String? {
         await requestConsent(scopes: ConditionalAccessScopes.module,
-                             deniedMessage: "Your organization hasn't approved permission for LAPSlock to read Conditional Access policies. An Entra administrator needs to grant it.")
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to read Conditional Access policies. An Entra administrator needs to grant it.")
     }
 
     /// Requests the Tenant pulse module's five read scopes, the first time it is opened.
     func requestTenantPulseConsent() async -> String? {
         await requestConsent(scopes: TenantPulseScopes.module,
-                             deniedMessage: "Your organization hasn't approved permission for LAPSlock to read service health, Message Center, app credentials, Intune configuration and Secure Score. An Entra administrator needs to grant it.")
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to read service health, Message Center, app credentials, Intune configuration and Secure Score. An Entra administrator needs to grant it.")
     }
 
     /// Requests the Sign-in triage scopes, the first time it is opened.
     func requestSignInTriageConsent() async -> String? {
         await requestConsent(scopes: SignInTriageScopes.module,
-                             deniedMessage: "Your organization hasn't approved permission for LAPSlock to read the sign-in log, Conditional Access policies and basic user details. An Entra administrator needs to grant it.")
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to read the sign-in log, Conditional Access policies and basic user details. An Entra administrator needs to grant it.")
     }
 
     /// Requests the audit-log scope, only when "who changed this" is tapped.
     func requestConditionalAccessChangesConsent() async -> String? {
         await requestConsent(scopes: ConditionalAccessScopes.changes,
-                             deniedMessage: "Your organization hasn't approved permission for LAPSlock to read the audit log. An Entra administrator needs to grant it.")
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to read the audit log. An Entra administrator needs to grant it.")
     }
 
     /// One consent request, the same shape every module uses: nil on success, or a
@@ -587,7 +587,7 @@ final class AppRootModel: ObservableObject {
             return nil
         } catch let error as AuthError {
             if ConsentDiagnostics.state(from: error) != nil {
-                return "Your organization hasn't approved permission for LAPSlock to read user names. An Entra administrator needs to grant it."
+                return "Your organization hasn't approved permission for TenantKeep to read user names. An Entra administrator needs to grant it."
             }
             if case .userCancelled = error { return "Permission wasn't granted." }
             return "Couldn't request permission. Check your connection and try again."
@@ -713,7 +713,7 @@ final class AppRootModel: ObservableObject {
             return nil
         } catch let error as AuthError {
             if ConsentDiagnostics.state(from: error) != nil {
-                return "Your organization hasn't approved permission for LAPSlock to modify devices. An Entra administrator needs to grant it."
+                return "Your organization hasn't approved permission for TenantKeep to modify devices. An Entra administrator needs to grant it."
             }
             if case .userCancelled = error { return "Permission wasn't granted." }
             return "Couldn't request permission. Check your connection and try again."

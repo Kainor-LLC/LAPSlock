@@ -251,7 +251,7 @@ struct SwitchFailure: Equatable {
         switch error {
         case .consentRequired:
             isConsent = true
-            title = "\(typed) hasn't approved LAPSlock yet"
+            title = "\(typed) hasn't approved TenantKeep yet"
             explanation = """
                 Microsoft requires each organization's own administrator to approve an app \
                 before anyone can use it there — including you, and including with delegated \

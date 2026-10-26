@@ -58,7 +58,7 @@ public enum BiometricPolicy {
 
     /// Copy shown when the device has no owner authentication configured.
     public static let noAuthConfiguredMessage =
-        "This device has no passcode or biometric lock. LAPSlock won't display a local "
+        "This device has no passcode or biometric lock. TenantKeep won't display a local "
         + "administrator password on an unprotected device. Add a passcode in Settings to continue."
 
     /// The reason string shown in the system prompt. Keep it specific: a vague prompt

@@ -89,7 +89,7 @@ public struct SignInView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("LAPSlock")
+                Text("TenantKeep On-Call")
                     .font(.largeTitle.bold())
                 Spacer()
                 if let onOpenSettings {
@@ -126,7 +126,7 @@ public struct SignInView: View {
 
     private var capabilities: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("What LAPSlock asks for")
+            Text("What TenantKeep asks for")
                 .font(.headline)
             InfoRow(
                 icon: "laptopcomputer.and.iphone",
@@ -153,7 +153,7 @@ public struct SignInView: View {
             InfoRow(
                 icon: "person.badge.key.fill",
                 title: "Your roles still decide",
-                detail: "LAPSlock acts as you. Without a directory role that can read passwords, it can't either — including just-in-time roles activated through PIM."
+                detail: "TenantKeep acts as you. Without a directory role that can read passwords, it can't either — including just-in-time roles activated through PIM."
             )
             InfoRow(
                 icon: "doc.text.magnifyingglass",
@@ -172,7 +172,7 @@ public struct SignInView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("First time in your organization?")
                 .font(.headline)
-            Text("An Entra administrator approves LAPSlock once for everyone. If you're approving now, choose **Consent on behalf of your organization** — without it, LAPSlock will work only for your own account and your team will be blocked.")
+            Text("An Entra administrator approves TenantKeep once for everyone. If you're approving now, choose **Consent on behalf of your organization** — without it, TenantKeep will work only for your own account and your team will be blocked.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button("Send the approval link to an administrator") {
@@ -238,10 +238,10 @@ struct AdminApprovalSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Approving LAPSlock")
+                    Text("Approving TenantKeep")
                         .font(.title2.bold())
 
-                    Text("LAPSlock needs a one-time approval from a Microsoft Entra administrator. Approving from the link below grants access for the whole organization.")
+                    Text("TenantKeep needs a one-time approval from a Microsoft Entra administrator. Approving from the link below grants access for the whole organization.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 

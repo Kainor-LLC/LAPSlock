@@ -296,7 +296,7 @@ public actor DiagnosticsRecorder {
     /// fields, so there is no path by which arbitrary text enters the report.
     public func buildReport(environment: DiagnosticEnvironment, includeTenantId: Bool) -> String {
         var lines: [String] = []
-        lines.append("LAPSlock diagnostic report")
+        lines.append("TenantKeep On-Call diagnostic report")
         lines.append("Generated: \(ISO8601DateFormatter().string(from: Date()))")
         lines.append("")
         lines.append("App: \(environment.appVersion) (\(environment.buildNumber))")

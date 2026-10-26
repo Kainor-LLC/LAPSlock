@@ -132,7 +132,7 @@ final class ConditionalAccessListModel: ObservableObject {
         }
         switch e {
         case .consentRequired:
-            return "This organization hasn't granted LAPSlock permission to read Conditional Access policies yet."
+            return "This organization hasn't granted TenantKeep permission to read Conditional Access policies yet."
         case .notAuthorized:
             return "Your account can't read Conditional Access policies. You'll need a role such as Security Reader or Global Reader."
         case .throttled(let retryAfter):

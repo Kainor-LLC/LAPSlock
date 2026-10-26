@@ -174,7 +174,7 @@ struct TenantPulseView: View {
 
     private var consentSection: some View {
         Section {
-            Text("Some cards need permissions this organization hasn't granted LAPSlock yet.")
+            Text("Some cards need permissions this organization hasn't granted TenantKeep yet.")
                 .font(.footnote)
             Button {
                 Task {

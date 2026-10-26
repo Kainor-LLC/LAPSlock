@@ -22,7 +22,7 @@ head = template[: template.index("</head>")]
 head = head.replace("<title>How LAPSlock works · Kainor LLC</title>", "<title>Sign-in error glossary · Kainor LLC</title>")
 head = re.sub(
     r'<meta name="description" content="[^"]*">',
-    '<meta name="description" content="Plain-English explanations of the Microsoft Entra sign-in error codes an on-call administrator meets most, with what to do about each. The same glossary ships inside LAPSlock.">',
+    '<meta name="description" content="Plain-English explanations of the Microsoft Entra sign-in error codes an on-call administrator meets most, with what to do about each. The same glossary ships inside TenantKeep On-Call.">',
     head,
 )
 
@@ -51,7 +51,7 @@ main = f"""
     <div class="summary">
       <h2>What this is</h2>
       <p><strong>The error codes Microsoft Entra returns when a sign-in fails, in plain English, with
-      what to do about each.</strong> LAPSlock shows the same line beside every failed sign-in in its
+      what to do about each.</strong> TenantKeep On-Call shows the same line beside every failed sign-in in its
       Sign-in triage module, so the person on call gets the answer without a search. This page is the
       same glossary, published for everyone.</p>
       <p>Each code links directly: add <code>#50074</code> to the address to share one entry. Microsoft's

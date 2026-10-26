@@ -48,7 +48,7 @@ public enum AdminConsentLink {
 
     /// Message an admin can forward to whoever holds Global Administrator or Privileged
     /// Role Administrator. Written to be pasted into Teams or email as-is.
-    public static func requestMessage(appName: String = "LAPSlock", consentURL: URL?) -> String {
+    public static func requestMessage(appName: String = "TenantKeep On-Call", consentURL: URL?) -> String {
         var lines = [
             "\(appName) needs one-time approval from a Microsoft Entra administrator before our team can use it.",
             "",
@@ -96,11 +96,11 @@ public enum ConsentState: Sendable, Equatable {
     public var explanation: String {
         switch self {
         case .granted:
-            return "LAPSlock is connected to your organization."
+            return "TenantKeep On-Call is connected to your organization."
         case .organizationApprovalRequired:
-            return "Your organization hasn't approved LAPSlock yet. Reading local administrator passwords requires an administrator to approve it once for everyone."
+            return "Your organization hasn't approved TenantKeep On-Call yet. Reading local administrator passwords requires an administrator to approve it once for everyone."
         case .grantedForThisUserOnly:
-            return "LAPSlock works for you, but nobody else in your organization can sign in yet. A tenant-wide approval fixes that in one step."
+            return "TenantKeep On-Call works for you, but nobody else in your organization can sign in yet. A tenant-wide approval fixes that in one step."
         case .roleMissing:
             return "You're signed in, but your account doesn't hold a directory role that can read local administrator passwords. Cloud Device Administrator is the least-privileged role that can, and it can be activated just-in-time through Privileged Identity Management."
         }
