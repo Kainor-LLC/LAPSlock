@@ -76,28 +76,6 @@ final class ProviderCapabilityTests: XCTestCase {
         }
     }
 
-    func test_macOS_rotateOffByDefault() async {
-        let p = MacOSLapsProvider(auth: FakeAuth())
-        XCTAssertFalse(p.capabilities.supportsRotate, "Beta API must be opt-in (§2.4)")
-        let target = DeviceCredentialTarget(platform: .macOS, entraDeviceId: nil, managedDeviceId: "m1")
-        do {
-            try await p.rotate(for: target)
-            XCTFail("expected rotate to be disabled")
-        } catch let error as CredentialError {
-            guard case .unsupportedOnPlatform = error else {
-                return XCTFail("expected unsupportedOnPlatform, got \(error)")
-            }
-        } catch {
-            XCTFail("unexpected error \(error)")
-        }
-    }
-
-    func test_macOS_rotateEnabledFlagFlipsCapability() {
-        let p = MacOSLapsProvider(auth: FakeAuth(), rotateEnabled: true)
-        XCTAssertTrue(p.capabilities.supportsRotate)
-        XCTAssertTrue(p.capabilities.usesBetaAPI, "UI must warn that rotate rides a preview API.")
-    }
-
     // MARK: - coordinator routing
 
     func test_coordinator_routesByPlatform() async {

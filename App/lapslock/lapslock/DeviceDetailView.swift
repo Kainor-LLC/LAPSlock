@@ -599,20 +599,6 @@ final class DeviceDetailModel: ObservableObject {
 
     // MARK: - rotate
 
-    func rotate() async {
-        guard capabilities.supportsRotate else { return }
-        isWorking = true
-        defer { isWorking = false }
-        do {
-            try await provider.rotate(for: device.credentialTarget)
-            statusNote = "Rotation requested. The device applies it on its next check-in."
-            hideNow()
-        } catch {
-            errorMessage = Self.describe(error)
-            lastFailureWasMissingRole = (error as? CredentialError).map { if case .notAuthorized = $0 { return true } else { return false } } ?? false
-        }
-    }
-
     var portalURL: URL? { provider.portalURL(for: device.credentialTarget) }
 
     // MARK: - diagnostics
@@ -985,9 +971,6 @@ struct DeviceDetailView: View {
                 Link("Open this device in Intune", destination: portal)
                     .font(.footnote.weight(.semibold))
             }
-            if model.capabilities.usesBetaAPI && model.capabilities.supportsRotate {
-                Text("Rotation uses a Microsoft preview API.")
-            }
         }
     }
 
@@ -1141,15 +1124,6 @@ struct DeviceDetailView: View {
             DataRow(label: "Last rotated", value: relative(model.metadata?.lastRotationDateTime), monospaced: false)
             DataRow(label: "Intune ID", value: model.device.id)
             DataRow(label: "Entra device ID", value: model.device.entraDeviceId ?? "None")
-
-            if model.capabilities.supportsRotate {
-                Button {
-                    Task { await model.rotate() }
-                } label: {
-                    Label("Rotate password", systemImage: "arrow.triangle.2.circlepath")
-                }
-                .disabled(model.isWorking)
-            }
         }
     }
 

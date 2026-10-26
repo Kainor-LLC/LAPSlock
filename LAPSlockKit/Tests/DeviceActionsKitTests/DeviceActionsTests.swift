@@ -17,7 +17,9 @@ final class DeviceActionsTests: XCTestCase {
         XCTAssertEqual(DeviceActionKind.locate.scope, "DeviceManagementManagedDevices.ReadWrite.All")
         XCTAssertEqual(DeviceActionKind.rotateBitLockerKeys.scope, "DeviceManagementManagedDevices.ReadWrite.All")
         XCTAssertEqual(DeviceActionKind.rotateBitLockerKeys.version, .beta)
-        for kind in DeviceActionKind.allCases where kind != .rotateBitLockerKeys {
+        XCTAssertEqual(DeviceActionKind.rotateLocalAdminPassword.version, .beta)
+        XCTAssertEqual(DeviceActionKind.rotateLocalAdminPassword.scope, "DeviceManagementManagedDevices.ReadWrite.All")
+        for kind in DeviceActionKind.allCases where kind != .rotateBitLockerKeys && kind != .rotateLocalAdminPassword {
             XCTAssertEqual(kind.version, .v1_0, kind.rawValue)
         }
         XCTAssertEqual(DeviceActionScopes.module, ["DeviceManagementManagedDevices.PrivilegedOperations.All", "DeviceManagementManagedDevices.ReadWrite.All"])
@@ -45,6 +47,10 @@ final class DeviceActionsTests: XCTestCase {
         XCTAssertNotNil(DeviceActionKind.rotateBitLockerKeys.unavailableReason(for: iPhone))
         XCTAssertNotNil(DeviceActionKind.locate.unavailableReason(for: windows))
         XCTAssertNil(DeviceActionKind.locate.unavailableReason(for: iPhone))
+        let mac = DeviceActionTarget(managedDeviceId: "dev-4", deviceName: "MBP-DESIGN-03", platform: .macOS, ownerType: "company")
+        XCTAssertNil(DeviceActionKind.rotateLocalAdminPassword.unavailableReason(for: mac))
+        XCTAssertNotNil(DeviceActionKind.rotateLocalAdminPassword.unavailableReason(for: windows))
+        XCTAssertEqual(DeviceActionKind.rotateLocalAdminPassword.action(for: mac).request.path, "/deviceManagement/managedDevices/dev-4/rotateLocalAdminPassword")
         XCTAssertEqual(DeviceActionKind.locate.unavailableReason(for: personalPhone), "Locate works on corporate-owned devices only.")
         var unknownOwner = iPhone
         unknownOwner.ownerType = nil

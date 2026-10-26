@@ -17,7 +17,6 @@ public struct WindowsLapsProvider: LocalAdminCredentialProviding {
     public let capabilities = CredentialCapabilities(
         supportsMetadata: true,
         supportsReveal: true,
-        supportsRotate: false,      // Windows LAPS rotates via policy/post-auth reset, not an app action
         usesBetaAPI: false,         // v1.0, GA
         offersPortalHandoff: true,  // still useful as an escape hatch on errors
         unavailabilityReason: nil
@@ -134,15 +133,6 @@ public struct WindowsLapsProvider: LocalAdminCredentialProviding {
             backupDateTime: current.backupDateTime,
             secret: current.secret,
             previousVersions: Array(versions.dropFirst())
-        )
-    }
-
-    // MARK: - rotate (not an app action on Windows)
-
-    public func rotate(for target: DeviceCredentialTarget) async throws {
-        throw CredentialError.unsupportedOnPlatform(
-            platform: .windows,
-            reason: "Windows LAPS rotates on its own schedule, and after each use when post-authentication reset is enabled in policy. There's nothing to trigger here."
         )
     }
 

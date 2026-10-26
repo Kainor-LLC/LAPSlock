@@ -208,7 +208,7 @@ struct DeviceActionsSections: View {
         } header: {
             Text("Actions")
         } footer: {
-            Text("Each action is queued by Intune and runs at the device's next check-in. Every request is written to the shift log in Settings, and to your tenant's audit log by Microsoft.")
+            Text("Each action is queued by Intune and runs at the device's next check-in. Every request is written to the shift log in Settings, and to your tenant's audit log by Microsoft. If a role has to be activated first, the app offers it, before the call when it can read your roles and after Microsoft refuses when it cannot.")
         }
         .confirmationDialog(
             model.confirming.map(\.title) ?? "",

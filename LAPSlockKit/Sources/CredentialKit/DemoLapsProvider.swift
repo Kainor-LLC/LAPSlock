@@ -25,18 +25,18 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
         switch platform {
         case .windows:
             return CredentialCapabilities(
-                supportsMetadata: true, supportsReveal: true, supportsRotate: false,
+                supportsMetadata: true, supportsReveal: true,
                 usesBetaAPI: false, offersPortalHandoff: true, unavailabilityReason: nil
             )
         case .macOS:
             return CredentialCapabilities(
-                supportsMetadata: true, supportsReveal: false, supportsRotate: false,
+                supportsMetadata: true, supportsReveal: false,
                 usesBetaAPI: true, offersPortalHandoff: true,
                 unavailabilityReason: MacOSLapsProvider.revealUnavailableReason
             )
         case .other:
             return CredentialCapabilities(
-                supportsMetadata: false, supportsReveal: false, supportsRotate: false,
+                supportsMetadata: false, supportsReveal: false,
                 usesBetaAPI: false, offersPortalHandoff: false,
                 unavailabilityReason: "LAPSlock manages local administrator passwords on Windows and macOS devices only."
             )
@@ -131,12 +131,6 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
             secret: secret,
             previousVersions: history
         )
-    }
-
-    public func rotate(for target: DeviceCredentialTarget) async throws {
-        try await Task.sleep(for: latency)
-        // Succeeds silently in demo mode. Nothing to rotate, and pretending otherwise
-        // would misrepresent what the real action does.
     }
 
     public func portalURL(for target: DeviceCredentialTarget) -> URL? {

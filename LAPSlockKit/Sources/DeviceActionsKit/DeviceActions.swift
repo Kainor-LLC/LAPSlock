@@ -64,6 +64,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
     case remoteLock
     case locate
     case rotateBitLockerKeys
+    case rotateLocalAdminPassword
 
     public var id: String { rawValue }
 
@@ -74,6 +75,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .remoteLock:           return "Remote lock"
         case .locate:               return "Locate"
         case .rotateBitLockerKeys:  return "Rotate BitLocker keys"
+        case .rotateLocalAdminPassword: return "Rotate local admin password"
         }
     }
 
@@ -84,6 +86,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .remoteLock:           return "lock"
         case .locate:               return "location"
         case .rotateBitLockerKeys:  return "key"
+        case .rotateLocalAdminPassword: return "key.horizontal"
         }
     }
 
@@ -104,18 +107,24 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .remoteLock:           return "remoteLock"
         case .locate:               return "locateDevice"
         case .rotateBitLockerKeys:  return "rotateBitLockerKeys"
+        case .rotateLocalAdminPassword: return "rotateLocalAdminPassword"
         }
     }
 
-    /// Key rotation is still beta on the reference; the others are v1.0.
+    /// Both rotations are still beta on the reference; the others are v1.0.
     public var version: GraphAPIVersion {
-        self == .rotateBitLockerKeys ? .beta : .v1_0
+        switch self {
+        case .rotateBitLockerKeys, .rotateLocalAdminPassword: return .beta
+        default: return .v1_0
+        }
     }
 
+    /// The local admin password rotation's scope is (verify) on the beta reference; it
+    /// shipped in 1.0 on the read-write scope and keeps it until the page says otherwise.
     public var scope: String {
         switch self {
         case .sync, .restart, .remoteLock:  return DeviceActionScopes.privilegedOperations
-        case .locate, .rotateBitLockerKeys: return DeviceActionScopes.readWrite
+        case .locate, .rotateBitLockerKeys, .rotateLocalAdminPassword: return DeviceActionScopes.readWrite
         }
     }
 
@@ -127,6 +136,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .remoteLock:           return "Lock this device? The person will need their passcode to get back in."
         case .locate:               return "Ask the device for its location? The person is notified on the device."
         case .rotateBitLockerKeys:  return "Rotate the BitLocker recovery keys? The old keys stop working once the device checks in."
+        case .rotateLocalAdminPassword: return "Rotate the local administrator password? The current password stops working once the device checks in."
         }
     }
 
@@ -137,6 +147,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .remoteLock:           return "Lock requested. It applies at the device's next check-in."
         case .locate:               return "Location requested. It appears on the device's page in the Intune admin center once the device answers."
         case .rotateBitLockerKeys:  return "Rotation requested. The device generates a new key at its next check-in, then the new key appears above."
+        case .rotateLocalAdminPassword: return "Rotation requested. Intune sets a new password at the device's next check-in."
         }
     }
 
@@ -150,6 +161,11 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
             return nil
         case .rotateBitLockerKeys:
             return target.platform == .windows ? nil : "BitLocker is a Windows feature."
+        case .rotateLocalAdminPassword:
+            // Windows LAPS rotates on its own schedule and after each use when the policy
+            // says so; the app action is for macOS, where 1.0 offered it. (verify) whether
+            // to offer it on Windows as well.
+            return target.platform == .macOS ? nil : "Windows LAPS rotates on its own schedule and after use."
         default:
             return nil
         }

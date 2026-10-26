@@ -72,8 +72,6 @@ public struct CredentialCapabilities: Sendable, Equatable {
     public let supportsMetadata: Bool
     /// Can retrieve the password value via a documented, production-supported API.
     public let supportsReveal: Bool
-    /// Can trigger a rotation.
-    public let supportsRotate: Bool
     /// Reveal/rotate rides a beta API (must be surfaced in the UI, off by default).
     public let usesBetaAPI: Bool
     /// When reveal is unavailable, a deep link to the admin portal is offered instead.
@@ -85,14 +83,12 @@ public struct CredentialCapabilities: Sendable, Equatable {
     public init(
         supportsMetadata: Bool,
         supportsReveal: Bool,
-        supportsRotate: Bool,
         usesBetaAPI: Bool,
         offersPortalHandoff: Bool,
         unavailabilityReason: String? = nil
     ) {
         self.supportsMetadata = supportsMetadata
         self.supportsReveal = supportsReveal
-        self.supportsRotate = supportsRotate
         self.usesBetaAPI = usesBetaAPI
         self.offersPortalHandoff = offersPortalHandoff
         self.unavailabilityReason = unavailabilityReason
@@ -213,7 +209,6 @@ public protocol LocalAdminCredentialProviding: Sendable {
 
     func metadata(for target: DeviceCredentialTarget) async throws -> CredentialMetadata
     func reveal(for target: DeviceCredentialTarget) async throws -> RevealedCredential
-    func rotate(for target: DeviceCredentialTarget) async throws
 
     /// Deep link to the admin portal for capabilities the app can't perform itself.
     func portalURL(for target: DeviceCredentialTarget) -> URL?

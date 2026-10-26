@@ -10,10 +10,10 @@ import AuthKit
 public actor CredentialCoordinator {
     private let providers: [DevicePlatform: any LocalAdminCredentialProviding]
 
-    public init(auth: AuthManaging, macRotateEnabled: Bool = false) {
+    public init(auth: AuthManaging) {
         self.providers = [
             .windows: WindowsLapsProvider(auth: auth),
-            .macOS: MacOSLapsProvider(auth: auth, rotateEnabled: macRotateEnabled)
+            .macOS: MacOSLapsProvider(auth: auth)
         ]
     }
 
@@ -29,7 +29,6 @@ public actor CredentialCoordinator {
         providers[platform]?.capabilities ?? CredentialCapabilities(
             supportsMetadata: false,
             supportsReveal: false,
-            supportsRotate: false,
             usesBetaAPI: false,
             offersPortalHandoff: false,
             unavailabilityReason: "LAPSlock doesn't manage local admin passwords on this kind of device."
@@ -52,10 +51,6 @@ public actor CredentialCoordinator {
             )
         }
         return try await p.reveal(for: target)
-    }
-
-    public func rotate(for target: DeviceCredentialTarget) async throws {
-        try await provider(for: target.platform).rotate(for: target)
     }
 
     public func portalURL(for target: DeviceCredentialTarget) -> URL? {

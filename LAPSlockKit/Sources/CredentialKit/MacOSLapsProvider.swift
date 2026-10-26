@@ -25,14 +25,10 @@ import AuthKit
 public struct MacOSLapsProvider: LocalAdminCredentialProviding {
     public let platform: DevicePlatform = .macOS
 
-    /// Rotate is implemented but OFF by default (beta API, §2.4). Callers opt in.
-    public let rotateEnabled: Bool
-
     public var capabilities: CredentialCapabilities {
         CredentialCapabilities(
             supportsMetadata: true,      // attempted; degrades cleanly if the API 500s
             supportsReveal: false,       // ← flip to true when Microsoft ships it
-            supportsRotate: rotateEnabled,
             usesBetaAPI: true,
             offersPortalHandoff: true,
             unavailabilityReason: Self.revealUnavailableReason
@@ -52,9 +48,8 @@ public struct MacOSLapsProvider: LocalAdminCredentialProviding {
     private let auth: AuthManaging
     private let session: URLSession
 
-    public init(auth: AuthManaging, rotateEnabled: Bool = false) {
+    public init(auth: AuthManaging) {
         self.auth = auth
-        self.rotateEnabled = rotateEnabled
         self.session = GraphHTTP.makeSession()
     }
 
@@ -97,30 +92,6 @@ public struct MacOSLapsProvider: LocalAdminCredentialProviding {
             platform: .macOS,
             reason: Self.revealUnavailableReason
         )
-    }
-
-    // MARK: - rotate (beta, opt-in, §2.4)
-
-    public func rotate(for target: DeviceCredentialTarget) async throws {
-        guard rotateEnabled else {
-            throw CredentialError.unsupportedOnPlatform(
-                platform: .macOS,
-                reason: "Rotating macOS passwords uses a Microsoft preview API. Turn it on in Settings to enable it."
-            )
-        }
-        guard let managedDeviceId = target.managedDeviceId, !managedDeviceId.isEmpty else {
-            throw CredentialError.missingIdentifier("Intune managed device ID is required to rotate.")
-        }
-        let token = try await auth.token(scopes: metadataScopes, allowInteractive: true)
-        var req = URLRequest(url: GraphHTTP.url(
-            version: "beta",
-            path: "/deviceManagement/managedDevices/\(managedDeviceId)/rotateLocalAdminPassword"))
-        req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let (_, response) = try await session.data(for: req)
-        try GraphHTTP.validate(response)
     }
 
     public func portalURL(for target: DeviceCredentialTarget) -> URL? {
