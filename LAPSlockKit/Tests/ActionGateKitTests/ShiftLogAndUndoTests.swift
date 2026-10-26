@@ -62,6 +62,33 @@ final class ShiftLogAndUndoTests: XCTestCase {
         XCTAssertFalse(empty.contains("\u{2014}"))
     }
 
+    func test_pendingActionsCancelByTargetFromOutsideTheWaiter() async {
+        let pending = PendingActions()
+        let window = UndoWindow()
+        await pending.register(window, for: "dev-1")
+        // The waiter runs on its own, the way the screen's task does.
+        let waiter = Task { await window.wait(seconds: 30, sleep: { _ in try await Task.sleep(for: .milliseconds(5)) }) }
+        try? await Task.sleep(for: .milliseconds(30))
+        let other = await pending.cancel("dev-2")
+        XCTAssertFalse(other, "another device's screen closing cancels nothing here")
+        let cancelled = await pending.cancel("dev-1")
+        XCTAssertTrue(cancelled)
+        let proceeded = await waiter.value
+        XCTAssertFalse(proceeded, "a countdown cancelled from outside never sends")
+        let left = await pending.count
+        XCTAssertEqual(left, 0)
+    }
+
+    func test_pendingActionsCancelAll() async {
+        let pending = PendingActions()
+        let a = UndoWindow(), b = UndoWindow()
+        await pending.register(a, for: "a")
+        await pending.register(b, for: "b")
+        await pending.cancelAll()
+        let ac = await a.isCancelled, bc = await b.isCancelled
+        XCTAssertTrue(ac && bc)
+    }
+
     func test_undoWindowElapsesOrCancels() async {
         let elapsed = UndoWindow()
         let ok = await elapsed.wait(seconds: 1, sleep: { _ in })

@@ -179,3 +179,38 @@ public actor UndoWindow {
 
     public var isCancelled: Bool { cancelled }
 }
+
+/// Every countdown running right now, by the id of what it acts on. A screen that goes
+/// away cancels through here rather than through its own view state, which a redraw or a
+/// teardown can lose: an action is sent only while its Undo is on screen.
+public actor PendingActions {
+    public static let shared = PendingActions()
+
+    private var windows: [String: UndoWindow] = [:]
+
+    public init() {}
+
+    public func register(_ window: UndoWindow, for targetId: String) {
+        windows[targetId] = window
+    }
+
+    public func finished(_ targetId: String) {
+        windows[targetId] = nil
+    }
+
+    /// Cancels the countdown for one target, if there is one. Returns whether there was.
+    @discardableResult
+    public func cancel(_ targetId: String) async -> Bool {
+        guard let window = windows.removeValue(forKey: targetId) else { return false }
+        await window.cancel()
+        return true
+    }
+
+    public func cancelAll() async {
+        let all = windows
+        windows = [:]
+        for window in all.values { await window.cancel() }
+    }
+
+    public var count: Int { windows.count }
+}

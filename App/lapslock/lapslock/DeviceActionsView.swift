@@ -109,18 +109,21 @@ final class DeviceActionsModel: ObservableObject {
             return
         }
         let window = UndoWindow()
+        let seconds = Self.undoSeconds
         undoWindow = window
         undoing = kind
-        undoRemaining = UndoWindow.standardSeconds
+        undoRemaining = seconds
+        await PendingActions.shared.register(window, for: target.managedDeviceId)
         let started = Date()
         let ticker = Task { @MainActor [weak self] in
             while let self, self.undoing != nil {
-                self.undoRemaining = max(0, UndoWindow.standardSeconds - Int(Date().timeIntervalSince(started)))
+                self.undoRemaining = max(0, seconds - Int(Date().timeIntervalSince(started)))
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }
-        let proceed = await window.wait()
+        let proceed = await window.wait(seconds: seconds)
         ticker.cancel()
+        await PendingActions.shared.finished(target.managedDeviceId)
         undoing = nil
         undoWindow = nil
         if proceed {
@@ -133,6 +136,18 @@ final class DeviceActionsModel: ObservableObject {
     func undo() {
         guard let window = undoWindow else { return }
         Task { await window.cancel() }
+    }
+
+    /// Ten seconds, or longer in a DEBUG build launched with `-LAPSlockUndoSeconds N` so a
+    /// slow automated pass can act inside the window. Never shorter than ten.
+    static var undoSeconds: Int {
+        #if DEBUG
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "-LAPSlockUndoSeconds"), i + 1 < args.count, let n = Int(args[i + 1]) {
+            return max(UndoWindow.standardSeconds, n)
+        }
+        #endif
+        return UndoWindow.standardSeconds
     }
 
     func confirmed(_ kind: DeviceActionKind) {
@@ -193,6 +208,32 @@ final class DeviceActionsModel: ObservableObject {
         case .decodeFailure:   return "Microsoft Graph returned a record the app couldn't read."
         case .cancelled:       return "Cancelled."
         }
+    }
+}
+
+/// Owns the actions model for as long as the device screen is up, so a redraw above it
+/// never replaces the model mid-countdown. Leaving the screen, or the app going to the
+/// background, during the countdown cancels it: an action is sent only while its Undo is
+/// on screen.
+struct DeviceActionsContainer: View {
+    @StateObject private var model: DeviceActionsModel
+    var activate: (() -> Void)?
+    @Environment(\.scenePhase) private var scenePhase
+
+    init(make: @escaping () -> DeviceActionsModel, activate: (() -> Void)?) {
+        _model = StateObject(wrappedValue: make())
+        self.activate = activate
+    }
+
+    var body: some View {
+        DeviceActionsSections(model: model, activate: activate)
+            .task { await model.load() }
+            // Not onDisappear here: a section in a List disappears when it scrolls off
+            // screen, which is no reason to cancel. The device screen going away is, and
+            // that cancels through PendingActions, see DeviceDetailView.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { Task { await PendingActions.shared.cancelAll() } }
+            }
     }
 }
 

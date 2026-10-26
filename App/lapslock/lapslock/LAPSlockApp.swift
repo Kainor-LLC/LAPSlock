@@ -894,8 +894,8 @@ struct AppRootView: View {
                                 actionsEnabled: AppSettings.shared.deviceActionsEffective,
                                 meter: RevealMeters.demo
                             ),
-                            actionsModel: AppSettings.shared.deviceActionsEffective
-                                ? DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: demoDeviceActions)
+                            makeActionsModel: AppSettings.shared.deviceActionsEffective
+                                ? { DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: demoDeviceActions) }
                                 : nil
                         )
                     }
@@ -993,8 +993,8 @@ struct AppRootView: View {
                                 privilegedSheet: {
                                     privilegedAccessView(deviceName: device.deviceName, embedded: false)
                                 },
-                                actionsModel: AppSettings.shared.deviceActionsEffective
-                                    ? DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: session.deviceActions)
+                                makeActionsModel: AppSettings.shared.deviceActionsEffective
+                                    ? { DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: session.deviceActions) }
                                     : nil
                             )
                         }

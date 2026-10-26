@@ -8,6 +8,7 @@ import PlatformSecurity
 import DiagnosticsKit
 import LicensingKit
 import DeviceActionsKit
+import ActionGateKit
 import ManagedConfigKit
 
 // Build Spec §6, device detail and the credential reveal.
@@ -725,7 +726,11 @@ struct DeviceDetailView: View {
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
     /// The device actions, built by the root when the Settings toggle is on. Nil means the
     /// section explains how to turn them on.
-    var actionsModel: DeviceActionsModel? = nil
+    /// Builds the device actions model, once. A factory and not a model: a model passed in
+    /// was rebuilt every time the view above redrew, and the Face ID prompt makes the app
+    /// inactive for a moment, which redraws it. The countdown lived on the discarded model,
+    /// kept running out of sight, and sent a wipe with no Undo on screen.
+    var makeActionsModel: (() -> DeviceActionsModel)? = nil
     @ObservedObject var settings: AppSettings = .shared
     @State private var showingPrivilegedSheet = false
 
@@ -737,9 +742,9 @@ struct DeviceDetailView: View {
             credentialSection
             bitLockerSection
             detailsSection
-            if let actionsModel {
-                DeviceActionsSections(
-                    model: actionsModel,
+            if let makeActionsModel {
+                DeviceActionsContainer(
+                    make: makeActionsModel,
                     activate: privilegedSheet != nil && settings.privilegedActivationEnabled
                         ? { showingPrivilegedSheet = true } : nil)
             } else {
@@ -760,6 +765,12 @@ struct DeviceDetailView: View {
         .sheet(isPresented: $showingPrivilegedSheet) {
             if let privilegedSheet { privilegedSheet() }
         }
+        .onDisappear {
+            // A countdown on this device stops when its screen goes: an action is sent
+            // only while its Undo is on screen.
+            let id = model.device.id
+            Task { await PendingActions.shared.cancel(id) }
+        }
         .privacyCover(isProtected: model.revealedSecret != nil || model.revealedBitLockerSecret != nil)
         .onReceive(ticker) { _ in model.tick() }
         .onChange(of: scenePhase) { _, phase in
@@ -777,7 +788,6 @@ struct DeviceDetailView: View {
             model.isCaptured = privacy.isCaptured
             await model.loadMetadata()
             await model.loadBitLockerKeys()
-            await actionsModel?.load()
         }
         .onChange(of: privacy.isCaptured) { _, captured in
             model.isCaptured = captured
