@@ -210,7 +210,13 @@ struct ModuleShell: View {
     @State private var compactColumn: NavigationSplitViewColumn = .content
     @State private var showingSettings = false
     @State private var searchPresented = false
+    /// The fold, on a device that has one. Unknown everywhere else.
+    @State private var hinge: HingePosture = .unknown
     @Environment(\.horizontalSizeClass) private var sizeClass
+
+    /// Open across the fold with room for two columns: the layout puts a boundary on the
+    /// hinge. In a compact width the shell is a stack and the fold is nobody's problem.
+    private var hingeOpen: Bool { hinge.isOpen && sizeClass == .regular }
 
     init(
         isDemo: Bool,
@@ -242,16 +248,39 @@ struct ModuleShell: View {
     }
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-        } content: {
-            contentColumn
-                .navigationSplitViewColumnWidth(min: 320, ideal: 380)
-        } detail: {
-            detailColumn
+        GeometryReader { geometry in
+            let fullWidth = geometry.size.width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing
+            let hingeWidth = HingeLayout.contentWidth(fullWidth: fullWidth, leadingInset: geometry.safeAreaInsets.leading, open: true, ideal: 380)
+            NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
+                sidebar
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+            } content: {
+                contentColumn
+                    .navigationSplitViewColumnWidth(
+                        min: hingeOpen ? hingeWidth : 320,
+                        ideal: hingeOpen ? hingeWidth : 380,
+                        max: hingeOpen ? hingeWidth : nil)
+            } detail: {
+                // On the phone idiom the split view lays the detail out across the whole
+                // window and slides the content column over it, so without this a
+                // credential card would start under the list. When the detail is found to
+                // span the window while the device is open, its safe area moves to the
+                // right half; where the columns tile, as on iPad, the detail is already
+                // half the width and nothing is added.
+                GeometryReader { detail in
+                    detailColumn
+                        .safeAreaPadding(.leading, hingeOpen && detail.size.width > fullWidth * 0.75 ? hingeWidth : 0)
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
         }
-        .navigationSplitViewStyle(.balanced)
+        .background { HingeMonitor(posture: $hinge) }
+        .onChange(of: hingeOpen) { _, open in
+            // Open: the sidebar goes, so the one boundary left is content against
+            // detail, at half the width, which is where the hinge is. Closed again: all
+            // three columns come back as they were at launch.
+            columnVisibility = open ? .doubleColumn : .all
+        }
         .sheet(isPresented: $showingSettings) { settingsBuilder() }
         .onChange(of: selectedModule) { _, module in
             // A module change closes whatever the previous one had open. On iPhone the
