@@ -291,6 +291,15 @@ struct ModuleShell: View {
             // three columns come back as they were at launch.
             columnVisibility = open ? .doubleColumn : .all
         }
+        .onChange(of: columnVisibility) { _, visibility in
+            // Hiding the sidebar from three columns lands on "detail only", which left
+            // the whole left half of an open Duo empty while the detail sat on the
+            // right. Open, the toggle goes between all three columns and list plus
+            // detail, and never to the detail alone.
+            if hingeOpen, visibility == .detailOnly {
+                columnVisibility = .doubleColumn
+            }
+        }
         .sheet(isPresented: $showingSettings) { settingsBuilder() }
         .onChange(of: selectedModule) { _, module in
             // A module change closes whatever the previous one had open. On iPhone the
