@@ -160,7 +160,7 @@ struct TenantSwitcherView: View {
                 Text("Customer Organizations")
             } footer: {
                 Text("""
-                    Kept on this device only. LAPSlock never sends this list anywhere — \
+                    Kept on this device only. LAPSlock never sends this list anywhere, \
                     which organizations you work with is your business, not ours.
                     """)
             }
@@ -238,7 +238,7 @@ struct SwitchFailure: Equatable {
             title = "No Microsoft organization found for \(typed)"
             explanation = """
                 Check the spelling. If it is right, the domain may not be a verified domain \
-                in that organization's Microsoft tenant — ask them for their tenant ID and \
+                in that organization's Microsoft tenant. Ask them for their tenant ID and \
                 enter that instead.
                 """
         case .network:
@@ -254,7 +254,7 @@ struct SwitchFailure: Equatable {
             title = "\(typed) hasn't approved TenantKeep yet"
             explanation = """
                 Microsoft requires each organization's own administrator to approve an app \
-                before anyone can use it there — including you, and including with delegated \
+                before anyone can use it there, including you, and including with delegated \
                 admin rights. Send them the link below. They approve once, and it works from \
                 then on.
                 """

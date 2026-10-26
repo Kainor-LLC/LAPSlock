@@ -186,7 +186,7 @@ struct DemoBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "theatermasks.fill")
-            Text("Demo data — not connected to a tenant")
+            Text("Demo data, not connected to a tenant")
                 .font(.caption.weight(.medium))
             Spacer(minLength: 0)
         }

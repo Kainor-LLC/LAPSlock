@@ -56,7 +56,7 @@ public enum RevealRevocation: String, Sendable, Equatable {
         case .screenRecording:
             return "Hidden because this screen is being recorded or mirrored. Stop the recording to reveal it."
         case .screenshotTaken:
-            return "A screenshot was taken. That image now contains an administrator password — delete it, and consider rotating the password."
+            return "A screenshot was taken. That image now contains an administrator password. Delete it, and consider rotating the password."
         case .signedOut:
             return "Hidden because the session ended."
         }

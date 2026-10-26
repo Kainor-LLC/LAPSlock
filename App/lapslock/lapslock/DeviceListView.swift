@@ -349,7 +349,7 @@ final class DeviceListModel: ObservableObject {
             }
             return "Microsoft Graph is rate limiting this tenant. Wait a moment and try again."
         case .serviceUnavailable:
-            return "Microsoft Intune isn't responding right now. This is on Microsoft's side — try again shortly."
+            return "Microsoft Intune isn't responding right now. This is on Microsoft's side. Try again shortly."
         case .transport(let status):
             return "The request failed (HTTP \(status)). Check your connection and try again."
         case .decodeFailure:
@@ -512,7 +512,7 @@ struct DeviceListView: View {
     private var partialSearchNote: String? {
         switch model.fill {
         case .filling(let loaded):
-            return "Still loading devices — \(loaded) so far. Results update as they arrive."
+            return "Still loading devices, \(loaded) so far. Results update as they arrive."
         case .incomplete(let loaded):
             return "Not every device is loaded (\(loaded) so far). Clear the search and load more to widen it."
         case .idle, .complete:
@@ -551,7 +551,7 @@ struct DeviceListView: View {
                 Spacer()
                 ProgressView()
                 if case .filling(let loaded) = model.fill {
-                    Text("Loading all devices — \(loaded) so far")
+                    Text("Loading all devices, \(loaded) so far")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -589,7 +589,7 @@ struct DeviceListView: View {
                 // cannot find my machine".
                 HStack(spacing: 8) {
                     ProgressView()
-                    Text("Still looking — \(loaded) devices loaded so far")
+                    Text("Still looking, \(loaded) devices loaded so far")
                         .font(.subheadline.weight(.medium))
                 }
                 Text("Results appear as the rest of the tenant loads.")

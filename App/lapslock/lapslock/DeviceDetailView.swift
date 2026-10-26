@@ -664,7 +664,7 @@ final class DeviceDetailModel: ObservableObject {
         case .consentRequired:
             return "Your session expired. Sign in again to continue."
         case .notAuthorized:
-            return "You're signed in, but your account doesn't hold a role that can read local administrator passwords. Cloud Device Administrator is the least-privileged role that can — and it can be activated just-in-time through Privileged Identity Management."
+            return "You're signed in, but your account doesn't hold a role that can read local administrator passwords. Cloud Device Administrator is the least-privileged role that can, and it can be activated just-in-time through Privileged Identity Management."
         case .notLapsEnabled:
             return "No LAPS password is stored for this device. Check that a Windows LAPS policy targets it and that the device has checked in since the policy applied."
         case .throttled(let retryAfter):
@@ -673,7 +673,7 @@ final class DeviceDetailModel: ObservableObject {
             }
             return "Microsoft Graph is rate limiting this tenant. Wait a moment and try again."
         case .serviceUnavailable:
-            return "Microsoft isn't responding right now. This is on their side — try again shortly."
+            return "Microsoft isn't responding right now. This is on their side. Try again shortly."
         case .transport(let status):
             return "The request failed (HTTP \(status)). Check your connection and try again."
         case .emptyCredentialSet:

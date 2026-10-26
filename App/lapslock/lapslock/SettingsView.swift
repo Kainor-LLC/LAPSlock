@@ -270,7 +270,7 @@ struct SettingsView: View {
         } footer: {
             Text("""
                 Off by default. Separate from the check before each password reveal, which \
-                always runs. This one protects the device list itself — hostnames, primary \
+                always runs. This one protects the device list itself: hostnames, primary \
                 users and compliance state are worth something to an attacker even with no \
                 password on screen.
 
@@ -516,7 +516,7 @@ struct SettingsView: View {
                 Text("""
                     If your role is eligible through Privileged Identity Management rather than permanently assigned, LAPSlock can activate it here instead of sending you to the portal.
 
-                    This asks Microsoft for permission to request activation of your own eligible roles — never anyone else's. Leave it off and that permission is never requested.
+                    This asks Microsoft for permission to request activation of your own eligible roles, never anyone else's. Leave it off and that permission is never requested.
 
                     This switch is your preference; the permission itself is granted per organization. Signing in to a different one asks again, and the activation screen offers it there when needed.
                     """)
@@ -559,7 +559,7 @@ struct SettingsView: View {
         } footer: {
             Text("""
                 Unavailable. Microsoft doesn't currently offer an API for reading macOS \
-                local administrator passwords — Intune keeps them encrypted on its own \
+                local administrator passwords. Intune keeps them encrypted on its own \
                 service, and only the admin center can display them. LAPSlock will enable \
                 this automatically if that changes.
 
@@ -723,7 +723,7 @@ struct SettingsView: View {
         case .mspYearly:
             return "MSP is active. Reveals are unlimited, and the building icon in the device list toolbar now switches between customer organizations."
         case .proMonthly, .proYearly:
-            return "Pro is active. Reveals are unlimited — the monthly count is gone."
+            return "Pro is active. Reveals are unlimited. The monthly count is gone."
         }
     }
 
@@ -1000,7 +1000,7 @@ struct SettingsView: View {
             Text("Diagnostics")
         } footer: {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Collects what happened, not what you saw: operation outcomes, HTTP status codes, and Microsoft Graph request IDs. It contains no passwords, recovery keys, usernames, device names, or response data — those cannot be represented in the report at all.")
+                Text("Collects what happened, not what you saw: operation outcomes, HTTP status codes, and Microsoft Graph request IDs. It contains no passwords, recovery keys, usernames, device names, or response data. Those cannot be represented in the report at all.")
                 Text("Kept in memory only and cleared when the app closes, so reproduce the problem first, then gather.")
             }
         }
@@ -1132,8 +1132,8 @@ struct SettingsView: View {
     }
 
     static var versionString: String {
-        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
-        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "unknown"
         return "\(v) (\(b))"
     }
 }

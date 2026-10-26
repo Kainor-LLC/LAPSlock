@@ -171,7 +171,7 @@ struct PrivilegedAccessView: View {
         switch access.kind {
         case .directoryRole:
             return access.canReadLocalCredentials
-                ? "Directory role — can read local administrator passwords"
+                ? "Directory role, can read local administrator passwords"
                 : "Directory role"
         case .group(_, let accessId):
             // Ownership is not membership with extras. An owner of a role-assignable group
@@ -179,7 +179,7 @@ struct PrivilegedAccessView: View {
             // people, a bigger thing than reading one password, and worth saying so rather
             // than leaving the difference to one word.
             return accessId == .owner
-                ? "Group ownership — also lets you change who else is in this group"
+                ? "Group ownership, also lets you change who else is in this group"
                 : "Group membership"
         }
     }
@@ -266,7 +266,7 @@ struct PrivilegedAccessView: View {
             } footer: {
                 Text("""
                     Microsoft accepted the activation and is applying it now. Nobody has to \
-                    approve anything. This usually takes a few seconds — check again, or go \
+                    approve anything. This usually takes a few seconds. Check again, or go \
                     back and try the reveal.
                     """)
             }
@@ -304,7 +304,7 @@ struct PrivilegedAccessView: View {
                 Text("""
                     Microsoft created the request but has not reported it as active. If your \
                     organization requires approval, an approver has been notified. If it does \
-                    not, this should become active shortly — check again below.
+                    not, this should become active shortly. Check again below.
                     """)
             }
         case .refused(let status):
@@ -525,18 +525,18 @@ struct PrivilegedFailure: Equatable {
             explanation = """
                 Your organization has not made any roles or groups eligible for you to \
                 activate. If you should be able to read local administrator passwords, ask \
-                an Entra administrator to assign the Cloud Device Administrator role — \
+                an Entra administrator to assign the Cloud Device Administrator role, \
                 either permanently, or as eligible so you can activate it here.
                 """
         case .consentRequired:
             title = "Permission not granted yet"
-            explanation = "TenantKeep hasn't been granted permission in this organization yet. Consent is granted per organization, so signing in somewhere new needs it again. If Microsoft refuses, these are directory permissions and need an Entra administrator to approve them — an Intune Administrator cannot."
+            explanation = "TenantKeep hasn't been granted permission in this organization yet. Consent is granted per organization, so signing in somewhere new needs it again. If Microsoft refuses, these are directory permissions and need an Entra administrator to approve them; an Intune Administrator cannot."
         case .alreadyActive:
             title = "Already active"
             explanation = """
                 That access is already active, so there is nothing to do. If the reveal is \
                 still refused, the role may not be one that can read local administrator \
-                passwords — Cloud Device Administrator is the least-privileged role that can.
+                passwords. Cloud Device Administrator is the least-privileged role that can.
                 """
         case .claimsChallenge:
             // The service retries once. Reaching here means re-authenticating did not
@@ -546,13 +546,13 @@ struct PrivilegedFailure: Equatable {
             explanation = """
                 Microsoft requires you to verify your identity in this session before \
                 granting privileged access, and the sign-in did not meet your \
-                organization's requirement. This is usually a Conditional Access policy — \
+                organization's requirement. This is usually a Conditional Access policy, \
                 for example one demanding a compliant device or a stronger authentication \
                 method than the one you used.
                 """
         case .notAuthorized:
             title = "Microsoft refused the request"
-            explanation = "The most likely reason is that these permissions have not been approved for your organization — they need an Entra administrator, and an Intune Administrator cannot grant them. A diagnostics report from Settings carries the Microsoft error code, which says exactly which."
+            explanation = "The most likely reason is that these permissions have not been approved for your organization. They need an Entra administrator, and an Intune Administrator cannot grant them. A diagnostics report from Settings carries the Microsoft error code, which says exactly which."
         case .serviceError(let status, let code):
             title = "Microsoft refused the request (HTTP \(status))"
             let codeLine = code.map { PrivilegedFailure.codeSuffix($0) } ?? ""
@@ -560,7 +560,7 @@ struct PrivilegedFailure: Equatable {
                 // A 400 means the request was rejected, not that the service is down,
                 // and the commonest reason by far is an activation longer than the
                 // tenant PIM policy allows. Naming that first saves a support round trip.
-                explanation = "Nothing was changed. The most likely reason is that the activation length exceeds what your organization allows — try 1 hour. It can also mean the eligibility no longer exists, or that your organization requires a ticket number." + codeLine
+                explanation = "Nothing was changed. The most likely reason is that the activation length exceeds what your organization allows. Try 1 hour. It can also mean the eligibility no longer exists, or that your organization requires a ticket number." + codeLine
             } else {
                 explanation = "Nothing was changed. Try again shortly; if it persists, send a diagnostics report from Settings." + codeLine
             }

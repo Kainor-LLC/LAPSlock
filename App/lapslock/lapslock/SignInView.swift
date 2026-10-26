@@ -136,7 +136,7 @@ public struct SignInView: View {
             InfoRow(
                 icon: "key.fill",
                 title: "Read local administrator passwords",
-                detail: "Requested separately, the first time you tap Reveal — not when you sign in."
+                detail: "Requested separately, the first time you tap Reveal, not when you sign in."
             )
         }
     }
@@ -153,7 +153,7 @@ public struct SignInView: View {
             InfoRow(
                 icon: "person.badge.key.fill",
                 title: "Your roles still decide",
-                detail: "TenantKeep acts as you. Without a directory role that can read passwords, it can't either — including just-in-time roles activated through PIM."
+                detail: "TenantKeep acts as you. Without a directory role that can read passwords, it can't either, including just-in-time roles activated through PIM."
             )
             InfoRow(
                 icon: "doc.text.magnifyingglass",
@@ -172,7 +172,7 @@ public struct SignInView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("First time in your organization?")
                 .font(.headline)
-            Text("An Entra administrator approves TenantKeep once for everyone. If you're approving now, choose **Consent on behalf of your organization** — without it, TenantKeep will work only for your own account and your team will be blocked.")
+            Text("An Entra administrator approves TenantKeep once for everyone. If you're approving now, choose **Consent on behalf of your organization**. Without it, TenantKeep will work only for your own account and your team will be blocked.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             Button("Send the approval link to an administrator") {

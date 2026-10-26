@@ -170,7 +170,7 @@ public final class SubscriptionStore: ObservableObject {
             case .success(let verification):
                 guard case .verified(let transaction) = verification else {
                     // Apple could not vouch for it, so neither do we.
-                    return .failed("Apple couldn't verify that purchase. Nothing was charged that we can see — check your Apple Account, and contact support if it was.")
+                    return .failed("Apple couldn't verify that purchase. Nothing was charged that we can see. Check your Apple Account, and contact support if it was.")
                 }
                 await transaction.finish()
                 await refreshEntitlement()
