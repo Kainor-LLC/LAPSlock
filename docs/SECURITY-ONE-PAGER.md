@@ -77,7 +77,8 @@ attested by a third party.
 1. Install a TLS-intercepting proxy on a test iPhone and trust its certificate.
 2. Sign in to a test tenant and reveal a credential.
 3. Observe two hosts, both Microsoft. Search the capture for the credential: it appears once,
-   in a Graph response.
+   in a Graph response. Open the Security module's Digest tab and two public feed hosts
+   appear, `www.cisa.gov` and `api.msrc.microsoft.com`, each a GET with no token and no cookie.
 
 Ten minutes. Step-by-step in `docs/NETWORK-TRANSPARENCY.md`. Vulnerability reports:
 `SECURITY.md`. Source, published for security review: github.com/Kainor-LLC/LAPSlock.

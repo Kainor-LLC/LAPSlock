@@ -127,6 +127,18 @@ check_module "SecurityKit" "Foundation|AuthKit" \
   "PrivilegedAccessKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# ThreatDigestKit talks to hosts that are not Microsoft Graph (public CISA and MSRC
+# feeds). It is capped at Foundation so it can never carry a token, a tenant id or a
+# credential to them: no AuthKit, nothing of the tenant's in its link graph at all.
+check_module "ThreatDigestKit" "Foundation" \
+  "AuthKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "PrivilegedAccessKit" \
+  "SecurityKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \

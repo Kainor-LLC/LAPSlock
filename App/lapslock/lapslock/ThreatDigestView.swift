@@ -1,0 +1,404 @@
+import SwiftUI
+import Combine
+import ThreatDigestKit
+
+// The Threat Digest. Spec section 3.14. The second tab of the Security module.
+//
+// Content column: the few cards that matter this week, then the rest collapsed. Detail
+// column: one item with why it ranked, what each source said, and a link per source.
+// Nothing here is written by the app: every summary is the source's own text. The feeds
+// are public and the Kit that fetches them is capped at Foundation, so nothing of the
+// tenant can travel with the request.
+//
+// Free tier: the data is public and this is the module's best hook. Tenant correlation
+// is phase 3 and Pro.
+
+@MainActor
+final class ThreatDigestModel: ObservableObject {
+    @Published private(set) var snapshot: DigestSnapshot?
+    @Published private(set) var isLoading = false
+    @Published private(set) var errorMessage: String?
+    @Published var microsoftOnly: Bool {
+        didSet { UserDefaults.standard.set(microsoftOnly, forKey: Self.microsoftOnlyKey) }
+    }
+    @Published private(set) var cards: [(item: DigestItem, ranking: DigestRanking)] = []
+    @Published private(set) var rest: [(item: DigestItem, ranking: DigestRanking)] = []
+    @Published var showRest = false
+
+    static let microsoftOnlyKey = "settings.digestMicrosoftOnly"
+    static let lastSeenKey = "settings.digestLastSeen"
+
+    /// The last-seen stamp as it was when the digest loaded, so an item stays "new" for
+    /// the whole visit and only stops being new on the next one.
+    private(set) var seenBefore: Date?
+    private let provider: any ThreatDigestProviding
+    private var cancellables = Set<AnyCancellable>()
+
+    init(provider: any ThreatDigestProviding) {
+        self.provider = provider
+        self.microsoftOnly = UserDefaults.standard.object(forKey: Self.microsoftOnlyKey) as? Bool ?? true
+        self.seenBefore = UserDefaults.standard.object(forKey: Self.lastSeenKey) as? Date
+        Publishers.CombineLatest($snapshot, $microsoftOnly.removeDuplicates())
+            .map { snapshot, microsoftOnly -> (cards: [(item: DigestItem, ranking: DigestRanking)], rest: [(item: DigestItem, ranking: DigestRanking)]) in
+                guard let snapshot else { return ([], []) }
+                let ranker = DigestRanker(now: snapshot.fetchedAt)
+                let visible = Self.filter(snapshot.items, microsoftOnly: microsoftOnly)
+                return ranker.split(ranker.ranked(visible))
+            }
+            .sink { [weak self] split in
+                self?.cards = split.cards
+                self?.rest = split.rest
+            }
+            .store(in: &cancellables)
+    }
+
+    /// The default filter hides vulnerabilities in other vendors' products. Advisories
+    /// always show: a ransomware campaign is everybody's business.
+    static func filter(_ items: [DigestItem], microsoftOnly: Bool) -> [DigestItem] {
+        guard microsoftOnly else { return items }
+        return items.filter { $0.kind == .advisory || $0.isMicrosoft }
+    }
+
+    func entry(_ id: String) -> (item: DigestItem, ranking: DigestRanking)? {
+        (cards + rest).first { $0.item.id == id }
+    }
+
+    func isNew(_ item: DigestItem) -> Bool {
+        guard let published = item.published else { return false }
+        guard let seenBefore else { return true }
+        return published > seenBefore
+    }
+
+    var newCount: Int { (cards + rest).filter { isNew($0.item) }.count }
+
+    var unavailable: [DigestSourceStatus] { snapshot?.unavailable ?? [] }
+
+    func load() async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+        do {
+            snapshot = try await provider.digest()
+            if snapshot?.statuses.allSatisfy({ !$0.isAvailable }) == true {
+                errorMessage = "None of the feeds answered. Check your connection and try again."
+            }
+        } catch {
+            errorMessage = "Couldn't load the digest. Check your connection and try again."
+        }
+    }
+
+    /// Called when the reader leaves, so the next visit marks only what came after.
+    func markSeen() {
+        guard let fetchedAt = snapshot?.fetchedAt else { return }
+        UserDefaults.standard.set(fetchedAt, forKey: Self.lastSeenKey)
+    }
+}
+
+// MARK: - content column
+
+struct ThreatDigestListView: View {
+    @ObservedObject var model: ThreatDigestModel
+    let isDemo: Bool
+    @Binding var selection: String?
+
+    var body: some View {
+        Group {
+            if model.isLoading && model.snapshot == nil {
+                loadingState
+            } else if let error = model.errorMessage, model.cards.isEmpty, model.rest.isEmpty {
+                errorState(error)
+            } else if model.snapshot == nil {
+                loadingState
+            } else {
+                digestList
+            }
+        }
+        .navigationTitle("Security")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .refreshable { await model.load() }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Toggle("Microsoft products only", isOn: $model.microsoftOnly)
+                } label: {
+                    Image(systemName: model.microsoftOnly
+                          ? "line.3.horizontal.decrease.circle"
+                          : "line.3.horizontal.decrease.circle.fill")
+                }
+                .accessibilityLabel("Filter digest")
+            }
+        }
+        .task {
+            if model.snapshot == nil { await model.load() }
+        }
+        .onDisappear { model.markSeen() }
+        .safeAreaInset(edge: .top) {
+            if isDemo { DemoBanner() }
+        }
+    }
+
+    private var digestList: some View {
+        List(selection: $selection) {
+            Section {
+                if model.cards.isEmpty {
+                    Text("Nothing ranks high enough this week. The rest is below.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.cards, id: \.item.id) { entry in
+                        NavigationLink(value: entry.item.id) {
+                            DigestCardRow(item: entry.item, ranking: entry.ranking, isNew: model.isNew(entry.item))
+                        }
+                    }
+                }
+            } header: {
+                Text("This Week")
+            } footer: {
+                Text(cardsFooter)
+            }
+            Section {
+                if model.showRest {
+                    ForEach(model.rest, id: \.item.id) { entry in
+                        NavigationLink(value: entry.item.id) {
+                            DigestCardRow(item: entry.item, ranking: entry.ranking, isNew: model.isNew(entry.item), compact: true)
+                        }
+                    }
+                } else if !model.rest.isEmpty {
+                    Button {
+                        model.showRest = true
+                    } label: {
+                        Text("Show \(model.rest.count) more")
+                    }
+                }
+            } header: {
+                Text("The Rest")
+            }
+            if !model.unavailable.isEmpty {
+                Section {
+                    ForEach(model.unavailable, id: \.source) { status in
+                        if case .unavailable(let reason) = status.state {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(status.source.title + " unavailable")
+                                    .font(.subheadline.weight(.medium))
+                                Text(reason)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Sources")
+                }
+            }
+        }
+    }
+
+    private var cardsFooter: String {
+        var parts = ["Ranked on the phone from CISA KEV, CISA advisories and Microsoft MSRC; the words are theirs."]
+        parts.append(model.microsoftOnly ? "Microsoft products only; advisories always show." : "Every vendor.")
+        if let fetchedAt = model.snapshot?.fetchedAt {
+            parts.append("Fetched " + fetchedAt.formatted(date: .omitted, time: .shortened) + ".")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text("Reading the feeds…").font(.subheadline).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func errorState(_ message: String) -> some View {
+        ContentUnavailableView {
+            Label("Couldn't load the digest", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text(message)
+        } actions: {
+            Button("Try again") { Task { await model.load() } }
+        }
+    }
+}
+
+struct DigestCardRow: View {
+    let item: DigestItem
+    let ranking: DigestRanking
+    let isNew: Bool
+    var compact = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if isNew {
+                    // Primary text on a tinted capsule, like every other pill in the
+                    // app: an accent dot vanished on a selected row.
+                    Text("New")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Brand.accent.opacity(0.22), in: Capsule())
+                        .foregroundStyle(.primary)
+                }
+                Text(item.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(compact ? 2 : 3)
+            }
+            Text(item.subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            if !compact, !item.summary.isEmpty {
+                Text(item.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            if !ranking.signals.isEmpty {
+                FlowChips(values: ranking.signals.filter { $0 != .new && $0 != .microsoft }.map(\.label))
+            }
+            HStack(spacing: 6) {
+                // An advisory's subtitle already names its source.
+                if item.kind == .vulnerability {
+                    Text(item.sources.sorted().map(\.title).joined(separator: ", "))
+                }
+                Spacer(minLength: 0)
+                if let published = item.published {
+                    Text(relative(published))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func relative(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+// MARK: - detail column
+
+struct DigestDetailView: View {
+    let item: DigestItem
+    let ranking: DigestRanking
+    let isDemo: Bool
+
+    var body: some View {
+        List {
+            summarySection
+            whySection
+            if item.sources.contains(.kev) { kevSection }
+            if item.sources.contains(.msrc) { msrcSection }
+            if item.kind == .advisory, !item.cves.isEmpty { cveSection }
+            linksSection
+        }
+        .navigationTitle(item.kind == .vulnerability ? item.id : "Advisory")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .safeAreaInset(edge: .top) {
+            if isDemo { DemoBanner() }
+        }
+    }
+
+    private var summarySection: some View {
+        Section {
+            Text(item.title)
+                .font(.headline)
+                .textSelection(.enabled)
+            LabeledContent(item.kind == .vulnerability ? "Product" : "Source", value: item.subtitle)
+            if let published = item.published {
+                LabeledContent("Published", value: published.formatted(date: .abbreviated, time: .omitted))
+            }
+            if !item.summary.isEmpty {
+                Text(item.summary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        } footer: {
+            Text("The description is the source's own text. Open the source for the full page.")
+        }
+    }
+
+    private var whySection: some View {
+        Section("Why It Ranked") {
+            if ranking.signals.isEmpty {
+                Text("No ranking signals. It is here because a source published it this month.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(ranking.signals, id: \.self) { signal in
+                    LabeledContent(signal.label, value: "+\(DigestRanker.weights[signal] ?? 0)")
+                }
+                LabeledContent("Score", value: String(ranking.score))
+            }
+        }
+    }
+
+    private var kevSection: some View {
+        Section("CISA Known Exploited Vulnerabilities") {
+            if let added = item.kevDateAdded {
+                LabeledContent("Added", value: added.formatted(date: .abbreviated, time: .omitted))
+            }
+            if let due = item.kevDueDate {
+                LabeledContent("Due date", value: due.formatted(date: .abbreviated, time: .omitted))
+            }
+            LabeledContent("Ransomware use", value: item.kevRansomware ? "Known" : "Unknown")
+            if let action = item.kevRequiredAction, !action.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Required action").font(.subheadline.weight(.semibold))
+                    Text(action).font(.subheadline).foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private var msrcSection: some View {
+        Section("Microsoft Security Update Guide") {
+            if let severity = item.msrcSeverity { LabeledContent("Severity", value: severity) }
+            if let impact = item.msrcImpact { LabeledContent("Impact", value: impact) }
+            if let cvss = item.cvssBase { LabeledContent("CVSS base", value: String(format: "%.1f", cvss)) }
+            LabeledContent("Exploited", value: item.msrcExploited ? "Yes" : "No")
+            LabeledContent("Publicly disclosed", value: item.msrcPubliclyDisclosed ? "Yes" : "No")
+            if let exploitability = item.msrcExploitability { LabeledContent("Exploitability", value: exploitability) }
+        }
+    }
+
+    private var cveSection: some View {
+        Section("CVEs Named") {
+            ForEach(item.cves, id: \.self) { cve in
+                Link(cve, destination: MSRCPage.guidePage(cve))
+            }
+        } 
+    }
+
+    private var linksSection: some View {
+        Section {
+            ForEach(item.links) { link in
+                Link(destination: link.url) {
+                    Label("Open at " + link.source.title, systemImage: "arrow.up.right.square")
+                }
+            }
+        } header: {
+            Text("Sources")
+        } footer: {
+            Text("Each link opens the source's page in the browser. The app fetched a public file and sent nothing else.")
+        }
+    }
+}
+
+#Preview("Digest (demo)") {
+    NavigationStack {
+        ThreatDigestListView(
+            model: ThreatDigestModel(provider: DemoThreatDigestProvider(latency: .milliseconds(1))),
+            isDemo: true,
+            selection: .constant(nil))
+    }
+}

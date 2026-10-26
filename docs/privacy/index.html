@@ -209,12 +209,21 @@
     report before sending it.</p>
 
     <h2 class="sec">Network connections</h2>
-    <p>TenantKeep On-Call connects to exactly two hosts:</p>
+    <p>Your organization's data travels between your device and exactly two hosts:</p>
     <ul>
       <li><code>login.microsoftonline.com</code>: Microsoft sign-in</li>
       <li><code>graph.microsoft.com</code>: Microsoft Graph, where your data lives</li>
     </ul>
-    <p>A third host is contacted <strong>only if your organization activates a paid license</strong>
+    <p>The Threat Digest, in the Security module, reads public threat feeds from two more hosts.
+    Those requests carry nothing of yours: no sign-in token, no tenant ID, no cookie, no identifier of
+    any kind. They are a request for a public file, the same request a browser makes:</p>
+    <ul>
+      <li><code>www.cisa.gov</code>: CISA's Known Exploited Vulnerabilities catalog and advisories</li>
+      <li><code>api.msrc.microsoft.com</code>: Microsoft's Security Update Guide</li>
+    </ul>
+    <p>They are contacted only when you open the Digest, and the code that contacts them is built so
+    that it cannot reach a token or your tenant at all.</p>
+    <p>One more host is contacted <strong>only if your organization activates a paid license</strong>
     in Settings, and never before:</p>
     <ul>
       <li><code>kainor-lapslock-prod-func.azurewebsites.net</code>: Kainor's license check</li>

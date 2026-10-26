@@ -11,6 +11,7 @@ import PrivilegedAccessKit
 import SubscriptionKit
 import ConditionalAccessKit
 import SecurityKit
+import ThreatDigestKit
 import TenantPulseKit
 import SignInTriageKit
 
@@ -157,6 +158,9 @@ final class AppRootModel: ObservableObject {
         let tenantPulse: TenantPulseService
         let signInTriage: SignInTriageService
         let security: SecurityService
+        /// Public feeds. Built without the auth manager on purpose: the Kit cannot take
+        /// one, and this is where that shows.
+        let threatDigest: ThreatDigestService
 
         init(auth: MSALAuthManager) {
             self.auth = auth
@@ -170,6 +174,7 @@ final class AppRootModel: ObservableObject {
             self.tenantPulse = TenantPulseService(graph: graph)
             self.signInTriage = SignInTriageService(graph: graph)
             self.security = SecurityService(graph: graph)
+            self.threatDigest = ThreatDigestService()
         }
 
         /// Live credential provider for one platform, sharing the authenticated session.
@@ -823,7 +828,8 @@ struct AppRootView: View {
                     makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider()) }
                 ),
                 security: SecurityColumns(
-                    makeModel: { SecurityListModel(provider: DemoSecurityProvider()) }
+                    makeModel: { SecurityListModel(provider: DemoSecurityProvider()) },
+                    makeDigestModel: { ThreatDigestModel(provider: DemoThreatDigestProvider()) }
                 ),
                 settingsBuilder: {
                     SettingsView(
@@ -919,6 +925,7 @@ struct AppRootView: View {
                     ),
                     security: SecurityColumns(
                         makeModel: { SecurityListModel(provider: session.security) },
+                        makeDigestModel: { ThreatDigestModel(provider: session.threatDigest) },
                         requestConsent: { await root.requestSecurityConsent() }
                     ),
                     settingsBuilder: {

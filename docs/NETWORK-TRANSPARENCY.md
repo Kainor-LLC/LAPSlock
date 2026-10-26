@@ -7,17 +7,26 @@ minutes, and section 4 tells you how.
 
 ## 1. The hosts
 
-LAPSlock talks to exactly these hosts. There is no fourth.
+TenantKeep On-Call talks to exactly these hosts. There is no sixth.
 
 | Host | Operator | When | What crosses the wire |
 |---|---|---|---|
 | `login.microsoftonline.com` | Microsoft | Sign-in, token refresh | Your Microsoft sign-in, brokered by MSAL. Standard Entra ID delegated auth. |
-| `graph.microsoft.com` | Microsoft | Browsing devices, revealing credentials | Graph requests carrying your delegated token; Graph responses carrying your organization's data, including the credential you asked for. |
+| `graph.microsoft.com` | Microsoft | Every module that reads your tenant | Graph requests carrying your delegated token; Graph responses carrying your organization's data, including the credential you asked for. |
+| `www.cisa.gov` | CISA (US government) | Only when you open the Security module's Digest tab | A GET for three public files: the Known Exploited Vulnerabilities catalog and two advisory feeds. No token, no tenant ID, no cookie, no identifier. The files come back. |
+| `api.msrc.microsoft.com` | Microsoft | Only when you open the Digest tab | A GET for the public Security Update Guide, filtered to the last thirty days. Same rule: nothing of yours in the request. |
 | `kainor-lapslock-prod-func.azurewebsites.net` | Kainor LLC | **Only after you activate an organization license**, then about monthly | A version number and your Microsoft tenant ID. Nothing else. A signed license statement comes back. |
 
-**A free-tier installation never contacts Kainor.** It talks to the two Microsoft hosts and
-nothing else, and there is no code path that can change that without a tap on *Activate
-organization license* in Settings. Demo mode has no path to Kainor at all.
+**A free-tier installation never contacts Kainor.** It talks to the two Microsoft hosts for
+your data, the two public feed hosts for the Digest, and nothing else, and there is no code
+path that can change that without a tap on *Activate organization license* in Settings. Demo
+mode has no path to Kainor at all.
+
+**The two feed hosts cannot receive anything of yours, structurally.** The code that fetches
+them is a package target capped at Foundation by the isolation guard in `scripts/isolation-check.sh`:
+it cannot import the authentication layer, so it has no way to hold a token or a tenant ID, and
+the session it uses sends no cookies and one `Accept` header. The host allowlist is checked on
+every URL about to be sent.
 
 ## 2. What never leaves the phone to anyone but Microsoft
 
@@ -70,7 +79,9 @@ already covered by the license. That reasoning is spelled out in the contract, s
 2. Sign in to LAPSlock and use it normally: search, open a device, reveal a Windows LAPS
    password, reveal a BitLocker key.
 3. Read the capture. You will see `login.microsoftonline.com` and `graph.microsoft.com`.
-   **You will not see a Kainor host.**
+   **You will not see a Kainor host.** If you open the Security module's Digest tab you will
+   also see `www.cisa.gov` and `api.msrc.microsoft.com`, each a plain GET with no
+   `Authorization` header and no cookie.
 4. If you hold an organization license, tap *Activate organization license* in Settings and
    watch the third host appear once. Confirm the body is
    `{"version":1,"tenantId":"<your tenant>"}` and that nothing further is sent to it while
@@ -94,12 +105,13 @@ is what tells you that it does.
 
 ## 6. If this changes
 
-Adding a host, adding a field to the one Kainor request, or sending anything to a Kainor
-host in response to a user action other than Activate or Refresh would each be a breaking
-change to the entitlement contract, requiring a new version of it and a note in the release
-notes. The list in section 1 is meant to stay exactly three lines long. If you ever observe
-otherwise, you have found either a bug or a broken promise, and we would like to hear about
-both.
+Adding a host that receives anything of yours, adding a field to the one Kainor request, or
+sending anything to a Kainor host in response to a user action other than Activate or
+Refresh would each be a breaking change to the entitlement contract, requiring a new version
+of it and a note in the release notes. The two public feed hosts were added with the Threat
+Digest; they receive a request for a public file and nothing else, and the list in section 1
+says so. If you ever observe otherwise, you have found either a bug or a broken promise, and
+we would like to hear about both.
 
 ---
 

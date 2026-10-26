@@ -39,7 +39,8 @@ let package = Package(
         .library(name: "ConditionalAccessKit", targets: ["ConditionalAccessKit"]),
         .library(name: "TenantPulseKit", targets: ["TenantPulseKit"]),
         .library(name: "SignInTriageKit", targets: ["SignInTriageKit"]),
-        .library(name: "SecurityKit", targets: ["SecurityKit"])
+        .library(name: "SecurityKit", targets: ["SecurityKit"]),
+        .library(name: "ThreatDigestKit", targets: ["ThreatDigestKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -109,6 +110,11 @@ let package = Package(
         // API. Foundation + AuthKit only, never CredentialKit.
         .target(name: "SecurityKit", dependencies: ["AuthKit"]),
 
+        // Threat digest: public feeds from CISA and MSRC, merged and ranked on the phone.
+        // Foundation only, no AuthKit: it must never be able to carry a token, a tenant id
+        // or anything else of the tenant's to a host that is not Microsoft Graph.
+        .target(name: "ThreatDigestKit"),
+
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
         // the credential path. The isolation guard enforces this.
@@ -137,6 +143,7 @@ let package = Package(
         .testTarget(name: "ConditionalAccessKitTests", dependencies: ["ConditionalAccessKit", "AuthKit"]),
         .testTarget(name: "TenantPulseKitTests", dependencies: ["TenantPulseKit", "AuthKit"]),
         .testTarget(name: "SignInTriageKitTests", dependencies: ["SignInTriageKit", "AuthKit"]),
-        .testTarget(name: "SecurityKitTests", dependencies: ["SecurityKit", "AuthKit"])
+        .testTarget(name: "SecurityKitTests", dependencies: ["SecurityKit", "AuthKit"]),
+        .testTarget(name: "ThreatDigestKitTests", dependencies: ["ThreatDigestKit"])
     ]
 )

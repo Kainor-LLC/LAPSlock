@@ -4,6 +4,7 @@ import ConditionalAccessKit
 import TenantPulseKit
 import SignInTriageKit
 import SecurityKit
+import ThreatDigestKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -145,6 +146,8 @@ struct ConditionalAccessColumns {
 /// What the Security module needs from the root, built once per session.
 struct SecurityColumns {
     let makeModel: @MainActor () -> SecurityListModel
+    /// The Threat Digest, the module's second tab. Public feeds, no scope, free tier.
+    let makeDigestModel: @MainActor () -> ThreatDigestModel
     /// Interactive consent for the module's scope. Nil in demo.
     var requestConsent: (() async -> String?)? = nil
 }
@@ -178,12 +181,27 @@ struct ModuleShell: View {
     @StateObject private var pulseModel: TenantPulseModel
     @StateObject private var triageModel: SignInTriageModel
     @StateObject private var securityModel: SecurityListModel
+    @StateObject private var digestModel: ThreatDigestModel
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
     @State private var selectedPolicyId: String?
     @State private var selectedPulseItem: String?
     @State private var selectedSignInId: String?
     @State private var selectedIncidentId: String?
+    @State private var selectedDigestId: String?
+    @State private var securityTab: SecurityTab = .incidents
+
+    enum SecurityTab: String, CaseIterable, Identifiable {
+        case incidents
+        case digest
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .incidents: return "Incidents"
+            case .digest:    return "Digest"
+            }
+        }
+    }
     /// All three columns from the first frame. The default is `.automatic`, which on an
     /// iPad in portrait opens with the sidebar and the list both collapsed and only "No
     /// device selected" on screen, two taps from anything useful. Ignored on iPhone, where
@@ -219,6 +237,7 @@ struct ModuleShell: View {
         _pulseModel = StateObject(wrappedValue: tenantPulse.makeModel())
         _triageModel = StateObject(wrappedValue: signInTriage.makeModel())
         _securityModel = StateObject(wrappedValue: security.makeModel())
+        _digestModel = StateObject(wrappedValue: security.makeDigestModel())
         _selectedModule = State(initialValue: AppModule.lastUsed)
     }
 
@@ -243,6 +262,7 @@ struct ModuleShell: View {
             selectedPulseItem = nil
             selectedSignInId = nil
             selectedIncidentId = nil
+            selectedDigestId = nil
             if let module { AppModule.lastUsed = module }
         }
         .onChange(of: selectedDeviceId) { _, id in
@@ -345,21 +365,8 @@ struct ModuleShell: View {
                 requestConsent: conditionalAccess.requestConsent
             )
         case .security?:
-            if isPro || isDemo {
-                SecurityListView(
-                    model: securityModel,
-                    isDemo: isDemo,
-                    selection: $selectedIncidentId,
-                    requestConsent: security.requestConsent
-                )
-            } else {
-                ProGateView(
-                    title: "Security is part of Pro",
-                    detail: "See the open incidents, every alert's recommended actions, and the users, devices, mailboxes and addresses involved, read-only. Pro also removes the reveal limit.",
-                    openSettings: { showingSettings = true }
-                )
-                .navigationTitle(AppModule.security.title)
-            }
+            securityContent
+                .safeAreaInset(edge: .top) { securityTabPicker }
         case .privilegedAccess?:
             if let privilegedColumn {
                 privilegedColumn()
@@ -375,6 +382,47 @@ struct ModuleShell: View {
         case nil:
             ContentUnavailableView("Choose a module", systemImage: "square.grid.2x2")
         }
+    }
+
+    /// Incidents (Pro) or the Threat Digest (free), one segmented control above either.
+    @ViewBuilder
+    private var securityContent: some View {
+        switch securityTab {
+        case .incidents:
+            if isPro || isDemo {
+                SecurityListView(
+                    model: securityModel,
+                    isDemo: isDemo,
+                    selection: $selectedIncidentId,
+                    requestConsent: security.requestConsent
+                )
+            } else {
+                ProGateView(
+                    title: "Incidents are part of Pro",
+                    detail: "See the open incidents, every alert's recommended actions, and the users, devices, mailboxes and addresses involved, read-only. The Digest tab is free. Pro also removes the reveal limit.",
+                    openSettings: { showingSettings = true }
+                )
+                .navigationTitle(AppModule.security.title)
+            }
+        case .digest:
+            ThreatDigestListView(
+                model: digestModel,
+                isDemo: isDemo,
+                selection: $selectedDigestId
+            )
+        }
+    }
+
+    private var securityTabPicker: some View {
+        Picker("Security view", selection: $securityTab) {
+            ForEach(SecurityTab.allCases) { tab in
+                Text(tab.label).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     @ViewBuilder
@@ -431,6 +479,17 @@ struct ModuleShell: View {
                     Label("No policy selected", systemImage: "checkmark.shield")
                 } description: {
                     Text("Pick a policy from the list. Nothing here can change one.")
+                }
+            }
+        case .security? where securityTab == .digest:
+            if let id = selectedDigestId, let entry = digestModel.entry(id) {
+                DigestDetailView(item: entry.item, ranking: entry.ranking, isDemo: isDemo)
+                    .id(id)
+            } else {
+                ContentUnavailableView {
+                    Label("Threat Digest", systemImage: "newspaper")
+                } description: {
+                    Text("Pick a card for why it ranked, what each source said, and the links.")
                 }
             }
         case .security?:
