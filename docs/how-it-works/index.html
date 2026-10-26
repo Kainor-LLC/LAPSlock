@@ -215,8 +215,8 @@
           <td>The recovery key value. Never requested at sign-in.</td>
         </tr>
         <tr>
-          <td><code>DeviceManagementManagedDevices.ReadWrite.All</code></td>
-          <td>Only if you enable BitLocker key rotation</td>
+          <td><code>DeviceManagementManagedDevices.ReadWrite.All</code> and <code>DeviceManagementManagedDevices.PrivilegedOperations.All</code></td>
+          <td>Only if you enable device actions</td>
           <td>The one write permission. Off by default, leave it off and TenantKeep On-Call only ever asks
           for read access.</td>
         </tr>
@@ -307,7 +307,9 @@
     are overwritten when it ends. They are never written to disk, never included in an iPhone or
     iCloud backup, and never sent anywhere except between your device and Microsoft.</p>
     <p>What TenantKeep On-Call does keep locally: your preferences, the device list for the current session,
-    the identifiers of devices you pinned, and a count of how many free reveals you have used. That
+    the identifiers of devices you pinned, a count of how many free reveals you have used, and the
+    shift log, a list of the device actions you requested from this app (time, device, action,
+    outcome, Microsoft's request id) that you can export from Settings and clear at any time. That
     count lives on your device and on no server, a server-side counter would mean recording how often
     each organization retrieves passwords, which is exactly the thing this app is built not to do.</p>
     <p>Optionally, you can lock the whole app behind Face ID. That protects the device list itself,

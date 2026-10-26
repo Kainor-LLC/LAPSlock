@@ -1,4 +1,5 @@
 import SwiftUI
+import ActionGateKit
 import Combine
 import AuthKit
 import CredentialKit
@@ -20,11 +21,12 @@ import StoreKit
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
-    /// Whether BitLocker key rotation is enabled. Gating this on a toggle is the whole
-    /// point: customers who leave it off never see a "modify your devices" permission on
-    /// their consent screen.
-    @Published var bitLockerRotationEnabled: Bool {
-        didSet { UserDefaults.standard.set(bitLockerRotationEnabled, forKey: Keys.rotation) }
+    /// Whether device actions are enabled: sync, restart, lock, locate and BitLocker key
+    /// rotation. Gating every write on one toggle is the whole point: customers who leave
+    /// it off never see a "modify your devices" permission on their consent screen.
+    /// Replaces the BitLocker rotation toggle; an install that had rotation on carries over.
+    @Published var deviceActionsEnabled: Bool {
+        didSet { UserDefaults.standard.set(deviceActionsEnabled, forKey: Keys.deviceActions) }
     }
 
     /// Whether LAPSlock may request just-in-time activation of a PIM-eligible role.
@@ -60,6 +62,7 @@ final class AppSettings: ObservableObject {
 
     private enum Keys {
         static let rotation = "settings.bitLockerRotationEnabled"
+        static let deviceActions = "settings.deviceActionsEnabled"
         static let privilegedActivation = "settings.privilegedActivationEnabled"
         static let userNames = "settings.userNamesEnabled"
         static let appLock = "settings.appLockEnabled"
@@ -67,7 +70,9 @@ final class AppSettings: ObservableObject {
     }
 
     private init() {
-        self.bitLockerRotationEnabled = UserDefaults.standard.bool(forKey: Keys.rotation)
+        let defaults = UserDefaults.standard
+        self.deviceActionsEnabled = defaults.object(forKey: Keys.deviceActions) as? Bool
+            ?? defaults.bool(forKey: Keys.rotation)
         self.privilegedActivationEnabled = UserDefaults.standard.bool(forKey: Keys.privilegedActivation)
         self.userNamesEnabled = UserDefaults.standard.bool(forKey: Keys.userNames)
         self.appLockEnabled = UserDefaults.standard.bool(forKey: Keys.appLock)
@@ -104,10 +109,14 @@ enum AppearancePreference: String, CaseIterable, Identifiable {
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
-    /// Requests consent for the write scope. Returns nil on success, or a message.
+    /// Requests consent for the two write scopes. Returns nil on success, or a message.
     /// Injected so the sheet doesn't need to know about MSAL.
-    let requestRotationConsent: () async -> String?
+    let requestDeviceActionsConsent: () async -> String?
     let isDemo: Bool
+    /// The shift log, for export and clear. Nil when signed out.
+    var shiftLog: (any ShiftLogging)? = nil
+    /// The tenant whose lines the export shows.
+    var shiftLogTenantId: String? = nil
     /// Tenant id of the signed-in account, offered as an opt-in field in the report.
     let tenantId: String?
     /// Free-tier meter, shared with the list and detail screens so all three read one
@@ -190,8 +199,9 @@ struct SettingsView: View {
                 appLockSection
                 if hasSession {
                     userNamesSection
-                    rotationSection
+                    deviceActionsSection
                     privilegedAccessSection
+                    shiftLogSection
                     macOSSection
                 }
                 freeTierSection
@@ -340,20 +350,20 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - BitLocker rotation
+    // MARK: - device actions
 
-    private var rotationSection: some View {
+    private var deviceActionsSection: some View {
         Section {
-            Toggle("Allow BitLocker key rotation", isOn: Binding(
-                get: { settings.bitLockerRotationEnabled },
+            Toggle("Allow device actions", isOn: Binding(
+                get: { settings.deviceActionsEnabled },
                 set: { newValue in
                     if newValue {
                         // Ask for consent NOW, at the moment of the decision, rather than
                         // later when the admin is standing at a broken machine. Finding
                         // out your org blocked the permission should not happen mid-repair.
-                        Task { await enableRotation() }
+                        Task { await enableDeviceActions() }
                     } else {
-                        settings.bitLockerRotationEnabled = false
+                        settings.deviceActionsEnabled = false
                         consentError = nil
                     }
                 }
@@ -373,37 +383,88 @@ struct SettingsView: View {
                     .foregroundStyle(.red)
             }
         } header: {
-            Text("BitLocker")
+            Text("Device Actions")
         } footer: {
             Text("""
                 Off by default. Turning this on asks Microsoft Entra ID for permission to \
-                **modify** devices in your tenant, not just read them — your administrator \
-                may need to approve it. Rotation is queued and applies the next time the \
-                device checks in with Intune.
+                **modify** devices in your tenant, not just read them; your administrator \
+                may need to approve it. It adds sync, restart, remote lock, locate and \
+                BitLocker key rotation to every device screen. Each action asks before it \
+                fires, is queued by Intune, and is written to the shift log below.
 
-                Leaving it off means LAPSlock only ever requests read access.
+                Leaving it off means TenantKeep only ever requests read access.
                 """)
         }
     }
 
-    private func enableRotation() async {
+    private func enableDeviceActions() async {
         consentError = nil
         if isDemo {
             // No real tenant to consent against; let the toggle work so the UI is
             // explorable, and say so plainly.
-            settings.bitLockerRotationEnabled = true
+            settings.deviceActionsEnabled = true
             consentError = "Demo mode: no permission was actually requested."
             return
         }
         isRequestingConsent = true
         defer { isRequestingConsent = false }
 
-        if let error = await requestRotationConsent() {
-            settings.bitLockerRotationEnabled = false
+        if let error = await requestDeviceActionsConsent() {
+            settings.deviceActionsEnabled = false
             consentError = error
         } else {
-            settings.bitLockerRotationEnabled = true
+            settings.deviceActionsEnabled = true
         }
+    }
+
+    // MARK: - shift log
+
+    @State private var shiftLogExport: String?
+    @State private var shiftLogCount: Int?
+    @State private var confirmingClear = false
+
+    @ViewBuilder
+    private var shiftLogSection: some View {
+        if let shiftLog, let tenant = shiftLogTenantId {
+            Section {
+                if let count = shiftLogCount {
+                    LabeledContent("Entries", value: String(count))
+                }
+                if let export = shiftLogExport {
+                    ShareLink(item: export, subject: Text("TenantKeep shift log")) {
+                        Label("Export shift log", systemImage: "square.and.arrow.up")
+                    }
+                }
+                Button(role: .destructive) {
+                    confirmingClear = true
+                } label: {
+                    Label("Clear shift log", systemImage: "trash")
+                }
+                .disabled((shiftLogCount ?? 0) == 0)
+                .confirmationDialog("Clear the shift log for this tenant?", isPresented: $confirmingClear, titleVisibility: .visible) {
+                    Button("Clear", role: .destructive) {
+                        Task {
+                            await shiftLog.clear(tenantId: tenant)
+                            await refreshShiftLog(shiftLog, tenant: tenant)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("The tenant's audit log at Microsoft is not affected.")
+                }
+            } header: {
+                Text("Shift Log")
+            } footer: {
+                Text("Every device action requested from this app, with the time, the device, the outcome and Microsoft's request id. On this device only; the tenant audit log is authoritative.")
+            }
+            .task { await refreshShiftLog(shiftLog, tenant: tenant) }
+        }
+    }
+
+    private func refreshShiftLog(_ log: any ShiftLogging, tenant: String) async {
+        let entries = await log.entries(tenantId: tenant)
+        shiftLogCount = entries.count
+        shiftLogExport = await log.export(tenantId: tenant, now: Date())
     }
 
     // MARK: - privileged access
@@ -1080,7 +1141,7 @@ struct SettingsView: View {
 #Preview("Settings") {
     SettingsView(
         settings: AppSettings.shared,
-        requestRotationConsent: { nil },
+        requestDeviceActionsConsent: { nil },
         isDemo: true,
         tenantId: nil
     )

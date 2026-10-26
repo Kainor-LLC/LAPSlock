@@ -12,6 +12,8 @@ import SubscriptionKit
 import ConditionalAccessKit
 import SecurityKit
 import ThreatDigestKit
+import ActionGateKit
+import DeviceActionsKit
 import TenantPulseKit
 import SignInTriageKit
 
@@ -161,6 +163,11 @@ final class AppRootModel: ObservableObject {
         /// Public feeds. Built without the auth manager on purpose: the Kit cannot take
         /// one, and this is where that shows.
         let threatDigest: ThreatDigestService
+        /// The shift log and the one path for a write. The runner's role gate reads the
+        /// person's own active roles with the PIM scopes already consented to.
+        let shiftLog: FileShiftLog
+        let actionRunner: ActionRunner
+        let deviceActions: DeviceActionsService
 
         init(auth: MSALAuthManager) {
             self.auth = auth
@@ -175,6 +182,16 @@ final class AppRootModel: ObservableObject {
             self.signInTriage = SignInTriageService(graph: graph)
             self.security = SecurityService(graph: graph)
             self.threatDigest = ThreatDigestService()
+            let shiftLog = FileShiftLog.standard()
+            self.shiftLog = shiftLog
+            let tenant: @Sendable () async -> String = { await auth.operatingTenantId ?? "" }
+            let runner = ActionRunner(
+                graph: graph,
+                gate: GraphRoleGate(graph: graph, privileged: PrivilegedAccessService(auth: auth)),
+                log: shiftLog,
+                tenantId: tenant)
+            self.actionRunner = runner
+            self.deviceActions = DeviceActionsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
         }
 
         /// Live credential provider for one platform, sharing the authenticated session.
@@ -722,10 +739,13 @@ final class AppRootModel: ObservableObject {
         ))
     }
 
-    func requestRotationConsent() async -> String? {
+    /// Both write scopes together, the first time device actions are turned on. Microsoft
+    /// splits them: sync, restart and lock need privileged operations; locate and key
+    /// rotation need read-write. Asking for one would leave half the rows failing.
+    func requestDeviceActionsConsent() async -> String? {
         guard let auth else { return "Sign in first." }
         do {
-            _ = try await auth.token(scopes: [LapsCredentialScopes.deviceWrite], allowInteractive: true)
+            _ = try await auth.token(scopes: DeviceActionScopes.module, allowInteractive: true)
             return nil
         } catch let error as AuthError {
             if ConsentDiagnostics.state(from: error) != nil {
@@ -738,6 +758,10 @@ final class AppRootModel: ObservableObject {
         }
     }
 }
+
+/// One demo provider for the session, so the demo shift log survives moving between
+/// devices.
+private let demoDeviceActions = DemoDeviceActionsProvider()
 
 struct AppRootView: View {
     @StateObject private var root = AppRootModel()
@@ -809,9 +833,12 @@ struct AppRootView: View {
                                 provider: DemoLapsProvider(platform: device.platform),
                                 bitLocker: DemoBitLockerService(),
                                 isDemo: true,
-                                rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
+                                actionsEnabled: AppSettings.shared.deviceActionsEnabled,
                                 meter: RevealMeters.demo
-                            )
+                            ),
+                            actionsModel: AppSettings.shared.deviceActionsEnabled
+                                ? DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: demoDeviceActions)
+                                : nil
                         )
                     }
                 ),
@@ -834,8 +861,10 @@ struct AppRootView: View {
                 settingsBuilder: {
                     SettingsView(
                         settings: AppSettings.shared,
-                        requestRotationConsent: { nil },   // no tenant in demo mode
+                        requestDeviceActionsConsent: { nil },   // no tenant in demo mode
                         isDemo: true,
+                        shiftLog: demoDeviceActions.shiftLog,
+                        shiftLogTenantId: DemoDeviceActionsProvider.tenant,
                         tenantId: nil,
                         meter: RevealMeters.demo,
                         endSession: { await root.signOut() },
@@ -897,13 +926,16 @@ struct AppRootView: View {
                                     provider: session.provider(for: device.platform),
                                     bitLocker: session.bitLocker(),
                                     isDemo: false,
-                                    rotationEnabled: AppSettings.shared.bitLockerRotationEnabled,
+                                    actionsEnabled: AppSettings.shared.deviceActionsEnabled,
                                     meter: RevealMeters.live,
                                     isPro: root.isPro
                                 ),
                                 privilegedSheet: {
                                     privilegedAccessView(deviceName: device.deviceName, embedded: false)
-                                }
+                                },
+                                actionsModel: AppSettings.shared.deviceActionsEnabled
+                                    ? DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: session.deviceActions)
+                                    : nil
                             )
                         }
                     ),
@@ -931,8 +963,10 @@ struct AppRootView: View {
                     settingsBuilder: {
                         SettingsView(
                             settings: AppSettings.shared,
-                            requestRotationConsent: { await root.requestRotationConsent() },
+                            requestDeviceActionsConsent: { await root.requestDeviceActionsConsent() },
                             isDemo: false,
+                            shiftLog: session.shiftLog,
+                            shiftLogTenantId: root.operatingTenantId ?? root.signedInTenantId,
                             tenantId: root.signedInTenantId,
                             meter: RevealMeters.live,
                             isPro: root.isPro,
@@ -1015,7 +1049,7 @@ struct AppRootView: View {
                 // most recent sign-in failure attached, the reason this sheet exists.
                 SettingsView(
                     settings: AppSettings.shared,
-                    requestRotationConsent: { "Sign in first." },
+                    requestDeviceActionsConsent: { "Sign in first." },
                     isDemo: false,
                     tenantId: nil,
                     meter: RevealMeters.live,
@@ -1095,7 +1129,7 @@ enum GraphDiagnostics {
                 provider: DemoLapsProvider(platform: .windows, latency: .milliseconds(1)),
                 bitLocker: DemoBitLockerService(latency: .milliseconds(1)),
                 isDemo: true,
-                rotationEnabled: true
+                actionsEnabled: true
             )
         )
     }
@@ -1109,7 +1143,7 @@ enum GraphDiagnostics {
                 provider: DemoLapsProvider(platform: .windows, latency: .milliseconds(1)),
                 bitLocker: DemoBitLockerService(latency: .milliseconds(1)),
                 isDemo: true,
-                rotationEnabled: true
+                actionsEnabled: true
             )
         )
     }
@@ -1123,7 +1157,7 @@ enum GraphDiagnostics {
                 provider: DemoLapsProvider(platform: .macOS, latency: .milliseconds(1)),
                 bitLocker: DemoBitLockerService(latency: .milliseconds(1)),
                 isDemo: true,
-                rotationEnabled: true
+                actionsEnabled: true
             )
         )
     }

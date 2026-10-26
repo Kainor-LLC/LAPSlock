@@ -41,7 +41,8 @@ let package = Package(
         .library(name: "SignInTriageKit", targets: ["SignInTriageKit"]),
         .library(name: "SecurityKit", targets: ["SecurityKit"]),
         .library(name: "ThreatDigestKit", targets: ["ThreatDigestKit"]),
-        .library(name: "ActionGateKit", targets: ["ActionGateKit"])
+        .library(name: "ActionGateKit", targets: ["ActionGateKit"]),
+        .library(name: "DeviceActionsKit", targets: ["DeviceActionsKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -122,6 +123,12 @@ let package = Package(
         // structurally unable to see a credential.
         .target(name: "ActionGateKit", dependencies: ["AuthKit", "PrivilegedAccessKit"]),
 
+        // Device actions: the five low-blast-radius Intune actions as WriteActions for the
+        // gate, plus the management record. Takes the device as plain values rather than
+        // importing InventoryKit, which links CredentialKit; a target that writes must never
+        // hold credential code in its link graph.
+        .target(name: "DeviceActionsKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
+
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
         // the credential path. The isolation guard enforces this.
@@ -152,6 +159,7 @@ let package = Package(
         .testTarget(name: "SignInTriageKitTests", dependencies: ["SignInTriageKit", "AuthKit"]),
         .testTarget(name: "SecurityKitTests", dependencies: ["SecurityKit", "AuthKit"]),
         .testTarget(name: "ThreatDigestKitTests", dependencies: ["ThreatDigestKit"]),
-        .testTarget(name: "ActionGateKitTests", dependencies: ["ActionGateKit", "AuthKit", "PrivilegedAccessKit"])
+        .testTarget(name: "ActionGateKitTests", dependencies: ["ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
+        .testTarget(name: "DeviceActionsKitTests", dependencies: ["DeviceActionsKit", "ActionGateKit", "AuthKit"])
     ]
 )

@@ -7,6 +7,7 @@ import InventoryKit
 import PlatformSecurity
 import DiagnosticsKit
 import LicensingKit
+import DeviceActionsKit
 
 // Build Spec §6, device detail and the credential reveal.
 //
@@ -69,8 +70,9 @@ final class DeviceDetailModel: ObservableObject {
     private let gate: BiometricGate
     private let session: RevealSession
     let isDemo: Bool
-    /// Mirrors the Settings toggle. When false, rotation is neither offered nor possible.
-    @Published var rotationEnabled: Bool
+    /// Mirrors the Settings toggle for device actions. When false, the actions section
+    /// says how to turn them on and nothing in this screen can write.
+    @Published var actionsEnabled: Bool
 
     /// Every version of the LAPS password from the current reveal, newest first.
     ///
@@ -115,7 +117,7 @@ final class DeviceDetailModel: ObservableObject {
         provider: any LocalAdminCredentialProviding,
         bitLocker: any BitLockerKeyProviding,
         isDemo: Bool,
-        rotationEnabled: Bool = false,
+        actionsEnabled: Bool = false,
         visibleDuration: TimeInterval = 60,
         // Defaulted to nil rather than to a constructed meter: a default argument
         // expression is evaluated in a nonisolated context, and RevealMeter.init is
@@ -130,7 +132,7 @@ final class DeviceDetailModel: ObservableObject {
         self.bitLocker = bitLocker
         self.capabilities = provider.capabilities
         self.isDemo = isDemo
-        self.rotationEnabled = rotationEnabled
+        self.actionsEnabled = actionsEnabled
         self.gate = BiometricGate()
         self.session = RevealSession(visibleDuration: visibleDuration)
         let resolvedMeter = meter ?? RevealMeter(store: InMemoryRevealLedgerStore())
@@ -492,25 +494,7 @@ final class DeviceDetailModel: ObservableObject {
         }
     }
 
-    /// Queues a BitLocker key rotation. Only reachable when Settings has rotation on.
-    func rotateBitLockerKeys() async {
-        guard rotationEnabled else { return }
-        errorMessage = nil
-        lastFailureWasMissingRole = false
-        isWorking = true
-        defer { isWorking = false }
-        do {
-            try await bitLocker.rotateKeys(managedDeviceId: device.id)
-            // "Requested", never "rotated": Intune queues the action and the device
-            // applies it on its next check-in, which may be a while if it is offline.
-            statusNote = "Rotation requested. The device generates a new key the next time it checks in with Intune, then you'll see the new key here."
-            hideNow()
-            await loadBitLockerKeys()
-        } catch {
-            errorMessage = Self.describe(error)
-            lastFailureWasMissingRole = (error as? CredentialError).map { if case .notAuthorized = $0 { return true } else { return false } } ?? false
-        }
-    }
+    // BitLocker key rotation moved to the Actions section, through the write gate.
 
     func copyBitLockerKey() {
         guard let bitLockerSecret, session.isVisible else { return }
@@ -752,6 +736,9 @@ struct DeviceDetailView: View {
 
     /// Opens the PIM activation sheet. Nil in demo and wherever PIM does not apply.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
+    /// The device actions, built by the root when the Settings toggle is on. Nil means the
+    /// section explains how to turn them on.
+    var actionsModel: DeviceActionsModel? = nil
     @ObservedObject var settings: AppSettings = .shared
     @State private var showingPrivilegedSheet = false
 
@@ -763,6 +750,14 @@ struct DeviceDetailView: View {
             credentialSection
             bitLockerSection
             detailsSection
+            if let actionsModel {
+                DeviceActionsSections(
+                    model: actionsModel,
+                    activate: privilegedSheet != nil && settings.privilegedActivationEnabled
+                        ? { showingPrivilegedSheet = true } : nil)
+            } else {
+                DeviceActionsDisabledSection()
+            }
             if let note = model.statusNote {
                 Section { Text(note).font(.footnote).foregroundStyle(.secondary) }
             }
@@ -795,6 +790,7 @@ struct DeviceDetailView: View {
             model.isCaptured = privacy.isCaptured
             await model.loadMetadata()
             await model.loadBitLockerKeys()
+            await actionsModel?.load()
         }
         .onChange(of: privacy.isCaptured) { _, captured in
             model.isCaptured = captured
@@ -1024,14 +1020,6 @@ struct DeviceDetailView: View {
                     ForEach(model.bitLockerKeys) { key in
                         bitLockerRow(key)
                     }
-                    if model.rotationEnabled {
-                        Button {
-                            Task { await model.rotateBitLockerKeys() }
-                        } label: {
-                            Label("Rotate recovery keys", systemImage: "arrow.triangle.2.circlepath")
-                        }
-                        .disabled(model.isWorking)
-                    }
                     // A tappable link belongs in the section body, not the footer, where
                     // it looked orphaned between two sections.
                     if let portal = model.portalURL {
@@ -1111,13 +1099,13 @@ struct DeviceDetailView: View {
             // could is a feature worth naming, and an admin should learn the tradeoff
             // here rather than discovering it at a broken machine.
             Label {
-                if model.rotationEnabled {
-                    Text("Rotation is **on**. LAPSlock has permission to modify devices in this tenant. Rotation is queued and applies at the device's next Intune check-in.")
+                if model.actionsEnabled {
+                    Text("Key rotation is under Actions below. It is queued and applies at the device's next Intune check-in.")
                 } else {
-                    Text("LAPSlock can read recovery keys but **can't rotate them**, because rotation needs permission to modify devices in your tenant and this app doesn't ask for that by default. Turn on **Allow BitLocker key rotation** in Settings to grant it, or rotate from the Intune admin center instead.")
+                    Text("Reading keys needs no write permission. Rotating them does: turn on **Allow device actions** in Settings, or rotate from the Intune admin center.")
                 }
             } icon: {
-                Image(systemName: model.rotationEnabled ? "lock.open" : "lock.shield")
+                Image(systemName: model.actionsEnabled ? "lock.open" : "lock.shield")
             }
             .font(.footnote)
         }

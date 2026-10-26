@@ -149,6 +149,16 @@ check_module "ActionGateKit" "Foundation|AuthKit|PrivilegedAccessKit" \
   "ThreatDigestKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# DeviceActionsKit builds writes for the gate. Same rule as the gate itself, and no
+# InventoryKit either, because InventoryKit links CredentialKit.
+check_module "DeviceActionsKit" "Foundation|AuthKit|ActionGateKit|PrivilegedAccessKit" \
+  "CredentialKit" \
+  "InventoryKit" \
+  "LicensingKit" \
+  "SecurityKit" \
+  "ThreatDigestKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \
