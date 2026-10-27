@@ -220,6 +220,18 @@ check_module "WatchBridgeKit" "Foundation" \
   "InventoryKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# RelayKit holds the phone's relay key and opens relayed alerts, in the app and in the
+# notification extension. Foundation, CryptoKit and Security only: it never sees a token, a
+# credential or tenant data beyond the alert it was sent.
+check_module "RelayKit" "Foundation|CryptoKit|Security" \
+  "AuthKit" \
+  "CredentialKit" \
+  "PrivilegedAccessKit" \
+  "ActionGateKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \
