@@ -301,9 +301,13 @@ public actor DemoApprovalsProvider: ApprovalsProviding {
     private let latency: Duration
     private let log = InMemoryShiftLog()
     private var decided: Set<String> = []
+    /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
+    /// customers shows different data and anything left over from the first stands out.
+    private let quiet: Bool
 
-    public init(latency: Duration = .milliseconds(600)) {
+    public init(latency: Duration = .milliseconds(600), quiet: Bool = false) {
         self.latency = latency
+        self.quiet = quiet
     }
 
     public static func samples(now: Date = Date()) -> [PendingApproval] {
@@ -322,6 +326,7 @@ public actor DemoApprovalsProvider: ApprovalsProviding {
 
     public func pending() async throws -> [PendingApproval] {
         try? await Task.sleep(for: latency)
+        if quiet { return [] }
         return Self.samples().filter { !decided.contains($0.id) }
     }
 

@@ -138,16 +138,19 @@ enum WatchHandlers {
     /// Fixed for the session, so the demo role's countdown counts down across refreshes.
     @MainActor static let demoRoleEnds = Date().addingTimeInterval(2 * 3600 + 14 * 60)
 
-    /// Demo: the demo approvals provider, fixed counts, and no activation.
+    /// Demo: the demo approvals provider, fixed counts, and no activation. Quiet is the
+    /// second sample customer, whose counts are all zero, so the wrist follows a switch.
     @MainActor
-    static func demo(approvals: any ApprovalsProviding) -> WatchConnector.Handlers {
+    static func demo(approvals: any ApprovalsProviding, quiet: Bool = false) -> WatchConnector.Handlers {
         WatchConnector.Handlers(
             glance: {
                 let pending = (try? await approvals.pending()) ?? []
                 return WatchGlance(
-                    updatedAt: Date(), tenant: "Demo tenant", isDemo: true,
-                    health: .init(degradedServices: 1, openIncidents: 2, expiringSoon: 3, secureScorePercent: 61),
-                    activeRoles: [.init(name: "Intune Administrator", endsAt: demoRoleEnds)],
+                    updatedAt: Date(), tenant: quiet ? "fabrikam.example (sample)" : "Demo tenant", isDemo: true,
+                    health: quiet
+                        ? .init(degradedServices: 0, openIncidents: 0, expiringSoon: 0, secureScorePercent: 72)
+                        : .init(degradedServices: 1, openIncidents: 2, expiringSoon: 3, secureScorePercent: 61),
+                    activeRoles: quiet ? [] : [.init(name: "Intune Administrator", endsAt: demoRoleEnds)],
                     eligible: [.init(id: "demo-gr", name: "Global Reader", isGroup: false),
                                .init(id: "demo-ops", name: "Ops On-Call (PIM)", isGroup: true)],
                     approvals: pending.map(summary))

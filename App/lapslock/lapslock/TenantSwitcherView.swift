@@ -33,6 +33,8 @@ struct TenantSwitcherView: View {
     let forget: (String) -> Void
     /// Builds the per-tenant admin consent URL.
     let consentURL: (String) -> URL?
+    /// Demo mode: two fixed sample customers, nothing to add and nothing to forget.
+    var isDemo = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var entry = ""
@@ -97,7 +99,22 @@ struct TenantSwitcherView: View {
 
     // MARK: - add
 
+    @ViewBuilder
     private var addSection: some View {
+        if isDemo {
+            Section {
+                Text("The demo has two sample customers. With the MSP plan and your own sign-in, you add customer organizations here by domain.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Add a Customer Organization")
+            }
+        } else {
+            liveAddSection
+        }
+    }
+
+    private var liveAddSection: some View {
         Section {
             TextField("contoso.com", text: $entry)
                 .textInputAutocapitalization(.never)
@@ -151,8 +168,10 @@ struct TenantSwitcherView: View {
                 ForEach(saved) { tenant in
                     row(label: tenant.label, tenantId: tenant.tenantId, isHome: false)
                         .swipeActions {
-                            Button(role: .destructive) { forget(tenant.tenantId) } label: {
-                                Label("Forget", systemImage: "trash")
+                            if !isDemo {
+                                Button(role: .destructive) { forget(tenant.tenantId) } label: {
+                                    Label("Forget", systemImage: "trash")
+                                }
                             }
                         }
                 }
@@ -160,7 +179,7 @@ struct TenantSwitcherView: View {
                 Text("Customer Organizations")
             } footer: {
                 Text("""
-                    Kept on this device only. LAPSlock never sends this list anywhere, \
+                    Kept on this device only. TenantKeep never sends this list anywhere: \
                     which organizations you work with is your business, not ours.
                     """)
             }
@@ -170,14 +189,14 @@ struct TenantSwitcherView: View {
     private var explanationSection: some View {
         Section {
             Text("""
-                Switching changes which organization's devices you see. The device list is \
-                cleared, and any password on screen is discarded.
+                Switching changes which organization every module shows. Everything on \
+                screen from the previous one is cleared first, including any password.
 
-                Each customer's Entra administrator has to approve LAPSlock in their own \
+                Each customer's Entra administrator has to approve TenantKeep in their own \
                 organization once before you can work in it. That is Microsoft's consent \
-                model, not a LAPSlock setting.
+                model, not a TenantKeep setting.
 
-                LAPSlock returns to your own organization when you reopen it.
+                TenantKeep returns to your own organization when you reopen it.
                 """)
             .font(.footnote)
             .foregroundStyle(.secondary)
@@ -262,7 +281,7 @@ struct SwitchFailure: Equatable {
             isConsent = false
             title = "Microsoft returned the wrong organization"
             explanation = """
-                LAPSlock asked for \(typed) and got a token for a different organization, so \
+                TenantKeep asked for \(typed) and got a token for a different organization, so \
                 it refused it. Nothing was changed. This is a safety check working; if it \
                 keeps happening, send a diagnostics report from Settings.
                 """
@@ -284,7 +303,7 @@ struct SwitchFailure: Equatable {
             explanation = """
                 Microsoft refused the request. The most common reasons are that your account \
                 has no access to that organization, or that its administrator has not \
-                approved LAPSlock there. A diagnostics report from Settings will say which.
+                approved TenantKeep there. A diagnostics report from Settings will say which.
                 """
         }
     }

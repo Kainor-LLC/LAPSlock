@@ -40,4 +40,12 @@ final class DemoConditionalAccessProviderTests: XCTestCase {
             XCTAssertTrue(ConditionalAccessVocabulary.isDirectoryId(policy.id), policy.id)
         }
     }
+
+    func test_theQuietCustomerHasNoPolicies() async throws {
+        let provider = DemoConditionalAccessProvider(latency: .milliseconds(1), now: now, quiet: true)
+        let policies = try await provider.policies()
+        XCTAssertTrue(policies.isEmpty)
+        let changes = try await provider.changes(forPolicyId: DemoConditionalAccessProvider.policies(now: now)[0].id)
+        XCTAssertTrue(changes.isEmpty)
+    }
 }

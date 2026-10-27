@@ -8,16 +8,20 @@ public actor DemoSignInTriageProvider: SignInTriageProviding {
 
     private let latency: Duration
     private let now: Date
+    /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
+    /// customers shows different data and anything left over from the first stands out.
+    private let quiet: Bool
 
-    public init(latency: Duration = .milliseconds(400), now: Date = Date()) {
+    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false) {
         self.latency = latency
         self.now = now
+        self.quiet = quiet
     }
 
     public func searchUsers(prefix: String) async throws -> [DirectoryUser] {
         try await Task.sleep(for: latency)
         let needle = prefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard needle.count >= 2 else { return [] }
+        guard needle.count >= 2, !quiet else { return [] }
         return Self.users.filter {
             ($0.displayName ?? "").lowercased().hasPrefix(needle)
                 || ($0.userPrincipalName ?? "").lowercased().hasPrefix(needle)
@@ -27,6 +31,7 @@ public actor DemoSignInTriageProvider: SignInTriageProviding {
 
     public func signIns(_ query: SignInQuery) async throws -> [SignInEvent] {
         try await Task.sleep(for: latency)
+        if quiet { return [] }
         let all = Self.signIns(now: now).filter { $0.userPrincipalName?.lowercased() == query.userPrincipalName.lowercased() }
         let windowed = query.last24Hours ? all.filter { ($0.createdDateTime ?? .distantPast) >= now.addingTimeInterval(-86_400) } : all
         return query.apply(windowed.sorted { ($0.createdDateTime ?? .distantPast) > ($1.createdDateTime ?? .distantPast) })

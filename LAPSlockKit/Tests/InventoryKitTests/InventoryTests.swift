@@ -178,3 +178,16 @@ final class DeviceSearchTests: XCTestCase {
         XCTAssertTrue(DeviceSearch.filter(list, query: "zzzz").isEmpty)
     }
 }
+
+final class DemoInventoryQuietTests: XCTestCase {
+    func test_theQuietCustomerHasNoDevices() async throws {
+        let provider = DemoInventoryProvider(latency: .zero, quiet: true)
+        let page = try await provider.loadFirstPage()
+        XCTAssertTrue(page.devices.isEmpty)
+        XCTAssertNil(page.nextLink)
+        let more = try await provider.hasMore()
+        XCTAssertFalse(more)
+        let first = try await DemoInventoryProvider(latency: .zero).loadFirstPage()
+        XCTAssertFalse(first.devices.isEmpty)
+    }
+}

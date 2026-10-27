@@ -8,32 +8,61 @@ public actor DemoTenantPulseProvider: TenantPulseProviding {
 
     private let latency: Duration
     private let now: Date
+    /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
+    /// customers shows different data and anything left over from the first stands out.
+    private let quiet: Bool
 
-    public init(latency: Duration = .milliseconds(400), now: Date = Date()) {
+    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false) {
         self.latency = latency
         self.now = now
+        self.quiet = quiet
     }
 
     static func days(_ d: Double, from now: Date) -> Date { now.addingTimeInterval(d * 86_400) }
 
     public func health() async throws -> ServiceHealthReport {
         try await Task.sleep(for: latency)
-        return Self.health(now: now)
+        return quiet ? Self.quietHealth : Self.health(now: now)
     }
 
     public func messages() async throws -> [ServiceMessage] {
         try await Task.sleep(for: latency)
+        if quiet { return [] }
         return MessageOrdering.sort(Self.messages(now: now).filter(\.isWorthShowing))
     }
 
     public func expiringItems() async throws -> [ExpiringItem] {
         try await Task.sleep(for: latency)
+        if quiet { return [] }
         return Self.expiring(now: now).sorted { $0.expiresAt < $1.expiresAt }
     }
 
     public func secureScore() async throws -> SecureScoreSummary? {
         try await Task.sleep(for: latency)
-        return SecureScoreSummary.make(from: Self.scores(now: now))
+        return SecureScoreSummary.make(from: quiet ? Self.quietScores(now: now) : Self.scores(now: now))
+    }
+
+    /// Every service operational and nothing open.
+    public static let quietHealth = ServiceHealthReport(
+        overviews: [
+            .init(id: "Exchange", service: "Exchange Online", status: "serviceOperational"),
+            .init(id: "Intune", service: "Microsoft Intune", status: "serviceOperational"),
+            .init(id: "OSDPPlatform", service: "Microsoft 365 suite", status: "serviceOperational"),
+            .init(id: "SharePoint", service: "SharePoint Online", status: "serviceOperational"),
+            .init(id: "microsoftteams", service: "Microsoft Teams", status: "serviceOperational"),
+            .init(id: "Entra", service: "Microsoft Entra", status: "serviceOperational"),
+        ],
+        activeIssues: [])
+
+    /// A flat month at 842, so the score card differs from the first customer's at a glance.
+    public static func quietScores(now: Date) -> [SecureScoreSnapshot] {
+        (0...30).map { day in
+            SecureScoreSnapshot(
+                id: "quiet-score-" + String(day),
+                createdDateTime: days(-Double(day), from: now),
+                currentScore: 842, maxScore: 1176,
+                controlScores: [.init(controlCategory: "Identity", controlName: "AdminMFAV2", score: 120)])
+        }
     }
 
     public static func health(now: Date) -> ServiceHealthReport {

@@ -13,20 +13,25 @@ public actor DemoSecurityProvider: SecurityProviding {
 
     private let latency: Duration
     private let now: Date
+    /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
+    /// customers shows different data and anything left over from the first stands out.
+    private let quiet: Bool
 
-    public init(latency: Duration = .milliseconds(400), now: Date = Date()) {
+    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false) {
         self.latency = latency
         self.now = now
+        self.quiet = quiet
     }
 
     public func incidents() async throws -> [SecurityIncident] {
         try await Task.sleep(for: latency)
+        if quiet { return [] }
         return Self.incidents(now: now).sorted(by: SecurityService.newestFirst)
     }
 
     public func incident(id: String) async throws -> SecurityIncident {
         try await Task.sleep(for: latency)
-        guard let found = Self.incidents(now: now).first(where: { $0.id == id }) else {
+        guard !quiet, let found = Self.incidents(now: now).first(where: { $0.id == id }) else {
             throw SecurityError.transport(status: 404)
         }
         return found

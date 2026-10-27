@@ -428,9 +428,11 @@ final class AppRootModel: ObservableObject {
             return .underlying("tenant switch failed")
         }
 
-        await session.inventory.reset()
-        await session.conditionalAccess.reset()
-        await session.security.reset()
+        // A new session rather than a reset of each service: every module's cache goes with
+        // the old one, including caches a later module adds and nobody remembers to reset.
+        // The module shell is keyed by the operating tenant, so every screen model is
+        // rebuilt from the new session as well.
+        liveSession = LiveSession(auth: session.auth)
         operatingTenantId = await session.auth.operatingTenantId
         return nil
     }
@@ -596,18 +598,41 @@ final class AppRootModel: ObservableObject {
         if case .live(let account) = mode, let auth {
             try? await auth.signOut(account: account)
         }
-        // Tenant-scoped data must not survive an account change (§7).
-        await liveSession?.inventory.reset()
-        await liveSession?.conditionalAccess.reset()
-        await liveSession?.security.reset()
+        // Tenant-scoped data must not survive an account change (§7). Dropping the session
+        // drops every service's cache with it.
         liveSession = nil
+        demoCustomer = .contoso
         mode = .signedOut
         consentState = nil
         recomputeEntitlement()
     }
 
     func enterDemoMode() {
+        demoCustomer = .contoso
         mode = .demo
+    }
+
+    /// Demo mode's two sample customers, so the MSP switcher, and what a switch clears, can
+    /// be tried and checked without a second tenant. The second is a calm tenant with
+    /// nothing open, so anything left over from the first stands out.
+    enum DemoCustomer: String {
+        case contoso = "demo"
+        case fabrikam = "demo-fabrikam"
+
+        var label: String {
+            switch self {
+            case .contoso: return "demo.example"
+            case .fabrikam: return "fabrikam.example (sample)"
+            }
+        }
+    }
+
+    @Published private(set) var demoCustomer: DemoCustomer = .contoso
+
+    /// The demo's switch. Nil is home, as in the live switcher.
+    func switchDemoCustomer(to tenantId: String?) -> AuthError? {
+        demoCustomer = tenantId.flatMap(DemoCustomer.init(rawValue:)) ?? .contoso
+        return nil
     }
 
     /// Requests incremental consent for the device-write scope, used when the user turns
@@ -857,6 +882,7 @@ private let demoDeviceActions = DemoDeviceActionsProvider()
 private let demoUserActions = DemoUserActionsProvider()
 private let demoGroupWrites = DemoGroupWritesProvider()
 private let demoApprovals = DemoApprovalsProvider()
+private let demoQuietApprovals = DemoApprovalsProvider(quiet: true)
 
 /// Demo notification choices: in memory, never the Keychain, and never checked in the
 /// background because there is no tenant to check.
@@ -903,6 +929,8 @@ struct AppRootView: View {
                 await root.refreshEntitlementIfDue()
             }
             .onChange(of: root.mode) { _, _ in configureWatch() }
+            .onChange(of: root.operatingTenantId) { _, _ in configureWatch() }
+            .onChange(of: root.demoCustomer) { _, _ in configureWatch() }
             .onChange(of: settings.privilegedActivationEnabled) { _, _ in configureWatch() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await WatchConnector.shared.push() } }
@@ -921,7 +949,8 @@ struct AppRootView: View {
     private func configureWatch() {
         switch root.mode {
         case .demo:
-            WatchConnector.shared.configure(WatchHandlers.demo(approvals: demoApprovals))
+            let quiet = root.demoCustomer == .fabrikam
+            WatchConnector.shared.configure(WatchHandlers.demo(approvals: quiet ? demoQuietApprovals : demoApprovals, quiet: quiet))
         case .live:
             if let session = root.liveSession {
                 WatchConnector.shared.configure(WatchHandlers.live(
@@ -943,16 +972,33 @@ struct AppRootView: View {
             signedOut
 
         case .demo:
+            let quiet = root.demoCustomer == .fabrikam
             ModuleShell(
                 isDemo: true,
                 isPro: true,
                 credentials: CredentialsColumns(
                     makeListModel: {
                         DeviceListModel(
-                            inventory: DemoInventoryProvider(),
+                            inventory: DemoInventoryProvider(quiet: quiet),
                             meter: RevealMeters.demo
                         )
                     },
+                    tenantSwitcher: {
+                        TenantSwitcherView(
+                            homeTenantId: AppRootModel.DemoCustomer.contoso.rawValue,
+                            homeLabel: AppRootModel.DemoCustomer.contoso.label,
+                            operatingTenantId: root.demoCustomer.rawValue,
+                            saved: [TenantReference(tenantId: AppRootModel.DemoCustomer.fabrikam.rawValue,
+                                                    label: AppRootModel.DemoCustomer.fabrikam.label)],
+                            resolve: { _ in .failure(.notFound) },
+                            switchTo: { root.switchDemoCustomer(to: $0) },
+                            remember: { _ in },
+                            forget: { _ in },
+                            consentURL: { _ in nil },
+                            isDemo: true
+                        )
+                    },
+                    tenantBanner: (label: root.demoCustomer.label, isAwayFromHome: root.demoCustomer != .contoso),
                     detailBuilder: { device in
                         DeviceDetailView(
                             model: DeviceDetailModel(
@@ -970,13 +1016,13 @@ struct AppRootView: View {
                     }
                 ),
                 conditionalAccess: ConditionalAccessColumns(
-                    makeListModel: { ConditionalAccessListModel(provider: DemoConditionalAccessProvider()) },
+                    makeListModel: { ConditionalAccessListModel(provider: DemoConditionalAccessProvider(quiet: quiet)) },
                     makeDetailModel: { policy in
-                        ConditionalAccessDetailModel(policy: policy, provider: DemoConditionalAccessProvider())
+                        ConditionalAccessDetailModel(policy: policy, provider: DemoConditionalAccessProvider(quiet: quiet))
                     }
                 ),
                 signInTriage: PeopleColumns(
-                    makeModel: { SignInTriageModel(provider: DemoSignInTriageProvider()) },
+                    makeModel: { SignInTriageModel(provider: DemoSignInTriageProvider(quiet: quiet)) },
                     makeUserActions: AppSettings.shared.userActionsEffective
                         ? { target in UserActionsModel(target: target, provider: demoUserActions, tapIssuer: DemoTemporaryAccessPassService()) }
                         : nil,
@@ -996,10 +1042,10 @@ struct AppRootView: View {
                         : nil
                 ),
                 tenantPulse: TenantPulseColumns(
-                    makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider()) }
+                    makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider(quiet: quiet)) }
                 ),
                 security: SecurityColumns(
-                    makeModel: { SecurityListModel(provider: DemoSecurityProvider()) },
+                    makeModel: { SecurityListModel(provider: DemoSecurityProvider(quiet: quiet)) },
                     makeDigestModel: { ThreatDigestModel(provider: DemoThreatDigestProvider()) }
                 ),
                 settingsBuilder: {
@@ -1008,7 +1054,9 @@ struct AppRootView: View {
                         requestDeviceActionsConsent: { nil },   // no tenant in demo mode
                         isDemo: true,
                         shiftLog: demoDeviceActions.shiftLog,
-                        shiftLogTenantId: DemoDeviceActionsProvider.tenant,
+                        // The second sample customer has its own (empty) shift log, as a real
+                        // customer would.
+                        shiftLogTenantId: quiet ? AppRootModel.DemoCustomer.fabrikam.rawValue : DemoDeviceActionsProvider.tenant,
                         notificationTenants: [NotificationTenant(id: "demo", label: "Demo organization")],
                         notificationsStore: demoNotificationPreferences,
                         tenantId: nil,
@@ -1021,8 +1069,11 @@ struct AppRootView: View {
                 },
                 // No account, nothing to activate. The column says so rather than hiding.
                 privilegedColumn: nil,
-                makeApprovals: { ApprovalsModel(provider: demoApprovals) }
+                makeApprovals: { ApprovalsModel(provider: quiet ? demoQuietApprovals : demoApprovals) }
             )
+            // Keyed by the sample customer, as the live shell is by tenant: a switch rebuilds
+            // every module's model.
+            .id(root.demoCustomer.rawValue)
 
         case .live:
             if let session = root.liveSession {
@@ -1153,6 +1204,9 @@ struct AppRootView: View {
                     },
                     makeApprovals: { ApprovalsModel(provider: session.approvals) }
                 )
+                // Keyed by the tenant being operated in. A switch rebuilds every module's
+                // model, so nothing one customer loaded can stay on screen in another (§7).
+                .id(root.operatingTenantId ?? root.signedInTenantId ?? "")
             } else {
                 // A .live mode with no session shouldn't happen. Recover to signed out
                 // rather than showing a blank screen or substituting a data source.

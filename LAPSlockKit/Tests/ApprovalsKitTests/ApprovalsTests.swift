@@ -76,6 +76,12 @@ final class ApprovalsTests: XCTestCase {
         XCTAssertEqual(entry?.actionId, "pim.approve")
     }
 
+    func testTheQuietDemoCustomerHasNothingWaiting() async throws {
+        let demo = DemoApprovalsProvider(latency: .zero, quiet: true)
+        let pending = try await demo.pending()
+        XCTAssertTrue(pending.isEmpty)
+    }
+
     func testApprovingNeedsNoNewScope() {
         XCTAssertEqual(Set(ApprovalScopes.module), ["RoleAssignmentSchedule.ReadWrite.Directory", "PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup"])
     }

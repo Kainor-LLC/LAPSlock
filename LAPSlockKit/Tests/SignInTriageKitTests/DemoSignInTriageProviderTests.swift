@@ -34,4 +34,12 @@ final class DemoSignInTriageProviderTests: XCTestCase {
             XCTAssertNotNil(ErrorGlossary.bundled.entry(for: code), "fixture code \(code) has no glossary entry")
         }
     }
+
+    func test_theQuietCustomerHasNobodyToFind() async throws {
+        let provider = DemoSignInTriageProvider(latency: .milliseconds(1), now: now, quiet: true)
+        let users = try await provider.searchUsers(prefix: "ja")
+        XCTAssertTrue(users.isEmpty)
+        let signIns = try await provider.signIns(SignInQuery(userPrincipalName: "jane.okafor@demo.example"))
+        XCTAssertTrue(signIns.isEmpty)
+    }
 }

@@ -74,4 +74,14 @@ final class DemoSecurityProviderTests: XCTestCase {
             }
         }
     }
+
+    func test_theQuietCustomerHasNoIncidents() async throws {
+        let provider = DemoSecurityProvider(latency: .milliseconds(1), now: now, quiet: true)
+        let incidents = try await provider.incidents()
+        XCTAssertTrue(incidents.isEmpty)
+        do {
+            _ = try await provider.incident(id: DemoSecurityProvider.phishingId)
+            XCTFail("the first customer's incident must not open in the second")
+        } catch {}
+    }
 }

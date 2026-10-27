@@ -28,4 +28,18 @@ final class DemoTenantPulseProviderTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(score?.change(overDays: 30)), 41, accuracy: 0.001)
         XCTAssertEqual(score?.history.count, 31)
     }
+
+    func test_theQuietCustomerIsHealthyWithADifferentScore() async throws {
+        let provider = DemoTenantPulseProvider(latency: .milliseconds(1), now: now, quiet: true)
+        let health = try await provider.health()
+        XCTAssertTrue(health.degraded.isEmpty)
+        XCTAssertTrue(health.activeIssues.isEmpty)
+        let messages = try await provider.messages()
+        let expiring = try await provider.expiringItems()
+        XCTAssertTrue(messages.isEmpty)
+        XCTAssertTrue(expiring.isEmpty)
+        let score = try await provider.secureScore()
+        XCTAssertEqual(score?.latest.currentScore, 842)
+        XCTAssertNotEqual(score?.latest.currentScore, SecureScoreSummary.make(from: DemoTenantPulseProvider.scores(now: now))?.latest.currentScore)
+    }
 }

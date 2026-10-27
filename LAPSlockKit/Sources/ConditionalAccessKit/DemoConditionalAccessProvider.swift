@@ -10,14 +10,19 @@ public actor DemoConditionalAccessProvider: ConditionalAccessProviding {
 
     private let latency: Duration
     private let now: Date
+    /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
+    /// customers shows different data and anything left over from the first stands out.
+    private let quiet: Bool
 
-    public init(latency: Duration = .milliseconds(400), now: Date = Date()) {
+    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false) {
         self.latency = latency
         self.now = now
+        self.quiet = quiet
     }
 
     public func policies() async throws -> [ConditionalAccessPolicy] {
         try await Task.sleep(for: latency)
+        if quiet { return [] }
         return Self.policies(now: now).sorted(by: ConditionalAccessService.newestChangeFirst)
     }
 
@@ -32,7 +37,7 @@ public actor DemoConditionalAccessProvider: ConditionalAccessProviding {
 
     public func changes(forPolicyId policyId: String) async throws -> [PolicyChange] {
         try await Task.sleep(for: latency)
-        return Self.changes(now: now)[policyId] ?? []
+        return quiet ? [] : Self.changes(now: now)[policyId] ?? []
     }
 
     public func reset() {}

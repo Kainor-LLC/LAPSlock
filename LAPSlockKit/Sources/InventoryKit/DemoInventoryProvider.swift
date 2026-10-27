@@ -24,11 +24,17 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
     private let pageSize: Int
     private var loaded: [ManagedDeviceSummary] = []
     private var cursor: Int = 0
+    /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
+    /// customers shows different data and anything left over from the first stands out.
+    private let quiet: Bool
 
-    public init(latency: Duration = .milliseconds(400), pageSize: Int = 8) {
+    public init(latency: Duration = .milliseconds(400), pageSize: Int = 8, quiet: Bool = false) {
         self.latency = latency
+        self.quiet = quiet
         self.pageSize = max(1, pageSize)
     }
+
+    private var fleet: [ManagedDeviceSummary] { quiet ? [] : Self.fleet }
 
     // MARK: - DeviceInventoryProviding
 
@@ -42,14 +48,14 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
 
     @discardableResult
     public func loadNextPage() async throws -> DevicePage? {
-        guard cursor < Self.fleet.count else { return nil }
+        guard cursor < fleet.count else { return nil }
         try await Task.sleep(for: latency)
         return nextChunk()
     }
 
     public func cachedDevices() async throws -> [ManagedDeviceSummary] { loaded }
 
-    public func hasMore() async throws -> Bool { cursor < Self.fleet.count }
+    public func hasMore() async throws -> Bool { cursor < fleet.count }
 
     public func reset() async {
         loaded = []
@@ -57,11 +63,11 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
     }
 
     private func nextChunk() -> DevicePage {
-        let end = min(cursor + pageSize, Self.fleet.count)
-        let slice = Array(Self.fleet[cursor..<end])
+        let end = min(cursor + pageSize, fleet.count)
+        let slice = Array(fleet[cursor..<end])
         loaded.append(contentsOf: slice)
         cursor = end
-        let more = cursor < Self.fleet.count
+        let more = cursor < fleet.count
         return DevicePage(devices: slice, nextLink: more ? "demo://page/\(cursor)" : nil)
     }
 
