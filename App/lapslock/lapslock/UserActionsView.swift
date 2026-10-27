@@ -340,18 +340,11 @@ struct UserActionsSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Picker("View", selection: $mode) {
-                    ForEach(Mode.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .listRowBackground(Color.clear)
                 if model.passVisible { passSection }
                 if mode == .leaver {
-                    if let pending = model.undoing { Section { undoRow(pending) } }
                     leaverSections
                 } else {
                 Section {
-                    if let pending = model.undoing { undoRow(pending) }
                     ForEach(model.kinds) { kind in
                         Button {
                             model.tapped(kind)
@@ -392,10 +385,39 @@ struct UserActionsSheet: View {
                 }
             }
             .task(id: mode) { if mode == .leaver { await model.loadDevices() } }
+            // The countdown sits above the bottom edge so the list does not jump while it runs.
+            .safeAreaInset(edge: .bottom) {
+                if let pending = model.undoing {
+                    undoRow(pending)
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(.regularMaterial)
+                }
+            }
             .navigationTitle("User Actions")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                // In the title bar, so the checklist starts at the top of the sheet.
+                ToolbarItem(placement: .principal) {
+                    Picker("View", selection: $mode) {
+                        ForEach(Mode.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+                if mode == .leaver {
+                    // Always reachable, however long the checklist runs.
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            UIPasteboard.general.string = model.summary()
+                            summaryCopied = true
+                        } label: {
+                            Label(summaryCopied ? "Summary copied" : "Copy summary", systemImage: summaryCopied ? "checkmark" : "doc.on.clipboard")
+                                .labelStyle(.titleAndIcon)
+                        }
+                        .accessibilityHint("What was done, skipped and left, with the time, for the ticket. No credentials.")
+                    }
+                }
             }
             .confirmationDialog(model.confirming.map(\.title) ?? "",
                                 isPresented: Binding(get: { model.confirming != nil }, set: { if !$0 { model.confirming = nil } }),
@@ -412,6 +434,7 @@ struct UserActionsSheet: View {
             }
         }
         .privacyCover(isProtected: model.passVisible)
+        .modifier(PageSizedSheet())
         .interactiveDismissDisabled(model.undoing != nil)
         .task { await model.load() }
         .onDisappear { model.sheetClosed() }
@@ -469,16 +492,6 @@ struct UserActionsSheet: View {
             }
         } header: {
             Text("In the Admin Centers")
-        }
-        Section {
-            Button {
-                UIPasteboard.general.string = model.summary()
-                summaryCopied = true
-            } label: {
-                Label(summaryCopied ? "Summary copied" : "Copy summary for the ticket", systemImage: "doc.on.clipboard")
-            }
-        } footer: {
-            Text("What was done, skipped and left, with the time. No credentials.")
         }
     }
 
@@ -683,6 +696,18 @@ struct LeaverDeviceRow: View {
         }
         .sheet(item: $model.destructive) { kind in
             DestructiveActionSheet(model: model, kind: kind)
+        }
+    }
+}
+
+/// On iPad the default form sheet is shorter than the leaver checklist; the page size shows
+/// it whole. iOS 17 keeps the form sheet.
+private struct PageSizedSheet: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.presentationSizing(.page)
+        } else {
+            content
         }
     }
 }
