@@ -248,6 +248,7 @@ struct DeviceActionsSections: View {
     @ObservedObject var model: DeviceActionsModel
     /// Opens the PIM activation sheet. Nil where PIM is not opted in.
     var activate: (() -> Void)? = nil
+    @Environment(\.awayTenant) private var awayTenant
 
     var body: some View {
         managementSection
@@ -339,7 +340,7 @@ struct DeviceActionsSections: View {
             }
         } message: {
             if let kind = model.confirming {
-                Text(kind.confirmation)
+                Text(confirmationMessage(kind.confirmation, awayTenant: awayTenant))
             }
         }
         .sheet(item: $model.destructive) { kind in
@@ -472,6 +473,7 @@ struct DestructiveActionSheet: View {
             Form {
                 Section {
                     Text(kind.confirmation)
+                    AwayTenantNote()
                 } header: {
                     Text(kind.title + " " + model.target.deviceName)
                 }

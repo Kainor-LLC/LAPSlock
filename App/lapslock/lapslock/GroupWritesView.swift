@@ -417,6 +417,7 @@ private struct GroupReviewSheet: View {
                     if let description = pending.group.description, !description.isEmpty {
                         LabeledContent("About", value: description)
                     }
+                    AwayTenantNote()
                 }
                 if !pending.decision.warnings.isEmpty {
                     Section("Before You Confirm") {
@@ -454,6 +455,7 @@ private struct GroupTypedNameSheet: View {
             Form {
                 Section {
                     Text("Type the group's name to confirm. " + pending.decision.warnings.joined(separator: " "))
+                    AwayTenantNote()
                 } header: {
                     Text(pending.kind.title)
                 }

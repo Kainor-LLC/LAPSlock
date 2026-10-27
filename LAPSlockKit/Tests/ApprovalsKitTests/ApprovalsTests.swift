@@ -76,10 +76,11 @@ final class ApprovalsTests: XCTestCase {
         XCTAssertEqual(entry?.actionId, "pim.approve")
     }
 
-    func testTheQuietDemoCustomerHasNothingWaiting() async throws {
+    func testTheQuietDemoCustomerHasItsOwnRequestOnly() async throws {
         let demo = DemoApprovalsProvider(latency: .zero, quiet: true)
         let pending = try await demo.pending()
-        XCTAssertTrue(pending.isEmpty)
+        XCTAssertEqual(pending.map { $0.requester }, ["Alex Kim"])
+        XCTAssertFalse(DemoApprovalsProvider.samples().contains { $0.requester == "Alex Kim" })
     }
 
     func testApprovingNeedsNoNewScope() {

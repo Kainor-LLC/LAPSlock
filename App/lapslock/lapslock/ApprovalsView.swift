@@ -136,6 +136,7 @@ struct ApprovalDetailView: View {
     let approval: PendingApproval
     @State private var justification = ""
     @State private var confirming: ApprovalDecision?
+    @Environment(\.awayTenant) private var awayTenant
 
     private var isPending: Bool { model.pending.contains { $0.id == approval.id } }
     private var justificationOK: Bool { justification.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3 }
@@ -204,7 +205,8 @@ struct ApprovalDetailView: View {
                 Button("Cancel", role: .cancel) { confirming = nil }
             }
         } message: {
-            Text(approval.requester + " for " + approval.targetLabel + (approval.durationText.map { ", " + $0 } ?? "") + ".")
+            Text(confirmationMessage(approval.requester + " for " + approval.targetLabel + (approval.durationText.map { ", " + $0 } ?? "") + ".",
+                                     awayTenant: awayTenant))
         }
     }
 }

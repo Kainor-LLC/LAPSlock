@@ -92,6 +92,9 @@ struct TenantSwitcherView: View {
                     Image(systemName: "checkmark").foregroundStyle(Brand.accent)
                 }
             }
+            // The whole row, not just its text: a plain-style button ignores taps on the
+            // Spacer, which made the customer row seem to need a second tap.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(isCurrent)

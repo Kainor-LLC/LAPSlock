@@ -324,10 +324,19 @@ public actor DemoApprovalsProvider: ApprovalsProviding {
         ]
     }
 
+    /// The second sample customer's one request: someone the first customer does not have,
+    /// so a switch that left the first customer's list on screen would show.
+    public static func quietSamples(now: Date = Date()) -> [PendingApproval] {
+        [
+            PendingApproval(id: "req-f1", kind: .role, approvalId: "ap-f1", requester: "Alex Kim", requesterUPN: "alex.kim@fabrikam.example",
+                            target: "Helpdesk Administrator", justification: "Password resets for the Monday intake",
+                            ticket: nil, requested: now.addingTimeInterval(-12 * 60), start: now, duration: "PT2H")
+        ]
+    }
+
     public func pending() async throws -> [PendingApproval] {
         try? await Task.sleep(for: latency)
-        if quiet { return [] }
-        return Self.samples().filter { !decided.contains($0.id) }
+        return (quiet ? Self.quietSamples() : Self.samples()).filter { !decided.contains($0.id) }
     }
 
     public func decide(_ approval: PendingApproval, _ decision: ApprovalDecision, justification: String) async -> ActionOutcome {

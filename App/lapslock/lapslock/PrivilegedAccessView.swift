@@ -215,6 +215,7 @@ struct PrivilegedAccessView: View {
                 }
             }
             .disabled(!canActivate)
+            AwayTenantNote()
         } footer: {
             Text("""
                 Microsoft may ask you to sign in again. That is required: it will not grant \

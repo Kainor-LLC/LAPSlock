@@ -183,10 +183,13 @@ struct TenantBanner: View {
 }
 
 struct DemoBanner: View {
+    /// Demo mode's second sample customer, when it is the one on screen.
+    @Environment(\.awayTenant) private var awayTenant
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "theatermasks.fill")
-            Text("Demo data, not connected to a tenant")
+            Text(awayTenant.map { "Demo data, working in " + $0 } ?? "Demo data, not connected to a tenant")
                 .font(.caption.weight(.medium))
             Spacer(minLength: 0)
         }
@@ -204,6 +207,53 @@ struct DemoBanner: View {
         .overlay(alignment: .bottom) {
             Divider()
         }
+    }
+}
+
+// MARK: - the organization a write lands in
+
+extension EnvironmentValues {
+    /// The organization the screens are working in when it is not the signed-in account's
+    /// own: an MSP in a customer's tenant, or demo mode's second sample customer. Nil at
+    /// home. Set once on the module shell and read by the demo banner and by every write
+    /// confirmation, so no confirmation can name a different organization from the banner.
+    @Entry var awayTenant: String? = nil
+}
+
+/// A write confirmation's message, with the organization named when the write lands
+/// somewhere other than the admin's own. For confirmation dialogs, which take only text.
+func confirmationMessage(_ message: String, awayTenant: String?) -> String {
+    guard let awayTenant else { return message }
+    return message + "\n\nThis runs in " + awayTenant + ", not your own organization."
+}
+
+/// The same warning as a row, for the confirmation sheets and forms. Nothing at home.
+struct AwayTenantNote: View {
+    @Environment(\.awayTenant) private var awayTenant
+
+    var body: some View {
+        if let awayTenant {
+            Label("This runs in " + awayTenant + ", not your own organization.", systemImage: "building.2.fill")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Brand.accent)
+        }
+    }
+}
+
+/// A short notice over the shell, gone after a few seconds: "Switched to contoso.com for
+/// this alert". Announced to VoiceOver as it appears.
+struct NoticeCapsule: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "building.2.fill")
+            .font(.footnote.weight(.semibold))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .foregroundStyle(Brand.accent)
+            .padding(.bottom, 24)
+            .onAppear { AccessibilityNotification.Announcement(text).post() }
     }
 }
 

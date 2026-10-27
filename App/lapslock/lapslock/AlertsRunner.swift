@@ -263,8 +263,38 @@ final class SessionAuth {
 }
 
 extension Notification.Name {
-    /// Posted when a notification is tapped; the shell opens the module it names.
+    /// Posted when a notification is tapped, with an `AlertRoute` as the object. The root
+    /// switches to the alert's organization if it has to, then the shell opens the module.
     static let openModuleFromAlert = Notification.Name("tenantkeep.openModuleFromAlert")
+}
+
+/// A tapped alert: the module to open, an optional tab or person, and the organization it
+/// is about. Built from a local alert's `module`, or from a relayed alert's `tenantkeep://`
+/// link (RELAY-API.md), whose host names the module.
+struct AlertRoute: Equatable {
+    let module: AppModule
+    var tab: String?
+    var upn: String?
+    /// Lowercase. Nil when the alert does not say, which opens it where the admin is.
+    var tenantId: String?
+
+    /// The last tap not yet handled by the root.
+    @MainActor static var pending: AlertRoute?
+
+    init?(_ fields: [String: String]) {
+        if let raw = fields["module"], let module = AppModule(rawValue: raw) {
+            self.module = module
+            tab = fields["tab"]
+        } else if let link = fields["link"], let url = URL(string: link), url.scheme?.lowercased() == "tenantkeep",
+                  let host = url.host()?.lowercased(),
+                  let module = AppModule.allCases.first(where: { $0.rawValue.lowercased() == host }) {
+            self.module = module
+            upn = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "upn" }?.value
+        } else {
+            return nil
+        }
+        tenantId = fields["tenantId"]?.lowercased()
+    }
 }
 
 /// Shows alerts while the app is open, and routes a tap to its module.
@@ -277,12 +307,16 @@ final class AlertsNotificationDelegate: NSObject, UNUserNotificationCenterDelega
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let info = response.notification.request.content.userInfo
-        guard let module = info["module"] as? String else { return }
-        let tab = info["tab"] as? String
+        var fields: [String: String] = [:]
+        for key in ["module", "tab", "link", "tenantId"] {
+            if let value = info[key] as? String { fields[key] = value }
+        }
         await MainActor.run {
-            var route = ["module": module]
-            if let tab { route["tab"] = tab }
-            NotificationCenter.default.post(name: .openModuleFromAlert, object: nil, userInfo: route)
+            guard let route = AlertRoute(fields) else { return }
+            // Kept as well as posted: a tap that launches the app can arrive before the
+            // root view is listening, and the root reads this when it appears.
+            AlertRoute.pending = route
+            NotificationCenter.default.post(name: .openModuleFromAlert, object: route)
         }
     }
 }

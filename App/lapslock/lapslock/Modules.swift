@@ -193,6 +193,10 @@ struct ModuleShell: View {
     /// anything for, and the column says so.
     private let privilegedColumn: (() -> PrivilegedAccessView)?
     @StateObject private var approvalsModel: ApprovalsModel
+    /// A tapped alert to open, set by the root once it has switched to the alert's
+    /// organization. Cleared here when opened.
+    @Binding private var openRoute: AlertRoute?
+    @State private var showingTenantSwitcher = false
     @State private var privilegedTab: PrivilegedTab = .activate
     @State private var selectedApprovalId: String?
 
@@ -263,8 +267,10 @@ struct ModuleShell: View {
         security: SecurityColumns,
         settingsBuilder: @escaping () -> SettingsView,
         privilegedColumn: (() -> PrivilegedAccessView)?,
-        makeApprovals: @escaping @MainActor () -> ApprovalsModel
+        makeApprovals: @escaping @MainActor () -> ApprovalsModel,
+        openRoute: Binding<AlertRoute?>
     ) {
+        _openRoute = openRoute
         self.isDemo = isDemo
         self.isPro = isPro
         self.credentials = credentials
@@ -303,7 +309,7 @@ struct ModuleShell: View {
                 // a menu in the list's toolbar, and the sidebar toggle is removed so
                 // nothing can put the detail across the fold.
                 NavigationSplitView(columnVisibility: $openVisibility) {
-                    contentColumn
+                    moduleColumn
                         .toolbar(removing: .sidebarToggle)
                         .toolbar { ToolbarItem(placement: .topBarLeading) { modulesMenu } }
                         .navigationSplitViewColumnWidth(min: hingeWidth, ideal: hingeWidth, max: hingeWidth)
@@ -316,7 +322,7 @@ struct ModuleShell: View {
                     sidebar
                         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
                 } content: {
-                    contentColumn
+                    moduleColumn
                         .navigationSplitViewColumnWidth(min: 250, ideal: listWidth.tiledIdeal)
                 } detail: {
                     detailColumn
@@ -338,6 +344,10 @@ struct ModuleShell: View {
             }
         }
         .sheet(isPresented: $showingSettings) { settingsBuilder() }
+        .sheet(isPresented: $showingTenantSwitcher) {
+            if let tenantSwitcher = credentials.tenantSwitcher { tenantSwitcher() }
+        }
+        .task { await credentials.onAppearRefresh?() }
         .onChange(of: selectedModule) { _, module in
             // A module change closes whatever the previous one had open. On iPhone the
             // sidebar selection clears when the stack pops to it, which is not a change
@@ -361,20 +371,51 @@ struct ModuleShell: View {
         .onReceive(NotificationCenter.default.publisher(for: .revealMeterDidChange)) { _ in
             listModel.refreshRemaining()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .openModuleFromAlert)) { note in
-            // A tapped notification opens its module in the tenant on screen. (verify) on
-            // device whether an MSP wants the tap to switch tenant as well; today it does not.
-            if let raw = note.userInfo?["module"] as? String, let module = AppModule(rawValue: raw), module.isEnabled {
-                selectedModule = module
-                if module == .privilegedAccess, note.userInfo?["tab"] as? String == "approvals" {
-                    privilegedTab = .approvals
-                }
-            }
-        }
+        // A tapped alert. The root has already switched to its organization, so this only
+        // opens the module; after a switch this is a new shell, and onAppear catches it.
+        .onAppear { open(openRoute) }
+        .onChange(of: openRoute) { _, route in open(route) }
         .background { keyboardShortcuts }
     }
 
+    private func open(_ route: AlertRoute?) {
+        guard let route else { return }
+        openRoute = nil
+        guard route.module.isEnabled else { return }
+        selectedModule = route.module
+        if route.module == .privilegedAccess, route.tab == "approvals" { privilegedTab = .approvals }
+        if route.module == .people, let upn = route.upn { triageModel.searchText = upn }
+    }
+
     // MARK: - columns
+
+    /// The module's own column, with the organization switcher in its toolbar and, for an
+    /// MSP, the organization banner above it. Every module, not only Devices: the switcher
+    /// was built when Devices was the only module, and an MSP in Security or People could
+    /// neither see which customer they were in nor change it.
+    private var moduleColumn: some View {
+        contentColumn
+            .toolbar {
+                if credentials.tenantSwitcher != nil {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            showingTenantSwitcher = true
+                        } label: {
+                            Image(systemName: credentials.tenantBanner?.isAwayFromHome == true ? "building.2.fill" : "building.2")
+                        }
+                        .accessibilityLabel("Switch organization")
+                        .accessibilityValue(credentials.tenantBanner?.label ?? "")
+                    }
+                }
+            }
+            .safeAreaInset(edge: .top) {
+                // Live only: in demo every screen already carries the demo banner, which
+                // names the sample customer when it is not the first.
+                if !isDemo, credentials.tenantSwitcher != nil, let banner = credentials.tenantBanner {
+                    TenantBanner(label: banner.label, isAwayFromHome: banner.isAwayFromHome)
+                }
+            }
+    }
 
     /// The module list as a menu, for the open posture where there is no sidebar.
     private var modulesMenu: some View {
@@ -468,9 +509,9 @@ struct ModuleShell: View {
                 isDemo: isDemo,
                 selection: $selectedDeviceId,
                 searchPresented: $searchPresented,
-                tenantSwitcher: credentials.tenantSwitcher,
-                onAppearRefresh: credentials.onAppearRefresh,
-                tenantBanner: credentials.tenantBanner,
+                // The shell shows the banner above every module when the switcher exists;
+                // the device list keeps its own for a single-organization admin.
+                tenantBanner: credentials.tenantSwitcher == nil ? credentials.tenantBanner : nil,
                 // In a compact stack the sidebar gear is a swipe away, so the gear stays on
                 // the list where it has always been. Regular width shows one gear, not two.
                 settingsBuilder: sizeClass == .compact ? settingsBuilder : nil
@@ -771,6 +812,11 @@ struct ModuleShell: View {
                 searchPresented = true
             }
             .keyboardShortcut("k", modifiers: .command)
+
+            if credentials.tenantSwitcher != nil {
+                Button("Switch organization") { showingTenantSwitcher = true }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+            }
 
             ForEach(Array(AppModule.enabled.prefix(9).enumerated()), id: \.element) { index, module in
                 Button(module.title) { selectedModule = module }

@@ -629,6 +629,54 @@ final class AppRootModel: ObservableObject {
 
     @Published private(set) var demoCustomer: DemoCustomer = .contoso
 
+    /// A tapped alert ready for the shell to open, after any switch it needed.
+    @Published var openRoute: AlertRoute?
+    /// "Switched to contoso.com for this alert", shown briefly over the shell.
+    @Published var alertNotice: String?
+    /// Why a tapped alert was not opened. Nothing is opened in its place.
+    @Published var alertFailure: String?
+
+    /// Handles a tapped alert once there is a session to open it in. An alert about another
+    /// organization switches to it first (decided 2026-10-27), so an MSP never reads
+    /// customer B's alert against customer A's data. When the switch is not possible the
+    /// alert is not opened at all, rather than opened in the wrong organization.
+    func handlePendingAlert() async {
+        guard let route = AlertRoute.pending else { return }
+        switch mode {
+        case .signedOut:
+            return   // kept until a session is restored or demo starts
+        case .demo:
+            // The same rule between the two sample customers, so it can be seen and tested.
+            AlertRoute.pending = nil
+            if let target = route.tenantId.flatMap(DemoCustomer.init(rawValue:)), target != demoCustomer {
+                _ = switchDemoCustomer(to: target.rawValue)
+                alertNotice = "Switched to " + target.label + " for this alert"
+            }
+            openRoute = route
+            return
+        case .live:
+            AlertRoute.pending = nil
+        }
+        let home = signedInTenantId?.lowercased()
+        let current = (operatingTenantId ?? signedInTenantId)?.lowercased()
+        if let target = route.tenantId, target != current {
+            await refreshTenants()
+            let label = target == home
+                ? (signedInDomain ?? "your own organization")
+                : (savedTenants.first { $0.tenantId == target }?.label ?? target)
+            guard target == home || canSwitchTenants else {
+                alertFailure = "This alert is about " + label + ". Switching organizations needs the MSP plan, so it was not opened here."
+                return
+            }
+            if let error = await switchTenant(to: target == home ? nil : target) {
+                alertFailure = SwitchFailure(auth: error, typed: label).title + ". The alert was not opened."
+                return
+            }
+            alertNotice = "Switched to " + label + " for this alert"
+        }
+        openRoute = route
+    }
+
     /// The demo's switch. Nil is home, as in the live switcher.
     func switchDemoCustomer(to tenantId: String?) -> AuthError? {
         demoCustomer = tenantId.flatMap(DemoCustomer.init(rawValue:)) ?? .contoso
@@ -927,8 +975,31 @@ struct AppRootView: View {
                 // shown, and the entitlement read does not depend on it.
                 await root.restoreSession()
                 await root.refreshEntitlementIfDue()
+                await root.handlePendingAlert()
             }
-            .onChange(of: root.mode) { _, _ in configureWatch() }
+            .onChange(of: root.mode) { _, _ in
+                configureWatch()
+                Task { await root.handlePendingAlert() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openModuleFromAlert)) { _ in
+                Task { await root.handlePendingAlert() }
+            }
+            .overlay(alignment: .bottom) {
+                if let notice = root.alertNotice {
+                    NoticeCapsule(text: notice)
+                        .task {
+                            try? await Task.sleep(for: .seconds(4))
+                            root.alertNotice = nil
+                        }
+                }
+            }
+            .alert("Alert Not Opened", isPresented: Binding(
+                get: { root.alertFailure != nil },
+                set: { if !$0 { root.alertFailure = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(root.alertFailure ?? "")
+            }
             .onChange(of: root.operatingTenantId) { _, _ in configureWatch() }
             .onChange(of: root.demoCustomer) { _, _ in configureWatch() }
             .onChange(of: settings.privilegedActivationEnabled) { _, _ in configureWatch() }
@@ -1069,8 +1140,10 @@ struct AppRootView: View {
                 },
                 // No account, nothing to activate. The column says so rather than hiding.
                 privilegedColumn: nil,
-                makeApprovals: { ApprovalsModel(provider: quiet ? demoQuietApprovals : demoApprovals) }
+                makeApprovals: { ApprovalsModel(provider: quiet ? demoQuietApprovals : demoApprovals) },
+                openRoute: $root.openRoute
             )
+            .environment(\.awayTenant, quiet ? root.demoCustomer.label : nil)
             // Keyed by the sample customer, as the live shell is by tenant: a switch rebuilds
             // every module's model.
             .id(root.demoCustomer.rawValue)
@@ -1202,8 +1275,10 @@ struct AppRootView: View {
                     privilegedColumn: {
                         privilegedAccessView(deviceName: nil, embedded: true)
                     },
-                    makeApprovals: { ApprovalsModel(provider: session.approvals) }
+                    makeApprovals: { ApprovalsModel(provider: session.approvals) },
+                    openRoute: $root.openRoute
                 )
+                .environment(\.awayTenant, root.isOperatingAwayFromHome ? root.operatingTenantLabel : nil)
                 // Keyed by the tenant being operated in. A switch rebuilds every module's
                 // model, so nothing one customer loaded can stay on screen in another (§7).
                 .id(root.operatingTenantId ?? root.signedInTenantId ?? "")

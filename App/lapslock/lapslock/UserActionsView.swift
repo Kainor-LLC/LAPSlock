@@ -325,6 +325,7 @@ struct PersonActionsView: View {
     /// Device actions for the leaver checklist's devices step; nil when they are off.
     var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.awayTenant) private var awayTenant
     @Binding var mode: Mode
 
     enum Mode: String, CaseIterable, Identifiable {
@@ -429,7 +430,7 @@ struct PersonActionsView: View {
                     Button("Cancel", role: .cancel) { model.confirming = nil }
                 }
             } message: {
-                if let kind = model.confirming { Text(kind.confirmation) }
+                if let kind = model.confirming { Text(confirmationMessage(kind.confirmation, awayTenant: awayTenant)) }
             }
             .sheet(item: $model.destructive) { kind in
                 typedUPNSheet(kind)
@@ -595,7 +596,10 @@ struct PersonActionsView: View {
     private func typedUPNSheet(_ kind: UserActionKind) -> some View {
         NavigationStack {
             Form {
-                Section { Text(kind.confirmation) } header: { Text(kind.title) }
+                Section {
+                    Text(kind.confirmation)
+                    AwayTenantNote()
+                } header: { Text(kind.title) }
                 Section {
                     TextField(model.target.userPrincipalName, text: $model.typedUPN)
                         .textInputAutocapitalization(.never)
@@ -629,6 +633,7 @@ struct LeaverDeviceRow: View {
     @StateObject private var model: DeviceActionsModel
     let report: (String) -> Void
     @State private var appeared = Date()
+    @Environment(\.awayTenant) private var awayTenant
 
     init(device: UserDevice, make: @escaping (DeviceActionTarget) -> DeviceActionsModel, report: @escaping (String) -> Void) {
         self.device = device
@@ -693,6 +698,8 @@ struct LeaverDeviceRow: View {
                 Button(kind.title) { model.confirmed(kind) }
                 Button("Cancel", role: .cancel) { model.confirming = nil }
             }
+        } message: {
+            if let kind = model.confirming { Text(confirmationMessage(kind.confirmation, awayTenant: awayTenant)) }
         }
         .sheet(item: $model.destructive) { kind in
             DestructiveActionSheet(model: model, kind: kind)

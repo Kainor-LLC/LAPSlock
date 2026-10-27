@@ -372,15 +372,9 @@ struct DeviceListView: View {
     /// shortcut land in the search field at all.
     @Binding var searchPresented: Bool
 
-    /// The MSP organization picker, or nil when this tier cannot switch. Passing nil rather
-    /// than disabling a visible control is deliberate: a single-organization admin should
-    /// not see chrome for a feature that does not apply to them.
-    var tenantSwitcher: (() -> TenantSwitcherView)? = nil
-    /// Refreshes tenant state when the list first appears. Once is enough here, because
-    /// switching organizations happens through the sheet below.
-    var onAppearRefresh: (() async -> Void)? = nil
     /// Which organization's devices these are, and whether that is the account's own.
-    /// Nil in demo, where the demo banner already says there is no tenant.
+    /// Nil in demo, where the demo banner already says there is no tenant, and for an MSP,
+    /// whose banner and organization switcher the module shell shows above every module.
     var tenantBanner: (label: String, isAwayFromHome: Bool)? = nil
     /// Opens Settings. Nil whenever the shell's sidebar is on screen with its own gear,
     /// which is every regular-width layout. In a compact stack the sidebar is a swipe
@@ -388,7 +382,6 @@ struct DeviceListView: View {
     var settingsBuilder: (() -> SettingsView)? = nil
 
     @State private var showingSettings = false
-    @State private var showingTenantSwitcher = false
 
     var body: some View {
         Group {
@@ -408,16 +401,6 @@ struct DeviceListView: View {
         .searchable(text: $model.query, isPresented: $searchPresented, prompt: "Device, user, or serial")
         .refreshable { await model.load() }
         .toolbar {
-            if tenantSwitcher != nil {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showingTenantSwitcher = true
-                    } label: {
-                        Image(systemName: "building.2")
-                    }
-                    .accessibilityLabel("Switch organization")
-                }
-            }
             if settingsBuilder != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -432,10 +415,6 @@ struct DeviceListView: View {
         .sheet(isPresented: $showingSettings) {
             if let settingsBuilder { settingsBuilder() }
         }
-        .sheet(isPresented: $showingTenantSwitcher) {
-            if let tenantSwitcher { tenantSwitcher() }
-        }
-        .task { await onAppearRefresh?() }
         .task {
             if model.devices.isEmpty { await model.load() }
         }
