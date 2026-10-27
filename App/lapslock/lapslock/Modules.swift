@@ -201,6 +201,13 @@ struct ModuleShell: View {
     private let savedSearches: SavedSearchLibrary?
     /// A saved email query to fill in when its detail opens.
     @State private var huntPrefill: SavedSearch?
+    /// The run across organizations, or nil where it is not offered (not MSP).
+    private let crossTenant: CrossTenantSearchSetup?
+    /// The saved search being run in every organization, while its sheet is open.
+    @State private var runningEverywhere: SavedSearch?
+    /// A saved search to put on screen, set by the root after a row in that sheet switched
+    /// organization. Cleared here when applied.
+    @Binding private var pendingSearch: SavedSearch?
     @State private var showingTenantSwitcher = false
     @State private var privilegedTab: PrivilegedTab = .activate
     @State private var selectedApprovalId: String?
@@ -274,10 +281,14 @@ struct ModuleShell: View {
         privilegedColumn: (() -> PrivilegedAccessView)?,
         makeApprovals: @escaping @MainActor () -> ApprovalsModel,
         openRoute: Binding<AlertRoute?>,
-        savedSearches: SavedSearchLibrary?
+        savedSearches: SavedSearchLibrary?,
+        crossTenant: CrossTenantSearchSetup? = nil,
+        pendingSearch: Binding<SavedSearch?> = .constant(nil)
     ) {
         _openRoute = openRoute
         self.savedSearches = savedSearches
+        self.crossTenant = crossTenant
+        _pendingSearch = pendingSearch
         self.isDemo = isDemo
         self.isPro = isPro
         self.credentials = credentials
@@ -382,6 +393,20 @@ struct ModuleShell: View {
         // opens the module; after a switch this is a new shell, and onAppear catches it.
         .onAppear { open(openRoute) }
         .onChange(of: openRoute) { _, route in open(route) }
+        // A row tapped in the run across organizations. After a switch this is a new shell,
+        // and onAppear catches it; in the same organization the change does.
+        .onAppear { applyPending(pendingSearch) }
+        .onChange(of: pendingSearch) { _, search in applyPending(search) }
+        .sheet(item: $runningEverywhere) { search in
+            if let crossTenant {
+                CrossTenantSearchView(
+                    model: {
+                        CrossTenantSearchModel(search: search, targets: crossTenant.targets(), sources: crossTenant.sources)
+                    },
+                    currentTenantId: crossTenant.currentTenantId(),
+                    open: { target in Task { await crossTenant.open(search, target) } })
+            }
+        }
         .background { keyboardShortcuts }
     }
 
@@ -456,6 +481,25 @@ struct ModuleShell: View {
         }
     }
 
+    /// Opens the module a saved search belongs to and puts the search on screen.
+    private func applyPending(_ search: SavedSearch?) {
+        guard let search else { return }
+        pendingSearch = nil
+        switch search.scope {
+        case .devices: selectedModule = .credentials
+        case .people: selectedModule = .people
+        case .incidents, .email: selectedModule = .security
+        case .conditionalAccess: selectedModule = .conditionalAccess
+        }
+        applySearch(search)
+    }
+
+    /// The run across organizations from a bookmark menu, where it is offered.
+    private var runEverywhere: ((SavedSearch) -> Void)? {
+        guard crossTenant != nil else { return nil }
+        return { runningEverywhere = $0 }
+    }
+
     private func open(_ route: AlertRoute?) {
         guard let route else { return }
         openRoute = nil
@@ -492,7 +536,8 @@ struct ModuleShell: View {
                             scope: scope,
                             // Email's query lives in the detail column, which saves it there.
                             current: scope == .email ? nil : { currentSearch(scope) },
-                            apply: { applySearch($0) })
+                            apply: { applySearch($0) },
+                            runEverywhere: runEverywhere)
                     }
                 }
             }
@@ -824,7 +869,8 @@ struct ModuleShell: View {
                         return model
                     },
                     savedSearches: savedSearches,
-                    apply: { applySearch($0) })
+                    apply: { applySearch($0) },
+                    runEverywhere: runEverywhere)
                 // Keyed by the recalled search too, so recalling one rebuilds the query.
                 .id(id + (huntPrefill?.id.uuidString ?? ""))
             } else {

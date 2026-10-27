@@ -320,11 +320,20 @@ public actor EmailHuntingService: EmailHuntingProviding {
 /// Demo: plausible rows for each query, so a reviewer sees the shapes. Nothing is real.
 public actor DemoEmailHuntingProvider: EmailHuntingProviding {
     private let latency: Duration
-    public init(latency: Duration = .milliseconds(800)) { self.latency = latency }
+    /// Demo mode's second sample customer: the queries run and find nothing, as in a
+    /// tenant the campaign never reached.
+    private let quiet: Bool
+    public init(latency: Duration = .milliseconds(800), quiet: Bool = false) {
+        self.latency = latency
+        self.quiet = quiet
+    }
 
     public func run(_ hunt: EmailHunt, value: String?, window: HuntWindow, allowInteractive: Bool) async throws -> HuntResult {
         _ = try hunt.query(value: value, window: window)
         try? await Task.sleep(for: latency)
+        if quiet {
+            return HuntResult(columns: EmailHunt.messageColumns.components(separatedBy: ", "), rows: [])
+        }
         let now = Date()
         func at(_ minutesAgo: Int) -> String { ISO8601DateFormatter().string(from: now.addingTimeInterval(TimeInterval(-60 * minutesAgo))) }
         var sender = "invoices@contoso-billing.com"

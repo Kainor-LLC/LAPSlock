@@ -136,11 +136,14 @@ struct EmailHuntDetailView: View {
     /// Saved searches, saved and recalled from here because this is where the query is.
     private let savedSearches: SavedSearchLibrary?
     private let apply: ((SavedSearch) -> Void)?
+    private let runEverywhere: ((SavedSearch) -> Void)?
 
-    init(make: @escaping () -> EmailHuntModel, savedSearches: SavedSearchLibrary? = nil, apply: ((SavedSearch) -> Void)? = nil) {
+    init(make: @escaping () -> EmailHuntModel, savedSearches: SavedSearchLibrary? = nil, apply: ((SavedSearch) -> Void)? = nil,
+         runEverywhere: ((SavedSearch) -> Void)? = nil) {
         _model = StateObject(wrappedValue: make())
         self.savedSearches = savedSearches
         self.apply = apply
+        self.runEverywhere = runEverywhere
     }
 
     var body: some View {
@@ -220,7 +223,8 @@ struct EmailHuntDetailView: View {
                                 if model.hunt.parameter != nil, value.isEmpty { return nil }
                                 return (value, ["hunt": model.hunt.rawValue, "window": String(model.window.rawValue)])
                             },
-                            apply: apply)
+                            apply: apply,
+                            runEverywhere: runEverywhere)
                     }
                 }
                 if model.result != nil {

@@ -101,4 +101,11 @@ final class EmailHuntingTests: XCTestCase {
         let ok = try? await demo.run(.linkClicks, value: "contoso-login.com", window: .day, allowInteractive: false)
         XCTAssertEqual(ok?.rows.count, 2)
     }
+
+    func testTheQuietDemoCustomerFindsNothing() async throws {
+        let quiet = DemoEmailHuntingProvider(latency: .zero, quiet: true)
+        let result = try await quiet.run(.fromSender, value: "contoso-billing.com", window: .week, allowInteractive: false)
+        XCTAssertTrue(result.rows.isEmpty)
+        XCTAssertFalse(result.columns.isEmpty)
+    }
 }

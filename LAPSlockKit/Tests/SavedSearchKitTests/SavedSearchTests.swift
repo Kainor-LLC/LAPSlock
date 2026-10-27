@@ -75,7 +75,7 @@ final class SavedSearchListTests: XCTestCase {
     func test_theDemoExamplesAreValidAndOnePerScreen() throws {
         var list: [SavedSearch] = []
         for example in SavedSearch.demoExamples { list = try SavedSearchList.adding(example, to: list) }
-        XCTAssertEqual(list.count, 3)
-        XCTAssertEqual(Set(list.map(\.scope)).count, 3)
+        XCTAssertEqual(list.count, 4)
+        XCTAssertEqual(Set(list.map(\.scope)).count, 4)
     }
 }

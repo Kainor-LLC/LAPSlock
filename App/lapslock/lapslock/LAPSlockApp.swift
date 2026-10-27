@@ -604,6 +604,7 @@ final class AppRootModel: ObservableObject {
         liveSession = nil
         demoCustomer = .contoso
         savedSearches.clear()
+        pendingSearch = nil
         mode = .signedOut
         consentState = nil
         recomputeEntitlement()
@@ -689,6 +690,71 @@ final class AppRootModel: ObservableObject {
     func switchDemoCustomer(to tenantId: String?) -> AuthError? {
         demoCustomer = tenantId.flatMap(DemoCustomer.init(rawValue:)) ?? .contoso
         return nil
+    }
+
+    // MARK: - a saved search across organizations (phase 5 step D)
+
+    /// A saved search for the shell to put on screen, after any switch it needed.
+    @Published var pendingSearch: SavedSearch?
+    /// Why a row from the run across organizations was not opened.
+    @Published var searchFailure: String?
+
+    /// Every organization a saved search runs in: the admin's own, then each saved customer.
+    var crossTenantTargets: [CrossTenantTarget] {
+        var list: [CrossTenantTarget] = []
+        if let home = signedInTenantId {
+            list.append(CrossTenantTarget(tenantId: home.lowercased(), label: signedInDomain ?? "Your organization"))
+        }
+        for tenant in savedTenants where !list.contains(where: { $0.tenantId == tenant.tenantId.lowercased() }) {
+            list.append(CrossTenantTarget(tenantId: tenant.tenantId.lowercased(), label: tenant.label))
+        }
+        return list
+    }
+
+    /// The live run: each organization read through a silent-only auth for that tenant.
+    func crossTenantSetup(session: LiveSession) -> CrossTenantSearchSetup {
+        let base: any AuthManaging = session.auth
+        return CrossTenantSearchSetup(
+            targets: { [weak self] in self?.crossTenantTargets ?? [] },
+            currentTenantId: { [weak self] in self?.operatingTenantId ?? self?.signedInTenantId },
+            sources: { target in try await CrossTenantSources.live(base: base, tenantId: target.tenantId) },
+            open: { [weak self] search, target in await self?.openSavedSearch(search, in: target) })
+    }
+
+    /// The demo run, across the two sample customers.
+    var demoCrossTenantSetup: CrossTenantSearchSetup {
+        CrossTenantSearchSetup(
+            targets: {
+                [DemoCustomer.contoso, DemoCustomer.fabrikam].map { CrossTenantTarget(tenantId: $0.rawValue, label: $0.label) }
+            },
+            currentTenantId: { [weak self] in self?.demoCustomer.rawValue },
+            sources: { target in CrossTenantSources.demo(quiet: target.tenantId == DemoCustomer.fabrikam.rawValue) },
+            open: { [weak self] search, target in await self?.openSavedSearch(search, in: target) })
+    }
+
+    /// A row tapped in the run: switch to that organization, then put the search on screen.
+    /// The same rule as a tapped alert: if the switch fails, nothing is opened.
+    func openSavedSearch(_ search: SavedSearch, in target: CrossTenantTarget) async {
+        if case .demo = mode {
+            let customer = DemoCustomer(rawValue: target.tenantId) ?? .contoso
+            if customer != demoCustomer {
+                _ = switchDemoCustomer(to: customer.rawValue)
+                alertNotice = "Switched to " + customer.label
+            }
+            pendingSearch = search
+            return
+        }
+        let home = signedInTenantId?.lowercased()
+        let current = (operatingTenantId ?? signedInTenantId)?.lowercased()
+        let wanted = target.tenantId.lowercased()
+        if wanted != current {
+            if let error = await switchTenant(to: wanted == home ? nil : wanted) {
+                searchFailure = SwitchFailure(auth: error, typed: target.label).title + ". The search was not opened."
+                return
+            }
+            alertNotice = "Switched to " + target.label
+        }
+        pendingSearch = search
     }
 
     /// Requests incremental consent for the device-write scope, used when the user turns
@@ -1008,6 +1074,13 @@ struct AppRootView: View {
             } message: {
                 Text(root.alertFailure ?? "")
             }
+            .alert("Search Not Opened", isPresented: Binding(
+                get: { root.searchFailure != nil },
+                set: { if !$0 { root.searchFailure = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(root.searchFailure ?? "")
+            }
             .onChange(of: root.operatingTenantId) { _, _ in configureWatch() }
             .onChange(of: root.demoCustomer) { _, _ in configureWatch() }
             .onChange(of: settings.privilegedActivationEnabled) { _, _ in configureWatch() }
@@ -1125,7 +1198,8 @@ struct AppRootView: View {
                 ),
                 security: SecurityColumns(
                     makeModel: { SecurityListModel(provider: DemoSecurityProvider(quiet: quiet)) },
-                    makeDigestModel: { ThreatDigestModel(provider: DemoThreatDigestProvider()) }
+                    makeDigestModel: { ThreatDigestModel(provider: DemoThreatDigestProvider()) },
+                    emailHunting: DemoEmailHuntingProvider(quiet: quiet)
                 ),
                 settingsBuilder: {
                     SettingsView(
@@ -1150,7 +1224,9 @@ struct AppRootView: View {
                 privilegedColumn: nil,
                 makeApprovals: { ApprovalsModel(provider: quiet ? demoQuietApprovals : demoApprovals) },
                 openRoute: $root.openRoute,
-                savedSearches: root.demoSavedSearches
+                savedSearches: root.demoSavedSearches,
+                crossTenant: root.demoCrossTenantSetup,
+                pendingSearch: $root.pendingSearch
             )
             .environment(\.awayTenant, quiet ? root.demoCustomer.label : nil)
             // Keyed by the sample customer, as the live shell is by tenant: a switch rebuilds
@@ -1287,7 +1363,10 @@ struct AppRootView: View {
                     makeApprovals: { ApprovalsModel(provider: session.approvals) },
                     openRoute: $root.openRoute,
                     // Pro, like the modules most searches belong to.
-                    savedSearches: root.isPro ? root.savedSearches : nil
+                    savedSearches: root.isPro ? root.savedSearches : nil,
+                    // MSP: the switcher's plan, and Pro for the saved searches it runs.
+                    crossTenant: root.isPro && root.canSwitchTenants ? root.crossTenantSetup(session: session) : nil,
+                    pendingSearch: $root.pendingSearch
                 )
                 .environment(\.awayTenant, root.isOperatingAwayFromHome ? root.operatingTenantLabel : nil)
                 // Keyed by the tenant being operated in. A switch rebuilds every module's

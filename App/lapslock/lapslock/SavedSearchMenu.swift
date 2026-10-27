@@ -72,12 +72,14 @@ final class SavedSearchLibrary: ObservableObject {
 
 /// The bookmark menu. `current` is what is on screen now, or nil when there is nothing
 /// worth saving; leave it out entirely where this column cannot save (Email's list, whose
-/// query lives in the detail column).
+/// query lives in the detail column). `runEverywhere` is the MSP run across organizations,
+/// nil where it is not offered.
 struct SavedSearchMenu: View {
     @ObservedObject var library: SavedSearchLibrary
     let scope: SavedSearch.Scope
     var current: (() -> (query: String, options: [String: String])?)? = nil
     let apply: (SavedSearch) -> Void
+    var runEverywhere: ((SavedSearch) -> Void)? = nil
 
     @State private var naming = false
     @State private var name = ""
@@ -104,6 +106,15 @@ struct SavedSearchMenu: View {
                     Label("Save this search", systemImage: "plus")
                 }
                 .disabled(current() == nil)
+            }
+            if let runEverywhere, scope.runsAcrossTenants, !saved.isEmpty {
+                Menu {
+                    ForEach(saved) { search in
+                        Button(search.name) { runEverywhere(search) }
+                    }
+                } label: {
+                    Label("Search every organization", systemImage: "building.2.crop.circle")
+                }
             }
             if !saved.isEmpty {
                 Menu {

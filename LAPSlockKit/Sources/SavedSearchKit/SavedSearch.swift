@@ -167,5 +167,7 @@ extension SavedSearch {
                     options: ["failuresOnly": "true", "last24Hours": "true"]),
         SavedSearch(name: "Open high severity", scope: .incidents, query: "",
                     options: ["openOnly": "true", "severity": "highOnly"]),
+        SavedSearch(name: "Invoice phish sender", scope: .email, query: "contoso-billing.com",
+                    options: ["hunt": "fromSender", "window": "7"]),
     ]
 }
