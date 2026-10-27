@@ -5,11 +5,13 @@ import DiagnosticsKit
 import UserActionsKit
 import DeviceActionsKit
 
-// Sign-in triage. Spec section 3.4. The "Jane can't sign in" screen.
+// People. Sign-in triage (spec 3.4) and user actions (3.5) in one place, merged
+// 2026-10-26: everything starts from finding the person.
 //
-// Content column: find the person, then their recent sign-ins with two filters. Detail
-// column: one sign-in, with the error explained in plain English, the policy that blocked
-// it named, the device, the location and the client, and risk when the tenant has P2.
+// Content column: find the person, then their state at a glance, their actions and leaver
+// checklist, and their recent sign-ins with two filters. Detail column: the actions, the
+// checklist, or one sign-in with the error explained in plain English, the policy that
+// blocked it named, the device, the location and the client, and risk when the tenant has P2.
 //
 // Pro, by decision D2: the module people open every morning is the one that converts.
 // Demo mode shows it in full so App Review can evaluate it.
@@ -20,6 +22,8 @@ final class SignInTriageModel: ObservableObject {
     @Published private(set) var users: [DirectoryUser] = []
     @Published private(set) var isSearching = false
     @Published private(set) var searchError: String?
+    /// The text the current results answer, so "nobody matches" waits for the search.
+    @Published private(set) var searchedText = ""
 
     @Published private(set) var selectedUser: DirectoryUser?
     @Published private(set) var signIns: [SignInEvent] = []
@@ -70,6 +74,7 @@ final class SignInTriageModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 users = found
                 searchError = nil
+                searchedText = trimmed
             } catch {
                 guard !Task.isCancelled else { return }
                 users = []
@@ -156,45 +161,41 @@ final class SignInTriageModel: ObservableObject {
 
 // MARK: - content column
 
-struct SignInTriageView: View {
+struct PeopleView: View {
+    /// Selection values for the person's own rows; every other value is a sign-in id.
+    static let actionsSelection = "person.actions"
+    static let leaverSelection = "person.leaver"
+
     @ObservedObject var model: SignInTriageModel
     let isDemo: Bool
     @Binding var selection: String?
     var requestConsent: (() async -> String?)? = nil
     /// Builds the actions for one person. Nil when user actions are off.
     var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
-    var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
-    var activate: (() -> Void)? = nil
+    /// The person's state at a glance. Nil when user actions are off.
+    var snapshot: ((UserActionTarget) async -> PersonSnapshot)? = nil
 
     @State private var isRequestingConsent = false
     @State private var consentMessage: String?
-    @State private var actionsFor: UserActionTarget?
+    @State private var personSnapshot: PersonSnapshot?
+    @State private var snapshotTick = 0
 
     var body: some View {
         List(selection: $selection) {
             peopleSection
             if model.selectedUser != nil {
+                personSection
                 filterSection
                 signInsSection
             }
         }
-        .navigationTitle("Sign-in Triage")
+        .navigationTitle("People")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar {
-            if let makeUserActions, let user = model.selectedUser, let upn = user.userPrincipalName {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        actionsFor = UserActionTarget(userId: user.id, userPrincipalName: upn, displayName: user.displayName)
-                    } label: {
-                        Image(systemName: "person.badge.shield.checkmark")
-                    }
-                    .accessibilityLabel("Actions for " + (user.displayName ?? upn))
-                    .sheet(item: $actionsFor) { target in
-                        UserActionsSheet(make: { makeUserActions(target) }, activate: activate, makeDeviceActions: makeDeviceActions)
-                    }
-                }
-            }
+        .task(id: snapshotKey) { await loadSnapshot() }
+        .onChange(of: selection) { old, _ in
+            // Back from the actions: what was done shows in the state lines.
+            if old == Self.actionsSelection || old == Self.leaverSelection { snapshotTick += 1 }
         }
         .searchable(text: $model.searchText, prompt: "Name or sign-in address")
         .refreshable { model.reloadSignIns() }
@@ -206,7 +207,7 @@ struct SignInTriageView: View {
     @ViewBuilder
     private var peopleSection: some View {
         Section {
-            if model.isSearching {
+            if model.isSearching || (trimmedSearch.count >= 2 && model.searchedText != trimmedSearch && model.searchError == nil) {
                 HStack(spacing: 8) { ProgressView(); Text("Searching…").font(.footnote).foregroundStyle(.secondary) }
             } else if let error = model.searchError {
                 consentAware(error)
@@ -219,6 +220,8 @@ struct SignInTriageView: View {
             } else {
                 ForEach(model.users) { user in
                     Button {
+                        selection = nil
+                        personSnapshot = nil
                         model.select(user)
                     } label: {
                         HStack {
@@ -239,6 +242,53 @@ struct SignInTriageView: View {
             }
         } header: {
             Text("People")
+        }
+    }
+
+    private var trimmedSearch: String { model.searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var target: UserActionTarget? {
+        guard let user = model.selectedUser, let upn = user.userPrincipalName else { return nil }
+        return UserActionTarget(userId: user.id, userPrincipalName: upn, displayName: user.displayName)
+    }
+
+    private var snapshotKey: String { (model.selectedUser?.id ?? "") + "#" + String(snapshotTick) }
+
+    private func loadSnapshot() async {
+        guard let snapshot, let target else { personSnapshot = nil; return }
+        personSnapshot = await snapshot(target)
+    }
+
+    /// The person at a glance, then their actions and leaver checklist. Only when user
+    /// actions are on: the state lines read on the same scopes.
+    @ViewBuilder
+    private var personSection: some View {
+        if makeUserActions != nil, let user = model.selectedUser {
+            Section {
+                if let snap = personSnapshot {
+                    let lines: [(String, String, Bool)] = [
+                        snap.signInLine.map { ($0, snap.accountEnabled == false ? "nosign" : "checkmark.circle", snap.accountEnabled == false) },
+                        snap.riskLine.map { ($0, "exclamationmark.triangle", snap.isRisky) },
+                        snap.methodsLine.map { ($0, "key", false) },
+                        snap.devicesLine.map { ($0, "laptopcomputer", false) }
+                    ].compactMap { $0 }
+                    ForEach(lines, id: \.0) { line in
+                        Label(line.0, systemImage: line.1)
+                            .font(.footnote)
+                            .foregroundStyle(line.2 ? Color.orange : Color.secondary)
+                    }
+                } else {
+                    HStack(spacing: 8) { ProgressView(); Text("Reading their account").font(.footnote).foregroundStyle(.secondary) }
+                }
+                NavigationLink(value: Self.actionsSelection) {
+                    Label("Actions", systemImage: "person.badge.shield.checkmark")
+                }
+                NavigationLink(value: Self.leaverSelection) {
+                    Label("Leaver Checklist", systemImage: "checklist")
+                }
+            } header: {
+                Text(user.displayName ?? user.userPrincipalName ?? "")
+            }
         }
     }
 
@@ -522,9 +572,9 @@ struct ProGateView: View {
     }
 }
 
-#Preview("Sign-in triage (demo)") {
+#Preview("People (demo)") {
     NavigationStack {
-        SignInTriageView(
+        PeopleView(
             model: SignInTriageModel(provider: DemoSignInTriageProvider(latency: .milliseconds(1))),
             isDemo: true,
             selection: .constant(nil))

@@ -32,7 +32,7 @@ final class AlertPlannerTests: XCTestCase {
                                   lastSeen: { _ in [] })
         XCTAssertEqual(result.alerts.first?.body, "contoso.com: 1 new break-glass sign-in")
         XCTAssertEqual(result.alerts.first?.timeSensitive, true)
-        XCTAssertEqual(result.alerts.first?.userInfo, ["tenantId": tenant, "module": "signInTriage"])
+        XCTAssertEqual(result.alerts.first?.userInfo, ["tenantId": tenant, "module": "people"])
     }
 
     func test_nothingNewMeansNothingPostedAndKindsAreIndependent() {

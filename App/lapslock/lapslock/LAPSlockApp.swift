@@ -919,13 +919,16 @@ struct AppRootView: View {
                         ConditionalAccessDetailModel(policy: policy, provider: DemoConditionalAccessProvider())
                     }
                 ),
-                signInTriage: SignInTriageColumns(
+                signInTriage: PeopleColumns(
                     makeModel: { SignInTriageModel(provider: DemoSignInTriageProvider()) },
                     makeUserActions: AppSettings.shared.userActionsEffective
                         ? { target in UserActionsModel(target: target, provider: demoUserActions, tapIssuer: DemoTemporaryAccessPassService()) }
                         : nil,
                     makeDeviceActions: AppSettings.shared.deviceActionsEffective
                         ? { target in DeviceActionsModel(target: target, provider: demoDeviceActions) }
+                        : nil,
+                    snapshot: AppSettings.shared.userActionsEffective
+                        ? { target in await demoUserActions.snapshot(of: target) }
                         : nil
                 ),
                 tenantPulse: TenantPulseColumns(
@@ -1026,7 +1029,7 @@ struct AppRootView: View {
                         requestConsent: { await root.requestConditionalAccessConsent() },
                         requestChangesConsent: { await root.requestConditionalAccessChangesConsent() }
                     ),
-                    signInTriage: SignInTriageColumns(
+                    signInTriage: PeopleColumns(
                         makeModel: { SignInTriageModel(provider: session.signInTriage) },
                         requestConsent: { await root.requestSignInTriageConsent() },
                         makeUserActions: AppSettings.shared.userActionsEffective
@@ -1034,6 +1037,9 @@ struct AppRootView: View {
                             : nil,
                         makeDeviceActions: AppSettings.shared.deviceActionsEffective
                             ? { target in DeviceActionsModel(target: target, provider: session.deviceActions) }
+                            : nil,
+                        snapshot: AppSettings.shared.userActionsEffective
+                            ? { target in await session.userActions.snapshot(of: target) }
                             : nil
                     ),
                     tenantPulse: TenantPulseColumns(

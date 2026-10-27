@@ -522,7 +522,7 @@ struct SettingsView: View {
                     Off by default. Turning this on asks Microsoft Entra ID for permission to \
                     sign people out, block and allow sign-in, remove their sign-in methods, \
                     issue a Temporary Access Pass, and, on Entra ID P2, mark risk. They appear \
-                    as an Actions button on a person in Sign-in Triage. Each asks before it is \
+                    on a person's page in People, with their leaver checklist. Each asks before it is \
                     sent; removing sign-in methods asks for the address typed back.
                     """)
             }

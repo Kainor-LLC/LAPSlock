@@ -31,9 +31,12 @@ public struct ManagedConfiguration: Sendable, Equatable {
 
     /// Module and feature ids an organization may switch off.
     public static let switchableIds: [String] = [
-        "credentials", "privilegedAccess", "signInTriage", "tenantPulse", "conditionalAccess",
+        "credentials", "privilegedAccess", "people", "tenantPulse", "conditionalAccess",
         "security", "deviceActions", "destructiveActions", "userActions", "groupWrites", "notifications"
     ]
+
+    /// Earlier ids still accepted, mapped to today's. People was Sign-in Triage until 2026-10-26.
+    public static let renamedIds: [String: String] = ["signInTriage": "people"]
 
     public var disabledIds: Set<String> = []
     public var confirmationLevel: ConfirmationLevel = .standard
@@ -64,7 +67,8 @@ public struct ManagedConfiguration: Sendable, Equatable {
         guard let dictionary, !dictionary.isEmpty else { return config }
 
         if let raw = dictionary["modules.disabled"] {
-            if let ids = strings(raw) {
+            if let listed = strings(raw) {
+                let ids = listed.map { renamedIds[$0] ?? $0 }
                 let known = ids.filter { switchableIds.contains($0) }
                 let unknown = ids.filter { !switchableIds.contains($0) }
                 config.disabledIds = Set(known)
@@ -184,7 +188,7 @@ public struct ManagedConfiguration: Sendable, Equatable {
         switch id {
         case "credentials":       return "LAPSlock"
         case "privilegedAccess":  return "Privileged Access"
-        case "signInTriage":      return "Sign-in Triage"
+        case "people":            return "People"
         case "tenantPulse":       return "Tenant Pulse"
         case "conditionalAccess": return "Conditional Access"
         case "security":          return "Security"

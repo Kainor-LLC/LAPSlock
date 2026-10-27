@@ -111,4 +111,35 @@ final class UserActionsTests: XCTestCase {
         XCTAssertFalse(UserDevice(id: "1", deviceName: nil, operatingSystem: nil, managedDeviceOwnerType: nil, azureADDeviceId: "00000000-0000-0000-0000-000000000000").hasEntraIdentity)
         XCTAssertFalse(UserDevice(id: "1", deviceName: nil, operatingSystem: nil, managedDeviceOwnerType: nil, azureADDeviceId: nil).hasEntraIdentity)
     }
+
+    func testPersonSnapshotLines() {
+        let snap = PersonSnapshot(accountEnabled: false, riskLevel: "high", methodCount: 1, deviceCount: 0)
+        XCTAssertEqual(snap.signInLine, "Sign-in blocked")
+        XCTAssertEqual(snap.riskLine, "User risk high")
+        XCTAssertTrue(snap.isRisky)
+        XCTAssertEqual(snap.methodsLine, "1 sign-in method besides the password")
+        XCTAssertEqual(snap.devicesLine, "No devices")
+        let unknown = PersonSnapshot()
+        XCTAssertNil(unknown.signInLine)
+        XCTAssertNil(unknown.riskLine)
+        XCTAssertFalse(unknown.isRisky)
+        XCTAssertEqual(PersonSnapshot(riskLevel: "none").riskLine, "No user risk")
+    }
+
+    func testSnapshotCountsMethodsWithoutThePassword() {
+        XCTAssertEqual(PersonSnapshot.countMethods(DemoUserActionsProvider.demoMethods), 4)
+    }
+
+    func testDemoSnapshotFollowsBlockAndAllow() async {
+        let demo = DemoUserActionsProvider(latency: .zero)
+        let target = UserActionTarget(userId: "u1", userPrincipalName: "a@demo.example", displayName: "A")
+        let before = await demo.snapshot(of: target)
+        XCTAssertEqual(before.accountEnabled, true)
+        _ = await demo.run(.blockSignIn, on: target)
+        let blocked = await demo.snapshot(of: target)
+        XCTAssertEqual(blocked.accountEnabled, false)
+        _ = await demo.run(.unblockSignIn, on: target)
+        let allowed = await demo.snapshot(of: target)
+        XCTAssertEqual(allowed.accountEnabled, true)
+    }
 }

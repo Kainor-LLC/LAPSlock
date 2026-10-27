@@ -32,7 +32,7 @@ import DeviceActionsKit
 enum AppModule: String, CaseIterable, Identifiable {
     case credentials
     case privilegedAccess
-    case signInTriage
+    case people
     case tenantPulse
     case conditionalAccess
     case security
@@ -43,7 +43,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "LAPSlock"
         case .privilegedAccess:  return "Privileged Access"
-        case .signInTriage:      return "Sign-in Triage"
+        case .people:            return "People"
         case .tenantPulse:       return "Tenant Pulse"
         case .conditionalAccess: return "Conditional Access"
         case .security:          return "Security"
@@ -54,7 +54,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "LAPS passwords and BitLocker keys"
         case .privilegedAccess:  return "Activate an eligible role or group"
-        case .signInTriage:      return "Why a sign-in failed, and which policy blocked it"
+        case .people:            return "Sign-ins, account state, actions and leavers"
         case .tenantPulse:       return "Health, Message Center, expiries, Secure Score"
         case .conditionalAccess: return "Policies, read-only, and what changed"
         case .security:          return "Incidents, alerts and who was involved"
@@ -65,7 +65,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return "key.horizontal"
         case .privilegedAccess:  return "person.badge.key"
-        case .signInTriage:      return "person.crop.circle.badge.questionmark"
+        case .people:            return "person.2"
         case .tenantPulse:       return "waveform.path.ecg"
         case .conditionalAccess: return "checkmark.shield"
         case .security:          return "exclamationmark.shield"
@@ -78,7 +78,7 @@ enum AppModule: String, CaseIterable, Identifiable {
         switch self {
         case .credentials:       return true
         case .privilegedAccess:  return false
-        case .signInTriage:      return true
+        case .people:            return true
         case .tenantPulse:       return true
         case .conditionalAccess: return true
         case .security:          return true
@@ -88,7 +88,7 @@ enum AppModule: String, CaseIterable, Identifiable {
     /// Pro-only modules, decision D2. Demo mode shows them so App Review can evaluate.
     var requiresPro: Bool {
         switch self {
-        case .signInTriage: return true
+        case .people: return true
         case .security:     return true
         default:            return false
         }
@@ -123,14 +123,16 @@ extension Notification.Name {
     static let revealMeterDidChange = Notification.Name("lapslock.revealMeterDidChange")
 }
 
-/// What the Sign-in triage module needs from the root, built once per session.
-struct SignInTriageColumns {
+/// What the People module needs from the root, built once per session.
+struct PeopleColumns {
     let makeModel: @MainActor () -> SignInTriageModel
     var requestConsent: (() async -> String?)? = nil
     /// User actions for the selected person; nil when they are off.
     var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
     /// Device actions for the leaver checklist; nil when they are off.
     var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
+    /// The selected person's state at a glance; nil when user actions are off.
+    var snapshot: ((UserActionTarget) async -> PersonSnapshot)? = nil
 }
 
 /// What the Tenant pulse module needs from the root, built once per session.
@@ -174,7 +176,7 @@ struct ModuleShell: View {
     /// Pro-only modules show their gate when false. Demo passes true.
     let isPro: Bool
     private let credentials: CredentialsColumns
-    private let signInTriage: SignInTriageColumns
+    private let signInTriage: PeopleColumns
     private let conditionalAccess: ConditionalAccessColumns
     private let tenantPulse: TenantPulseColumns
     private let security: SecurityColumns
@@ -236,7 +238,7 @@ struct ModuleShell: View {
         isPro: Bool,
         credentials: CredentialsColumns,
         conditionalAccess: ConditionalAccessColumns,
-        signInTriage: SignInTriageColumns,
+        signInTriage: PeopleColumns,
         tenantPulse: TenantPulseColumns,
         security: SecurityColumns,
         settingsBuilder: @escaping () -> SettingsView,
@@ -446,23 +448,23 @@ struct ModuleShell: View {
                 // the list where it has always been. Regular width shows one gear, not two.
                 settingsBuilder: sizeClass == .compact ? settingsBuilder : nil
             )
-        case .signInTriage?:
+        case .people?:
             if isPro || isDemo {
-                SignInTriageView(
+                PeopleView(
                     model: triageModel,
                     isDemo: isDemo,
                     selection: $selectedSignInId,
                     requestConsent: signInTriage.requestConsent,
                     makeUserActions: signInTriage.makeUserActions,
-                    makeDeviceActions: signInTriage.makeDeviceActions
+                    snapshot: signInTriage.snapshot
                 )
             } else {
                 ProGateView(
-                    title: "Sign-in Triage is part of Pro",
-                    detail: "Search a person, see their last sign-ins, and read why each one failed with the policy that blocked it named. Pro also removes the reveal limit.",
+                    title: "People is part of Pro",
+                    detail: "Search a person, see whether they can sign in, read why each sign-in failed with the policy that blocked it named, and act on their account. Pro also removes the reveal limit.",
                     openSettings: { showingSettings = true }
                 )
-                .navigationTitle(AppModule.signInTriage.title)
+                .navigationTitle(AppModule.people.title)
             }
         case .tenantPulse?:
             TenantPulseView(
@@ -555,16 +557,29 @@ struct ModuleShell: View {
                     Text("Pick a device from the list, or search for one.")
                 }
             }
-        case .signInTriage?:
-            if let id = selectedSignInId, let event = triageModel.signIn(id) {
+        case .people?:
+            if let id = selectedSignInId, id == PeopleView.actionsSelection || id == PeopleView.leaverSelection,
+               let makeUserActions = signInTriage.makeUserActions,
+               let user = triageModel.selectedUser, let upn = user.userPrincipalName {
+                let target = UserActionTarget(userId: user.id, userPrincipalName: upn, displayName: user.displayName)
+                // Keyed by the person, so Actions and Leaver Checklist share one model.
+                PersonActionsView(
+                    make: { makeUserActions(target) },
+                    mode: Binding(
+                        get: { selectedSignInId == PeopleView.leaverSelection ? .leaver : .actions },
+                        set: { selectedSignInId = $0 == .leaver ? PeopleView.leaverSelection : PeopleView.actionsSelection }),
+                    makeDeviceActions: signInTriage.makeDeviceActions
+                )
+                .id(user.id)
+            } else if let id = selectedSignInId, let event = triageModel.signIn(id) {
                 SignInDetailView(event: event, glossary: triageModel.glossary)
                     .id(id)
             } else {
                 ContentUnavailableView {
-                    Label("Sign-in Triage", systemImage: "person.crop.circle.badge.questionmark")
+                    Label("People", systemImage: "person.2")
                 } description: {
                     Text(isPro || isDemo
-                         ? "Find a person, then tap a sign-in to see why it went the way it did."
+                         ? "Find a person, then open their actions, their leaver checklist, or a sign-in to see why it went the way it did."
                          : "Available with Pro.")
                 }
             }
@@ -615,7 +630,7 @@ struct ModuleShell: View {
                         // Read-only to read-only, so no gate: the search box fills and
                         // the person's row is one tap away.
                         triageModel.searchText = upn
-                        selectedModule = .signInTriage
+                        selectedModule = .people
                     },
                     openDevice: { host in
                         listModel.query = host

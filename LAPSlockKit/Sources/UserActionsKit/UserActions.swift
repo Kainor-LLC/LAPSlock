@@ -276,6 +276,53 @@ public struct UserDevice: Sendable, Equatable, Identifiable, Decodable {
     }
 }
 
+/// A person's state at a glance, for the top of their page in People. Every field is
+/// optional: each comes from its own call, and one that fails or is not licensed (risk
+/// needs P2) leaves its line out rather than the whole snapshot.
+public struct PersonSnapshot: Sendable, Equatable {
+    public var accountEnabled: Bool?
+    /// Graph's riskLevel: none, low, medium, high, hidden. Nil when it could not be read.
+    public var riskLevel: String?
+    /// Registered methods other than the password.
+    public var methodCount: Int?
+    public var deviceCount: Int?
+
+    public init(accountEnabled: Bool? = nil, riskLevel: String? = nil, methodCount: Int? = nil, deviceCount: Int? = nil) {
+        self.accountEnabled = accountEnabled
+        self.riskLevel = riskLevel
+        self.methodCount = methodCount
+        self.deviceCount = deviceCount
+    }
+
+    public var signInLine: String? {
+        accountEnabled.map { $0 ? "Can sign in" : "Sign-in blocked" }
+    }
+
+    public var riskLine: String? {
+        guard let level = riskLevel?.lowercased() else { return nil }
+        switch level {
+        case "none":   return "No user risk"
+        case "hidden": return "Risk hidden from your role"
+        default:       return "User risk " + level
+        }
+    }
+
+    public var isRisky: Bool { ["low", "medium", "high"].contains(riskLevel?.lowercased() ?? "") }
+
+    public var methodsLine: String? {
+        methodCount.map { $0 == 0 ? "No sign-in methods besides the password" : ($0 == 1 ? "1 sign-in method" : String($0) + " sign-in methods") + " besides the password" }
+    }
+
+    public var devicesLine: String? {
+        deviceCount.map { $0 == 0 ? "No devices" : ($0 == 1 ? "1 device" : String($0) + " devices") }
+    }
+
+    /// The password counts as no method: it is never removed by the authentication wipe.
+    public static func countMethods(_ methods: [AuthenticationMethodRef]) -> Int {
+        methods.filter { !$0.odataType.lowercased().hasSuffix("passwordauthenticationmethod") }.count
+    }
+}
+
 /// The leaver checklist's steps, in order. Spec 8a and D8. Each runs the action it names
 /// through its usual tier; the two that Graph cannot do as designed are links.
 public enum LeaverStep: String, CaseIterable, Sendable, Identifiable {
@@ -386,6 +433,8 @@ public protocol UserActionsProviding: Sendable {
     func lastLogEntry(userId: String) async -> ShiftLogEntry?
     /// Devices the person is the primary user of.
     func devices(of target: UserActionTarget) async throws -> [UserDevice]
+    /// Their state at a glance. Never throws: a part that fails is left out.
+    func snapshot(of target: UserActionTarget) async -> PersonSnapshot
 }
 
 public actor UserActionsService: UserActionsProviding {
@@ -492,6 +541,46 @@ public actor UserActionsService: UserActionsProviding {
                                    scopes: ["DeviceManagementManagedDevices.Read.All"])
         return try await graph.collection(UserDevice.self, from: request, maxPages: 2).items
     }
+
+    private struct AccountRecord: Decodable { let accountEnabled: Bool? }
+    private struct RiskRecord: Decodable { let riskLevel: String? }
+
+    /// Four reads in parallel, each on a scope the module already holds.
+    public func snapshot(of target: UserActionTarget) async -> PersonSnapshot {
+        async let enabled = accountEnabled(target)
+        async let risk = riskLevel(target)
+        async let methodList = try? methods(of: target)
+        async let deviceList = try? devices(of: target)
+        return PersonSnapshot(
+            accountEnabled: await enabled,
+            riskLevel: await risk,
+            methodCount: await methodList.map(PersonSnapshot.countMethods),
+            deviceCount: await deviceList?.count)
+    }
+
+    private func accountEnabled(_ target: UserActionTarget) async -> Bool? {
+        let request = GraphRequest(path: "/users/" + target.userId,
+                                   template: "/users/{id}",
+                                   query: [URLQueryItem(name: "$select", value: "accountEnabled")],
+                                   scopes: [UserActionScopes.userRead])
+        return (try? await graph.decode(AccountRecord.self, from: request))?.accountEnabled
+    }
+
+    /// A person Identity Protection has never flagged has no riskyUser record: a 404 is
+    /// "none". Any other failure, such as no P2, leaves the line out.
+    private func riskLevel(_ target: UserActionTarget) async -> String? {
+        let request = GraphRequest(path: "/identityProtection/riskyUsers/" + target.userId,
+                                   template: "/identityProtection/riskyUsers/{id}",
+                                   query: [URLQueryItem(name: "$select", value: "riskLevel")],
+                                   scopes: [UserActionScopes.riskyUsers])
+        do {
+            return try await graph.decode(RiskRecord.self, from: request).riskLevel
+        } catch GraphError.notFound {
+            return "none"
+        } catch {
+            return nil
+        }
+    }
 }
 
 /// Demo: every action succeeds after a pause and lands in an in-memory log; the person has
@@ -506,10 +595,20 @@ public actor DemoUserActionsProvider: UserActionsProviding {
         self.latency = latency
     }
 
+    private var blocked: Set<String> = []
+
     public func run(_ kind: UserActionKind, on target: UserActionTarget) async -> ActionOutcome {
         try? await Task.sleep(for: latency)
         await record(kind.title, target)
+        if kind == .blockSignIn { blocked.insert(target.userId) }
+        if kind == .unblockSignIn { blocked.remove(target.userId) }
         return .requested(requestId: "demo")
+    }
+
+    public func snapshot(of target: UserActionTarget) async -> PersonSnapshot {
+        try? await Task.sleep(for: .milliseconds(300))
+        return PersonSnapshot(accountEnabled: !blocked.contains(target.userId), riskLevel: "medium",
+                              methodCount: PersonSnapshot.countMethods(Self.demoMethods), deviceCount: 2)
     }
 
     public func resume(_ kind: UserActionKind, on target: UserActionTarget, satisfying challenge: ClaimsChallenge) async -> ActionOutcome {

@@ -8,7 +8,7 @@ import PrivilegedAccessKit
 import ManagedConfigKit
 import DeviceActionsKit
 
-// User actions. Spec section 3.5. Opened from the person in Sign-in Triage.
+// User actions. Spec section 3.5. The detail page for a person in People.
 //
 // A sheet that owns its model for as long as it is up, so no redraw can replace it
 // mid-countdown (the phase 3 step D lesson). Revoke, block, allow, confirm compromised and
@@ -259,7 +259,7 @@ final class UserActionsModel: ObservableObject {
         pass = nil
     }
 
-    func sheetClosed() {
+    func closed() {
         hidePass()
         if let copied { SecureClipboard.clearIfHolding(copied) }
         copied = nil
@@ -316,14 +316,16 @@ final class UserActionsModel: ObservableObject {
     }
 }
 
-struct UserActionsSheet: View {
+/// A person's actions and leaver checklist, the detail column of People. Keyed by the
+/// person, so switching between the two views keeps one model and its countdown, and
+/// choosing another person or a sign-in replaces it, which cancels anything pending.
+struct PersonActionsView: View {
     @StateObject private var model: UserActionsModel
     var activate: (() -> Void)?
     /// Device actions for the leaver checklist's devices step; nil when they are off.
     var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @State private var mode: Mode = .actions
+    @Binding var mode: Mode
 
     enum Mode: String, CaseIterable, Identifiable {
         case actions, leaver
@@ -331,8 +333,9 @@ struct UserActionsSheet: View {
         var label: String { self == .actions ? "Actions" : "Leaver Checklist" }
     }
 
-    init(make: @escaping () -> UserActionsModel, activate: (() -> Void)? = nil, makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil) {
+    init(make: @escaping () -> UserActionsModel, mode: Binding<Mode>, activate: (() -> Void)? = nil, makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil) {
         _model = StateObject(wrappedValue: make())
+        _mode = mode
         self.activate = activate
         self.makeDeviceActions = makeDeviceActions
     }
@@ -396,7 +399,6 @@ struct UserActionsSheet: View {
             .navigationTitle("User Actions")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
                 // In the title bar, so the checklist starts at the top of the sheet.
                 ToolbarItem(placement: .principal) {
                     Picker("View", selection: $mode) {
@@ -434,10 +436,8 @@ struct UserActionsSheet: View {
             }
         }
         .privacyCover(isProtected: model.passVisible)
-        .modifier(PageSizedSheet())
-        .interactiveDismissDisabled(model.undoing != nil)
         .task { await model.load() }
-        .onDisappear { model.sheetClosed() }
+        .onDisappear { model.closed() }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { model.hidePass() }
             if phase == .background { Task { await PendingActions.shared.cancelAll() } }
@@ -696,18 +696,6 @@ struct LeaverDeviceRow: View {
         }
         .sheet(item: $model.destructive) { kind in
             DestructiveActionSheet(model: model, kind: kind)
-        }
-    }
-}
-
-/// On iPad the default form sheet is shorter than the leaver checklist; the page size shows
-/// it whole. iOS 17 keeps the form sheet.
-private struct PageSizedSheet: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.presentationSizing(.page)
-        } else {
-            content
         }
     }
 }

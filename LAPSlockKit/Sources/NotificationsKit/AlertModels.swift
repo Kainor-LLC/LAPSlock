@@ -84,7 +84,7 @@ public enum AlertKind: String, Codable, Sendable, CaseIterable, Identifiable, Co
     public var moduleId: String {
         switch self {
         case .serviceIncident, .messageDeadline, .expiringCredential, .secureScoreDrop: return "tenantPulse"
-        case .breakGlassSignIn:        return "signInTriage"
+        case .breakGlassSignIn:        return "people"
         case .conditionalAccessChange: return "conditionalAccess"
         case .securityIncident:        return "security"
         }

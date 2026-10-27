@@ -12,7 +12,7 @@ import DiagnosticsKit
 // from the device list. The one way to act on an incident is the portal, and the screen
 // says so with a link rather than pretending.
 //
-// Pro, by decision in the phase 2 plan, like Sign-in Triage. Demo shows it in full.
+// Pro, by decision in the phase 2 plan, like People. Demo shows it in full.
 
 @MainActor
 final class SecurityListModel: ObservableObject {
@@ -389,7 +389,7 @@ struct VerdictPill: View {
 struct SecurityDetailView: View {
     let incident: SecurityIncident
     let isDemo: Bool
-    /// Opens Sign-in Triage with this address in the search box.
+    /// Opens People with this address in the search box.
     let openUser: (String) -> Void
     /// Opens the device list with this host name in the search box.
     let openDevice: (String) -> Void

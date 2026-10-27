@@ -110,4 +110,10 @@ final class ManagedConfigurationTests: XCTestCase {
         let config = ManagedConfiguration.parse(["IntuneMAMUPN": "x@y.com"])
         XCTAssertTrue(config.problems.isEmpty)
     }
+
+    func testTheOldSignInTriageIdStillTurnsPeopleOff() {
+        let config = ManagedConfiguration.parse(["modules.disabled": ["signInTriage"]])
+        XCTAssertTrue(config.isDisabled("people"))
+        XCTAssertTrue(config.problems.isEmpty)
+    }
 }
