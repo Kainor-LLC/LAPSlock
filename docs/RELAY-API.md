@@ -1,9 +1,9 @@
 # TenantKeep alert relay, version 1
 
-**Status:** draft contract, phase 3 step I. It becomes frozen for implementation when Kainor
-approves it, and from then nothing here may change without a version bump except the
-additive changes listed under [Versioning](#13-versioning-and-compatibility). No code exists
-yet; by decision the contract comes first, as the entitlement contract did.
+**Status:** frozen for implementation, 2026-10-27. Nothing here may change without a version
+bump except the additive changes listed under [Versioning](#13-versioning-and-compatibility).
+Written before any code, as the entitlement contract was; the open items it listed are
+resolved in section 14.
 
 **Date:** 2026-10-27
 **Operator:** Kainor LLC (Kansas, US)
@@ -318,7 +318,7 @@ request in real time. The relay retains nothing beyond the request, so the label
   exportable, `afterFirstUnlockThisDeviceOnly`, no biometric condition so the notification
   extension can use it while the phone is locked. The key is not one of the app's five
   Keychain items for credentials or settings; it is the Enclave's, and the Keychain holds
-  only its reference. (verify) this counts as a sixth item under the rule, and decide.
+  only its reference. It is the sixth item under the rule, decided 2026-10-27.
 - **Notification Service Extension.** Every relayed push carries `mutable-content` and a
   neutral placeholder, "TenantKeep alert". The extension verifies and decrypts with the
   Enclave key and the pinned sender key, checks the plaintext's `v`, drops it as a
@@ -327,7 +327,7 @@ request in real time. The relay retains nothing beyond the request, so the label
 - **Anything that fails** (wrong sender, wrong phone, tampering, a ciphertext from before
   the key was rotated, a duplicate) is shown as "TenantKeep: an alert could not be verified
   and was discarded", with no content. The extension cannot silence a notification without
-  an entitlement Apple grants on request; (verify) whether to apply for it.
+  an entitlement Apple grants on request, which Kainor applies for.
 - **Nothing decrypted is written down** except the `id` list for de-duplication, in the
   app group container, holding ids only, at most a day old.
 - **The kill switch.** Turning the relay off deletes the Enclave key and the sender pins.
@@ -376,20 +376,22 @@ plaintext field, which an older phone ignores. Anything else, including any new 
 field, a new suite, or a change to what the relay sees or keeps, is version 2, a new path,
 and a privacy page change in the same release.
 
-## 14. Open items before this is frozen
+## 14. Resolved before freezing
 
-Each is marked (verify) where it appears, and none changes what the relay sees:
-
-- CryptoKit HPKE in authenticated mode with a Secure Enclave recipient key on iOS 17.
-- An RFC 9180 implementation for the PowerShell sender on .NET, which has ECDH, HKDF and
-  AES-GCM but no HPKE type, checked against the RFC's test vectors.
-- Whether the Enclave key reference is a sixth Keychain item under the rule.
-- Whether to apply for Apple's notification filtering entitlement, so a failed alert can be
-  silenced instead of shown as a notice.
-- Whether to publish the relay function's source alongside this contract. It is small, and
-  publishing it would let an administrator check section 9 against the code, not only
-  against a proxy.
-- The App Privacy label definitions at submission.
+- **CryptoKit, authenticated mode, Secure Enclave recipient:** works. Checked on Apple silicon
+  with a real Enclave key: a round trip, an impostor sender rejected, another phone's AAD
+  rejected, and the key reference restored from its data representation.
+- **The sender on .NET:** `relay/sender/Hpke.cs` implements RFC 9180 for this suite. It
+  matches the CFRG test vectors for authenticated mode with AES-128-GCM and AES-256-GCM, all
+  514 encryptions sealed and opened (`relay/sender/Test-Hpke.ps1`), and CryptoKit opens what
+  it seals.
+- **The Enclave key reference is the app's sixth Keychain item,** shared with the
+  notification extension, this device only, after first unlock. Decided by Kainor.
+- **Apple's notification filtering entitlement:** Kainor applies for it. Until it is
+  granted, a failed alert shows the generic notice in section 10; after, it is dropped.
+- **The relay function's source is published,** in this repository under `relay/`, so
+  section 9 can be checked against the code as well as a proxy.
+- **Still at submission:** the App Privacy label definitions, section 9.1.
 
 ## Change log
 
@@ -397,4 +399,5 @@ Each is marked (verify) where it appears, and none changes what the relay sees:
   that decision: HPKE authenticated mode with a sender key the phone pins, instead of base
   mode, so pairing data alone cannot be used to show a fake alert.
 - 2026-10-27, draft 1 accepted in substance. Kainor approved authenticated mode and two-way
-  pairing. Freezing waits on the open items in section 14.
+  pairing.
+- 2026-10-27, frozen. Open items resolved (section 14).
