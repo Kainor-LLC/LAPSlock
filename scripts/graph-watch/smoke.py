@@ -98,6 +98,15 @@ def device_user(access):
     return None
 
 
+def any_group(access):
+    """A real group, for reads that are about one. A made-up id answers 404."""
+    status, body = get(access, "v1.0", "/groups?$top=1&$select=id")
+    if status != 200:
+        return None
+    items = body.get("value", [])
+    return items[0]["id"] if items and items[0].get("id") else None
+
+
 def check(access, call, context=None):
     path = call["smoke"]
     for key, value in (context or {}).items():
@@ -209,10 +218,11 @@ def main(argv):
             handle.write(rotated)
     features = {f.strip().lower() for f in os.environ.get("GW_TENANT_FEATURES", "").split(",") if f.strip()}
     context = {}
-    if any("{deviceUserId}" in (c.get("smoke") or "") for c in manifest["calls"]):
-        found = device_user(access)
-        if found:
-            context["deviceUserId"] = found
+    for key, finder in (("deviceUserId", device_user), ("anyGroupId", any_group)):
+        if any("{" + key + "}" in (c.get("smoke") or "") for c in manifest["calls"]):
+            found = finder(access)
+            if found:
+                context[key] = found
     findings = []
     checked = 0
     skipped = []
@@ -226,7 +236,7 @@ def main(argv):
         for key, value in context.items():
             filled = filled.replace("{" + key + "}", value)
         if re.search(r"\{[A-Za-z]+\}", filled):
-            skipped.append(call["id"] + " (nobody to read it for: no managed device has a primary user)")
+            skipped.append(call["id"] + " (nothing to read it for: no device with a primary user, or no group)")
             continue
         reason = refuse(call)
         if reason:

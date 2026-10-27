@@ -1,5 +1,5 @@
 {
- "about": "Every Microsoft Graph call TenantKeep On-Call makes, for the daily Graph change watch. A test fails when a Kit adds a Graph path that is not listed here. smoke is the read the live check makes against the Kainor tenant; null means schema check only. requires names the tenant-wide plan a live read needs (P1, P2, Intune, Defender); the live check skips it when GW_TENANT_FEATURES does not list it, and the schema and changelog checks still cover it. Nothing here ever reads a password, a recovery key or a pass. {deviceUserId} in a smoke read is the primary user of a managed device, found at run time, because Intune answers 404 for a person it does not know. hunting lists the advanced hunting tables and columns the Email tab's fixed queries use (SecurityKit/EmailHunting.swift); the live check compiles a zero-row projection of each, so a renamed column fails without reading any mail.",
+ "about": "Every Microsoft Graph call TenantKeep On-Call makes, for the daily Graph change watch. A test fails when a Kit adds a Graph path that is not listed here. smoke is the read the live check makes against the Kainor tenant; null means schema check only. requires names the tenant-wide plan a live read needs (P1, P2, Intune, Defender); the live check skips it when GW_TENANT_FEATURES does not list it, and the schema and changelog checks still cover it. Nothing here ever reads a password, a recovery key or a pass. {deviceUserId} in a smoke read is the primary user of a managed device and {anyGroupId} a real group, both found at run time: Intune and PIM answer 404 for things that do not exist. hunting lists the advanced hunting tables and columns the Email tab's fixed queries use (SecurityKit/EmailHunting.swift); the live check compiles a zero-row projection of each, so a renamed column fails without reading any mail.",
  "calls": [
   {
    "id": "inventory.devices",
@@ -831,7 +831,7 @@
     "id",
     "groupId"
    ],
-   "smoke": "/identityGovernance/privilegedAccess/group/eligibilitySchedules?$filter=groupId eq '00000000-0000-0000-0000-000000000000'&$top=1"
+   "smoke": "/identityGovernance/privilegedAccess/group/eligibilitySchedules?$filter=groupId eq '{anyGroupId}'&$top=1"
   },
   {
    "id": "groups.appAccess",
@@ -904,7 +904,7 @@
   {
    "id": "digest.msrc",
    "kit": "ThreatDigestKit",
-   "url": "https://api.msrc.microsoft.com/sug/v2.0/en-US/vulnerability?$top=1",
+   "url": "https://api.msrc.microsoft.com/sug/v2.0/en-US/vulnerability?$filter=severity%20eq%20%27Critical%27&$top=1",
    "kind": "json",
    "keys": [
     "value"

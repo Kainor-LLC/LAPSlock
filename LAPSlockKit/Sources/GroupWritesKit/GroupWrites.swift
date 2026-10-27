@@ -435,16 +435,23 @@ public actor GroupWritesService: GroupWritesProviding {
         return context.facts(for: group, pim: await pim, grantsAppAccess: await apps, memberCount: await count)
     }
 
-    /// A group onboarded to PIM has eligibility schedules. A tenant without PIM for groups
-    /// answers with an error, which stays unknown rather than being read as "no".
+    /// A group onboarded to PIM has eligibility schedules. A 404 means PIM has nothing for
+    /// the group, which is "not managed by PIM". Any other failure, such as no permission or
+    /// no P2, stays unknown rather than being read as "no".
     private func pimState(_ group: DirectoryGroup) async -> GroupFacts.PIM {
         let request = GraphRequest(path: "/identityGovernance/privilegedAccess/group/eligibilitySchedules",
                                    template: "/identityGovernance/privilegedAccess/group/eligibilitySchedules?groupId",
                                    query: [URLQueryItem(name: "$filter", value: "groupId eq '" + group.id + "'"),
                                            URLQueryItem(name: "$top", value: "1")],
                                    scopes: [GroupWriteScopes.pim])
-        guard let items = try? await graph.collection(IdOnly.self, from: request, maxPages: 1).items else { return .unknown }
-        return items.isEmpty ? .none : .eligible
+        do {
+            let items = try await graph.collection(IdOnly.self, from: request, maxPages: 1).items
+            return items.isEmpty ? .none : .eligible
+        } catch GraphError.notFound {
+            return .none
+        } catch {
+            return .unknown
+        }
     }
 
     private func appAccess(_ group: DirectoryGroup) async -> Bool? {
