@@ -209,6 +209,17 @@ check_module "ApprovalsKit" "Foundation|AuthKit|ActionGateKit|PrivilegedAccessKi
   "GroupWritesKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# WatchBridgeKit is everything that crosses to the Apple Watch. Foundation only, so nothing
+# that holds or fetches a credential, a token or tenant data can be reached from it.
+check_module "WatchBridgeKit" "Foundation" \
+  "AuthKit" \
+  "CredentialKit" \
+  "PrivilegedAccessKit" \
+  "ActionGateKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \

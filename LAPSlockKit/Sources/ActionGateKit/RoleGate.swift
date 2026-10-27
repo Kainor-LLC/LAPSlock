@@ -57,10 +57,49 @@ public struct GraphRoleGate: RoleGateChecking {
         (try? await privileged.eligibleAccess()) ?? []
     }
 
+    /// The person's roles active right now, by name, with when each ends (nil for a
+    /// permanent assignment), soonest ending first. For the Apple Watch glance.
+    public func activeRoles() async throws -> [ActiveRole] {
+        let request = GraphRequest(
+            path: Self.instancesPath,
+            template: "/roleManagement/directory/roleAssignmentScheduleInstances/filterByCurrentUser(principal)?names",
+            query: [URLQueryItem(name: "$select", value: "roleDefinitionId,assignmentType,endDateTime"),
+                    URLQueryItem(name: "$expand", value: "roleDefinition($select=displayName)")],
+            scopes: [Self.scope])
+        let now = Date()
+        let items = try await graph.collection(NamedInstance.self, from: request, maxPages: 2).items
+        return items.compactMap { item in
+            if let end = item.endDateTime, end < now { return nil }
+            return ActiveRole(name: item.roleDefinition?.displayName ?? "A directory role", endsAt: item.endDateTime,
+                              activated: (item.assignmentType ?? "").caseInsensitiveCompare("Activated") == .orderedSame)
+        }
+        .sorted { ($0.endsAt ?? .distantFuture) < ($1.endsAt ?? .distantFuture) }
+    }
+
     struct Instance: Decodable, Sendable {
         let roleDefinitionId: String?
         let assignmentType: String?
         let endDateTime: Date?
+    }
+
+    struct NamedInstance: Decodable, Sendable {
+        struct Definition: Decodable, Sendable { let displayName: String? }
+        let assignmentType: String?
+        let endDateTime: Date?
+        let roleDefinition: Definition?
+    }
+}
+
+/// A role the person holds now. `activated` is true for a PIM activation, false for a
+/// standing assignment.
+public struct ActiveRole: Sendable, Equatable {
+    public let name: String
+    public let endsAt: Date?
+    public let activated: Bool
+    public init(name: String, endsAt: Date?, activated: Bool) {
+        self.name = name
+        self.endsAt = endsAt
+        self.activated = activated
     }
 }
 

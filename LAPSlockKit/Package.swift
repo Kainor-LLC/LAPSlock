@@ -24,7 +24,9 @@ let package = Package(
         // availability shims in the screens that matter most. Revisit only if a
         // customer reports a fleet on iPhone 8-era hardware.
         .iOS(.v17),
-        .macOS(.v14)     // test-host only
+        .macOS(.v14),    // test-host only
+        // The Apple Watch companion links WatchBridgeKit and nothing else from here.
+        .watchOS(.v10)
     ],
     products: [
         .library(name: "AuthKit", targets: ["AuthKit"]),
@@ -47,7 +49,8 @@ let package = Package(
         .library(name: "ManagedConfigKit", targets: ["ManagedConfigKit"]),
         .library(name: "UserActionsKit", targets: ["UserActionsKit"]),
         .library(name: "GroupWritesKit", targets: ["GroupWritesKit"]),
-        .library(name: "ApprovalsKit", targets: ["ApprovalsKit"])
+        .library(name: "ApprovalsKit", targets: ["ApprovalsKit"]),
+        .library(name: "WatchBridgeKit", targets: ["WatchBridgeKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -147,6 +150,7 @@ let package = Package(
         .target(name: "UserActionsKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
         .target(name: "GroupWritesKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
         .target(name: "ApprovalsKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
+        .target(name: "WatchBridgeKit"),
 
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
@@ -184,6 +188,7 @@ let package = Package(
         .testTarget(name: "ManagedConfigKitTests", dependencies: ["ManagedConfigKit"]),
         .testTarget(name: "UserActionsKitTests", dependencies: ["UserActionsKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
         .testTarget(name: "GroupWritesKitTests", dependencies: ["GroupWritesKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
-        .testTarget(name: "ApprovalsKitTests", dependencies: ["ApprovalsKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"])
+        .testTarget(name: "ApprovalsKitTests", dependencies: ["ApprovalsKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
+        .testTarget(name: "WatchBridgeKitTests", dependencies: ["WatchBridgeKit"])
     ]
 )

@@ -874,6 +874,7 @@ struct AppRootView: View {
             .task {
                 appLock.armAtLaunch(enabled: settings.appLockEffective)
                 root.prepare()
+                WatchConnector.shared.start()
                 #if DEBUG
                 // Straight into demo mode for simulator screenshots and UI automation, which
                 // cannot tap the button on the sign-in screen. Debug builds only, and it
@@ -888,7 +889,10 @@ struct AppRootView: View {
                 await root.restoreSession()
                 await root.refreshEntitlementIfDue()
             }
+            .onChange(of: root.mode) { _, _ in configureWatch() }
+            .onChange(of: settings.privilegedActivationEnabled) { _, _ in configureWatch() }
             .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await WatchConnector.shared.push() } }
                 if phase == .background { AlertsRunner.scheduleIfNeeded() }
                 // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
                 // grace period, waiting on an Authenticator push, must not return to a lock
@@ -898,6 +902,25 @@ struct AppRootView: View {
                     enabled: settings.appLockEffective,
                     isSigningIn: root.isSigningIn)
             }
+    }
+
+    /// The Apple Watch follows the phone's mode: demo, the signed-in tenant, or nothing.
+    private func configureWatch() {
+        switch root.mode {
+        case .demo:
+            WatchConnector.shared.configure(WatchHandlers.demo(approvals: demoApprovals))
+        case .live:
+            if let session = root.liveSession {
+                WatchConnector.shared.configure(WatchHandlers.live(
+                    graph: session.graph, auth: session.auth, tenant: root.operatingTenantLabel ?? "Your tenant",
+                    approvals: session.approvals, tenantPulse: session.tenantPulse, security: session.security,
+                    activationEnabled: settings.privilegedActivationEnabled))
+            } else {
+                WatchConnector.shared.configure(nil)
+            }
+        default:
+            WatchConnector.shared.configure(nil)
+        }
     }
 
     @ViewBuilder
