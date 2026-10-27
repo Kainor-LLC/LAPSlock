@@ -89,6 +89,21 @@ final class ShiftLogAndUndoTests: XCTestCase {
         XCTAssertTrue(ac && bc)
     }
 
+    func test_sendNowEndsTheWaitAndACancelStillWins() async {
+        let window = UndoWindow()
+        let waiter = Task { await window.wait(seconds: 30, sleep: { _ in try await Task.sleep(for: .milliseconds(5)) }) }
+        try? await Task.sleep(for: .milliseconds(30))
+        await window.proceedNow()
+        let sent = await waiter.value
+        XCTAssertTrue(sent, "send now proceeds without waiting the full window")
+
+        let cancelledFirst = UndoWindow()
+        await cancelledFirst.cancel()
+        await cancelledFirst.proceedNow()
+        let result = await cancelledFirst.wait(seconds: 1, sleep: { _ in })
+        XCTAssertFalse(result, "an undo that landed first is never overridden")
+    }
+
     func test_undoWindowElapsesOrCancels() async {
         let elapsed = UndoWindow()
         let ok = await elapsed.wait(seconds: 1, sleep: { _ in })

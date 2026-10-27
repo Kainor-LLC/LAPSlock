@@ -36,8 +36,8 @@ public actor ActionRunner {
 
     /// Gate, send once, log.
     public func run(_ action: WriteAction) async -> ActionOutcome {
-        guard action.request.method == .post else {
-            return await record(action, .failed(.refused(reason: "Only a POST can be a write action.")), requestId: nil)
+        guard action.request.method.isWrite else {
+            return await record(action, .failed(.refused(reason: "A read is not a write action.")), requestId: nil)
         }
         if let outcome = await preflight(action) {
             return await record(action, outcome, requestId: nil)
@@ -58,6 +58,21 @@ public actor ActionRunner {
             return await record(action, .failed(.refused(reason: "Your organization asked for another sign-in step and it did not clear. Try again from the portal.")), requestId: nil)
         }
         return outcome
+    }
+
+    // MARK: - for the one write that does not pass through here
+
+    /// The role gate on its own, for the Temporary Access Pass, which is issued on the
+    /// credential path because its response is a credential this target must never hold.
+    /// Same rule as `run`: eligible but not active comes back as `.needsActivation`; nil
+    /// means go ahead.
+    public func checkRoles(_ action: WriteAction) async -> ActionOutcome? {
+        await preflight(action)
+    }
+
+    /// A shift-log line for a write made elsewhere, carrying no value from its response.
+    public func log(_ action: WriteAction, outcome: ActionOutcome, requestId: String?) async {
+        _ = await record(action, outcome, requestId: requestId)
     }
 
     // MARK: - gate

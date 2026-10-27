@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import SignInTriageKit
 import DiagnosticsKit
+import UserActionsKit
 
 // Sign-in triage. Spec section 3.4. The "Jane can't sign in" screen.
 //
@@ -159,9 +160,13 @@ struct SignInTriageView: View {
     let isDemo: Bool
     @Binding var selection: String?
     var requestConsent: (() async -> String?)? = nil
+    /// Builds the actions for one person. Nil when user actions are off.
+    var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
+    var activate: (() -> Void)? = nil
 
     @State private var isRequestingConsent = false
     @State private var consentMessage: String?
+    @State private var actionsFor: UserActionTarget?
 
     var body: some View {
         List(selection: $selection) {
@@ -174,6 +179,21 @@ struct SignInTriageView: View {
         .navigationTitle("Sign-in Triage")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            if let makeUserActions, let user = model.selectedUser, let upn = user.userPrincipalName {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        actionsFor = UserActionTarget(userId: user.id, userPrincipalName: upn, displayName: user.displayName)
+                    } label: {
+                        Image(systemName: "person.badge.shield.checkmark")
+                    }
+                    .accessibilityLabel("Actions for " + (user.displayName ?? upn))
+                    .sheet(item: $actionsFor) { target in
+                        UserActionsSheet(make: { makeUserActions(target) }, activate: activate)
+                    }
+                }
+            }
+        }
         .searchable(text: $model.searchText, prompt: "Name or sign-in address")
         .refreshable { model.reloadSignIns() }
         .safeAreaInset(edge: .top) {
@@ -507,4 +527,8 @@ struct ProGateView: View {
             isDemo: true,
             selection: .constant(nil))
     }
+}
+
+extension UserActionTarget: Identifiable {
+    public var id: String { userId }
 }

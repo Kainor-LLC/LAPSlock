@@ -16,6 +16,7 @@ import ActionGateKit
 import DeviceActionsKit
 import NotificationsKit
 import ManagedConfigKit
+import UserActionsKit
 import UserNotifications
 import TenantPulseKit
 import SignInTriageKit
@@ -184,6 +185,9 @@ final class AppRootModel: ObservableObject {
         let shiftLog: FileShiftLog
         let actionRunner: ActionRunner
         let deviceActions: DeviceActionsService
+        let userActions: UserActionsService
+        /// On the credential path: the pass is a credential.
+        let temporaryAccessPass: TemporaryAccessPassService
 
         init(auth: MSALAuthManager) {
             self.auth = auth
@@ -208,6 +212,8 @@ final class AppRootModel: ObservableObject {
                 tenantId: tenant)
             self.actionRunner = runner
             self.deviceActions = DeviceActionsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
+            self.userActions = UserActionsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
+            self.temporaryAccessPass = TemporaryAccessPassService(auth: auth)
         }
 
         /// Live credential provider for one platform, sharing the authenticated session.
@@ -792,6 +798,12 @@ final class AppRootModel: ObservableObject {
         ))
     }
 
+    /// The user action scopes together, the first time user actions are turned on.
+    func requestUserActionsConsent() async -> String? {
+        await requestConsent(scopes: UserActionScopes.module,
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to change people's sign-in. An Entra administrator needs to grant it.")
+    }
+
     /// Both write scopes together, the first time device actions are turned on. Microsoft
     /// splits them: sync, restart and lock need privileged operations; locate and key
     /// rotation need read-write. Asking for one would leave half the rows failing.
@@ -815,6 +827,7 @@ final class AppRootModel: ObservableObject {
 /// One demo provider for the session, so the demo shift log survives moving between
 /// devices.
 private let demoDeviceActions = DemoDeviceActionsProvider()
+private let demoUserActions = DemoUserActionsProvider()
 
 /// Demo notification choices: in memory, never the Keychain, and never checked in the
 /// background because there is no tenant to check.
@@ -907,7 +920,10 @@ struct AppRootView: View {
                     }
                 ),
                 signInTriage: SignInTriageColumns(
-                    makeModel: { SignInTriageModel(provider: DemoSignInTriageProvider()) }
+                    makeModel: { SignInTriageModel(provider: DemoSignInTriageProvider()) },
+                    makeUserActions: AppSettings.shared.userActionsEffective
+                        ? { target in UserActionsModel(target: target, provider: demoUserActions, tapIssuer: DemoTemporaryAccessPassService()) }
+                        : nil
                 ),
                 tenantPulse: TenantPulseColumns(
                     makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider()) }
@@ -1009,7 +1025,10 @@ struct AppRootView: View {
                     ),
                     signInTriage: SignInTriageColumns(
                         makeModel: { SignInTriageModel(provider: session.signInTriage) },
-                        requestConsent: { await root.requestSignInTriageConsent() }
+                        requestConsent: { await root.requestSignInTriageConsent() },
+                        makeUserActions: AppSettings.shared.userActionsEffective
+                            ? { target in UserActionsModel(target: target, provider: session.userActions, tapIssuer: session.temporaryAccessPass) }
+                            : nil
                     ),
                     tenantPulse: TenantPulseColumns(
                         makeModel: { TenantPulseModel(provider: session.tenantPulse) },
@@ -1024,6 +1043,7 @@ struct AppRootView: View {
                         SettingsView(
                             settings: AppSettings.shared,
                             requestDeviceActionsConsent: { await root.requestDeviceActionsConsent() },
+                            requestUserActionsConsent: { await root.requestUserActionsConsent() },
                             isDemo: false,
                             shiftLog: session.shiftLog,
                             shiftLogTenantId: root.operatingTenantId ?? root.signedInTenantId,

@@ -249,6 +249,15 @@
           one policy. Never requested until you open one of those.</td>
         </tr>
         <tr>
+          <td><code>User.RevokeSessions.All</code>, <code>User.EnableDisableAccount.All</code>,
+          <code>User.Read.All</code>, <code>UserAuthenticationMethod.ReadWrite.All</code>,
+          <code>UserAuthMethod-TAP.ReadWrite.All</code>, <code>IdentityRiskyUser.ReadWrite.All</code></td>
+          <td>Only if you enable user actions</td>
+          <td>Signing a person out everywhere, blocking and allowing sign-in, removing their sign-in
+          methods, issuing a Temporary Access Pass, and on Entra ID P2 marking risk. Off by default.
+          Your organization can switch them off through Intune.</td>
+        </tr>
+        <tr>
           <td><code>User.ReadBasic.All</code></td>
           <td>When you open Sign-in Triage</td>
           <td>Finding a person by name or sign-in address. Names and addresses only.</td>

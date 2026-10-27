@@ -128,3 +128,24 @@ private struct FakeAuth: AuthManaging {
     }
     func signOut(account: AdminAccount) async throws {}
 }
+
+final class TemporaryAccessPassParseTests: XCTestCase {
+    func test_thePassGoesIntoASensitiveValue() throws {
+        let body = #"{"id":"x","temporaryAccessPass":"+drkzqAD","lifetimeInMinutes":60,"isUsableOnce":true,"startDateTime":"2026-10-26T12:00:00Z"}"#
+        let issued = try TemporaryAccessPassService.parse(Data(body.utf8))
+        XCTAssertEqual(issued.pass.withValue { $0 }, "+drkzqAD")
+        XCTAssertEqual(issued.lifetimeMinutes, 60)
+        XCTAssertTrue(issued.isUsableOnce)
+        issued.pass.wipe()
+        XCTAssertTrue(issued.pass.isWiped)
+    }
+
+    func test_aResponseWithoutAPassIsADecodeFailure() {
+        XCTAssertThrowsError(try TemporaryAccessPassService.parse(Data(#"{"id":"x"}"#.utf8)))
+    }
+
+    func test_lifetimeBoundsAreMicrosofts() {
+        XCTAssertEqual(TemporaryAccessPassService.lifetimeRange, 10...43_200)
+        XCTAssertEqual(TemporaryAccessPassService.scope, "UserAuthMethod-TAP.ReadWrite.All")
+    }
+}

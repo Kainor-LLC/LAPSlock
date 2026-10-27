@@ -179,6 +179,15 @@ check_module "ManagedConfigKit" "Foundation" \
   "InventoryKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# UserActionsKit sends writes against people's accounts. Same rule as the gate: never a
+# credential in its link graph, which is why the Temporary Access Pass is not here.
+check_module "UserActionsKit" "Foundation|AuthKit|ActionGateKit|PrivilegedAccessKit" \
+  "CredentialKit" \
+  "InventoryKit" \
+  "LicensingKit" \
+  "SecurityKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \

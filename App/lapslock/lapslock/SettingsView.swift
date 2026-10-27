@@ -65,6 +65,14 @@ final class AppSettings: ObservableObject {
     /// toggle says, and the toggle is not offered.
     var deviceActionsEffective: Bool { deviceActionsEnabled && !ManagedConfigStore.read().isDisabled("deviceActions") }
 
+    /// Whether user actions are enabled: revoke, block, the authentication wipe, a
+    /// Temporary Access Pass, risk. Off by default; the organization can force it off.
+    @Published var userActionsEnabled: Bool {
+        didSet { UserDefaults.standard.set(userActionsEnabled, forKey: Keys.userActions) }
+    }
+
+    var userActionsEffective: Bool { userActionsEnabled && !ManagedConfigStore.read().isDisabled("userActions") }
+
     @Published var appearance: AppearancePreference {
         didSet { UserDefaults.standard.set(appearance.rawValue, forKey: Keys.appearance) }
     }
@@ -72,6 +80,7 @@ final class AppSettings: ObservableObject {
     private enum Keys {
         static let rotation = "settings.bitLockerRotationEnabled"
         static let deviceActions = "settings.deviceActionsEnabled"
+        static let userActions = "settings.userActionsEnabled"
         static let privilegedActivation = "settings.privilegedActivationEnabled"
         static let userNames = "settings.userNamesEnabled"
         static let appLock = "settings.appLockEnabled"
@@ -80,6 +89,7 @@ final class AppSettings: ObservableObject {
 
     private init() {
         let defaults = UserDefaults.standard
+        self.userActionsEnabled = defaults.bool(forKey: Keys.userActions)
         self.deviceActionsEnabled = defaults.object(forKey: Keys.deviceActions) as? Bool
             ?? defaults.bool(forKey: Keys.rotation)
         self.privilegedActivationEnabled = UserDefaults.standard.bool(forKey: Keys.privilegedActivation)
@@ -121,6 +131,8 @@ struct SettingsView: View {
     /// Requests consent for the two write scopes. Returns nil on success, or a message.
     /// Injected so the sheet doesn't need to know about MSAL.
     let requestDeviceActionsConsent: () async -> String?
+    /// Requests consent for the user action scopes. Nil in demo.
+    var requestUserActionsConsent: (() async -> String?)? = nil
     let isDemo: Bool
     /// The shift log, for export and clear. Nil when signed out.
     var shiftLog: (any ShiftLogging)? = nil
@@ -222,6 +234,7 @@ struct SettingsView: View {
                             isDemo: isDemo)
                     }
                     deviceActionsSection
+                    userActionsSection
                     privilegedAccessSection
                     shiftLogSection
                     macOSSection
@@ -465,6 +478,71 @@ struct SettingsView: View {
 
                 Leaving it off means TenantKeep only ever requests read access.
                 """)
+        }
+    }
+
+    // MARK: - user actions
+
+    @State private var userActionsError: String?
+    @State private var isRequestingUserActions = false
+
+    @ViewBuilder
+    private var userActionsSection: some View {
+        if managed.config.isDisabled("userActions") {
+            Section {
+                Text("Your organization has turned off user actions in this app.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } header: {
+                Text("User Actions")
+            }
+        } else {
+            Section {
+                Toggle("Allow user actions", isOn: Binding(
+                    get: { settings.userActionsEnabled },
+                    set: { newValue in
+                        if newValue { Task { await enableUserActions() } } else {
+                            settings.userActionsEnabled = false
+                            userActionsError = nil
+                        }
+                    }))
+                    .disabled(isRequestingUserActions)
+                if isRequestingUserActions {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Requesting permission…").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if let userActionsError {
+                    Text(userActionsError).font(.footnote).foregroundStyle(.red)
+                }
+            } header: {
+                Text("User Actions")
+            } footer: {
+                Text("""
+                    Off by default. Turning this on asks Microsoft Entra ID for permission to \
+                    sign people out, block and allow sign-in, remove their sign-in methods, \
+                    issue a Temporary Access Pass, and, on Entra ID P2, mark risk. They appear \
+                    as an Actions button on a person in Sign-in Triage. Each asks before it is \
+                    sent; removing sign-in methods asks for the address typed back.
+                    """)
+            }
+        }
+    }
+
+    private func enableUserActions() async {
+        userActionsError = nil
+        guard let requestUserActionsConsent else {
+            settings.userActionsEnabled = true
+            userActionsError = "Demo mode: no permission was actually requested."
+            return
+        }
+        isRequestingUserActions = true
+        defer { isRequestingUserActions = false }
+        if let error = await requestUserActionsConsent() {
+            settings.userActionsEnabled = false
+            userActionsError = error
+        } else {
+            settings.userActionsEnabled = true
         }
     }
 

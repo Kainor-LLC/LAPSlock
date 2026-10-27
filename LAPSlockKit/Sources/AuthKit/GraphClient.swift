@@ -41,6 +41,12 @@ public struct GraphRequest: Sendable, Equatable {
     public enum Method: String, Sendable, Equatable {
         case get = "GET"
         case post = "POST"
+        case patch = "PATCH"
+        case delete = "DELETE"
+
+        /// Anything but a GET changes something, so it is never retried and only the
+        /// write gate may send it.
+        public var isWrite: Bool { self != .get }
     }
 
     public var method: Method

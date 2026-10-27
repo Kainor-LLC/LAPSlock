@@ -154,6 +154,7 @@ public actor UndoWindow {
 
     private var cancelled = false
     private var started = false
+    private var sendNow = false
 
     public init() {}
 
@@ -167,6 +168,7 @@ public actor UndoWindow {
         var elapsed: TimeInterval = 0
         while elapsed < TimeInterval(seconds) {
             if cancelled { return false }
+            if sendNow { return true }
             do { try await sleep(step) } catch { return false }
             elapsed += step
         }
@@ -175,6 +177,12 @@ public actor UndoWindow {
 
     public func cancel() {
         cancelled = true
+    }
+
+    /// The person is sure: end the wait and send. A cancel that already landed wins.
+    public func proceedNow() {
+        guard !cancelled else { return }
+        sendNow = true
     }
 
     public var isCancelled: Bool { cancelled }

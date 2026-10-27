@@ -138,6 +138,12 @@ final class DeviceActionsModel: ObservableObject {
         Task { await window.cancel() }
     }
 
+    /// Ends the wait and sends, for an admin who is sure.
+    func sendNow() {
+        guard let window = undoWindow else { return }
+        Task { await window.proceedNow() }
+    }
+
     /// Ten seconds, or longer in a DEBUG build launched with `-LAPSlockUndoSeconds N` so a
     /// slow automated pass can act inside the window. Never shorter than ten.
     static var undoSeconds: Int {
@@ -353,6 +359,15 @@ struct DeviceActionsSections: View {
             }
             Spacer()
             Button {
+                model.sendNow()
+            } label: {
+                Text("Send now")
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Send " + kind.title + " now")
+            Button {
                 model.undo()
             } label: {
                 Text("Undo")
@@ -468,7 +483,7 @@ struct DestructiveActionSheet: View {
                 } header: {
                     Text("Type the Device Name to Continue")
                 } footer: {
-                    Text("Then Face ID, then ten seconds in which you can undo before anything is sent.")
+                    Text("Then Face ID, then ten seconds in which you can undo, or send right away.")
                 }
             }
             .navigationTitle(kind.title)

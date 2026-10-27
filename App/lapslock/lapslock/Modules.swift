@@ -6,6 +6,7 @@ import SignInTriageKit
 import SecurityKit
 import ThreatDigestKit
 import ManagedConfigKit
+import UserActionsKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -125,6 +126,8 @@ extension Notification.Name {
 struct SignInTriageColumns {
     let makeModel: @MainActor () -> SignInTriageModel
     var requestConsent: (() async -> String?)? = nil
+    /// User actions for the selected person; nil when they are off.
+    var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
 }
 
 /// What the Tenant pulse module needs from the root, built once per session.
@@ -446,7 +449,8 @@ struct ModuleShell: View {
                     model: triageModel,
                     isDemo: isDemo,
                     selection: $selectedSignInId,
-                    requestConsent: signInTriage.requestConsent
+                    requestConsent: signInTriage.requestConsent,
+                    makeUserActions: signInTriage.makeUserActions
                 )
             } else {
                 ProGateView(

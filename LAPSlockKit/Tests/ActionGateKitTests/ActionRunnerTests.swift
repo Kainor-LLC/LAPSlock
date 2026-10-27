@@ -116,7 +116,7 @@ final class ActionRunnerTests: XCTestCase {
         let action = WriteAction(id: "x", title: "X", tier: .none, target: ActionTarget(label: "t", id: "1"),
                                  request: GraphRequest(path: "/me", scopes: ["User.Read"]), successCopy: "")
         let outcome = await runner(gate: StubGate(active: [])).run(action)
-        XCTAssertEqual(outcome, .failed(.refused(reason: "Only a POST can be a write action.")))
+        XCTAssertEqual(outcome, .failed(.refused(reason: "A read is not a write action.")))
         XCTAssertTrue(StubProtocol.requests.isEmpty)
         let entries = await log.entries(tenantId: tenant)
         XCTAssertEqual(entries.first?.outcome, "refused")
@@ -198,6 +198,29 @@ final class ActionRunnerTests: XCTestCase {
         XCTAssertEqual(outcomes, [.failed(.notFound), .failed(.serviceUnavailable(status: 503)), .failed(.badRequest(code: "BadRequest")), .failed(.transport(status: 418))])
         let entries = await log.entries(tenantId: tenant)
         XCTAssertEqual(entries.count, 4)
+    }
+
+    func test_patchAndDeleteAreWritesToo() async {
+        StubProtocol.replies = ["users/u1": [.init(status: 204, body: ""), .init(status: 204, body: "")]]
+        let r = runner(gate: StubGate(active: nil))
+        for method in [GraphRequest.Method.patch, .delete] {
+            let action = WriteAction(id: "user.x", title: "X", tier: .confirm, target: ActionTarget(label: "u", id: "u1"),
+                                     request: GraphRequest(method: method, path: "/users/u1", scopes: ["S"]), successCopy: "")
+            let outcome = await r.run(action)
+            XCTAssertTrue(outcome.isRequested, "\(method)")
+        }
+        XCTAssertEqual(StubProtocol.requests.map(\.httpMethod), ["PATCH", "DELETE"])
+    }
+
+    func test_checkRolesAndLogForAWriteMadeElsewhere() async {
+        let r = runner(gate: StubGate(active: [], eligible: [eligibleIntune]))
+        let action = restart(required: [intuneAdmin])
+        let gate = await r.checkRoles(action)
+        XCTAssertEqual(gate, .needsActivation(eligible: [eligibleIntune]))
+        await r.log(action, outcome: .requested(requestId: "r9"), requestId: "r9")
+        let entries = await log.entries(tenantId: tenant)
+        XCTAssertEqual(entries.first?.requestId, "r9")
+        XCTAssertTrue(StubProtocol.requests.isEmpty, "checking and logging send nothing")
     }
 
     func test_strictMovesEveryTierUpOne() {
