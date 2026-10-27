@@ -31,6 +31,9 @@ final class WatchConnector: NSObject {
     }
 
     private var handlers: Handlers?
+    /// False until the app's screens have said which mode it is in. A background launch for
+    /// the notification check builds no screens, and must not tell the watch "signed out".
+    private var configured = false
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
 
     func start() {
@@ -42,13 +45,14 @@ final class WatchConnector: NSObject {
     /// Set when the mode changes: demo, live, or signed out (nil).
     func configure(_ handlers: Handlers?) {
         self.handlers = handlers
+        configured = true
         Task { await push() }
     }
 
     /// Sends the latest glance, if a watch with the app is paired. Signed out sends an empty
     /// glance, so the wrist never shows a previous session's tenant.
     func push() async {
-        guard let session, session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+        guard configured, let session, session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
         let glance: WatchGlance
         if let handlers {
             glance = await handlers.glance().fitted()

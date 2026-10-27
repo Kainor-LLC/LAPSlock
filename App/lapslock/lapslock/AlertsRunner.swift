@@ -50,6 +50,9 @@ enum AlertsRunner {
     @discardableResult
     static func run(auth suppliedAuth: (any AuthManaging)? = nil) async -> Int {
         defer { scheduleIfNeeded() }
+        // The watch's glance and complications are as fresh as this run, when the app's
+        // screens exist to say which mode it is in; a cold background launch skips it.
+        defer { Task { await WatchConnector.shared.push() } }
         let managed = ManagedConfigStore.read()
         guard !managed.isDisabled("notifications") else { return 0 }
         guard var prefs = try? preferencesStore.load(), prefs.anythingToCheck else { return 0 }
