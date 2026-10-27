@@ -1,5 +1,5 @@
 {
- "about": "Every Microsoft Graph call TenantKeep On-Call makes, for the daily Graph change watch. A test fails when a Kit adds a Graph path that is not listed here. smoke is the read the live check makes against the Kainor tenant; null means schema check only. requires names the tenant-wide plan a live read needs (P1, P2, Intune, Defender); the live check skips it when GW_TENANT_FEATURES does not list it, and the schema and changelog checks still cover it. Nothing here ever reads a password, a recovery key or a pass. {deviceUserId} in a smoke read is the primary user of a managed device, found at run time, because Intune answers 404 for a person it does not know.",
+ "about": "Every Microsoft Graph call TenantKeep On-Call makes, for the daily Graph change watch. A test fails when a Kit adds a Graph path that is not listed here. smoke is the read the live check makes against the Kainor tenant; null means schema check only. requires names the tenant-wide plan a live read needs (P1, P2, Intune, Defender); the live check skips it when GW_TENANT_FEATURES does not list it, and the schema and changelog checks still cover it. Nothing here ever reads a password, a recovery key or a pass. {deviceUserId} in a smoke read is the primary user of a managed device, found at run time, because Intune answers 404 for a person it does not know. hunting lists the advanced hunting tables and columns the Email tab's fixed queries use (SecurityKit/EmailHunting.swift); the live check compiles a zero-row projection of each, so a renamed column fails without reading any mail.",
  "calls": [
   {
    "id": "inventory.devices",
@@ -867,6 +867,21 @@
    "version": "v1.0",
    "path": "/groups/{id}/members/{userId}/$ref",
    "smoke": null
+  },
+  {
+   "id": "security.hunting",
+   "kit": "SecurityKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/security/runHuntingQuery",
+   "requires": [
+    "Defender"
+   ],
+   "parameters": [
+    "query",
+    "timespan"
+   ],
+   "smoke": null
   }
  ],
  "feeds": [
@@ -913,6 +928,55 @@
    "kit": "ThreatDigestKit",
    "url": "https://www.cisa.gov/cybersecurity-advisories/cybersecurity-advisories.xml",
    "kind": "rss"
+  }
+ ],
+ "hunting": [
+  {
+   "id": "hunting.EmailEvents",
+   "kit": "SecurityKit",
+   "table": "EmailEvents",
+   "columns": [
+    "Timestamp",
+    "SenderFromAddress",
+    "SenderFromDomain",
+    "RecipientEmailAddress",
+    "Subject",
+    "DeliveryAction",
+    "DeliveryLocation",
+    "ThreatTypes",
+    "EmailDirection",
+    "NetworkMessageId"
+   ]
+  },
+  {
+   "id": "hunting.EmailPostDeliveryEvents",
+   "kit": "SecurityKit",
+   "table": "EmailPostDeliveryEvents",
+   "columns": [
+    "Timestamp",
+    "Action",
+    "ActionType",
+    "ActionTrigger",
+    "ActionResult",
+    "DeliveryLocation",
+    "ThreatTypes",
+    "NetworkMessageId",
+    "RecipientEmailAddress"
+   ]
+  },
+  {
+   "id": "hunting.UrlClickEvents",
+   "kit": "SecurityKit",
+   "table": "UrlClickEvents",
+   "columns": [
+    "Timestamp",
+    "AccountUpn",
+    "Url",
+    "ActionType",
+    "IsClickedThrough",
+    "Workload",
+    "NetworkMessageId"
+   ]
   }
  ]
 }

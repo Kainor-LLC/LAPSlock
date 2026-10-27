@@ -123,6 +123,45 @@ def check(access, call, context=None):
     return problems
 
 
+def post_hunting(access, kql):
+    """The one POST the live check makes: advanced hunting, which changes nothing. The path
+    is fixed here, not taken from the manifest."""
+    body = json.dumps({"query": kql, "timespan": "P1D"}).encode()
+    request = urllib.request.Request(GRAPH + "v1.0/security/runHuntingQuery", data=body, method="POST", headers={
+        "Authorization": "Bearer " + access,
+        "Content-Type": "application/json",
+        "User-Agent": "TenantKeep-GraphWatch/1",
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            return response.status, json.loads(response.read() or b"{}")
+    except urllib.error.HTTPError as error:
+        try:
+            return error.code, json.loads(error.read() or b"{}")
+        except ValueError:
+            return error.code, {}
+
+
+TABLE = re.compile(r"^[A-Za-z]+$")
+
+
+def hunting(access, manifest):
+    """Each table the Email tab reads, with the columns its queries use, compiled with no
+    rows asked for. A renamed or removed column is a 400 naming it; no mail is read."""
+    found = []
+    for entry in manifest.get("hunting", []):
+        names = [entry["table"]] + entry["columns"]
+        if not all(TABLE.match(n) for n in names):
+            found.append({"id": entry["id"], "kit": entry["kit"], "problem": "refused: table and column names must be plain words; fix the manifest"})
+            continue
+        kql = entry["table"] + " | project " + ", ".join(entry["columns"]) + " | take 0"
+        status, body = post_hunting(access, kql)
+        if status != 200:
+            err = body.get("error", {}) if isinstance(body, dict) else {}
+            found.append({"id": entry["id"], "kit": entry["kit"], "problem": "HTTP " + str(status) + " " + str(err.get("code", "")) + ": " + str(err.get("message", ""))[:300]})
+    return found
+
+
 def message_center(access, manifest):
     """Message Center posts from the last week that name an API the app uses and retire,
     deprecate or remove something."""
@@ -196,6 +235,11 @@ def main(argv):
         checked += 1
         for problem in check(access, call, context):
             findings.append({"id": call["id"], "kit": call["kit"], "version": call["version"], "problem": problem})
+    if "defender" in features:
+        findings += hunting(access, manifest)
+        checked += len(manifest.get("hunting", []))
+    else:
+        skipped += [h["id"] for h in manifest.get("hunting", [])]
     findings += message_center(access, manifest)
     for f in findings:
         print("BREAK " + f["id"] + ": " + f["problem"])

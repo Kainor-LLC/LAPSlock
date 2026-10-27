@@ -52,6 +52,7 @@ SCOPES = [
     "SecurityIncident.Read.All",
     "IdentityRiskyUser.Read.All",
     "UserAuthenticationMethod.Read.All",
+    "ThreatHunting.Read.All",
 ]
 
 PAGE = b"""<!doctype html><meta charset="utf-8"><title>Graph watch</title>

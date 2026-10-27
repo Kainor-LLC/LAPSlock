@@ -162,6 +162,10 @@ struct SecurityColumns {
     let makeDigestModel: @MainActor () -> ThreatDigestModel
     /// Interactive consent for the module's scope. Nil in demo.
     var requestConsent: (() async -> String?)? = nil
+    /// The Email tab's hunting queries.
+    var emailHunting: any EmailHuntingProviding = DemoEmailHuntingProvider()
+    /// Consent for the hunting scope, asked the first time a query runs. Nil in demo.
+    var requestHuntingConsent: (() async -> String?)? = nil
 }
 
 /// What the credentials module needs from the root, built once per session.
@@ -201,15 +205,18 @@ struct ModuleShell: View {
     @State private var selectedSignInId: String?
     @State private var selectedIncidentId: String?
     @State private var selectedDigestId: String?
+    @State private var selectedHuntId: String?
     @State private var securityTab: SecurityTab = .incidents
 
     enum SecurityTab: String, CaseIterable, Identifiable {
         case incidents
+        case email
         case digest
         var id: String { rawValue }
         var label: String {
             switch self {
             case .incidents: return "Incidents"
+            case .email:     return "Email"
             case .digest:    return "Digest"
             }
         }
@@ -329,6 +336,7 @@ struct ModuleShell: View {
             selectedSignInId = nil
             selectedIncidentId = nil
             selectedDigestId = nil
+            selectedHuntId = nil
             if let module { AppModule.lastUsed = module }
         }
         .onChange(of: selectedDeviceId) { _, id in
@@ -524,6 +532,17 @@ struct ModuleShell: View {
                 )
                 .navigationTitle(AppModule.security.title)
             }
+        case .email:
+            if isPro || isDemo {
+                EmailHuntListView(isDemo: isDemo, selection: $selectedHuntId)
+            } else {
+                ProGateView(
+                    title: "Email investigation is part of Pro",
+                    detail: "Fixed, read-only hunting queries: everything a sender sent, what reached a person, phish that got through, what was pulled back, and who clicked. The Digest tab is free. Pro also removes the reveal limit.",
+                    openSettings: { showingSettings = true }
+                )
+                .navigationTitle(AppModule.security.title)
+            }
         case .digest:
             ThreatDigestListView(
                 model: digestModel,
@@ -617,6 +636,21 @@ struct ModuleShell: View {
                     Label("No policy selected", systemImage: "checkmark.shield")
                 } description: {
                     Text("Pick a policy from the list. Nothing here can change one.")
+                }
+            }
+        case .security? where securityTab == .email:
+            if let id = selectedHuntId, let hunt = EmailHunt(rawValue: id), isPro || isDemo {
+                EmailHuntDetailView(make: {
+                    EmailHuntModel(hunt: hunt, provider: security.emailHunting, requestConsent: security.requestHuntingConsent)
+                })
+                .id(id)
+            } else {
+                ContentUnavailableView {
+                    Label("Investigate Email", systemImage: "envelope.badge.shield.half.filled")
+                } description: {
+                    Text(isPro || isDemo
+                         ? "Pick a query. Each is fixed and read-only, and takes at most one value."
+                         : "Available with Pro.")
                 }
             }
         case .security? where securityTab == .digest:

@@ -138,6 +138,20 @@ class BootstrapCallbackTests(unittest.TestCase):
         self.assertEqual(result.get("code"), "abc")
 
 
+class HuntingTests(unittest.TestCase):
+    def test_tables_compile_with_no_rows_and_names_must_be_plain(self):
+        from unittest import mock
+        sent = []
+        manifest = {"hunting": [
+            {"id": "ok", "kit": "K", "table": "EmailEvents", "columns": ["Timestamp", "Subject"]},
+            {"id": "bad", "kit": "K", "table": "EmailEvents | union x", "columns": ["Subject"]},
+        ]}
+        with mock.patch.object(smoke, "post_hunting", side_effect=lambda a, kql: sent.append(kql) or (200, {})):
+            found = smoke.hunting("x", manifest)
+        self.assertEqual(sent, ["EmailEvents | project Timestamp, Subject | take 0"])
+        self.assertEqual([f["id"] for f in found], ["bad"])
+
+
 class MessageCenterTests(unittest.TestCase):
     def test_only_graph_posts_naming_a_specific_api_count(self):
         from unittest import mock

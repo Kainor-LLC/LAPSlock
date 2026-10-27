@@ -178,6 +178,7 @@ final class AppRootModel: ObservableObject {
         let tenantPulse: TenantPulseService
         let signInTriage: SignInTriageService
         let security: SecurityService
+        let emailHunting: EmailHuntingService
         /// Public feeds. Built without the auth manager on purpose: the Kit cannot take
         /// one, and this is where that shows.
         let threatDigest: ThreatDigestService
@@ -203,6 +204,7 @@ final class AppRootModel: ObservableObject {
             self.tenantPulse = TenantPulseService(graph: graph)
             self.signInTriage = SignInTriageService(graph: graph)
             self.security = SecurityService(graph: graph)
+            self.emailHunting = EmailHuntingService(graph: graph)
             self.threatDigest = ThreatDigestService()
             let shiftLog = FileShiftLog.standard()
             self.shiftLog = shiftLog
@@ -647,6 +649,11 @@ final class AppRootModel: ObservableObject {
     }
 
     /// Requests the Security module's one read scope, the first time it is opened.
+    func requestHuntingConsent() async -> String? {
+        await requestConsent(scopes: [HuntingScopes.hunting],
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to run advanced hunting queries. An Entra administrator needs to grant it.")
+    }
+
     func requestSecurityConsent() async -> String? {
         await requestConsent(scopes: SecurityScopes.module,
                              deniedMessage: "Your organization hasn't approved permission for TenantKeep to read security incidents and alerts. An Entra administrator needs to grant it.")
@@ -1069,7 +1076,9 @@ struct AppRootView: View {
                     security: SecurityColumns(
                         makeModel: { SecurityListModel(provider: session.security) },
                         makeDigestModel: { ThreatDigestModel(provider: session.threatDigest) },
-                        requestConsent: { await root.requestSecurityConsent() }
+                        requestConsent: { await root.requestSecurityConsent() },
+                        emailHunting: session.emailHunting,
+                        requestHuntingConsent: { await root.requestHuntingConsent() }
                     ),
                     settingsBuilder: {
                         SettingsView(
