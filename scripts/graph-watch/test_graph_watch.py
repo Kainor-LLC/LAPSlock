@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import check_changelog  # noqa: E402
 import check_schema  # noqa: E402
+import bootstrap_token  # noqa: E402
 import report  # noqa: E402
 import smoke  # noqa: E402
 
@@ -104,6 +105,20 @@ class SmokeLicensingTests(unittest.TestCase):
                  mock.patch.object(smoke, "message_center", return_value=[]):
                 self.assertEqual(smoke.main(["smoke.py", str(path)]), 0)
         self.assertEqual(sent, ["a", "b"])
+
+
+class BootstrapCallbackTests(unittest.TestCase):
+    def test_the_local_callback_takes_the_code_only_with_the_right_state(self):
+        import urllib.error
+        import urllib.request
+        port, result, thread = bootstrap_token.wait_for_code("good")
+        with self.assertRaises(urllib.error.HTTPError):
+            urllib.request.urlopen("http://127.0.0.1:" + str(port) + "/?code=evil&state=bad", timeout=5)
+        self.assertNotIn("code", result)
+        port, result, thread = bootstrap_token.wait_for_code("good")
+        urllib.request.urlopen("http://127.0.0.1:" + str(port) + "/?code=abc&state=good", timeout=5).read()
+        thread.join(5)
+        self.assertEqual(result.get("code"), "abc")
 
 
 class ReportTests(unittest.TestCase):
