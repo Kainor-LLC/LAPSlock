@@ -142,7 +142,7 @@
       <tr>
         <td>Device inventory you have browsed (names, models, compliance state)</td>
         <td>App memory, scoped to the tenant you are signed in to</td>
-        <td>Cleared when you sign out, switch accounts, or close the app</td>
+        <td>Cleared when you sign out, switch accounts or organizations, or close the app</td>
       </tr>
       <tr>
         <td>The shift log: device actions you requested from the app (time, device name, action,
@@ -150,6 +150,13 @@
         <td>A file in the app's own container, protected until the device is first unlocked, never
         synced to iCloud, never sent anywhere</td>
         <td>The newest 500 entries, until you clear it in Settings or delete the app</td>
+      </tr>
+      <tr>
+        <td>Searches you save: a name, the screen, what you typed (which can be a person's sign-in
+        address or a sender's address) and that screen's filters, never the results</td>
+        <td>A file in the app's own container, readable only while the device is unlocked, excluded
+        from backups, never synced to iCloud, never sent anywhere</td>
+        <td>At most 50, until you remove them, sign out, or delete the app</td>
       </tr>
       <tr>
         <td>A Temporary Access Pass you issue</td>
