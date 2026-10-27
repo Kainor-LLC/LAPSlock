@@ -35,6 +35,11 @@
 		87CA0001305200010000001A /* WatchBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000019 /* WatchBridgeKit */; };
 		87CA0001305200010000001C /* WatchBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000001B /* WatchBridgeKit */; };
 		87CA0001305200010000001E /* WatchBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000001D /* WatchBridgeKit */; };
+		87CA00013052000100000024 /* AuthKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000001F /* AuthKit */; };
+		87CA00013052000100000025 /* AuthKitMSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000020 /* AuthKitMSAL */; };
+		87CA00013052000100000026 /* InventoryKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000021 /* InventoryKit */; };
+		87CA00013052000100000027 /* PrivilegedAccessKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000022 /* PrivilegedAccessKit */; };
+		87CA00013052000100000028 /* TenantPulseKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000023 /* TenantPulseKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,6 +90,7 @@
 		8751892E30904643006C9B7C /* OnCallComplicationsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OnCallComplicationsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8751892F30904643006C9B7C /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		8751893130904643006C9B7C /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		87518996309052DA006C9B7C /* TenantKeepMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = TenantKeepMac.app; path = TenantKeep.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8769AA9B304A08C70093ADD6 /* LAPSlock.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = LAPSlock.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -125,6 +131,11 @@
 				8751894130904644006C9B7C /* Exceptions for "OnCallComplications" folder in "OnCallComplicationsExtension" target */,
 			);
 			path = OnCallComplications;
+			sourceTree = "<group>";
+		};
+		87518997309052DA006C9B7C /* TenantKeepMac */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TenantKeepMac;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -177,6 +188,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		87518993309052DA006C9B7C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				87CA00013052000100000024 /* AuthKit in Frameworks */,
+				87CA00013052000100000025 /* AuthKitMSAL in Frameworks */,
+				87CA00013052000100000026 /* InventoryKit in Frameworks */,
+				87CA00013052000100000027 /* PrivilegedAccessKit in Frameworks */,
+				87CA00013052000100000028 /* TenantPulseKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -187,6 +210,7 @@
 				8734CC52302FB6650056D699 /* lapslock */,
 				8751889530904259006C9B7C /* OnCallWatch Watch App */,
 				8751893330904643006C9B7C /* OnCallComplications */,
+				87518997309052DA006C9B7C /* TenantKeepMac */,
 				8734CC62302FBA9E0056D699 /* Frameworks */,
 				8734CC51302FB6650056D699 /* Products */,
 			);
@@ -198,6 +222,7 @@
 				8734CC50302FB6650056D699 /* lapslock.app */,
 				8751889130904259006C9B7C /* OnCallWatch Watch App.app */,
 				8751892E30904643006C9B7C /* OnCallComplicationsExtension.appex */,
+				87518996309052DA006C9B7C /* TenantKeepMac.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -308,6 +333,33 @@
 			productReference = 8751892E30904643006C9B7C /* OnCallComplicationsExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		87518995309052DA006C9B7C /* TenantKeepMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 875189A0309052DA006C9B7C /* Build configuration list for PBXNativeTarget "TenantKeepMac" */;
+			buildPhases = (
+				87518992309052DA006C9B7C /* Sources */,
+				87518993309052DA006C9B7C /* Frameworks */,
+				87518994309052DA006C9B7C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				87518997309052DA006C9B7C /* TenantKeepMac */,
+			);
+			name = TenantKeepMac;
+			packageProductDependencies = (
+				87CA0001305200010000001F /* AuthKit */,
+				87CA00013052000100000020 /* AuthKitMSAL */,
+				87CA00013052000100000021 /* InventoryKit */,
+				87CA00013052000100000022 /* PrivilegedAccessKit */,
+				87CA00013052000100000023 /* TenantPulseKit */,
+			);
+			productName = TenantKeepMac;
+			productReference = 87518996309052DA006C9B7C /* TenantKeepMac.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -326,6 +378,9 @@
 						CreatedOnToolsVersion = 27.1;
 					};
 					8751892D30904643006C9B7C = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					87518995309052DA006C9B7C = {
 						CreatedOnToolsVersion = 27.1;
 					};
 				};
@@ -350,6 +405,7 @@
 				8734CC4F302FB6650056D699 /* lapslock */,
 				8751889030904259006C9B7C /* OnCallWatch Watch App */,
 				8751892D30904643006C9B7C /* OnCallComplicationsExtension */,
+				87518995309052DA006C9B7C /* TenantKeepMac */,
 			);
 		};
 /* End PBXProject section */
@@ -376,6 +432,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		87518994309052DA006C9B7C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -394,6 +457,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8751892A30904643006C9B7C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		87518992309052DA006C9B7C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -625,9 +695,9 @@
 		875188A030904259006C9B7C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "OnCallWatch Watch App/OnCallWatch.entitlements";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "OnCallWatch Watch App/OnCallWatch.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -658,9 +728,9 @@
 		875188A130904259006C9B7C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "OnCallWatch Watch App/OnCallWatch.entitlements";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "OnCallWatch Watch App/OnCallWatch.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -691,9 +761,9 @@
 		8751893F30904644006C9B7C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = OnCallComplications/OnCallComplications.entitlements;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = OnCallComplications/OnCallComplications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -724,9 +794,9 @@
 		8751894030904644006C9B7C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = OnCallComplications/OnCallComplications.entitlements;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = OnCallComplications/OnCallComplications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -751,6 +821,80 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		8751899E309052DA006C9B7C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "TenantKeepMac-Mac.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72C7PQBP52;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "TenantKeepMac-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "TenantKeep On-Call";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslock;
+				PRODUCT_NAME = TenantKeep;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8751899F309052DA006C9B7C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "TenantKeepMac-Mac.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72C7PQBP52;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "TenantKeepMac-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "TenantKeep On-Call";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslock;
+				PRODUCT_NAME = TenantKeep;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -789,6 +933,15 @@
 			buildConfigurations = (
 				8751893F30904644006C9B7C /* Debug */,
 				8751894030904644006C9B7C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		875189A0309052DA006C9B7C /* Build configuration list for PBXNativeTarget "TenantKeepMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8751899E309052DA006C9B7C /* Debug */,
+				8751899F309052DA006C9B7C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -913,15 +1066,40 @@
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = WatchBridgeKit;
 		};
+		87CA0001305200010000001B /* WatchBridgeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = WatchBridgeKit;
+		};
 		87CA0001305200010000001D /* WatchBridgeKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = WatchBridgeKit;
 		};
-		87CA0001305200010000001B /* WatchBridgeKit */ = {
+		87CA0001305200010000001F /* AuthKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
-			productName = WatchBridgeKit;
+			productName = AuthKit;
+		};
+		87CA00013052000100000020 /* AuthKitMSAL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = AuthKitMSAL;
+		};
+		87CA00013052000100000021 /* InventoryKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = InventoryKit;
+		};
+		87CA00013052000100000022 /* PrivilegedAccessKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = PrivilegedAccessKit;
+		};
+		87CA00013052000100000023 /* TenantPulseKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = TenantPulseKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

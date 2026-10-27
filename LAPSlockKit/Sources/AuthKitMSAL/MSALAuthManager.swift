@@ -1,11 +1,16 @@
-// MSAL's interactive flow is UIKit-based, so this implementation is iOS-only.
-// On the macOS test host this target compiles to nothing, which is intended:
-// the shipping product is an iOS app, and macOS exists only to host fast tests.
-// The guard must sit ABOVE the imports: UIKit does not exist on macOS.
-#if os(iOS)
+// iOS and, since phase 4 step C, macOS for the native Mac app. The only difference is how
+// the presenting view controller is found (MainActorUI at the bottom). Since this compiles
+// on macOS, `swift test` on the Mac now compiles this file for real, which closes the gap
+// CLAUDE.md warns about; building the iOS app is still required, for the UIKit half.
+// The guard must sit ABOVE the imports.
+#if os(iOS) || os(macOS)
 
 import Foundation
+#if os(iOS)
 import UIKit
+#else
+import AppKit
+#endif
 import MSAL
 import AuthKit
 
@@ -532,9 +537,9 @@ private struct MSALFailure: Error {
     let error: Error?
 }
 
-// MARK: - main-actor UIKit access
+// MARK: - main-actor UI access
 
-/// All UIKit touching happens here, on the main actor. The MSALAuthManager actor
+/// All UIKit and AppKit touching happens here, on the main actor. The MSALAuthManager actor
 /// reaches these with `await`, which is what keeps the concurrency checker happy.
 ///
 /// Note that this is necessary but not sufficient: MSAL also dereferences the presenting
@@ -545,6 +550,29 @@ private enum MainActorUI {
     static func webviewParameters() throws -> MSALWebviewParameters {
         MSALWebviewParameters(authPresentationViewController: try topViewController())
     }
+
+    #if os(macOS)
+    /// The key window's controller, or any visible window's. A menu bar app may have no
+    /// window open; then a small transparent one hosts the sign-in sheet and is closed with
+    /// the app. MSAL presents ASWebAuthenticationSession on macOS, which needs an anchor.
+    static func topViewController() throws -> NSViewController {
+        if let controller = NSApplication.shared.keyWindow?.contentViewController
+            ?? NSApplication.shared.windows.first(where: { $0.isVisible })?.contentViewController {
+            return controller
+        }
+        let controller = NSViewController()
+        controller.view = NSView(frame: NSRect(x: 0, y: 0, width: 1, height: 1))
+        let window = NSWindow(contentViewController: controller)
+        window.styleMask = [.borderless]
+        window.isReleasedWhenClosed = false
+        window.setFrame(NSRect(x: 0, y: 0, width: 1, height: 1), display: false)
+        window.orderFront(nil)
+        anchors.append(window)
+        return controller
+    }
+
+    private static var anchors: [NSWindow] = []
+    #else
 
     static func topViewController() throws -> UIViewController {
         let activeScene = UIApplication.shared.connectedScenes
@@ -562,6 +590,7 @@ private enum MainActorUI {
         while let presented = top.presentedViewController { top = presented }
         return top
     }
+    #endif
 }
 
-#endif // os(iOS)
+#endif // os(iOS) || os(macOS)
