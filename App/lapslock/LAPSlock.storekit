@@ -36,11 +36,11 @@
       "localizations" : [
         {
           "description" : "",
-          "displayName" : "LAPSlock",
+          "displayName" : "TenantKeep",
           "locale" : "en_US"
         }
       ],
-      "name" : "LAPSlock",
+      "name" : "TenantKeep",
       "subscriptions" : [
         {
           "adHocOffers" : [
@@ -81,7 +81,7 @@
           "localizations" : [
             {
               "description" : "Everything in Pro, plus tenant switching",
-              "displayName" : "LAPSlock MSP",
+              "displayName" : "TenantKeep MSP",
               "locale" : "en_US"
             }
           ],
@@ -133,7 +133,7 @@
           "localizations" : [
             {
               "description" : "Unlimited password and BitLocker key reveals",
-              "displayName" : "LAPSlock Pro",
+              "displayName" : "TenantKeep Pro",
               "locale" : "en_US"
             }
           ],
@@ -185,7 +185,7 @@
           "localizations" : [
             {
               "description" : "Unlimited password and BitLocker key reveals",
-              "displayName" : "LAPSlock Pro",
+              "displayName" : "TenantKeep Pro",
               "locale" : "en_US"
             }
           ],
