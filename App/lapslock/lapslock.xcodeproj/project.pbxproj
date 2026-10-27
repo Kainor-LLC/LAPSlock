@@ -839,7 +839,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "TenantKeepMac-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "TenantKeep On-Call";
+				INFOPLIST_KEY_CFBundleDisplayName = "TenantKeep Menu Bar";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -849,8 +849,8 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslock;
-				PRODUCT_NAME = TenantKeep;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.tenantkeep.menubar;
+				PRODUCT_NAME = "TenantKeep Menu Bar";
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -876,7 +876,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "TenantKeepMac-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "TenantKeep On-Call";
+				INFOPLIST_KEY_CFBundleDisplayName = "TenantKeep Menu Bar";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -886,8 +886,8 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslock;
-				PRODUCT_NAME = TenantKeep;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.tenantkeep.menubar;
+				PRODUCT_NAME = "TenantKeep Menu Bar";
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;

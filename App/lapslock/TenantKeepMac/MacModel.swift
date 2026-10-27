@@ -40,6 +40,12 @@ final class MacModel: ObservableObject {
     private var pulse: (any TenantPulseProviding)?
     private var privileged: PrivilegedAccessService?
 
+    /// The same app registration as the iPhone and iPad app, with this app's own redirect,
+    /// which the registration's iOS / macOS platform must list for this bundle id.
+    static let authConfiguration = AuthConfiguration(
+        clientId: AuthConfiguration.vendorDefault.clientId,
+        redirectUri: "msauth." + (Bundle.main.bundleIdentifier ?? "com.kainor.tenantkeep.menubar") + "://auth")
+
     var attention: Bool { !degraded.isEmpty || sessionProblem != nil }
 
     var results: [ManagedDeviceSummary] {
@@ -55,7 +61,7 @@ final class MacModel: ObservableObject {
         #if DEBUG
         if CommandLine.arguments.contains("-LAPSlockDemo") { enterDemo(); return }
         #endif
-        guard let auth = try? MSALAuthManager(config: .vendorDefault) else {
+        guard let auth = try? MSALAuthManager(config: Self.authConfiguration) else {
             sessionProblem = "The sign-in library could not start."
             return
         }
@@ -66,7 +72,7 @@ final class MacModel: ObservableObject {
     }
 
     func signIn() async {
-        guard let auth = auth ?? (try? MSALAuthManager(config: .vendorDefault)) else { return }
+        guard let auth = auth ?? (try? MSALAuthManager(config: Self.authConfiguration)) else { return }
         self.auth = auth
         busy = true
         defer { busy = false }

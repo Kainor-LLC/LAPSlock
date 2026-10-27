@@ -1,10 +1,11 @@
 import SwiftUI
 import InventoryKit
 
-// TenantKeep On-Call for Mac, phase 4 step C. A native macOS app from the same kits as the
-// iPhone and iPad app, sold under the same App Store record (universal purchase). Menu bar
-// first: who you are signed in as and whether the session is good, device lookup, PIM
-// activation, and the tenant's pulse. The windowed modules come after.
+// TenantKeep Menu Bar, phase 4 step C. A small native macOS app from the same kits as the
+// iPhone and iPad app: who you are signed in as and whether the session is good, device
+// lookup, PIM activation, and the tenant's pulse. Its own bundle id, because the full app
+// reaches the Mac as the iPad app on Apple silicon (decided 2026-10-27, Connor), and a
+// native app under the iPhone app's id would replace that.
 //
 // The menu bar never shows a password or a recovery key. Device lookup is inventory only.
 

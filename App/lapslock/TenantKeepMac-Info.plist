@@ -9,7 +9,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>msauth.com.kainor.lapslock</string>
+				<string>msauth.com.kainor.tenantkeep.menubar</string>
 			</array>
 		</dict>
 	</array>

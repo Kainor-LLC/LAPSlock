@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "87518995309052DA006C9B7C"
-               BuildableName = "TenantKeep.app"
+               BuildableName = "TenantKeep Menu Bar.app"
                BlueprintName = "TenantKeepMac"
                ReferencedContainer = "container:lapslock.xcodeproj">
             </BuildableReference>
@@ -45,7 +45,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "87518995309052DA006C9B7C"
-            BuildableName = "TenantKeep.app"
+            BuildableName = "TenantKeep Menu Bar.app"
             ReferencedContainer = "container:lapslock.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -61,7 +61,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "87518995309052DA006C9B7C"
-            BuildableName = "TenantKeep.app"
+            BuildableName = "TenantKeep Menu Bar.app"
             ReferencedContainer = "container:lapslock.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
