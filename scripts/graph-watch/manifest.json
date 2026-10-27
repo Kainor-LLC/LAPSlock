@@ -1,5 +1,5 @@
 {
-  "about": "Every Microsoft Graph call TenantKeep On-Call makes, for the daily Graph change watch. A test fails when a Kit adds a Graph path that is not listed here. smoke is the read the live check makes against the Kainor tenant; null means schema check only. requires names the tenant-wide plan a live read needs (P1, P2, Intune, Defender); the live check skips it when GW_TENANT_FEATURES does not list it, and the schema and changelog checks still cover it. Nothing here ever reads a password, a recovery key or a pass.",
+  "about": "Every Microsoft Graph call TenantKeep On-Call makes, for the daily Graph change watch. A test fails when a Kit adds a Graph path that is not listed here. smoke is the read the live check makes against the Kainor tenant; null means schema check only. requires names the tenant-wide plan a live read needs (P1, P2, Intune, Defender); the live check skips it when GW_TENANT_FEATURES does not list it, and the schema and changelog checks still cover it. Nothing here ever reads a password, a recovery key or a pass. {deviceUserId} in a smoke read is the primary user of a managed device, found at run time, because Intune answers 404 for a person it does not know.",
   "calls": [
     {"id": "inventory.devices", "requires": ["Intune"], "kit": "InventoryKit", "method": "GET", "version": "v1.0", "path": "/deviceManagement/managedDevices",
      "select": ["id","deviceName","managedDeviceName","operatingSystem","osVersion","azureADDeviceId","userPrincipalName","userDisplayName","emailAddress","serialNumber","model","manufacturer","complianceState","lastSyncDateTime"],
@@ -93,7 +93,7 @@
      "smoke": "/identityProtection/riskyUsers?$top=1&$select=riskLevel"},
     {"id": "user.methods", "kit": "UserActionsKit", "method": "GET", "version": "v1.0", "path": "/users/{id}/authentication/methods", "smoke": "/me/authentication/methods"},
     {"id": "user.devices", "requires": ["Intune"], "kit": "UserActionsKit", "method": "GET", "version": "v1.0", "path": "/users/{id}/managedDevices",
-     "select": ["id","deviceName","operatingSystem","managedDeviceOwnerType","azureADDeviceId"], "smoke": "/me/managedDevices?$select=id,deviceName,operatingSystem,managedDeviceOwnerType,azureADDeviceId"},
+     "select": ["id","deviceName","operatingSystem","managedDeviceOwnerType","azureADDeviceId"], "smoke": "/users/{deviceUserId}/managedDevices?$select=id,deviceName,operatingSystem,managedDeviceOwnerType,azureADDeviceId"},
     {"id": "user.removeAuthenticator", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/microsoftAuthenticatorMethods/{methodId}", "smoke": null},
     {"id": "user.removePhone", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/phoneMethods/{methodId}", "smoke": null},
     {"id": "user.removeFido2", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/fido2Methods/{methodId}", "smoke": null},

@@ -34,7 +34,7 @@ from pathlib import Path
 GRAPH = "https://graph.microsoft.com/"
 # Paths and selects that return a secret. The live check never sends one.
 FORBIDDEN = re.compile(r"\$select=[^&]*\b(credentials|key|temporaryAccessPass)\b|recoveryKeys/[^?/]+|retrieveDeviceLocalAdminAccountDetail|temporaryAccessPassMethods", re.I)
-WATCH_WORDS = re.compile(r"\b(Microsoft Graph|Graph API|beta endpoint|API)\b", re.I)
+GRAPH_WORDS = re.compile(r"\b(Microsoft Graph|Graph API)\b", re.I)
 LICENSE_CODES = re.compile(r"NonPremiumTenant|PremiumLicense|LicenseRequired|not licensed|license", re.I)
 BREAK_WORDS = re.compile(r"\b(retir\w*|deprecat\w*|remov\w*|no longer|breaking|end of support)\b", re.I)
 
@@ -86,8 +86,23 @@ def get(access, version, path):
             return error.code, {}
 
 
-def check(access, call):
-    status, body = get(access, call["version"], call["smoke"])
+def device_user(access):
+    """A person who is the primary user of a managed device, for reads about someone's
+    devices. The watch account has none, and Intune answers 404 for people it does not know."""
+    status, body = get(access, "v1.0", "/deviceManagement/managedDevices?$top=20&$select=userId")
+    if status != 200:
+        return None
+    for item in body.get("value", []):
+        if item.get("userId"):
+            return item["userId"]
+    return None
+
+
+def check(access, call, context=None):
+    path = call["smoke"]
+    for key, value in (context or {}).items():
+        path = path.replace("{" + key + "}", value)
+    status, body = get(access, call["version"], path)
     if status in call.get("smokeAllow", []):
         return []
     if status != 200:
@@ -100,8 +115,8 @@ def check(access, call):
     sample = items[0] if isinstance(items, list) and items else (body if items is None else None)
     if "value" in body and not isinstance(items, list):
         problems.append("value is no longer a list")
-    if sample is not None and "$select=" in call["smoke"]:
-        selected = call["smoke"].split("$select=")[1].split("&")[0].split(",")
+    if sample is not None and "$select=" in path:
+        selected = path.split("$select=")[1].split("&")[0].split(",")
         missing = [f for f in selected if f not in sample]
         if missing:
             problems.append("response no longer carries " + ", ".join(missing))
@@ -115,16 +130,18 @@ def message_center(access, manifest):
     status, body = get(access, "v1.0", "/admin/serviceAnnouncement/messages?$filter=lastModifiedDateTime ge " + since)
     if status != 200:
         return [{"id": "messageCenter", "problem": "could not read Message Center, HTTP " + str(status)}]
+    # Only names specific enough to mean the API: camelCase path segments such as
+    # managedDevices or riskyUsers, never plain words like security or messages.
     names = set()
     for call in manifest["calls"]:
         for seg in call["path"].split("/"):
             seg = seg.split("(")[0]
-            if seg and not seg.startswith("{") and len(seg) > 6:
+            if seg and not seg.startswith("{") and re.search(r"[a-z][A-Z]", seg):
                 names.add(seg)
     found = []
     for post in body.get("value", []):
         text = (post.get("title") or "") + " " + re.sub(r"<[^>]+>", " ", (post.get("body") or {}).get("content") or "")
-        if not (WATCH_WORDS.search(text) and BREAK_WORDS.search(text)):
+        if not (GRAPH_WORDS.search(text) and BREAK_WORDS.search(text)):
             continue
         named = sorted(n for n in names if re.search(r"(?<![A-Za-z])" + re.escape(n) + r"(?![A-Za-z])", text, re.I))
         if named:
@@ -152,6 +169,11 @@ def main(argv):
         with os.fdopen(fd, "w") as handle:
             handle.write(rotated)
     features = {f.strip().lower() for f in os.environ.get("GW_TENANT_FEATURES", "").split(",") if f.strip()}
+    context = {}
+    if any("{deviceUserId}" in (c.get("smoke") or "") for c in manifest["calls"]):
+        found = device_user(access)
+        if found:
+            context["deviceUserId"] = found
     findings = []
     checked = 0
     skipped = []
@@ -161,19 +183,25 @@ def main(argv):
         if any(r.lower() not in features for r in call.get("requires", [])):
             skipped.append(call["id"])
             continue
+        filled = call["smoke"]
+        for key, value in context.items():
+            filled = filled.replace("{" + key + "}", value)
+        if re.search(r"\{[A-Za-z]+\}", filled):
+            skipped.append(call["id"] + " (nobody to read it for: no managed device has a primary user)")
+            continue
         reason = refuse(call)
         if reason:
             findings.append({"id": call["id"], "kit": call["kit"], "problem": "smoke read refused, " + reason + "; fix the manifest"})
             continue
         checked += 1
-        for problem in check(access, call):
+        for problem in check(access, call, context):
             findings.append({"id": call["id"], "kit": call["kit"], "version": call["version"], "problem": problem})
     findings += message_center(access, manifest)
     for f in findings:
         print("BREAK " + f["id"] + ": " + f["problem"])
     if skipped:
-        print("Not read live, the tenant lacks the plan: " + ", ".join(skipped))
-    print(str(checked) + " live reads, " + str(len(skipped)) + " skipped for licensing, " + str(len(findings)) + " problems")
+        print("Not read live: " + ", ".join(skipped))
+    print(str(checked) + " live reads, " + str(len(skipped)) + " skipped, " + str(len(findings)) + " problems")
     if out:
         Path(out).write_text(json.dumps(findings, indent=2))
     return 1 if findings else 0

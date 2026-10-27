@@ -534,12 +534,18 @@ public actor UserActionsService: UserActionsProviding {
     }
 
     /// GET /users/{id}/managedDevices, on the device-read scope consented at sign-in.
+    /// Intune answers 404 for a person it does not know, such as one with no Intune
+    /// license, common for a leaver whose license went first: that is no devices.
     public func devices(of target: UserActionTarget) async throws -> [UserDevice] {
         let request = GraphRequest(path: "/users/" + target.userId + "/managedDevices",
                                    template: "/users/{id}/managedDevices",
                                    query: [URLQueryItem(name: "$select", value: "id,deviceName,operatingSystem,managedDeviceOwnerType,azureADDeviceId")],
                                    scopes: ["DeviceManagementManagedDevices.Read.All"])
-        return try await graph.collection(UserDevice.self, from: request, maxPages: 2).items
+        do {
+            return try await graph.collection(UserDevice.self, from: request, maxPages: 2).items
+        } catch GraphError.notFound {
+            return []
+        }
     }
 
     private struct AccountRecord: Decodable { let accountEnabled: Bool? }

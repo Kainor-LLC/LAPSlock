@@ -101,10 +101,27 @@ class SmokeLicensingTests(unittest.TestCase):
             env = {"GW_TENANT_ID": "t", "GW_CLIENT_ID": "c", "GW_REFRESH_TOKEN": "r", "GW_TENANT_FEATURES": "p1"}
             with mock.patch.dict(os.environ, env), \
                  mock.patch.object(smoke, "token", return_value=("access", None)), \
-                 mock.patch.object(smoke, "check", side_effect=lambda a, call: sent.append(call["id"]) or []), \
+                 mock.patch.object(smoke, "check", side_effect=lambda a, call, ctx=None: sent.append(call["id"]) or []), \
                  mock.patch.object(smoke, "message_center", return_value=[]):
                 self.assertEqual(smoke.main(["smoke.py", str(path)]), 0)
         self.assertEqual(sent, ["a", "b"])
+
+    def test_a_placeholder_nobody_can_fill_is_skipped(self):
+        import os
+        from unittest import mock
+        sent = []
+        manifest = {"calls": [{"id": "d", "kit": "K", "method": "GET", "version": "v1.0", "path": "/users/{id}/managedDevices", "smoke": "/users/{deviceUserId}/managedDevices"}]}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "m.json"
+            path.write_text(json.dumps(manifest))
+            env = {"GW_TENANT_ID": "t", "GW_CLIENT_ID": "c", "GW_REFRESH_TOKEN": "r"}
+            with mock.patch.dict(os.environ, env), \
+                 mock.patch.object(smoke, "token", return_value=("access", None)), \
+                 mock.patch.object(smoke, "device_user", return_value=None), \
+                 mock.patch.object(smoke, "check", side_effect=lambda a, call, ctx=None: sent.append(call["id"]) or []), \
+                 mock.patch.object(smoke, "message_center", return_value=[]):
+                self.assertEqual(smoke.main(["smoke.py", str(path)]), 0)
+        self.assertEqual(sent, [])
 
 
 class BootstrapCallbackTests(unittest.TestCase):
@@ -119,6 +136,20 @@ class BootstrapCallbackTests(unittest.TestCase):
         urllib.request.urlopen("http://127.0.0.1:" + str(port) + "/?code=abc&state=good", timeout=5).read()
         thread.join(5)
         self.assertEqual(result.get("code"), "abc")
+
+
+class MessageCenterTests(unittest.TestCase):
+    def test_only_graph_posts_naming_a_specific_api_count(self):
+        from unittest import mock
+        manifest = {"calls": [{"path": "/deviceManagement/managedDevices/{id}"}, {"path": "/security/incidents"}]}
+        posts = {"value": [
+            {"id": "1", "title": "Retirement notice: Advanced Hunting APIs retiring; migrate to Microsoft Graph Security API", "body": {"content": ""}},
+            {"id": "2", "title": "Microsoft Graph: deprecating a property on managedDevices", "body": {"content": ""}},
+            {"id": "3", "title": "Removing a setting from policies in security", "body": {"content": ""}},
+        ]}
+        with mock.patch.object(smoke, "get", return_value=(200, posts)):
+            found = smoke.message_center("x", manifest)
+        self.assertEqual([f["id"] for f in found], ["messageCenter.2"])
 
 
 class ReportTests(unittest.TestCase):
