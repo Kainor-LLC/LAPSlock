@@ -10,6 +10,7 @@ import UserActionsKit
 import DeviceActionsKit
 import GroupWritesKit
 import ApprovalsKit
+import SavedSearchKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -196,6 +197,10 @@ struct ModuleShell: View {
     /// A tapped alert to open, set by the root once it has switched to the alert's
     /// organization. Cleared here when opened.
     @Binding private var openRoute: AlertRoute?
+    /// Saved searches, or nil where they are not offered (not Pro, outside demo).
+    private let savedSearches: SavedSearchLibrary?
+    /// A saved email query to fill in when its detail opens.
+    @State private var huntPrefill: SavedSearch?
     @State private var showingTenantSwitcher = false
     @State private var privilegedTab: PrivilegedTab = .activate
     @State private var selectedApprovalId: String?
@@ -268,9 +273,11 @@ struct ModuleShell: View {
         settingsBuilder: @escaping () -> SettingsView,
         privilegedColumn: (() -> PrivilegedAccessView)?,
         makeApprovals: @escaping @MainActor () -> ApprovalsModel,
-        openRoute: Binding<AlertRoute?>
+        openRoute: Binding<AlertRoute?>,
+        savedSearches: SavedSearchLibrary?
     ) {
         _openRoute = openRoute
+        self.savedSearches = savedSearches
         self.isDemo = isDemo
         self.isPro = isPro
         self.credentials = credentials
@@ -378,6 +385,77 @@ struct ModuleShell: View {
         .background { keyboardShortcuts }
     }
 
+    // MARK: - saved searches
+
+    /// The saved-search screen the module column is showing, if it has one.
+    private var searchScope: SavedSearch.Scope? {
+        switch selectedModule {
+        case .credentials?: return .devices
+        case .people?: return .people
+        case .conditionalAccess?: return .conditionalAccess
+        case .security?:
+            switch securityTab {
+            case .incidents: return .incidents
+            case .email: return .email
+            case .digest: return nil
+            }
+        default: return nil
+        }
+    }
+
+    /// What is on screen now, in a saved search's terms. Nil when there is nothing typed
+    /// worth saving; incidents always have their filters, so they can always be saved.
+    private func currentSearch(_ scope: SavedSearch.Scope) -> (query: String, options: [String: String])? {
+        func typed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+        switch scope {
+        case .devices:
+            let query = typed(listModel.query)
+            return query.isEmpty ? nil : (query, [:])
+        case .people:
+            let query = typed(triageModel.searchText)
+            return query.isEmpty ? nil : (query, ["failuresOnly": String(triageModel.failuresOnly),
+                                                  "last24Hours": String(triageModel.last24Hours)])
+        case .incidents:
+            return (typed(securityModel.query), ["openOnly": String(securityModel.openOnly),
+                                                 "severity": securityModel.severity.rawValue])
+        case .conditionalAccess:
+            let query = typed(policyModel.query)
+            return query.isEmpty ? nil : (query, ["sort": policyModel.sortOrder.rawValue])
+        case .email:
+            return nil
+        }
+    }
+
+    /// Puts a saved search back on screen. Options the screen does not know are ignored, and
+    /// a missing one leaves that filter as it is.
+    private func applySearch(_ search: SavedSearch) {
+        switch search.scope {
+        case .devices:
+            listModel.query = search.query
+        case .people:
+            triageModel.searchText = search.query
+            if let value = search.options["failuresOnly"] { triageModel.failuresOnly = value == "true" }
+            if let value = search.options["last24Hours"] { triageModel.last24Hours = value == "true" }
+        case .incidents:
+            securityTab = .incidents
+            securityModel.query = search.query
+            if let value = search.options["openOnly"] { securityModel.openOnly = value == "true" }
+            if let raw = search.options["severity"], let floor = SecurityFilter.SeverityFloor(rawValue: raw) {
+                securityModel.severity = floor
+            }
+        case .conditionalAccess:
+            policyModel.query = search.query
+            if let raw = search.options["sort"], let order = ConditionalAccessListModel.SortOrder(rawValue: raw) {
+                policyModel.sortOrder = order
+            }
+        case .email:
+            guard let raw = search.options["hunt"], EmailHunt(rawValue: raw) != nil else { return }
+            securityTab = .email
+            huntPrefill = search
+            selectedHuntId = raw
+        }
+    }
+
     private func open(_ route: AlertRoute?) {
         guard let route else { return }
         openRoute = nil
@@ -405,6 +483,16 @@ struct ModuleShell: View {
                         }
                         .accessibilityLabel("Switch organization")
                         .accessibilityValue(credentials.tenantBanner?.label ?? "")
+                    }
+                }
+                if let savedSearches, let scope = searchScope {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        SavedSearchMenu(
+                            library: savedSearches,
+                            scope: scope,
+                            // Email's query lives in the detail column, which saves it there.
+                            current: scope == .email ? nil : { currentSearch(scope) },
+                            apply: { applySearch($0) })
                     }
                 }
             }
@@ -724,10 +812,21 @@ struct ModuleShell: View {
             }
         case .security? where securityTab == .email:
             if let id = selectedHuntId, let hunt = EmailHunt(rawValue: id), isPro || isDemo {
-                EmailHuntDetailView(make: {
-                    EmailHuntModel(hunt: hunt, provider: security.emailHunting, requestConsent: security.requestHuntingConsent)
-                })
-                .id(id)
+                EmailHuntDetailView(
+                    make: {
+                        let model = EmailHuntModel(hunt: hunt, provider: security.emailHunting, requestConsent: security.requestHuntingConsent)
+                        if let prefill = huntPrefill, prefill.options["hunt"] == hunt.rawValue {
+                            model.value = prefill.query
+                            if let window = prefill.options["window"].flatMap(Int.init).flatMap(HuntWindow.init(rawValue:)) {
+                                model.window = window
+                            }
+                        }
+                        return model
+                    },
+                    savedSearches: savedSearches,
+                    apply: { applySearch($0) })
+                // Keyed by the recalled search too, so recalling one rebuilds the query.
+                .id(id + (huntPrefill?.id.uuidString ?? ""))
             } else {
                 ContentUnavailableView {
                     Label("Investigate Email", systemImage: "envelope.badge.shield.half.filled")

@@ -22,6 +22,7 @@ import ApprovalsKit
 import UserNotifications
 import TenantPulseKit
 import SignInTriageKit
+import SavedSearchKit
 
 // App root. Owns the one decision the rest of the app depends on: which data source
 // is in play, a live tenant, or demo mode.
@@ -602,6 +603,7 @@ final class AppRootModel: ObservableObject {
         // drops every service's cache with it.
         liveSession = nil
         demoCustomer = .contoso
+        savedSearches.clear()
         mode = .signedOut
         consentState = nil
         recomputeEntitlement()
@@ -609,6 +611,7 @@ final class AppRootModel: ObservableObject {
 
     func enterDemoMode() {
         demoCustomer = .contoso
+        demoSavedSearches = SavedSearchLibrary(store: MemorySavedSearchStore(SavedSearch.demoExamples))
         mode = .demo
     }
 
@@ -628,6 +631,11 @@ final class AppRootModel: ObservableObject {
     }
 
     @Published private(set) var demoCustomer: DemoCustomer = .contoso
+
+    /// Saved searches: one file on this device, read on first use in the foreground.
+    let savedSearches = SavedSearchLibrary(store: FileSavedSearchStore.standard())
+    /// Demo mode's, in memory with three examples, fresh each time demo starts.
+    private(set) var demoSavedSearches = SavedSearchLibrary(store: MemorySavedSearchStore(SavedSearch.demoExamples))
 
     /// A tapped alert ready for the shell to open, after any switch it needed.
     @Published var openRoute: AlertRoute?
@@ -1141,7 +1149,8 @@ struct AppRootView: View {
                 // No account, nothing to activate. The column says so rather than hiding.
                 privilegedColumn: nil,
                 makeApprovals: { ApprovalsModel(provider: quiet ? demoQuietApprovals : demoApprovals) },
-                openRoute: $root.openRoute
+                openRoute: $root.openRoute,
+                savedSearches: root.demoSavedSearches
             )
             .environment(\.awayTenant, quiet ? root.demoCustomer.label : nil)
             // Keyed by the sample customer, as the live shell is by tenant: a switch rebuilds
@@ -1276,7 +1285,9 @@ struct AppRootView: View {
                         privilegedAccessView(deviceName: nil, embedded: true)
                     },
                     makeApprovals: { ApprovalsModel(provider: session.approvals) },
-                    openRoute: $root.openRoute
+                    openRoute: $root.openRoute,
+                    // Pro, like the modules most searches belong to.
+                    savedSearches: root.isPro ? root.savedSearches : nil
                 )
                 .environment(\.awayTenant, root.isOperatingAwayFromHome ? root.operatingTenantLabel : nil)
                 // Keyed by the tenant being operated in. A switch rebuilds every module's

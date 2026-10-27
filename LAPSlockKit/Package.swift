@@ -51,7 +51,8 @@ let package = Package(
         .library(name: "GroupWritesKit", targets: ["GroupWritesKit"]),
         .library(name: "ApprovalsKit", targets: ["ApprovalsKit"]),
         .library(name: "WatchBridgeKit", targets: ["WatchBridgeKit"]),
-        .library(name: "RelayKit", targets: ["RelayKit"])
+        .library(name: "RelayKit", targets: ["RelayKit"]),
+        .library(name: "SavedSearchKit", targets: ["SavedSearchKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -153,6 +154,8 @@ let package = Package(
         .target(name: "ApprovalsKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
         .target(name: "WatchBridgeKit"),
         .target(name: "RelayKit"),
+        // Saved searches, phase 5 step C. Foundation only.
+        .target(name: "SavedSearchKit"),
 
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
@@ -192,6 +195,7 @@ let package = Package(
         .testTarget(name: "GroupWritesKitTests", dependencies: ["GroupWritesKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
         .testTarget(name: "ApprovalsKitTests", dependencies: ["ApprovalsKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
         .testTarget(name: "WatchBridgeKitTests", dependencies: ["WatchBridgeKit"]),
-        .testTarget(name: "RelayKitTests", dependencies: ["RelayKit"])
+        .testTarget(name: "RelayKitTests", dependencies: ["RelayKit"]),
+        .testTarget(name: "SavedSearchKitTests", dependencies: ["SavedSearchKit"])
     ]
 )

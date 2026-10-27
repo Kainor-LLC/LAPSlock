@@ -43,6 +43,7 @@
 		87CA00013052000100000028 /* TenantPulseKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000023 /* TenantPulseKit */; };
 		87CA0001305200010000002B /* RelayKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000002A /* RelayKit */; };
 		87CA0001305200010000002D /* RelayKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000002C /* RelayKit */; };
+		87CA0001305200010000002F /* SavedSearchKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000002E /* SavedSearchKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -183,6 +184,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				87CA0001305200010000002D /* RelayKit in Frameworks */,
+				87CA0001305200010000002F /* SavedSearchKit in Frameworks */,
 				8769AA963048CB430093ADD6 /* PrivilegedAccessKit in Frameworks */,
 				87CA00013052000100000002 /* ConditionalAccessKit in Frameworks */,
 				87CA00013052000100000004 /* TenantPulseKit in Frameworks */,
@@ -309,6 +311,7 @@
 			name = lapslock;
 			packageProductDependencies = (
 				87CA0001305200010000002C /* RelayKit */,
+				87CA0001305200010000002E /* SavedSearchKit */,
 				8734CC63302FBA9E0056D699 /* AuthKitMSAL */,
 				8734CC68302FBB7D0056D699 /* CredentialKit */,
 				87177D8B302FCD330009BB78 /* InventoryKit */,
@@ -1276,6 +1279,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = RelayKit;
+		};
+		87CA0001305200010000002E /* SavedSearchKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = SavedSearchKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,5 +1,6 @@
 import SwiftUI
 import SecurityKit
+import SavedSearchKit
 import Combine
 
 // Investigate email: the Security module's Email tab, phase 3 step H, spec 3.12.
@@ -132,9 +133,14 @@ struct EmailHuntListView: View {
 
 struct EmailHuntDetailView: View {
     @StateObject private var model: EmailHuntModel
+    /// Saved searches, saved and recalled from here because this is where the query is.
+    private let savedSearches: SavedSearchLibrary?
+    private let apply: ((SavedSearch) -> Void)?
 
-    init(make: @escaping () -> EmailHuntModel) {
+    init(make: @escaping () -> EmailHuntModel, savedSearches: SavedSearchLibrary? = nil, apply: ((SavedSearch) -> Void)? = nil) {
         _model = StateObject(wrappedValue: make())
+        self.savedSearches = savedSearches
+        self.apply = apply
     }
 
     var body: some View {
@@ -203,6 +209,20 @@ struct EmailHuntDetailView: View {
             .navigationTitle(model.hunt.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if let savedSearches, let apply {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        SavedSearchMenu(
+                            library: savedSearches,
+                            scope: .email,
+                            current: {
+                                // A query that takes a value is worth saving only with one.
+                                let value = model.value.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if model.hunt.parameter != nil, value.isEmpty { return nil }
+                                return (value, ["hunt": model.hunt.rawValue, "window": String(model.window.rawValue)])
+                            },
+                            apply: apply)
+                    }
+                }
                 if model.result != nil {
                     ToolbarItem(placement: .primaryAction) {
                         Button {

@@ -232,6 +232,18 @@ check_module "RelayKit" "Foundation|CryptoKit|Security" \
   "InventoryKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# SavedSearchKit keeps an admin's saved searches on the device. Foundation only: it can
+# hold a sign-in address someone typed, and must never be able to reach a token, a
+# credential or Graph.
+check_module "SavedSearchKit" "Foundation" \
+  "AuthKit" \
+  "CredentialKit" \
+  "PrivilegedAccessKit" \
+  "ActionGateKit" \
+  "LicensingKit" \
+  "InventoryKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \
