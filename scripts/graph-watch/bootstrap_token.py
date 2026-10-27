@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-time sign-in for the Graph change watch's test account.
 
-Runs the device code flow against the Kainor demo tenant with read-only delegated
+Runs the device code flow against the Kainor tenant with read-only delegated
 scopes, then hands the refresh token straight to `gh secret set` on the private repo.
 The token is never printed or written to disk. Run it again if the watch reports that
 its sign-in failed.

@@ -37,7 +37,7 @@ def main(argv):
     known_bodies = " ".join(i.get("body", "") for i in read(arg(argv, "--known")))
     sections = [
         ("Schema", "A path, field, action or parameter the app uses is gone from Graph's published schema.", read(arg(argv, "--schema"))),
-        ("Live reads", "A real read against the demo tenant answered differently from what the app expects.", read(arg(argv, "--smoke"))),
+        ("Live reads", "A real read against the Kainor tenant answered differently from what the app expects.", read(arg(argv, "--smoke"))),
         ("Changelog", "Microsoft's Graph changelog removes, renames or deprecates something the app uses.", read(arg(argv, "--changelog"))),
         ("Threat Digest feeds", "A public feed the Threat Digest parses changed shape or stopped answering.", read(arg(argv, "--feeds"))),
     ]

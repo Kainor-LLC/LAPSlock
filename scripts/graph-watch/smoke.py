@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""The live half of the Graph change watch: real reads against the Kainor demo tenant.
+"""The live half of the Graph change watch: real reads against the Kainor tenant.
 
 Signs in as the watch's test account with a stored refresh token (delegated, like the
 app), makes each manifest call's smoke read, and checks the answer: the status, that a
 list is still a list, and that every field the app selects still comes back. It also
-reads the demo tenant's Message Center for posts that name an API the app uses.
+reads the tenant's Message Center for posts that name an API the app uses.
+
+A read whose manifest entry requires a plan the tenant lacks (P1, P2, Intune, Defender)
+is skipped, not failed: GW_TENANT_FEATURES lists what the tenant has, comma separated.
+A licensing refusal on a read that was expected to work is reported as such.
 
 Reads only. A call that is not a GET, or a path that could return a password, a recovery
 key or a pass, is refused before any request is made. Nothing from a response is printed
 except Graph's own error code and message; tokens are never printed.
 
-    GW_TENANT_ID=... GW_CLIENT_ID=... GW_REFRESH_TOKEN=... \\
+    GW_TENANT_ID=... GW_CLIENT_ID=... GW_REFRESH_TOKEN=... GW_TENANT_FEATURES=P1,Intune \\
         python3 smoke.py manifest.json [--json OUT] [--new-token-file FILE]
 
 --new-token-file writes the rotated refresh token there (mode 600) for the workflow to
@@ -31,6 +35,7 @@ GRAPH = "https://graph.microsoft.com/"
 # Paths and selects that return a secret. The live check never sends one.
 FORBIDDEN = re.compile(r"\$select=[^&]*\b(credentials|key|temporaryAccessPass)\b|recoveryKeys/[^?/]+|retrieveDeviceLocalAdminAccountDetail|temporaryAccessPassMethods", re.I)
 WATCH_WORDS = re.compile(r"\b(Microsoft Graph|Graph API|beta endpoint|API)\b", re.I)
+LICENSE_CODES = re.compile(r"NonPremiumTenant|PremiumLicense|LicenseRequired|not licensed|license", re.I)
 BREAK_WORDS = re.compile(r"\b(retir\w*|deprecat\w*|remov\w*|no longer|breaking|end of support)\b", re.I)
 
 
@@ -87,6 +92,8 @@ def check(access, call):
         return []
     if status != 200:
         err = body.get("error", {}) if isinstance(body, dict) else {}
+        if status == 403 and LICENSE_CODES.search(str(err.get("code", "")) + " " + str(err.get("message", ""))):
+            return ["the tenant refused this read for licensing; if Kainor dropped " + "/".join(call.get("requires", ["a plan"])) + ", remove it from GW_TENANT_FEATURES"]
         return ["HTTP " + str(status) + " " + str(err.get("code", "")) + ": " + str(err.get("message", ""))[:300]]
     problems = []
     items = body.get("value") if isinstance(body, dict) else None
@@ -144,10 +151,15 @@ def main(argv):
         fd = os.open(new_token_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as handle:
             handle.write(rotated)
+    features = {f.strip().lower() for f in os.environ.get("GW_TENANT_FEATURES", "").split(",") if f.strip()}
     findings = []
     checked = 0
+    skipped = []
     for call in manifest["calls"]:
         if not call.get("smoke"):
+            continue
+        if any(r.lower() not in features for r in call.get("requires", [])):
+            skipped.append(call["id"])
             continue
         reason = refuse(call)
         if reason:
@@ -159,7 +171,9 @@ def main(argv):
     findings += message_center(access, manifest)
     for f in findings:
         print("BREAK " + f["id"] + ": " + f["problem"])
-    print(str(checked) + " live reads, " + str(len(findings)) + " problems")
+    if skipped:
+        print("Not read live, the tenant lacks the plan: " + ", ".join(skipped))
+    print(str(checked) + " live reads, " + str(len(skipped)) + " skipped for licensing, " + str(len(findings)) + " problems")
     if out:
         Path(out).write_text(json.dumps(findings, indent=2))
     return 1 if findings else 0

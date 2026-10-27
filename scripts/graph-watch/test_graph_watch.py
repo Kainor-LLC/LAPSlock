@@ -84,6 +84,28 @@ class SmokeGuardTests(unittest.TestCase):
         self.assertEqual(refused, [])
 
 
+class SmokeLicensingTests(unittest.TestCase):
+    def test_reads_needing_a_missing_plan_are_skipped_not_sent(self):
+        import os
+        from unittest import mock
+        sent = []
+        manifest = {"calls": [
+            {"id": "a", "kit": "K", "method": "GET", "version": "v1.0", "path": "/x", "smoke": "/x"},
+            {"id": "b", "kit": "K", "method": "GET", "version": "v1.0", "path": "/y", "smoke": "/y", "requires": ["P1"]},
+            {"id": "c", "kit": "K", "method": "GET", "version": "v1.0", "path": "/z", "smoke": "/z", "requires": ["Intune"]},
+        ]}
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "m.json"
+            path.write_text(json.dumps(manifest))
+            env = {"GW_TENANT_ID": "t", "GW_CLIENT_ID": "c", "GW_REFRESH_TOKEN": "r", "GW_TENANT_FEATURES": "p1"}
+            with mock.patch.dict(os.environ, env), \
+                 mock.patch.object(smoke, "token", return_value=("access", None)), \
+                 mock.patch.object(smoke, "check", side_effect=lambda a, call: sent.append(call["id"]) or []), \
+                 mock.patch.object(smoke, "message_center", return_value=[]):
+                self.assertEqual(smoke.main(["smoke.py", str(path)]), 0)
+        self.assertEqual(sent, ["a", "b"])
+
+
 class ReportTests(unittest.TestCase):
     def test_each_finding_is_reported_once(self):
         with tempfile.TemporaryDirectory() as d:
