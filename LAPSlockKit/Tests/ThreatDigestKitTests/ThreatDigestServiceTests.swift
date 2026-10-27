@@ -5,13 +5,18 @@ private final class StubProtocol: URLProtocol {
     struct Reply { var status: Int; var body: String }
     nonisolated(unsafe) static var replies: [String: Reply] = [:]
     nonisolated(unsafe) static var requests: [URLRequest] = []
+    /// URLSession calls startLoading on its own threads, and the services under test send
+    /// requests concurrently; unguarded, the shared state above corrupts the heap now and then.
+    static let lock = NSLock()
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        Self.lock.lock()
         Self.requests.append(request)
         let url = request.url?.absoluteString ?? ""
         let reply = Self.replies.first { url.contains($0.key) }?.value ?? Reply(status: 599, body: "")
+        Self.lock.unlock()
         let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(reply.body.utf8))

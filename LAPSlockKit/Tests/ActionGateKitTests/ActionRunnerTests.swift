@@ -12,12 +12,13 @@ private final class RecordingAuth: AuthManaging, @unchecked Sendable {
         username: "admin@example.com",
         objectId: "aaaaaaaa-1111-2222-3333-444455556666")
     private(set) var calls: [(scopes: [String], claims: String?, interactive: Bool)] = []
+    private let lock = NSLock()
     var currentAccount: AdminAccount? { get async { account } }
     func token(scopes: [String], allowInteractive: Bool) async throws -> String {
-        calls.append((scopes, nil, allowInteractive)); return "token"
+        lock.lock(); calls.append((scopes, nil, allowInteractive)); lock.unlock(); return "token"
     }
     func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String {
-        calls.append((scopes, claims, allowInteractive)); return "token-with-claims"
+        lock.lock(); calls.append((scopes, claims, allowInteractive)); lock.unlock(); return "token-with-claims"
     }
     func signIn() async throws -> AdminAccount { account }
     func signOut(account: AdminAccount) async throws {}
@@ -27,9 +28,13 @@ private final class StubProtocol: URLProtocol {
     struct Reply { var status: Int; var body: String; var headers: [String: String] = [:] }
     nonisolated(unsafe) static var replies: [String: [Reply]] = [:]
     nonisolated(unsafe) static var requests: [URLRequest] = []
+    /// URLSession calls startLoading on its own threads, and the services under test send
+    /// requests concurrently; unguarded, the shared state above corrupts the heap now and then.
+    static let lock = NSLock()
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
+        Self.lock.lock()
         Self.requests.append(request)
         let url = request.url?.absoluteString ?? ""
         let key = Self.replies.keys.first { url.contains($0) }
@@ -37,6 +42,7 @@ private final class StubProtocol: URLProtocol {
             guard var queue = Self.replies[k], !queue.isEmpty else { return nil }
             let next = queue.removeFirst(); Self.replies[k] = queue; return next
         } ?? Reply(status: 599, body: "{}")
+        Self.lock.unlock()
         let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(reply.body.utf8))

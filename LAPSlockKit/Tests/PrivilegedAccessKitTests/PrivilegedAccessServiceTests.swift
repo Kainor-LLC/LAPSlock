@@ -15,6 +15,7 @@ final class RecordingAuth: AuthManaging, @unchecked Sendable {
     /// Scopes that should throw, keyed by the first scope requested.
     var failures: [String: AuthError] = [:]
     private(set) var calls: [(scopes: [String], claims: String?, interactive: Bool)] = []
+    private let lock = NSLock()
 
     var currentAccount: AdminAccount? { get async { account } }
 
@@ -23,7 +24,7 @@ final class RecordingAuth: AuthManaging, @unchecked Sendable {
     }
 
     func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String {
-        calls.append((scopes, claims, allowInteractive))
+        lock.lock(); calls.append((scopes, claims, allowInteractive)); lock.unlock()
         if let first = scopes.first, let error = failures[first] { throw error }
         return "token-for-\(scopes.joined(separator: "+"))"
     }
@@ -42,11 +43,15 @@ final class StubProtocol: URLProtocol {
     /// Keyed by a substring of the path. Each entry is consumed in order.
     nonisolated(unsafe) static var replies: [String: [Reply]] = [:]
     nonisolated(unsafe) static var requests: [(path: String, method: String, body: Data?)] = []
+    /// URLSession calls startLoading on its own threads, and the services under test send
+    /// requests concurrently; unguarded, the shared state above corrupts the heap now and then.
+    static let lock = NSLock()
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        Self.lock.lock()
         let path = request.url?.path ?? ""
         Self.requests.append((path, request.httpMethod ?? "", request.httpBodyStream.flatMap { stream in
             stream.open()
@@ -68,6 +73,7 @@ final class StubProtocol: URLProtocol {
             return next
         } ?? Reply(status: 500, body: "{}")
 
+        Self.lock.unlock()
         let response = HTTPURLResponse(
             url: request.url!, statusCode: reply.status,
             httpVersion: "HTTP/1.1", headerFields: reply.headers)!

@@ -6,9 +6,10 @@ private final class RecordingAuth: AuthManaging, @unchecked Sendable {
     var account = AdminAccount(id: "a.b", tenantId: "4470dc21-a4b7-4729-a232-56d4c0eedf73", username: "admin@example.com", objectId: "a")
     var failures: [String: AuthError] = [:]
     private(set) var calls: [[String]] = []
+    private let lock = NSLock()
     var currentAccount: AdminAccount? { get async { account } }
     func token(scopes: [String], allowInteractive: Bool) async throws -> String {
-        calls.append(scopes)
+        lock.lock(); calls.append(scopes); lock.unlock()
         if let first = scopes.first, let error = failures[first] { throw error }
         return "token"
     }
@@ -24,11 +25,15 @@ private final class StubProtocol: URLProtocol {
     }
     nonisolated(unsafe) static var replies: [String: [Reply]] = [:]
     nonisolated(unsafe) static var requests: [URLRequest] = []
+    /// URLSession calls startLoading on its own threads, and the services under test send
+    /// requests concurrently; unguarded, the shared state above corrupts the heap now and then.
+    static let lock = NSLock()
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        Self.lock.lock()
         Self.requests.append(request)
         let url = request.url?.absoluteString ?? ""
         let key = Self.replies.keys.first { url.lowercased().contains($0.lowercased()) }
@@ -38,6 +43,7 @@ private final class StubProtocol: URLProtocol {
             Self.replies[k] = queue
             return next
         } ?? Reply(status: 599, body: "{}")
+        Self.lock.unlock()
         let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(reply.body.utf8))

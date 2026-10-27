@@ -12,11 +12,12 @@ private final class RecordingAuth: AuthManaging, @unchecked Sendable {
         objectId: "aaaaaaaa-1111-2222-3333-444455556666")
     var failures: [String: AuthError] = [:]
     private(set) var calls: [(scopes: [String], interactive: Bool)] = []
+    private let lock = NSLock()
 
     var currentAccount: AdminAccount? { get async { account } }
 
     func token(scopes: [String], allowInteractive: Bool) async throws -> String {
-        calls.append((scopes, allowInteractive))
+        lock.lock(); calls.append((scopes, allowInteractive)); lock.unlock()
         if let first = scopes.first, let error = failures[first] { throw error }
         return "token"
     }
@@ -32,12 +33,16 @@ private final class StubProtocol: URLProtocol {
     }
     nonisolated(unsafe) static var replies: [String: [Reply]] = [:]
     nonisolated(unsafe) static var requests: [(url: String, method: String, body: Data?)] = []
+    /// URLSession calls startLoading on its own threads, and the services under test send
+    /// requests concurrently; unguarded, the shared state above corrupts the heap now and then.
+    static let lock = NSLock()
     nonisolated(unsafe) static var headers: [[String: String]] = []
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
+        Self.lock.lock()
         let url = request.url?.absoluteString ?? ""
         let body = request.httpBodyStream.flatMap { stream -> Data in
             stream.open()
@@ -60,6 +65,7 @@ private final class StubProtocol: URLProtocol {
             Self.replies[k] = queue
             return next
         } ?? Reply(status: 599, body: "{}")
+        Self.lock.unlock()
         let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(reply.body.utf8))
