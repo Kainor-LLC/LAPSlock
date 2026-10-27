@@ -723,7 +723,7 @@
 				INFOPLIST_FILE = lapslock/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = TenantKeep;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "LAPSlock uses Face ID to confirm your identity before showing a local administrator password or BitLocker recovery key.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "TenantKeep uses Face ID to confirm your identity before showing a local administrator password or BitLocker recovery key.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -765,7 +765,7 @@
 				INFOPLIST_FILE = lapslock/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = TenantKeep;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "LAPSlock uses Face ID to confirm your identity before showing a local administrator password or BitLocker recovery key.";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "TenantKeep uses Face ID to confirm your identity before showing a local administrator password or BitLocker recovery key.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

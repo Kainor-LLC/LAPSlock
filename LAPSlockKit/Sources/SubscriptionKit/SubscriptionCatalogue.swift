@@ -13,7 +13,7 @@ import LicensingKit
 // CredentialKit, for the same reason LicensingKit is forbidden: a receipt and a local
 // administrator password have no business in one link graph.
 
-/// The subscriptions LAPSlock sells through Apple.
+/// The subscriptions TenantKeep sells through Apple.
 ///
 /// **Product IDs are permanent.** Apple does not allow an ID to be renamed or reused, in this
 /// app or any other, ever. They are pinned by a test for that reason: a typo that ships is

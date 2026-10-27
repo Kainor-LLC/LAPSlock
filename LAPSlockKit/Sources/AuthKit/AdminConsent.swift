@@ -3,7 +3,7 @@ import Foundation
 // Build Spec §4, §8, consent onboarding.
 //
 // THE PROBLEM THIS SOLVES
-// All four Graph scopes LAPSlock requests are admin-restricted. That produces a
+// All four Graph scopes TenantKeep requests are admin-restricted. That produces a
 // predictable and nasty onboarding failure:
 //
 //   An admin signs in, approves the consent prompt, but does NOT tick "Consent on

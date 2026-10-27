@@ -667,7 +667,7 @@ final class DeviceDetailModel: ObservableObject {
         case .emptyCredentialSet:
             return "This device has a LAPS record but no stored password yet. It'll appear after the device backs one up."
         case .decodeFailure:
-            return "Microsoft Graph returned a password in a format LAPSlock couldn't read. Please report this."
+            return "Microsoft Graph returned a password in a format TenantKeep couldn't read. Please report this."
         case .missingIdentifier(let detail):
             return detail
         case .unsupportedOnPlatform(_, let reason):
@@ -1082,14 +1082,14 @@ struct DeviceDetailView: View {
         }
     }
 
-    /// The upfront disclosure about what LAPSlock deliberately cannot do.
+    /// The upfront disclosure about what TenantKeep deliberately cannot do.
     @ViewBuilder
     private var bitLockerFooter: some View {
         VStack(alignment: .leading, spacing: 8) {
             if model.device.platform == .windows && model.device.hasEntraDeviceIdentity {
                 Text("Face ID confirms it's you before a key is retrieved. Each retrieval is recorded in your tenant's audit log.")
             }
-            // Stated plainly and always, not buried. LAPSlock asking for LESS than it
+            // Stated plainly and always, not buried. TenantKeep asking for LESS than it
             // could is a feature worth naming, and an admin should learn the tradeoff
             // here rather than discovering it at a broken machine.
             Label {

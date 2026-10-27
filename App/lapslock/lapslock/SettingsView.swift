@@ -32,7 +32,7 @@ final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(deviceActionsEnabled, forKey: Keys.deviceActions) }
     }
 
-    /// Whether LAPSlock may request just-in-time activation of a PIM-eligible role.
+    /// Whether TenantKeep may request just-in-time activation of a PIM-eligible role.
     ///
     /// Same reasoning as rotation, and a heavier ask. `RoleAssignmentSchedule.ReadWrite.Directory`
     /// lets the app request a privilege escalation, which reads worse on a consent screen
@@ -359,7 +359,7 @@ struct SettingsView: View {
                 users and compliance state are worth something to an attacker even with no \
                 password on screen.
 
-                LAPSlock re-locks after a few minutes in the background, not instantly, so \
+                TenantKeep re-locks after a few minutes in the background, not instantly, so \
                 switching to Microsoft Authenticator and back does not ask twice.
                 """)
         }
@@ -407,11 +407,11 @@ struct SettingsView: View {
             Text("""
                 Off by default. Intune often leaves a device's primary user as a sign-in \
                 address rather than a name. Turning this on looks the name up in Microsoft \
-                Entra ID, which adds one permission to what LAPSlock requests from your \
+                Entra ID, which adds one permission to what TenantKeep requests from your \
                 organization: reading basic user profiles (User.ReadBasic.All). Names are \
                 kept in memory for this session and never stored.
 
-                Leaving it off means LAPSlock never reads your user directory.
+                Leaving it off means TenantKeep never reads your user directory.
                 """)
         }
     }
@@ -788,7 +788,7 @@ struct SettingsView: View {
                 Text("Privileged Access")
             } footer: {
                 Text("""
-                    If your role is eligible through Privileged Identity Management rather than permanently assigned, LAPSlock can activate it here instead of sending you to the portal.
+                    If your role is eligible through Privileged Identity Management rather than permanently assigned, TenantKeep can activate it here instead of sending you to the portal.
 
                     This asks Microsoft for permission to request activation of your own eligible roles, never anyone else's. Leave it off and that permission is never requested.
 
@@ -834,7 +834,7 @@ struct SettingsView: View {
             Text("""
                 Unavailable. Microsoft doesn't currently offer an API for reading macOS \
                 local administrator passwords. Intune keeps them encrypted on its own \
-                service, and only the admin center can display them. LAPSlock will enable \
+                service, and only the admin center can display them. TenantKeep will enable \
                 this automatically if that changes.
 
                 Rotation schedules for macOS devices are still shown where Microsoft \
@@ -871,7 +871,7 @@ struct SettingsView: View {
                     allowance, and revealing the same device twice within an hour only \
                     counts once.
 
-                    This tally is kept on this device and nowhere else. LAPSlock does not \
+                    This tally is kept on this device and nowhere else. TenantKeep does not \
                     record which credentials you retrieve, or how often, on any server.
                     """)
             }
@@ -1129,7 +1129,7 @@ struct SettingsView: View {
                       """
                     : """
                       An organization license is keyed to your Microsoft tenant. Until you \
-                      activate one, LAPSlock never contacts Kainor: it talks to Microsoft and \
+                      activate one, TenantKeep never contacts Kainor: it talks to Microsoft and \
                       nothing else, which you can confirm with a network proxy.
 
                       If you manage several organizations, activate while signed in to your \
