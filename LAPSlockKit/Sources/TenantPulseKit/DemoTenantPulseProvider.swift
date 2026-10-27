@@ -11,11 +11,14 @@ public actor DemoTenantPulseProvider: TenantPulseProviding {
     /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
     /// customers shows different data and anything left over from the first stands out.
     private let quiet: Bool
+    /// The large demo tenant: 200 Message Center posts and 600 expiring items.
+    private let large: Bool
 
-    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false) {
+    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false, large: Bool = false) {
         self.latency = latency
         self.now = now
         self.quiet = quiet
+        self.large = large
     }
 
     static func days(_ d: Double, from now: Date) -> Date { now.addingTimeInterval(d * 86_400) }
@@ -28,13 +31,15 @@ public actor DemoTenantPulseProvider: TenantPulseProviding {
     public func messages() async throws -> [ServiceMessage] {
         try await Task.sleep(for: latency)
         if quiet { return [] }
-        return MessageOrdering.sort(Self.messages(now: now).filter(\.isWorthShowing))
+        let messages = large ? Self.largeMessages(now: now) : Self.messages(now: now)
+        return MessageOrdering.sort(messages.filter(\.isWorthShowing))
     }
 
     public func expiringItems() async throws -> [ExpiringItem] {
         try await Task.sleep(for: latency)
         if quiet { return [] }
-        return Self.expiring(now: now).sorted { $0.expiresAt < $1.expiresAt }
+        let items = large ? Self.largeExpiringItems(now: now) : Self.expiring(now: now)
+        return items.sorted { $0.expiresAt < $1.expiresAt }
     }
 
     public func secureScore() async throws -> SecureScoreSummary? {

@@ -28,13 +28,17 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
     /// customers shows different data and anything left over from the first stands out.
     private let quiet: Bool
 
-    public init(latency: Duration = .milliseconds(400), pageSize: Int = 8, quiet: Bool = false) {
+    /// Set for the large demo tenant, which replaces the twelve hand-built devices.
+    private let customFleet: [ManagedDeviceSummary]?
+
+    public init(latency: Duration = .milliseconds(400), pageSize: Int = 8, quiet: Bool = false, fleet: [ManagedDeviceSummary]? = nil) {
         self.latency = latency
         self.quiet = quiet
         self.pageSize = max(1, pageSize)
+        self.customFleet = fleet
     }
 
-    private var fleet: [ManagedDeviceSummary] { quiet ? [] : Self.fleet }
+    private var fleet: [ManagedDeviceSummary] { quiet ? [] : (customFleet ?? Self.fleet) }
 
     // MARK: - DeviceInventoryProviding
 
@@ -69,6 +73,60 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
         cursor = end
         let more = cursor < fleet.count
         return DevicePage(devices: slice, nextLink: more ? "demo://page/\(cursor)" : nil)
+    }
+
+    // MARK: - the large fleet
+
+    /// A tenant the size of a large customer, for measuring rather than for review: 20,000
+    /// devices by default, roughly 70 percent Windows, 15 percent macOS and 15 percent phones,
+    /// shared by 5,000 people, a few in every hundred non-compliant or stale.
+    ///
+    /// Every field comes from the index, so the same count gives the same fleet on every run
+    /// and a measurement can be repeated. Names follow the hand-built fleet's patterns and
+    /// resemble no real organization's convention.
+    public static func largeFleet(count: Int = 20_000) -> [ManagedDeviceSummary] {
+        let prefixes = ["LT-SALES", "LT-FIELD", "DESKTOP-FRONT", "WS-LAB", "WS-ENG", "LT-FIN", "KIOSK-LOBBY", "LT-OPS"]
+        let macPrefixes = ["MBP-DESIGN", "MBA-EXEC", "MBP-ENG", "MBA-MKT"]
+        let phonePrefixes = ["iPhone (Field", "iPad (Store"]
+        let windowsModels = [("OptiPlex 7010", "Dell Inc."), ("ThinkPad T14", "LENOVO"), ("Latitude 5440", "Dell Inc."), ("EliteBook 840", "HP")]
+        let macModels = ["MacBook Pro (14-inch, M3)", "MacBook Air (13-inch, M2)"]
+        let people = 5_000
+        let now = Date()
+        return (0..<max(0, count)).map { i in
+            let person = i % people
+            let upn = "user" + String(format: "%04d", person) + "@demo.example"
+            let synced = now.addingTimeInterval(-Double((i * 7919) % (30 * 24)) * 3_600)
+            let compliance = i % 37 == 0 ? "noncompliant" : (i % 53 == 0 ? "unknown" : "compliant")
+            let serial = "DL" + String(format: "%06X", (i &* 2_654_435_761) & 0xFFFFFF)
+            switch i % 20 {
+            case 0..<14:
+                let model = windowsModels[i % windowsModels.count]
+                return ManagedDeviceSummary(
+                    id: "large-w-" + String(i), entraDeviceId: "large-entra-" + String(i),
+                    deviceName: prefixes[i % prefixes.count] + "-" + String(format: "%05d", i),
+                    platform: .windows, operatingSystemRaw: "Windows",
+                    osVersion: i % 3 == 0 ? "10.0.22631.4460" : "10.0.26100.2314",
+                    userPrincipalName: upn, userDisplayName: i % 4 == 0 ? nil : "Person " + String(person),
+                    serialNumber: serial, model: model.0, manufacturer: model.1,
+                    complianceState: compliance, lastSyncDateTime: synced)
+            case 14..<17:
+                return ManagedDeviceSummary(
+                    id: "large-m-" + String(i), entraDeviceId: "large-entra-" + String(i),
+                    deviceName: macPrefixes[i % macPrefixes.count] + "-" + String(format: "%05d", i),
+                    platform: .macOS, operatingSystemRaw: "macOS", osVersion: "15.6",
+                    userPrincipalName: upn, userDisplayName: "Person " + String(person),
+                    serialNumber: serial, model: macModels[i % macModels.count], manufacturer: "Apple",
+                    complianceState: compliance, lastSyncDateTime: synced)
+            default:
+                return ManagedDeviceSummary(
+                    id: "large-p-" + String(i), entraDeviceId: nil,
+                    deviceName: phonePrefixes[i % phonePrefixes.count] + " " + String(i) + ")",
+                    platform: .other, operatingSystemRaw: "iOS", osVersion: "18.6",
+                    userPrincipalName: upn, userDisplayName: "Person " + String(person),
+                    serialNumber: serial, model: "iPhone", manufacturer: "Apple",
+                    complianceState: compliance, lastSyncDateTime: synced)
+            }
+        }
     }
 
     // MARK: - the fleet

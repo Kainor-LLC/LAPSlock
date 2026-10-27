@@ -140,7 +140,9 @@ final class DeviceListModel: ObservableObject {
 
         Publishers.CombineLatest($devices, debouncedQuery)
             .map { devices, query in
-                DeviceSearch.filter(devices, query: query)
+                PerfProbe.measure("deviceFilter", "devices=" + String(devices.count) + " queryLength=" + String(query.count)) {
+                    DeviceSearch.filter(devices, query: query)
+                }
             }
             .assign(to: &$visibleDevices)
     }
@@ -210,8 +212,10 @@ final class DeviceListModel: ObservableObject {
         let started = Date()
         defer { isLoading = false }
         do {
+            let firstPageStarted = ContinuousClock.now
             _ = try await inventory.loadFirstPage()
             devices = try await inventory.cachedDevices()
+            PerfProbe.mark("deviceFirstPage", since: firstPageStarted, "devices=" + String(devices.count))
             hasMore = try await inventory.hasMore()
             await Self.record(.deviceListFirstPage, .success, since: started)
             if hasMore { startFill() } else { fill = .complete }
@@ -229,6 +233,7 @@ final class DeviceListModel: ObservableObject {
     private func startFill() {
         fillTask?.cancel()
         fill = .filling(loaded: devices.count)
+        let fillStarted = ContinuousClock.now
         fillTask = Task { [weak self] in
             guard let self else { return }
             let outcome = await InventoryFill.run(inventory) { @MainActor [weak self] loaded in
@@ -237,6 +242,7 @@ final class DeviceListModel: ObservableObject {
                 self.fill = .filling(loaded: loaded.count)
             }
             guard !Task.isCancelled else { return }
+            PerfProbe.mark("deviceFill", since: fillStarted, "devices=" + String(devices.count) + " outcome=" + String(describing: outcome))
             hasMore = (try? await inventory.hasMore()) ?? hasMore
             switch outcome {
             case .complete:
@@ -384,6 +390,7 @@ struct DeviceListView: View {
     @State private var showingSettings = false
 
     var body: some View {
+        let _ = PerfProbe.body("DeviceListView")
         Group {
             if model.isLoading && model.devices.isEmpty {
                 loadingState

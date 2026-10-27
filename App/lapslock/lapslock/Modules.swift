@@ -314,6 +314,7 @@ struct ModuleShell: View {
     }
 
     var body: some View {
+        let _ = PerfProbe.body("ModuleShell")
         GeometryReader { geometry in
             let fullWidth = geometry.size.width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing
             let hingeWidth = HingeLayout.contentWidth(

@@ -196,6 +196,7 @@ struct SecurityListView: View {
     @State private var consentMessage: String?
 
     var body: some View {
+        let _ = PerfProbe.body("SecurityListView")
         Group {
             if model.isLoading && model.incidents.isEmpty {
                 loadingState

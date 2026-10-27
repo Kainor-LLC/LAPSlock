@@ -1030,7 +1030,7 @@ final class AppRootModel: ObservableObject {
 /// devices.
 private let demoDeviceActions = DemoDeviceActionsProvider()
 private let demoUserActions = DemoUserActionsProvider()
-private let demoGroupWrites = DemoGroupWritesProvider()
+private let demoGroupWrites = DemoGroupWritesProvider(large: PerfProbe.largeDemo)
 private let demoApprovals = DemoApprovalsProvider()
 private let demoQuietApprovals = DemoApprovalsProvider(quiet: true)
 
@@ -1047,6 +1047,7 @@ struct AppRootView: View {
     @State private var lockPresenter = AppLockPresenter()
 
     var body: some View {
+        let _ = PerfProbe.body("AppRootView")
         content
             .accessibilityHidden(appLock.isLocked)
             // The lock itself is a window above everything in this scene, sheets and alerts
@@ -1165,7 +1166,9 @@ struct AppRootView: View {
                 credentials: CredentialsColumns(
                     makeListModel: {
                         DeviceListModel(
-                            inventory: DemoInventoryProvider(quiet: quiet),
+                            inventory: PerfProbe.largeDemo
+                                ? DemoInventoryProvider(latency: .milliseconds(450), pageSize: 100, quiet: quiet, fleet: PerfProbe.largeFleet)
+                                : DemoInventoryProvider(quiet: quiet),
                             meter: RevealMeters.demo
                         )
                     },
@@ -1202,9 +1205,9 @@ struct AppRootView: View {
                     }
                 ),
                 conditionalAccess: ConditionalAccessColumns(
-                    makeListModel: { ConditionalAccessListModel(provider: DemoConditionalAccessProvider(quiet: quiet)) },
+                    makeListModel: { ConditionalAccessListModel(provider: DemoConditionalAccessProvider(quiet: quiet, large: PerfProbe.largeDemo)) },
                     makeDetailModel: { policy in
-                        ConditionalAccessDetailModel(policy: policy, provider: DemoConditionalAccessProvider(quiet: quiet))
+                        ConditionalAccessDetailModel(policy: policy, provider: DemoConditionalAccessProvider(quiet: quiet, large: PerfProbe.largeDemo))
                     }
                 ),
                 signInTriage: PeopleColumns(
@@ -1228,10 +1231,10 @@ struct AppRootView: View {
                         : nil
                 ),
                 tenantPulse: TenantPulseColumns(
-                    makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider(quiet: quiet)) }
+                    makeModel: { TenantPulseModel(provider: DemoTenantPulseProvider(quiet: quiet, large: PerfProbe.largeDemo)) }
                 ),
                 security: SecurityColumns(
-                    makeModel: { SecurityListModel(provider: DemoSecurityProvider(quiet: quiet)) },
+                    makeModel: { SecurityListModel(provider: DemoSecurityProvider(quiet: quiet, large: PerfProbe.largeDemo)) },
                     makeDigestModel: { ThreatDigestModel(provider: DemoThreatDigestProvider()) },
                     emailHunting: DemoEmailHuntingProvider(quiet: quiet)
                 ),

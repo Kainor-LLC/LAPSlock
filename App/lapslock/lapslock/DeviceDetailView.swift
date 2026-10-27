@@ -739,6 +739,7 @@ struct DeviceDetailView: View {
     private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        let _ = PerfProbe.body("DeviceDetailView")
         List {
             credentialSection
             bitLockerSection

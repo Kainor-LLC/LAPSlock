@@ -267,6 +267,7 @@ struct PersonGroupsView: View {
     }
 
     var body: some View {
+        let _ = PerfProbe.body("PersonGroupsView")
         List {
             if model.note != nil || model.errorMessage != nil || model.pendingChallenge != nil {
                 Section {

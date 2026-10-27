@@ -13,24 +13,28 @@ public actor DemoConditionalAccessProvider: ConditionalAccessProviding {
     /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
     /// customers shows different data and anything left over from the first stands out.
     private let quiet: Bool
+    /// The large demo tenant's 150 policies in place of the hand-built ones.
+    private let large: Bool
 
-    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false) {
+    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false, large: Bool = false) {
         self.latency = latency
         self.now = now
         self.quiet = quiet
+        self.large = large
     }
 
     public func policies() async throws -> [ConditionalAccessPolicy] {
         try await Task.sleep(for: latency)
         if quiet { return [] }
-        return Self.policies(now: now).sorted(by: ConditionalAccessService.newestChangeFirst)
+        let policies = large ? Self.largePolicies(now: now) : Self.policies(now: now)
+        return policies.sorted(by: ConditionalAccessService.newestChangeFirst)
     }
 
     public func names(for references: Set<DirectoryReference>) async throws -> [DirectoryReference: String] {
         try await Task.sleep(for: latency)
         var result: [DirectoryReference: String] = [:]
         for reference in references {
-            if let name = Self.names[reference.id] { result[reference] = name }
+            if let name = Self.names[reference.id] ?? (large ? Self.largeName(for: reference) : nil) { result[reference] = name }
         }
         return result
     }

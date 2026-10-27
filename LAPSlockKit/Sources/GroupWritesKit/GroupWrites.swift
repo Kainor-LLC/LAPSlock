@@ -509,12 +509,18 @@ public actor DemoGroupWritesProvider: GroupWritesProviding {
         DirectoryGroup(id: "g-salesforce", displayName: "Salesforce Users")
     ]
 
-    public init(latency: Duration = .seconds(1)) {
+    /// The large demo tenant: everyone is in 300 groups, and each group's facts take as
+    /// long as the three reads behind them would.
+    private let large: [DirectoryGroup]?
+
+    public init(latency: Duration = .seconds(1), large: Bool = false) {
         self.latency = latency
+        self.large = large ? Self.largeGroups() : nil
     }
 
     public func groups(of member: GroupMember) async throws -> [DirectoryGroup] {
         try? await Task.sleep(for: .milliseconds(300))
+        if let large { return large.sorted { $0.name < $1.name } }
         let ids = memberships[member.userId] ?? ["g-hd-vpn", "g-sales", "g-e5", "g-mfa", "g-all-staff", "g-salesforce"]
         if memberships[member.userId] == nil { memberships[member.userId] = ids }
         return Self.groups.filter { ids.contains($0.id) }.sorted { $0.name < $1.name }
@@ -524,7 +530,7 @@ public actor DemoGroupWritesProvider: GroupWritesProviding {
         try? await Task.sleep(for: .milliseconds(300))
         let needle = text.lowercased()
         guard needle.count >= 2 else { return [] }
-        return Self.groups.filter { $0.name.lowercased().contains(needle) }
+        return ((large ?? []) + Self.groups).filter { $0.name.lowercased().contains(needle) }.prefix(25).map { $0 }
     }
 
     public func context(administrativeUnit: String) async -> GroupWriteContext {
@@ -535,7 +541,7 @@ public actor DemoGroupWritesProvider: GroupWritesProviding {
     }
 
     public func facts(for group: DirectoryGroup, in context: GroupWriteContext) async -> GroupFacts {
-        try? await Task.sleep(for: .milliseconds(200))
+        try? await Task.sleep(for: .milliseconds(large == nil ? 200 : 450))
         let pim: GroupFacts.PIM = group.id == "g-pim-ops" ? .eligible : .none
         return context.facts(for: group, pim: pim, grantsAppAccess: group.id == "g-salesforce",
                              memberCount: group.name.count * 3)
