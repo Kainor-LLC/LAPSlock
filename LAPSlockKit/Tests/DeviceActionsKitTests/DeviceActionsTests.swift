@@ -18,7 +18,7 @@ final class DeviceActionsTests: XCTestCase {
         XCTAssertEqual(DeviceActionKind.rotateBitLockerKeys.scope, "DeviceManagementManagedDevices.ReadWrite.All")
         XCTAssertEqual(DeviceActionKind.rotateBitLockerKeys.version, .beta)
         XCTAssertEqual(DeviceActionKind.rotateLocalAdminPassword.version, .beta)
-        XCTAssertEqual(DeviceActionKind.rotateLocalAdminPassword.scope, "DeviceManagementManagedDevices.ReadWrite.All")
+        XCTAssertEqual(DeviceActionKind.rotateLocalAdminPassword.scope, "DeviceManagementManagedDevices.PrivilegedOperations.All")
         for kind in DeviceActionKind.allCases where kind != .rotateBitLockerKeys && kind != .rotateLocalAdminPassword {
             XCTAssertEqual(kind.version, .v1_0, kind.rawValue)
         }
@@ -49,7 +49,14 @@ final class DeviceActionsTests: XCTestCase {
         XCTAssertNil(DeviceActionKind.locate.unavailableReason(for: iPhone))
         let mac = DeviceActionTarget(managedDeviceId: "dev-4", deviceName: "MBP-DESIGN-03", platform: .macOS, ownerType: "company")
         XCTAssertNil(DeviceActionKind.rotateLocalAdminPassword.unavailableReason(for: mac))
-        XCTAssertNotNil(DeviceActionKind.rotateLocalAdminPassword.unavailableReason(for: windows))
+        XCTAssertNil(DeviceActionKind.rotateLocalAdminPassword.unavailableReason(for: windows), "Windows LAPS rotation is an Intune action")
+        var personalPC = windows
+        personalPC.ownerType = "personal"
+        XCTAssertEqual(DeviceActionKind.rotateLocalAdminPassword.unavailableReason(for: personalPC), "Intune rotates the password on corporate-owned devices only.")
+        var notJoined = windows
+        notJoined.hasEntraIdentity = false
+        XCTAssertNotNil(DeviceActionKind.rotateLocalAdminPassword.unavailableReason(for: notJoined))
+        XCTAssertNotNil(DeviceActionKind.rotateLocalAdminPassword.unavailableReason(for: iPhone))
         XCTAssertEqual(DeviceActionKind.rotateLocalAdminPassword.action(for: mac).request.path, "/deviceManagement/managedDevices/dev-4/rotateLocalAdminPassword")
         XCTAssertEqual(DeviceActionKind.locate.unavailableReason(for: personalPhone), "Locate works on corporate-owned devices only.")
         var unknownOwner = iPhone

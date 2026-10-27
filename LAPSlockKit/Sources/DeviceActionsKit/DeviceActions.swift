@@ -29,12 +29,16 @@ public struct DeviceActionTarget: Sendable, Equatable {
     public let platform: Platform
     /// `company`, `personal` or nil when not yet known; from the management record.
     public var ownerType: String?
+    /// Whether the device has an Entra device identity, which Windows LAPS needs to back its
+    /// password up to Entra ID.
+    public var hasEntraIdentity: Bool
 
-    public init(managedDeviceId: String, deviceName: String, platform: Platform, ownerType: String? = nil) {
+    public init(managedDeviceId: String, deviceName: String, platform: Platform, ownerType: String? = nil, hasEntraIdentity: Bool = true) {
         self.managedDeviceId = managedDeviceId
         self.deviceName = deviceName
         self.platform = platform
         self.ownerType = ownerType
+        self.hasEntraIdentity = hasEntraIdentity
     }
 }
 
@@ -133,12 +137,12 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         }
     }
 
-    /// The local admin password rotation's scope is (verify) on the beta reference; it
-    /// shipped in 1.0 on the read-write scope and keeps it until the page says otherwise.
+    /// The local admin password rotation is on the privileged-operations scope, verified on
+    /// the beta reference 2026-10-26 (1.0 sent it on read-write).
     public var scope: String {
         switch self {
-        case .sync, .restart, .remoteLock, .retire, .wipe: return DeviceActionScopes.privilegedOperations
-        case .locate, .rotateBitLockerKeys, .rotateLocalAdminPassword: return DeviceActionScopes.readWrite
+        case .sync, .restart, .remoteLock, .retire, .wipe, .rotateLocalAdminPassword: return DeviceActionScopes.privilegedOperations
+        case .locate, .rotateBitLockerKeys: return DeviceActionScopes.readWrite
         }
     }
 
@@ -150,7 +154,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .remoteLock:           return "Lock this device? The person will need their passcode to get back in."
         case .locate:               return "Ask the device for its location? The person is notified on the device."
         case .rotateBitLockerKeys:  return "Rotate the BitLocker recovery keys? The old keys stop working once the device checks in."
-        case .rotateLocalAdminPassword: return "Rotate the local administrator password? The current password stops working once the device checks in."
+        case .rotateLocalAdminPassword: return "Rotate the local administrator password now? The current password stops working once the device checks in, and the new one appears here after the device backs it up."
         case .retire:               return "Retire removes your organization's data, apps and settings from the device and stops managing it. The person's own data stays."
         case .wipe:                 return "Wipe restores the device to factory settings and erases everything on it, your organization's data and the person's. It cannot be undone once the device receives it."
         }
@@ -163,7 +167,7 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
         case .remoteLock:           return "Lock requested. It applies at the device's next check-in."
         case .locate:               return "Location requested. It appears on the device's page in the Intune admin center once the device answers."
         case .rotateBitLockerKeys:  return "Rotation requested. The device generates a new key at its next check-in, then the new key appears above."
-        case .rotateLocalAdminPassword: return "Rotation requested. Intune sets a new password at the device's next check-in."
+        case .rotateLocalAdminPassword: return "Rotation requested. Intune sets a new password at the device's next check-in; reveal again after it backs up to see it."
         case .retire:               return "Retire requested. Intune removes your organization's data at the device's next check-in."
         case .wipe:                 return "Wipe requested. The device erases itself at its next check-in."
         }
@@ -191,10 +195,20 @@ public enum DeviceActionKind: String, CaseIterable, Sendable, Identifiable, Coda
             if target.platform == .macOS { return "Wipe a Mac from the Intune admin center; it can need a recovery PIN." }
             return nil
         case .rotateLocalAdminPassword:
-            // Windows LAPS rotates on its own schedule and after each use when the policy
-            // says so; the app action is for macOS, where 1.0 offered it. (verify) whether
-            // to offer it on Windows as well.
-            return target.platform == .macOS ? nil : "Windows LAPS rotates on its own schedule and after use."
+            // Intune's action, verified 2026-10-26: Windows, corporate-owned, Entra or hybrid
+            // joined with Windows LAPS backing up to Entra ID; macOS enrolled through
+            // Automated Device Enrollment. Unknown ownership is left to Intune: this changes
+            // a password, not anyone's data.
+            switch target.platform {
+            case .windows:
+                if let owner = target.ownerType?.lowercased(), owner != "company" { return "Intune rotates the password on corporate-owned devices only." }
+                if !target.hasEntraIdentity { return "Needs an Entra joined device with Windows LAPS backing up to Entra ID." }
+                return nil
+            case .macOS:
+                return nil
+            default:
+                return "Local admin password rotation is for Windows and Mac."
+            }
         default:
             return nil
         }

@@ -454,7 +454,8 @@ extension DeviceActionTarget {
             else if raw.contains("android") { platform = .android }
             else { platform = .other }
         }
-        self.init(managedDeviceId: summary.id, deviceName: summary.deviceName, platform: platform, ownerType: nil)
+        self.init(managedDeviceId: summary.id, deviceName: summary.deviceName, platform: platform, ownerType: nil,
+                  hasEntraIdentity: summary.hasEntraDeviceIdentity)
     }
 }
 
