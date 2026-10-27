@@ -128,6 +128,17 @@ public struct RelayAlert: Codable, Sendable, Equatable {
     public var body: String
     public var link: String?
 
+    public init(v: Int, id: String, at: Int, tenant: String, kind: String, title: String, body: String, link: String?) {
+        self.v = v
+        self.id = id
+        self.at = at
+        self.tenant = tenant
+        self.kind = kind
+        self.title = title
+        self.body = body
+        self.link = link
+    }
+
     /// Checks the contract's rules. A link that is not `tenantkeep://` is dropped, not refused.
     func validated() throws -> RelayAlert {
         guard v == RelayContract.version else { throw RelayError.malformed("version") }

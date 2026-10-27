@@ -92,6 +92,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    /// Relayed alerts: APNs answered with this phone's token, which pairing needs.
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        Task { @MainActor in RelayCoordinator.shared.registered(token: deviceToken) }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        Task { @MainActor in RelayCoordinator.shared.registrationFailed() }
+    }
+
     func application(
         _ app: UIApplication,
         open url: URL,
@@ -876,6 +885,9 @@ struct AppRootView: View {
                 root.prepare()
                 WatchConnector.shared.start()
                 AlertsRunner.registerCategories()
+                #if DEBUG
+                RelayCoordinator.shared.runSelfTestIfAsked()
+                #endif
                 #if DEBUG
                 // Straight into demo mode for simulator screenshots and UI automation, which
                 // cannot tap the button on the sign-in screen. Debug builds only, and it

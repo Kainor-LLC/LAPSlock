@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.kainor.lapslock.notifications.refresh</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -18,10 +22,8 @@
 		<string>msauthv2</string>
 		<string>msauthv3</string>
 	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.kainor.lapslock.notifications.refresh</string>
-	</array>
+	<key>TKAppIdentifierPrefix</key>
+	<string>$(AppIdentifierPrefix)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

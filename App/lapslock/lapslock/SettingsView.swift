@@ -268,6 +268,7 @@ struct SettingsView: View {
                             isPro: isPro,
                             isDemo: isDemo)
                     }
+                    RelaySettingsSection(isPro: isPro, isDemo: isDemo)
                     deviceActionsSection
                     userActionsSection
                     groupWritesSection
