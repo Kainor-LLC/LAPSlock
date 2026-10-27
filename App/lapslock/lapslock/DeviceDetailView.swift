@@ -721,6 +721,7 @@ struct DeviceDetailView: View {
     @StateObject var model: DeviceDetailModel
     @StateObject private var privacy = ScreenPrivacyMonitor()
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// Opens the PIM activation sheet. Nil in demo and wherever PIM does not apply.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
@@ -1147,25 +1148,41 @@ struct DeviceDetailView: View {
     private var osVersionRow: some View {
         if model.device.platform == .windows,
            let friendly = WindowsRelease.friendlyName(osVersion: model.device.osVersion) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("OS VERSION")
-                    .font(Brand.fieldLabel)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 116, alignment: .leading)
+            // Label above value at the accessibility sizes, as DataRow does.
+            if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(friendly)
-                        .font(.subheadline)
-                    if let raw = model.device.osVersion {
-                        Text(raw)
-                            .font(Brand.data(12))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
+                    osVersionLabel
+                    osVersionValue(friendly)
                 }
-                Spacer(minLength: 0)
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    osVersionLabel.frame(width: 116, alignment: .leading)
+                    osVersionValue(friendly)
+                    Spacer(minLength: 0)
+                }
             }
         } else {
             DataRow(label: "OS version", value: model.device.osVersion)
+        }
+    }
+
+    private var osVersionLabel: some View {
+        Text("OS version")
+            .textCase(.uppercase)
+            .font(Brand.fieldLabel)
+            .foregroundStyle(.secondary)
+    }
+
+    private func osVersionValue(_ friendly: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(friendly)
+                .font(.subheadline)
+            if let raw = model.device.osVersion {
+                Text(raw)
+                    .font(Brand.data(12))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
         }
     }
 
@@ -1204,35 +1221,11 @@ struct RevealedCredentialCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                usernameField
-                Spacer(minLength: 12)
-                countdown
-            }
+            RevealCardHeader { usernameField } countdown: { countdown }
 
             passwordField
 
-            HStack(spacing: 10) {
-                Button(action: onCopyPassword) {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Brand.accentOnField)
-
-                Button(action: onHide) {
-                    Label("Hide", systemImage: "eye.slash")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.bordered)
-                .tint(Brand.mist)
-            }
+            RevealButtons(onCopy: onCopyPassword, onHide: onHide)
         }
         .padding(18)
         .background(Brand.field)
@@ -1285,15 +1278,19 @@ struct RevealedCredentialCard: View {
             Text("PASSWORD")
                 .font(Brand.fieldLabel)
                 .foregroundStyle(Brand.mist)
-            secret.withValue { value in
-                Text(value)
-                    .font(Brand.data(23, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .textSelection(.disabled)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel("Local administrator password")
+            // A card SwiftUI still holds after Hide can be drawn again by an environment change
+            // (text size, appearance). The value is gone by then; reading it would trap.
+            if !secret.isWiped {
+                secret.withValue { value in
+                    Text(value)
+                        .font(Brand.data(23, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .textSelection(.disabled)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityLabel("Local administrator password")
+                }
             }
         }
     }
@@ -1316,6 +1313,7 @@ struct RevealedCredentialCard: View {
 /// local-only clipboard.
 struct RevealedRecoveryKeyCard: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var typeSize
     let secret: SensitiveValue
     let info: BitLockerKeyInfo
     let secondsRemaining: Int
@@ -1325,7 +1323,7 @@ struct RevealedRecoveryKeyCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
+            RevealCardHeader {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("RECOVERY KEY")
                         .font(Brand.fieldLabel)
@@ -1333,47 +1331,36 @@ struct RevealedRecoveryKeyCard: View {
                     Text("\(info.volumeType.displayName) · ID \(info.shortIdentifier)")
                         .font(.caption)
                         .foregroundStyle(Brand.mist)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 12)
+            } countdown: {
                 CountdownRing(secondsRemaining: secondsRemaining, progress: progress)
             }
 
-            secret.withValue { value in
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Self.rows(from: value), id: \.self) { row in
-                        Text(row)
-                            .font(Brand.data(17, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .textSelection(.disabled)
-                            .minimumScaleFactor(0.7)
-                            .lineLimit(1)
+            // Same as the password card: a held card redrawn after Hide draws nothing.
+            if !secret.isWiped {
+                secret.withValue { value in
+                    VStack(alignment: .leading, spacing: 6) {
+                        // Two groups to a line at the accessibility sizes: four did not fit even
+                        // scaled down, and a key cut to an ellipsis cannot be typed in.
+                        // Keyed by position: two lines of a key can read the same, and the key
+                        // does not change while it is shown.
+                        let rows = Self.rows(from: value, groupsPerRow: typeSize.isAccessibilitySize ? 2 : 4)
+                        ForEach(rows.indices, id: \.self) { index in
+                            Text(rows[index])
+                                .font(Brand.data(17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .textSelection(.disabled)
+                                .minimumScaleFactor(typeSize.isAccessibilitySize ? 0.5 : 0.7)
+                                .lineLimit(1)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("BitLocker recovery key")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityLabel("BitLocker recovery key")
             }
 
-            HStack(spacing: 10) {
-                Button(action: onCopy) {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Brand.accentOnField)
-
-                Button(action: onHide) {
-                    Label("Hide", systemImage: "eye.slash")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.bordered)
-                .tint(Brand.mist)
-            }
+            RevealButtons(onCopy: onCopy, onHide: onHide)
         }
         .padding(18)
         .background(Brand.field)
@@ -1405,6 +1392,8 @@ struct RevealedRecoveryKeyCard: View {
 struct CountdownRing: View {
     let secondsRemaining: Int
     let progress: Double
+    /// Grows with Dynamic Type, so the number inside is never cut to an ellipsis.
+    @ScaledMetric(relativeTo: .subheadline) private var size: CGFloat = 44
 
     var body: some View {
         ZStack {
@@ -1417,9 +1406,73 @@ struct CountdownRing: View {
                 .font(Brand.data(15, weight: .semibold))
                 .foregroundStyle(.white)
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
         }
-        .frame(width: 44, height: 44)
+        .frame(width: size, height: size)
         .animation(.linear(duration: 0.5), value: progress)
         .accessibilityLabel("\(secondsRemaining) seconds until this hides")
+    }
+}
+
+/// Copy and Hide under a revealed credential. Side by side, or stacked at the accessibility
+/// text sizes, where side by side cut both labels to an ellipsis.
+struct RevealButtons: View {
+    let onCopy: () -> Void
+    let onHide: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+        layout {
+            Button(action: onCopy) {
+                Label("Copy", systemImage: "doc.on.doc")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Brand.accentOnField)
+
+            Button(action: onHide) {
+                Label("Hide", systemImage: "eye.slash")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.bordered)
+            .tint(Brand.mist)
+        }
+    }
+}
+
+/// A revealed card's top line: what it is on the left and the countdown on the right, or the
+/// countdown above it at the accessibility text sizes, where side by side squeezed the left
+/// side to an ellipsis.
+struct RevealCardHeader<Title: View, Countdown: View>: View {
+    let title: Title
+    let countdown: Countdown
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    init(@ViewBuilder title: () -> Title, @ViewBuilder countdown: () -> Countdown) {
+        self.title = title()
+        self.countdown = countdown()
+    }
+
+    var body: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 12) {
+                countdown
+                title
+            }
+        } else {
+            HStack(alignment: .top) {
+                title
+                Spacer(minLength: 12)
+                countdown
+            }
+        }
     }
 }

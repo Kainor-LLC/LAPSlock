@@ -428,7 +428,12 @@ struct PrivilegedAccessView: View {
     /// could exceed it, and the request would be refused with a 400 that names no reason.
     private func loadPolicy(for access: EligibleAccess) async {
         isLoadingPolicy = true
+        activePolicy = .unknown
         let read = await policy(access)
+        // Another role was tapped while this one loaded. Its policy is the one that counts,
+        // and its load clears the flag: a ticket rule or duration from this role must not
+        // be applied to that one, or Activate enabled before its rules are known.
+        guard selected?.id == access.id else { return }
         activePolicy = read
         let allowed = read.offeredDurations.map(\.iso)
         if !allowed.contains(duration) {

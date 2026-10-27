@@ -200,7 +200,13 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         ticketNumber: String? = nil,
         duration: String = ActivationRequest.defaultDuration
     ) async throws -> ActivationOutcome {
-        guard let principalId = await auth.currentAccount?.objectId, !principalId.isEmpty else {
+        // The principal in the tenant being operated in: for a guest in a customer tenant
+        // that is the guest object there, not the home account's.
+        var principal: String?
+        if let tenant = await auth.operatingTenantId {
+            principal = await auth.objectId(inTenant: tenant)
+        }
+        guard let principalId = principal, !principalId.isEmpty else {
             // The oid claim, not the MSAL account identifier. Without it there is no
             // principal to activate for, and guessing would target a nonexistent object.
             throw PrivilegedAccessError.notAuthorized

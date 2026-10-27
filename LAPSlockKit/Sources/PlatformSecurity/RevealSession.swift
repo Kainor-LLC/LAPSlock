@@ -74,6 +74,12 @@ public final class RevealSession {
 
     private let clock: RevealClock
 
+    /// How long after a reveal ends a screenshot still counts as one of the password.
+    public static let screenshotGrace: TimeInterval = 2
+    /// When the last reveal ended. A screenshot can land a frame after masking, so for a
+    /// moment it may still hold the password; after that it is a picture of a masked card.
+    private var hiddenAt: Date?
+
     /// Called whenever the value must be destroyed. The app wires this to
     /// SensitiveValue.wipe(). Invoked exactly once per reveal.
     public var onWipe: (() -> Void)?
@@ -96,6 +102,7 @@ public final class RevealSession {
         guard case .revealed(let until) = state else { return false }
         if clock.now >= until {
             state = .expired
+            hiddenAt = clock.now
             wipe()
             return true
         }
@@ -104,23 +111,36 @@ public final class RevealSession {
 
     /// Hide because of an unsafe condition. Idempotent per reason.
     public func revoke(_ reason: RevealRevocation) {
-        // A screenshot is a special case: the pixels already escaped, so hiding now is
-        // about limiting further exposure, and the message must be honest about that.
-        guard isVisible || reason == .screenshotTaken else { return }
+        // A screenshot is a special case: the pixels may already have escaped, so hiding
+        // now is about limiting further exposure, and the message must be honest about
+        // that. But only while a password was up or had just gone: telling somebody who
+        // screenshotted a masked page for a ticket to rotate a password teaches them to
+        // ignore the warning when it is real.
+        guard isVisible || (reason == .screenshotTaken && endedJustNow) else { return }
+        if isVisible { hiddenAt = clock.now }
         state = .revokedForSafety(reason: reason)
         wipe()
+    }
+
+    private var endedJustNow: Bool {
+        guard let hiddenAt else { return false }
+        return clock.now.timeIntervalSince(hiddenAt) <= Self.screenshotGrace
     }
 
     /// User dismissed the reveal manually.
     public func mask() {
         guard isVisible else { return }
         state = .masked
+        hiddenAt = clock.now
         wipe()
     }
 
     /// Reset to a clean masked state (e.g. leaving the screen).
     public func reset() {
-        if isVisible { wipe() }
+        if isVisible {
+            hiddenAt = clock.now
+            wipe()
+        }
         state = .masked
     }
 

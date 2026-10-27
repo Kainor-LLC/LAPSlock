@@ -226,6 +226,11 @@ struct ModuleShell: View {
     @StateObject private var digestModel: ThreatDigestModel
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
+    /// The device as it was when opened. A pull to refresh starts the list again from its
+    /// first page, so the open device can be missing from it for a while; without this the
+    /// detail emptied, which wiped a revealed password and cancelled a pending action's
+    /// undo window, then came back as a fresh screen once the fill reached it.
+    @State private var openedDevice: ManagedDeviceSummary?
     @State private var selectedPolicyId: String?
     @State private var selectedPulseItem: String?
     @State private var selectedSignInId: String?
@@ -382,7 +387,10 @@ struct ModuleShell: View {
         }
         .onChange(of: selectedDeviceId) { _, id in
             // The event that means "a device was opened", on iPhone and iPad alike.
-            if let id, let device = device(id) { listModel.recordVisit(device) }
+            if let id, let device = device(id) {
+                openedDevice = device
+                listModel.recordVisit(device)
+            }
             // And, on the way back on iPhone, the moment a reveal may have been spent.
             listModel.refreshRemaining()
         }
@@ -847,7 +855,9 @@ struct ModuleShell: View {
                     isDemo: isDemo,
                     requestChangesConsent: conditionalAccess.requestChangesConsent
                 )
-                .id(id)
+                // Keyed on the change time too: the detail's model keeps the policy it was
+                // built with, so a refresh that brings back an edited policy rebuilds it.
+                .id(id + "#" + String(policy.modifiedDateTime?.timeIntervalSince1970 ?? 0))
             } else {
                 ContentUnavailableView {
                     Label("No policy selected", systemImage: "checkmark.shield")
@@ -943,7 +953,7 @@ struct ModuleShell: View {
     }
 
     private func device(_ id: String) -> ManagedDeviceSummary? {
-        listModel.devices.first { $0.id == id }
+        listModel.devices.first { $0.id == id } ?? (openedDevice?.id == id ? openedDevice : nil)
     }
 
     // MARK: - keyboard

@@ -174,6 +174,61 @@ final class SecurityServiceTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests.count, 2)
     }
 
+    // MARK: the filtered list
+
+    func test_theScreensFilterIsSentToGraph() async throws {
+        StubProtocol.replies = ["security/incidents": [.init(status: 200, body: incidentsBody)]]
+        let list = try await service.incidents(matching: SecurityFilter(openOnly: true, severity: .highOnly))
+        XCTAssertEqual(list.incidents.map(\.id), ["200"])
+        XCTAssertNil(list.more)
+        let sent = try XCTUnwrap(StubProtocol.requests.first).url
+        XCTAssertTrue(sent.contains("lastUpdateDateTime%20ge%20"), sent)
+        XCTAssertTrue(sent.contains("status%20ne%20'resolved'%20and%20status%20ne%20'redirected'"), sent)
+        XCTAssertTrue(sent.contains("severity%20eq%20'high'"), sent)
+        XCTAssertTrue(sent.contains("$expand=alerts"), sent)
+    }
+
+    func test_aRefusedFilterFallsBackToTheWindowAndIsNotTriedAgain() async throws {
+        StubProtocol.replies = ["security/incidents": [
+            .init(status: 400, body: #"{"error":{"code":"BadRequest"}}"#),
+            .init(status: 200, body: incidentsBody),
+            .init(status: 200, body: incidentsBody)]]
+        let filter = SecurityFilter(openOnly: true, severity: .mediumAndUp)
+        let first = try await service.incidents(matching: filter)
+        XCTAssertEqual(first.incidents.map(\.id), ["200"], "filtered on the phone instead")
+        XCTAssertEqual(StubProtocol.requests.count, 2)
+        XCTAssertFalse(StubProtocol.requests[1].url.contains("status%20ne"), StubProtocol.requests[1].url)
+
+        _ = try await service.incidents(matching: filter)
+        XCTAssertEqual(StubProtocol.requests.count, 3, "one request, no second refusal")
+        XCTAssertFalse(StubProtocol.requests[2].url.contains("status%20ne"))
+    }
+
+    func test_aListThatStoppedShortSaysWhereItContinues() async throws {
+        let page1 = ##"{"@odata.nextLink":"https://graph.microsoft.com/v1.0/security/incidents?$skip=50","value":[{"id":"1","severity":"high","status":"active"}]}"##
+        let page2 = ##"{"@odata.nextLink":"https://graph.microsoft.com/v1.0/security/incidents?$skip=100","value":[{"id":"2","severity":"high","status":"active"}]}"##
+        let page3 = ##"{"value":[{"id":"3","severity":"high","status":"active"}]}"##
+        StubProtocol.replies = ["security/incidents": [
+            .init(status: 200, body: page1), .init(status: 200, body: page2), .init(status: 200, body: page3)]]
+        let list = try await service.incidents(matching: .standard)
+        XCTAssertEqual(list.incidents.count, 2)
+        let more = try XCTUnwrap(list.more)
+        XCTAssertTrue(more.absoluteString.contains("skip=100"))
+
+        let rest = try await service.moreIncidents(after: more, matching: .standard)
+        XCTAssertEqual(rest.incidents.map(\.id), ["3"])
+        XCTAssertNil(rest.more)
+        XCTAssertTrue(StubProtocol.requests[2].url.contains("skip=100"))
+    }
+
+    func test_theServerClauseCoversOnlyWhatIsChosen() {
+        XCTAssertNil(SecurityService.serverClause(for: SecurityFilter(openOnly: false, severity: .all)))
+        XCTAssertEqual(SecurityService.serverClause(for: SecurityFilter(openOnly: false, severity: .mediumAndUp)),
+                       "(severity eq 'medium' or severity eq 'high')")
+        XCTAssertEqual(SecurityService.serverClause(for: SecurityFilter(openOnly: true, severity: .all)),
+                       "status ne 'resolved' and status ne 'redirected'")
+    }
+
     func test_newestFirstTieBreaksOnSeverityThenTitle() {
         let a = SecurityIncident(id: "1", displayName: "b", severity: .low, status: .active)
         let b = SecurityIncident(id: "2", displayName: "a", severity: .high, status: .active)

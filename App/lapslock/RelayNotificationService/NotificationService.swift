@@ -1,4 +1,5 @@
 import UserNotifications
+import Security
 import RelayKit
 
 // Decrypts a relayed TenantKeep Watch alert before iOS shows it. docs/RELAY-API.md, section 10.
@@ -30,10 +31,15 @@ final class NotificationService: UNNotificationServiceExtension {
             let alert = try phone.open(enc: enc, ct: ct, seen: RelaySeenStore(url: seenURL))
             content.title = alert.title
             content.body = alert.body
+            if let late = alert.lateness() { content.subtitle = late }
             content.threadIdentifier = "relay-" + alert.tenant
             var info: [String: Any] = ["tenantId": alert.tenant, "relayKind": alert.kind]
             if let link = alert.link { info["link"] = link }
             content.userInfo = info
+        } catch RelayError.keychain(errSecInteractionNotAllowed) {
+            // The phone has not been unlocked since it restarted, so the relay key cannot be
+            // read yet. Not a forgery: keep the envelope, and the app opens it on a tap.
+            Self.lockedSinceRestart(content, envelope: ["enc": enc, "ct": ct])
         } catch {
             Self.discard(content)
         }
@@ -45,6 +51,12 @@ final class NotificationService: UNNotificationServiceExtension {
             Self.discard(content)
             handler(content)
         }
+    }
+
+    static func lockedSinceRestart(_ content: UNMutableNotificationContent, envelope: [String: String]) {
+        content.title = "TenantKeep"
+        content.body = "An alert arrived before this iPhone was unlocked after a restart. Unlock and tap to read it."
+        content.userInfo = ["e": envelope]
     }
 
     static func discard(_ content: UNMutableNotificationContent) {

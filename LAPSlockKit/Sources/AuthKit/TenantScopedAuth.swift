@@ -22,6 +22,10 @@ public struct TenantScopedAuth: AuthManaging {
 
     public var operatingTenantId: String? { tenantId }
 
+    public func objectId(inTenant tenantId: String) async -> String? {
+        await base.objectId(inTenant: tenantId)
+    }
+
     public func token(scopes: [String], allowInteractive: Bool) async throws -> String {
         try await base.silentToken(scopes: scopes, tenantId: tenantId)
     }

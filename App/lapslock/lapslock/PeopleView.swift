@@ -259,7 +259,11 @@ struct PeopleView: View {
 
     private func loadSnapshot() async {
         guard let snapshot, let target else { personSnapshot = nil; return }
-        personSnapshot = await snapshot(target)
+        let fresh = await snapshot(target)
+        // Picking someone else cancels this load, but its reads still return. Their account
+        // state must not land under the next person's name.
+        guard !Task.isCancelled, model.selectedUser?.id == target.userId else { return }
+        personSnapshot = fresh
     }
 
     /// The person at a glance, then their actions, leaver checklist and groups. The state

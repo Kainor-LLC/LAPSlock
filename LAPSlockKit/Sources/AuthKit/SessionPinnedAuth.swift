@@ -29,6 +29,10 @@ public struct SessionPinnedAuth: AuthManaging {
 
     public var operatingTenantId: String? { tenantId }
 
+    public func objectId(inTenant tenantId: String) async -> String? {
+        await base.objectId(inTenant: tenantId)
+    }
+
     public func token(scopes: [String], allowInteractive: Bool) async throws -> String {
         guard allowInteractive else { return try await silent(scopes) }
         return try await whileOperatingHere {

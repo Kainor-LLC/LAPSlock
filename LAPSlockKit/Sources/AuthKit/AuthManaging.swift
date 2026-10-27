@@ -69,6 +69,11 @@ public extension AuthManaging {
     var operatingTenantId: String? {
         get async { await currentAccount?.tenantId }
     }
+
+    /// Default: the home object id, the only one a provider that cannot switch knows.
+    func objectId(inTenant tenantId: String) async -> String? {
+        await currentAccount?.objectId
+    }
 }
 
 public enum AuthError: Error, Sendable, Equatable {
@@ -116,6 +121,11 @@ public protocol AuthManaging: Sendable {
     /// switched. Anything keyed by tenant (a cache, a log entry) keys by this. A requirement
     /// with a default, for the same dispatch reason as the claims method above.
     var operatingTenantId: String? { get async }
+
+    /// The signed-in user's directory object id in `tenantId`. Not always the home `oid`:
+    /// a guest in a customer tenant is a different object there, and a request naming a
+    /// principal (PIM self-activation) must name that one. A requirement with a default.
+    func objectId(inTenant tenantId: String) async -> String?
 
     /// Interactive account selection sign-in (uses /common or /organizations, §2.1).
     @discardableResult

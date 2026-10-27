@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import CoreImage.CIFilterBuiltins
+import UserNotifications
 import RelayKit
 
 // Relayed alerts, phase 4 step D, docs/RELAY-API.md. The phone's half of pairing with the
@@ -16,6 +17,12 @@ final class RelayCoordinator: ObservableObject {
     @Published private(set) var pairing: PairingCode?
     @Published private(set) var pinned: [String] = []
     @Published var problem: String?
+    /// APNs gave this phone a different token since Watch was paired. Every envelope is
+    /// bound to the token, so until Watch has the new pairing code nothing it sends arrives.
+    /// Kept until the new code is copied, across launches.
+    @Published private(set) var pairingOutOfDate = UserDefaults.standard.bool(forKey: RelayCoordinator.outOfDateKey)
+
+    static let outOfDateKey = "relay.pairingOutOfDate"
 
     let phone: RelayPhone
 
@@ -40,8 +47,16 @@ final class RelayCoordinator: ObservableObject {
         pinned = phone.pinnedTenants()
     }
 
+    /// At every launch, as Apple asks: a token can change, and a registration that failed
+    /// or whose callback was missed otherwise never happens again.
+    func registerIfOn() {
+        guard phone.isOn else { return }
+        UIApplication.shared.registerForRemoteNotifications()
+    }
+
     func turnOn() {
         problem = nil
+        setPairingOutOfDate(false)
         do {
             try phone.turnOn(environment: Self.environment)
             UIApplication.shared.registerForRemoteNotifications()
@@ -52,6 +67,7 @@ final class RelayCoordinator: ObservableObject {
     }
 
     func turnOff() {
+        setPairingOutOfDate(false)
         try? phone.turnOff()
         UIApplication.shared.unregisterForRemoteNotifications()
         reload()
@@ -60,8 +76,39 @@ final class RelayCoordinator: ObservableObject {
     /// From the app delegate, once APNs gives the phone a token.
     func registered(token: Data) {
         guard phone.isOn else { return }
-        try? phone.setDeviceToken(token)
+        if (try? phone.setDeviceToken(token)) == true { setPairingOutOfDate(true) }
         reload()
+    }
+
+    /// The new pairing code was copied to give to Watch.
+    func pairingCodeCopied() {
+        setPairingOutOfDate(false)
+    }
+
+    private func setPairingOutOfDate(_ value: Bool) {
+        pairingOutOfDate = value
+        UserDefaults.standard.set(value, forKey: Self.outOfDateKey)
+    }
+
+    /// A relayed alert that arrived before the phone was unlocked after a restart, opened on
+    /// its tap. Shown again as a local notification with its real content, so it reads like
+    /// any other relayed alert, and returned so the tap can be routed. Same key, same pinned
+    /// senders and the same one-day repeat check as the extension.
+    func openDeferred(enc: String, ct: String) async -> RelayAlert? {
+        let seenURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.kainor.lapslock")?
+            .appendingPathComponent("relay-seen.json")
+        guard let alert = try? phone.open(enc: enc, ct: ct, seen: RelaySeenStore(url: seenURL)) else { return nil }
+        let content = UNMutableNotificationContent()
+        content.title = alert.title
+        content.body = alert.body
+        if let late = alert.lateness() { content.subtitle = late }
+        content.threadIdentifier = "relay-" + alert.tenant
+        var info: [String: Any] = ["tenantId": alert.tenant, "relayKind": alert.kind]
+        if let link = alert.link { info["link"] = link }
+        content.userInfo = info
+        try? await UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "relay-" + alert.id, content: content, trigger: nil))
+        return alert
     }
 
     func registrationFailed() {
@@ -91,8 +138,9 @@ import UserNotifications
 
 extension RelayCoordinator {
     /// Debug builds only: `-LAPSlockRelaySelfTest` turns the relay on with a fixed token, pins
-    /// a throwaway sender, and writes two pushes to the app group for `simctl push`: one
-    /// sealed by that sender, one by an impostor.
+    /// a throwaway sender, and writes three pushes to the app group for `simctl push`: one
+    /// sealed by that sender, one by an impostor, and one the sender raised fifteen minutes
+    /// ago, which the phone shows with its age.
     func runSelfTestIfAsked() {
         guard CommandLine.arguments.contains("-LAPSlockRelaySelfTest"),
               let folder = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.kainor.lapslock") else { return }
@@ -106,10 +154,15 @@ extension RelayCoordinator {
             let key = Data(base64URL: code.publicKey) ?? Data()
             let alert = RelayAlert(v: 1, id: UUID().uuidString, at: Int(Date().timeIntervalSince1970), tenant: tenant, kind: "breakGlassSignIn",
                                    title: "Contoso: break-glass sign-in", body: "bg-admin signed in from 203.0.113.7", link: "tenantkeep://people")
+            var late = alert
+            late.id = UUID().uuidString
+            late.at -= 15 * 60
             var results: [String] = []
             let seen = RelaySeenStore(url: nil)
-            for (name, signer) in [("relay-test-good.json", sender), ("relay-test-impostor.json", P256.KeyAgreement.PrivateKey())] {
-                let env = try RelayTestSender.seal(alert, to: key, deviceToken: code.deviceToken, sender: signer)
+            for (name, signer, sent) in [("relay-test-good.json", sender, alert),
+                                         ("relay-test-impostor.json", P256.KeyAgreement.PrivateKey(), alert),
+                                         ("relay-test-late.json", sender, late)] {
+                let env = try RelayTestSender.seal(sent, to: key, deviceToken: code.deviceToken, sender: signer)
                 let payload: [String: Any] = ["aps": ["alert": ["title": "TenantKeep alert", "body": "Open TenantKeep"], "mutable-content": 1],
                                               "e": ["enc": env.enc, "ct": env.ct]]
                 try JSONSerialization.data(withJSONObject: payload).write(to: folder.appendingPathComponent(name))
@@ -183,6 +236,12 @@ struct RelaySettingsSection: View {
     @ViewBuilder
     private var pairingRows: some View {
         if let pairing = relay.pairing {
+            if relay.pairingOutOfDate {
+                Label("This phone's push address changed. Give TenantKeep Watch the new pairing code below, or relayed alerts will not arrive.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
             VStack(alignment: .leading, spacing: 8) {
                 Text("1. Give this to TenantKeep Watch's setup").font(.subheadline.weight(.medium))
                 if let image = Self.qr(pairing.text) {
@@ -192,6 +251,7 @@ struct RelaySettingsSection: View {
                 Button {
                     UIPasteboard.general.string = pairing.text
                     copied = true
+                    relay.pairingCodeCopied()
                 } label: {
                     Label(copied ? "Copied" : "Copy pairing code", systemImage: copied ? "checkmark" : "doc.on.doc")
                 }

@@ -130,16 +130,16 @@ public actor TenantPulseService: TenantPulseProviding {
             let page = try await graph.collection(ApplicationRecord.self, from: request, maxPages: 10)
             return page.items.flatMap { app -> [ExpiringItem] in
                 let owner = app.displayName ?? app.appId ?? app.id
-                let secrets = (app.passwordCredentials ?? []).compactMap { credential -> ExpiringItem? in
+                let secrets = (app.passwordCredentials ?? []).enumerated().compactMap { index, credential -> ExpiringItem? in
                     guard let end = credential.endDateTime else { return nil }
                     return ExpiringItem(
-                        id: "secret:" + app.id + ":" + (credential.keyId ?? UUID().uuidString),
+                        id: "secret:" + app.id + ":" + Self.credentialKey(credential.keyId, end: end, name: credential.displayName, index: index),
                         kind: .appSecret, owner: owner, detail: credential.displayName, expiresAt: end)
                 }
-                let certificates = (app.keyCredentials ?? []).compactMap { credential -> ExpiringItem? in
+                let certificates = (app.keyCredentials ?? []).enumerated().compactMap { index, credential -> ExpiringItem? in
                     guard let end = credential.endDateTime else { return nil }
                     return ExpiringItem(
-                        id: "cert:" + app.id + ":" + (credential.keyId ?? UUID().uuidString),
+                        id: "cert:" + app.id + ":" + Self.credentialKey(credential.keyId, end: end, name: credential.displayName, index: index),
                         kind: .appCertificate, owner: owner, detail: credential.displayName, expiresAt: end)
                 }
                 return secrets + certificates
@@ -179,13 +179,21 @@ public actor TenantPulseService: TenantPulseProviding {
             let owner = principal.displayName ?? principal.id
             // One certificate appears twice on a SAML app, as Sign and Verify. One row.
             let signing = (principal.keyCredentials ?? []).filter { $0.usage?.lowercased() != "verify" }
-            return signing.compactMap { credential in
+            return signing.enumerated().compactMap { index, credential in
                 guard let end = credential.endDateTime else { return nil }
                 return ExpiringItem(
-                    id: "saml:" + principal.id + ":" + (credential.keyId ?? UUID().uuidString),
+                    id: "saml:" + principal.id + ":" + Self.credentialKey(credential.keyId, end: end, name: credential.displayName, index: index),
                     kind: .samlCertificate, owner: owner, detail: credential.displayName, expiresAt: end)
             }
         }
+    }
+
+    /// A credential's key for its id. Graph's keyId when there is one; otherwise one built
+    /// from what does not change between reads. A random fallback made the background
+    /// check announce the same credential as new on every run.
+    static func credentialKey(_ keyId: String?, end: Date, name: String?, index: Int) -> String {
+        if let keyId, !keyId.isEmpty { return keyId }
+        return "end" + String(Int(end.timeIntervalSince1970)) + ":" + (name ?? "") + ":" + String(index)
     }
 
     private struct ApplePushCertificate: Decodable, Sendable {

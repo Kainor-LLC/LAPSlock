@@ -60,13 +60,33 @@ public enum Brand {
     }
 
     /// Monospaced type for machine data, at a few deliberate sizes.
+    ///
+    /// Each size is the text style nearest it, so the type follows Dynamic Type: an admin
+    /// who enlarges text to read a password off the screen gets a larger password. A fixed
+    /// point size did not scale at all.
     public static func data(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+        .system(textStyle(nearest: size), design: .monospaced, weight: weight)
+    }
+
+    /// The text style whose default size is nearest `size`.
+    static func textStyle(nearest size: CGFloat) -> Font.TextStyle {
+        switch size {
+        case ..<11.5: return .caption2
+        case ..<12.5: return .caption
+        case ..<14:   return .footnote
+        case ..<16:   return .subheadline
+        case ..<16.5: return .callout
+        case ..<19:   return .body
+        case ..<21:   return .title3
+        case ..<25:   return .title2
+        default:      return .title
+        }
     }
 
     /// Small uppercase label used for field names. Encodes "this is a record field",
-    /// which is true of the content rather than decorative.
-    public static let fieldLabel = Font.system(size: 11, weight: .medium, design: .monospaced)
+    /// which is true of the content rather than decorative. Pair with
+    /// `.textCase(.uppercase)` rather than uppercasing the string.
+    public static let fieldLabel = Font.system(.caption2, design: .monospaced, weight: .medium)
 }
 
 // MARK: - shared primitives
@@ -77,20 +97,38 @@ struct DataRow: View {
     let label: String
     let value: String?
     var monospaced: Bool = true
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         if let value, !value.isEmpty {
-            HStack(alignment: .firstTextBaseline) {
-                Text(label.uppercased())
-                    .font(Brand.fieldLabel)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 116, alignment: .leading)
-                Text(value)
-                    .font(monospaced ? Brand.data(14) : .subheadline)
-                    .textSelection(.enabled)
-                Spacer(minLength: 0)
+            // At the accessibility sizes the label goes above the value: a fixed label
+            // column broke both mid-word.
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    labelText
+                    valueText(value)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    labelText.frame(width: 116, alignment: .leading)
+                    valueText(value)
+                    Spacer(minLength: 0)
+                }
             }
         }
+    }
+
+    private var labelText: some View {
+        Text(label)
+            .textCase(.uppercase)
+            .font(Brand.fieldLabel)
+            .foregroundStyle(.secondary)
+    }
+
+    private func valueText(_ value: String) -> some View {
+        Text(value)
+            .font(monospaced ? Brand.data(14) : .subheadline)
+            .textSelection(.enabled)
     }
 }
 

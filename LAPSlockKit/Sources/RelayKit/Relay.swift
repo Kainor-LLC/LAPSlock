@@ -36,6 +36,19 @@ public enum RelayError: Error, Sendable, Equatable {
     case keychain(OSStatus)
 }
 
+public extension RelayAlert {
+    /// "Raised 14 minutes ago" for an alert that arrives late, or nil when it is on time.
+    /// The alert carries the moment Watch raised it, so a delayed or held delivery says so
+    /// instead of looking current.
+    func lateness(now: Date = Date(), after threshold: TimeInterval = 120) -> String? {
+        let raised = Date(timeIntervalSince1970: TimeInterval(at))
+        guard now.timeIntervalSince(raised) > threshold else { return nil }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Raised " + formatter.localizedString(for: raised, relativeTo: now)
+    }
+}
+
 // MARK: - base64url
 
 enum Base64URL {
@@ -280,10 +293,18 @@ public struct RelayPhone: Sendable {
     /// without its reference.
     public func turnOff() throws { try store.delete() }
 
-    public func setDeviceToken(_ token: Data) throws {
+    /// Records APNs's token for this phone. Returns true when it replaced a different one:
+    /// the token is bound into every envelope, so Watch has to be given the new pairing code
+    /// or nothing it sends can be delivered or opened.
+    @discardableResult
+    public func setDeviceToken(_ token: Data) throws -> Bool {
         guard var state = try store.load() else { throw RelayError.notPaired }
-        state.deviceToken = token.map { String(format: "%02x", $0) }.joined()
+        let hex = token.map { String(format: "%02x", $0) }.joined()
+        let changed = state.deviceToken != nil && state.deviceToken != hex
+        guard state.deviceToken != hex else { return false }
+        state.deviceToken = hex
         try store.save(state)
+        return changed
     }
 
     public func pairingCode() throws -> PairingCode {

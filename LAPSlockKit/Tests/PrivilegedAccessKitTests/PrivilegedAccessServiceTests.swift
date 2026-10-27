@@ -19,6 +19,14 @@ final class RecordingAuth: AuthManaging, @unchecked Sendable {
 
     var currentAccount: AdminAccount? { get async { account } }
 
+    /// A customer tenant being operated in, and the user's object id in each tenant.
+    var operating: String?
+    var objectIdsByTenant: [String: String] = [:]
+    var operatingTenantId: String? { get async { operating ?? account.tenantId } }
+    func objectId(inTenant tenantId: String) async -> String? {
+        objectIdsByTenant[tenantId] ?? account.objectId
+    }
+
     func token(scopes: [String], allowInteractive: Bool) async throws -> String {
         try await token(scopes: scopes, claims: nil, allowInteractive: allowInteractive)
     }
@@ -231,6 +239,20 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         // The DIRECTORY object id, not the MSAL account identifier. Using the latter would
         // target a principal that does not exist.
         XCTAssertEqual(body?["principalId"] as? String, auth.account.objectId)
+    }
+
+    func test_inACustomerTenantTheActivationNamesThePrincipalThere() async throws {
+        let customer = "22222222-2222-4222-8222-222222222222"
+        let guest = "99999999-8888-4777-8666-555555555555"
+        auth.operating = customer
+        auth.objectIdsByTenant = [customer: guest]
+        StubProtocol.replies = ["roleAssignmentScheduleRequests": [
+            .init(status: 201, body: #"{"id":"r1","status":"Provisioned"}"#)]]
+
+        _ = try await service.activate(role, justification: "ticket INC-1", ticketNumber: nil, duration: "PT1H")
+        let posted = StubProtocol.requests.first { $0.method == "POST" }
+        let body = try XCTUnwrap(posted?.body).flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+        XCTAssertEqual(body?["principalId"] as? String, guest, "the guest object in the customer tenant, not the home oid")
     }
 
     func test_aClaimsChallengeTriggersExactlyOneRetryWithTheClaims() async throws {

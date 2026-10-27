@@ -111,12 +111,40 @@ final class RevealSessionTests: XCTestCase {
         XCTAssertEqual(s.state, .revokedForSafety(reason: .screenRecording))
     }
 
-    func test_screenshotRevokesEvenWhenNotVisible() {
-        // A screenshot may land a frame after masking. The pixels already escaped, so
-        // the user still needs to be told.
-        let (s, _) = makeSession()
+    func test_aScreenshotJustAfterMaskingStillWarns() {
+        // A screenshot may land a frame after masking. The pixels may already have
+        // escaped, so the user still needs to be told.
+        let (s, clock) = makeSession()
+        s.reveal()
+        s.mask()
+        clock.advance(1)
         s.revoke(.screenshotTaken)
         XCTAssertEqual(s.state, .revokedForSafety(reason: .screenshotTaken))
+    }
+
+    func test_aScreenshotOfAPageThatNeverRevealedDoesNotWarn() {
+        let (s, _) = makeSession()
+        s.revoke(.screenshotTaken)
+        XCTAssertEqual(s.state, .masked, "a picture of a masked card holds no password")
+    }
+
+    func test_aScreenshotLongAfterARevealEndedDoesNotWarn() {
+        let (s, clock) = makeSession()
+        s.reveal()
+        clock.advance(61)
+        s.tick()
+        XCTAssertEqual(s.state, .expired)
+        clock.advance(RevealSession.screenshotGrace + 1)
+        s.revoke(.screenshotTaken)
+        XCTAssertEqual(s.state, .expired)
+    }
+
+    func test_aScreenshotWhileRevealedWarnsAndHides() {
+        let (s, _) = makeSession()
+        s.reveal()
+        s.revoke(.screenshotTaken)
+        XCTAssertEqual(s.state, .revokedForSafety(reason: .screenshotTaken))
+        XCTAssertFalse(s.isVisible)
     }
 
     func test_otherRevocationsIgnoredWhenNotVisible() {

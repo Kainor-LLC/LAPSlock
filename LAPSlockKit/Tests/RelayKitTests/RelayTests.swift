@@ -41,6 +41,25 @@ final class RelayTests: XCTestCase {
         XCTAssertEqual(try phone.open(enc: env.enc, ct: env.ct), sent)
     }
 
+    func testANewDeviceTokenIsReportedAsAChangeOnlyWhenOneWasThere() throws {
+        let phone = RelayPhone(store: MemoryRelayStateStore())
+        try phone.turnOn(environment: "sandbox")
+        XCTAssertFalse(try phone.setDeviceToken(token), "the first token is not a change")
+        XCTAssertFalse(try phone.setDeviceToken(token), "the same token again is not a change")
+        let other = Data((0..<32).map { UInt8(255 - $0) })
+        XCTAssertTrue(try phone.setDeviceToken(other))
+        XCTAssertEqual(try phone.pairingCode().deviceToken, other.map { String(format: "%02x", $0) }.joined())
+    }
+
+    func testALateAlertSaysWhenItWasRaised() {
+        let raised = Date(timeIntervalSince1970: 1_800_000_000)
+        let sent = alert(tenant)
+        XCTAssertNil(sent.lateness(now: raised.addingTimeInterval(90)), "on time says nothing")
+        let late = sent.lateness(now: raised.addingTimeInterval(14 * 60))
+        XCTAssertEqual(late?.hasPrefix("Raised "), true, late ?? "")
+        XCTAssertEqual(late?.contains("14"), true, late ?? "")
+    }
+
     func testAnImpostorSenderIsRefused() throws {
         let (phone, code, _) = try pairedPhone()
         let env = try RelayTestSender.seal(alert(tenant), to: Base64URL.decode(code.publicKey)!, deviceToken: code.deviceToken, sender: P256.KeyAgreement.PrivateKey())

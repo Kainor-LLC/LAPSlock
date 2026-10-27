@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -37,6 +38,18 @@ public sealed class ApnsSender : IApnsSender
         _time = time;
     }
 
+    /// <summary>
+    /// How long Apple holds an alert for a phone it cannot reach, a phone in a lift or out of
+    /// signal. An expiration of 0 told Apple to try once and drop it, while the sender was
+    /// told 202. Apple keeps only the latest alert per phone while it waits, so a bad night
+    /// cannot pile up a backlog, and the phone shows each alert's own time.
+    /// </summary>
+    public static readonly TimeSpan HoldTimeSensitive = TimeSpan.FromHours(1);
+    public static readonly TimeSpan HoldNormal = TimeSpan.FromMinutes(30);
+
+    public static long Expiration(DateTimeOffset now, bool timeSensitive) =>
+        (now + (timeSensitive ? HoldTimeSensitive : HoldNormal)).ToUnixTimeSeconds();
+
     public static string Payload(bool timeSensitive, string enc, string ct) => JsonSerializer.Serialize(new Dictionary<string, object>
     {
         ["aps"] = new Dictionary<string, object>
@@ -62,7 +75,8 @@ public sealed class ApnsSender : IApnsSender
         request.Headers.TryAddWithoutValidation("apns-topic", _options.Topic);
         request.Headers.TryAddWithoutValidation("apns-push-type", "alert");
         request.Headers.TryAddWithoutValidation("apns-priority", "10");
-        request.Headers.TryAddWithoutValidation("apns-expiration", "0");
+        request.Headers.TryAddWithoutValidation("apns-expiration",
+            Expiration(_time.GetUtcNow(), timeSensitive).ToString(CultureInfo.InvariantCulture));
         try
         {
             using var response = await _http.SendAsync(request, cancel);

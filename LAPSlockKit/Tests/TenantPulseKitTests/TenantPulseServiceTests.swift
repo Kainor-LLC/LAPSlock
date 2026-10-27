@@ -152,6 +152,21 @@ final class TenantPulseServiceTests: XCTestCase {
         XCTAssertTrue(auth.calls.contains(["DeviceManagementServiceConfig.Read.All"]))
     }
 
+    func test_aCredentialWithoutAKeyIdKeepsTheSameIdOnEveryRead() async throws {
+        let end = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertEqual(TenantPulseService.credentialKey("k1", end: end, name: "x", index: 3), "k1")
+        let first = TenantPulseService.credentialKey(nil, end: end, name: "Deploy", index: 0)
+        XCTAssertEqual(first, TenantPulseService.credentialKey(nil, end: end, name: "Deploy", index: 0))
+        XCTAssertEqual(first, TenantPulseService.credentialKey("", end: end, name: "Deploy", index: 0))
+        XCTAssertNotEqual(first, TenantPulseService.credentialKey(nil, end: end, name: "Deploy", index: 1))
+
+        seedExpiring()
+        let a = try await service.expiringItems().map(\.id)
+        seedExpiring()
+        let b = try await service.expiringItems().map(\.id)
+        XCTAssertEqual(a, b)
+    }
+
     func test_extrasFailingQuietlyStillReturnTheAppRegistrations() async throws {
         seedExpiring()
         StubProtocol.replies["servicePrincipals"] = [.init(status: 400, body: "{}")]

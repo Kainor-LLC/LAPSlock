@@ -254,4 +254,13 @@ public class HandlerTests
         Assert.Equal("ENC", root.GetProperty("e").GetProperty("enc").GetString());
         Assert.Equal(["aps", "e"], root.EnumerateObject().Select(p => p.Name).ToArray());
     }
+
+    [Fact]
+    public void AnAlertIsHeldForAPhoneThatIsOffline()
+    {
+        var now = new DateTimeOffset(2026, 10, 27, 3, 0, 0, TimeSpan.Zero);
+        Assert.Equal(now.AddHours(1).ToUnixTimeSeconds(), ApnsSender.Expiration(now, timeSensitive: true));
+        Assert.Equal(now.AddMinutes(30).ToUnixTimeSeconds(), ApnsSender.Expiration(now, timeSensitive: false));
+        Assert.True(ApnsSender.Expiration(now, false) > now.ToUnixTimeSeconds());
+    }
 }

@@ -154,3 +154,29 @@ final class SessionPinnedAuthTests: XCTestCase {
         XCTAssertEqual(operating, "home-tenant")
     }
 }
+
+final class ObjectIdInTenantTests: XCTestCase {
+    func test_theDefaultIsTheHomeObjectIdAndWrappersPassThrough() async {
+        struct Home: AuthManaging {
+            var currentAccount: AdminAccount? {
+                get async { AdminAccount(id: "a", tenantId: "home", username: "u", objectId: "home-oid") }
+            }
+            func token(scopes: [String], allowInteractive: Bool) async throws -> String { "t" }
+            func signIn() async throws -> AdminAccount { throw AuthError.userCancelled }
+            func signOut(account: AdminAccount) async throws {}
+        }
+        struct Guest: AuthManaging {
+            var currentAccount: AdminAccount? { get async { nil } }
+            func objectId(inTenant tenantId: String) async -> String? { "oid-in-" + tenantId }
+            func token(scopes: [String], allowInteractive: Bool) async throws -> String { "t" }
+            func signIn() async throws -> AdminAccount { throw AuthError.userCancelled }
+            func signOut(account: AdminAccount) async throws {}
+        }
+        let home = await Home().objectId(inTenant: "anything")
+        XCTAssertEqual(home, "home-oid")
+        let pinned = await SessionPinnedAuth(base: Guest(), tenantId: "c").objectId(inTenant: "c")
+        XCTAssertEqual(pinned, "oid-in-c")
+        let scoped = await TenantScopedAuth(base: Guest(), tenantId: "c").objectId(inTenant: "c")
+        XCTAssertEqual(scoped, "oid-in-c")
+    }
+}

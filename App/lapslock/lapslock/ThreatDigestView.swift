@@ -26,17 +26,26 @@ final class ThreatDigestModel: ObservableObject {
     @Published var showRest = false
 
     static let microsoftOnlyKey = "settings.digestMicrosoftOnly"
+    /// Before ids were kept: the time of the last look. Read once, for the first visit
+    /// after the change, then removed.
     static let lastSeenKey = "settings.digestLastSeen"
+    static let seenIdsKey = "settings.digestSeenIds"
 
-    /// The last-seen stamp as it was when the digest loaded, so an item stays "new" for
-    /// the whole visit and only stops being new on the next one.
-    private(set) var seenBefore: Date?
+    /// What the last look contained, as it was when the digest loaded, so an item stays
+    /// "new" for the whole visit and only stops being new on the next one.
+    ///
+    /// Ids, not a time. The KEV catalog dates an entry by day, which reads as midnight, so
+    /// anything CISA added after a look earlier the same day compared as older than the
+    /// look and was never marked new.
+    @Published private(set) var seenIds: Set<String>?
+    @Published private(set) var seenBefore: Date?
     private let provider: any ThreatDigestProviding
     private var cancellables = Set<AnyCancellable>()
 
     init(provider: any ThreatDigestProviding) {
         self.provider = provider
         self.microsoftOnly = UserDefaults.standard.object(forKey: Self.microsoftOnlyKey) as? Bool ?? true
+        self.seenIds = (UserDefaults.standard.array(forKey: Self.seenIdsKey) as? [String]).map(Set.init)
         self.seenBefore = UserDefaults.standard.object(forKey: Self.lastSeenKey) as? Date
         Publishers.CombineLatest($snapshot, $microsoftOnly.removeDuplicates())
             .map { snapshot, microsoftOnly -> (cards: [(item: DigestItem, ranking: DigestRanking)], rest: [(item: DigestItem, ranking: DigestRanking)]) in
@@ -64,6 +73,7 @@ final class ThreatDigestModel: ObservableObject {
     }
 
     func isNew(_ item: DigestItem) -> Bool {
+        if let seenIds { return !seenIds.contains(item.id) }
         guard let published = item.published else { return false }
         guard let seenBefore else { return true }
         return published > seenBefore
@@ -87,10 +97,19 @@ final class ThreatDigestModel: ObservableObject {
         }
     }
 
+    /// Called when the reader arrives. The model outlives a switch to another module, so
+    /// reading what the last visit saw only when it was built kept everything "new" until
+    /// the app was relaunched.
+    func beginVisit() {
+        seenIds = (UserDefaults.standard.array(forKey: Self.seenIdsKey) as? [String]).map(Set.init)
+        seenBefore = UserDefaults.standard.object(forKey: Self.lastSeenKey) as? Date
+    }
+
     /// Called when the reader leaves, so the next visit marks only what came after.
     func markSeen() {
-        guard let fetchedAt = snapshot?.fetchedAt else { return }
-        UserDefaults.standard.set(fetchedAt, forKey: Self.lastSeenKey)
+        guard let items = snapshot?.items else { return }
+        UserDefaults.standard.set(items.map(\.id), forKey: Self.seenIdsKey)
+        UserDefaults.standard.removeObject(forKey: Self.lastSeenKey)
     }
 }
 
@@ -132,6 +151,7 @@ struct ThreatDigestListView: View {
         .task {
             if model.snapshot == nil { await model.load() }
         }
+        .onAppear { model.beginVisit() }
         .onDisappear { model.markSeen() }
         .safeAreaInset(edge: .top) {
             if isDemo { DemoBanner() }

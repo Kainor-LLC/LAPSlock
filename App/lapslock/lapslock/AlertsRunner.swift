@@ -10,6 +10,7 @@ import SignInTriageKit
 import ApprovalsKit
 import SecurityKit
 import ManagedConfigKit
+import RelayKit
 
 // The background run. Spec section 3.11.
 //
@@ -248,13 +249,18 @@ final class SessionAuth {
     private var restored: MSALAuthManager?
 
     nonisolated func restoredAuth() async -> (any AuthManaging)? {
+        await restoredManager()
+    }
+
+    /// The manager itself, for a caller that builds a whole live session on it.
+    nonisolated func restoredManager() async -> MSALAuthManager? {
         if let existing = await MainActor.run(body: { self.auth ?? self.restored }) {
             return existing
         }
         return await restoreFresh()
     }
 
-    nonisolated private func restoreFresh() async -> (any AuthManaging)? {
+    nonisolated private func restoreFresh() async -> MSALAuthManager? {
         guard let manager = try? MSALAuthManager(config: .vendorDefault),
               await manager.restoreSession() != nil else { return nil }
         await MainActor.run { self.restored = manager }
@@ -310,6 +316,15 @@ final class AlertsNotificationDelegate: NSObject, UNUserNotificationCenterDelega
         var fields: [String: String] = [:]
         for key in ["module", "tab", "link", "tenantId"] {
             if let value = info[key] as? String { fields[key] = value }
+        }
+        // A relayed alert that arrived before the phone was unlocked after a restart: the
+        // extension kept the envelope. Now that the phone is unlocked it can be opened,
+        // shown with its real content, and routed like any other.
+        if fields.isEmpty, let envelope = info["e"] as? [String: Any],
+           let enc = envelope["enc"] as? String, let ct = envelope["ct"] as? String,
+           let alert = await RelayCoordinator.shared.openDeferred(enc: enc, ct: ct) {
+            fields["tenantId"] = alert.tenant
+            if let link = alert.link { fields["link"] = link }
         }
         await MainActor.run {
             guard let route = AlertRoute(fields) else { return }

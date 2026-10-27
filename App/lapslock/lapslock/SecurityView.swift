@@ -25,6 +25,10 @@ final class SecurityListModel: ObservableObject {
         didSet { UserDefaults.standard.set(severity.rawValue, forKey: Self.severityKey) }
     }
     @Published private(set) var visible: [SecurityIncident] = []
+    /// Where the list continues when more incidents matched than were read. The screen
+    /// says so, with a way to read on, rather than presenting part of the list as all of it.
+    @Published private(set) var more: URL?
+    @Published private(set) var isLoadingMore = false
     @Published private(set) var isLoading = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastFailureWasConsent = false
@@ -37,6 +41,9 @@ final class SecurityListModel: ObservableObject {
 
     private let provider: any SecurityProviding
     private var cancellables = Set<AnyCancellable>()
+    /// Moves on every load, so a slower load that started under the previous filter
+    /// cannot land on top of the current one.
+    private var generation = 0
 
     init(provider: any SecurityProviding) {
         self.provider = provider
@@ -52,7 +59,18 @@ final class SecurityListModel: ObservableObject {
                 Self.search(SecurityFilter(openOnly: openOnly, severity: severity).apply(incidents), query: query)
             }
             .assign(to: &$visible)
+        // The filter is applied by Graph, so a change of filter is a new read: turning
+        // "open only" off has to fetch the resolved incidents it never asked for.
+        Publishers.CombineLatest($openOnly.removeDuplicates(), $severity.removeDuplicates())
+            .dropFirst()
+            .sink { [weak self] _, _ in
+                guard let self, self.hasLoaded else { return }
+                Task { await self.load() }
+            }
+            .store(in: &cancellables)
     }
+
+    var isFiltered: Bool { openOnly || severity != .all }
 
     var filter: SecurityFilter { SecurityFilter(openOnly: openOnly, severity: severity) }
 
@@ -76,20 +94,39 @@ final class SecurityListModel: ObservableObject {
     }
 
     func load() async {
+        generation += 1
+        let mine = generation
         isLoading = true
         errorMessage = nil
         lastFailureWasConsent = false
         let started = Date()
-        defer { isLoading = false }
+        defer { if mine == generation { isLoading = false } }
         do {
-            incidents = try await provider.incidents()
+            let list = try await provider.incidents(matching: filter)
+            guard mine == generation else { return }
+            incidents = list.incidents
+            more = list.more
             hasLoaded = true
             await Self.record(.success, since: started)
         } catch {
+            guard mine == generation else { return }
             lastFailureWasConsent = (error as? SecurityError) == .consentRequired
             errorMessage = Self.describe(error)
             await Self.record(Self.outcome(for: error), since: started)
         }
+    }
+
+    /// Reads on from where the list stopped. A failure leaves the row in place to try again.
+    func loadMore() async {
+        guard let cursor = more, !isLoadingMore else { return }
+        let mine = generation
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        guard let list = try? await provider.moreIncidents(after: cursor, matching: filter),
+              mine == generation else { return }
+        let known = Set(incidents.map(\.id))
+        incidents = (incidents + list.incidents.filter { !known.contains($0.id) }).sorted(by: SecurityService.newestFirst)
+        more = list.more
     }
 
     /// Re-reads one incident and swaps it into the list. Silent on failure: the row is
@@ -164,7 +201,7 @@ struct SecurityListView: View {
                 loadingState
             } else if let error = model.errorMessage, model.incidents.isEmpty {
                 errorState(error)
-            } else if model.incidents.isEmpty {
+            } else if model.incidents.isEmpty && !model.isFiltered {
                 emptyState
             } else {
                 incidentList
@@ -203,6 +240,14 @@ struct SecurityListView: View {
     private var incidentList: some View {
         List(selection: $selection) {
             Section {
+                if model.visible.isEmpty {
+                    Text(model.query.isEmpty
+                         ? "No incidents match the filter."
+                         : "No incidents match \"\(model.query)\"")
+                        .font(.subheadline.weight(.medium))
+                        .frame(maxWidth: .infinity)
+                        .listRowSeparator(.hidden)
+                }
                 ForEach(model.visible) { incident in
                     NavigationLink(value: incident.id) {
                         SecurityIncidentRow(incident: incident)
@@ -211,13 +256,21 @@ struct SecurityListView: View {
             } footer: {
                 Text(footer)
             }
-            if model.visible.isEmpty {
-                Text(model.query.isEmpty
-                     ? "No incidents match the filter."
-                     : "No incidents match \"\(model.query)\"")
-                    .font(.subheadline.weight(.medium))
-                    .frame(maxWidth: .infinity)
-                    .listRowSeparator(.hidden)
+            if model.more != nil {
+                Section {
+                    Button {
+                        Task { await model.loadMore() }
+                    } label: {
+                        HStack {
+                            Text(model.isLoadingMore ? "Loading more…" : "Load more incidents")
+                            Spacer()
+                            if model.isLoadingMore { ProgressView() }
+                        }
+                    }
+                    .disabled(model.isLoadingMore)
+                } footer: {
+                    Text("More incidents match than were loaded.")
+                }
             }
         }
     }

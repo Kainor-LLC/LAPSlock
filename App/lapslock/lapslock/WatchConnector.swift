@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UserNotifications
 import WatchConnectivity
 import WatchBridgeKit
@@ -8,6 +9,8 @@ import ApprovalsKit
 import PrivilegedAccessKit
 import TenantPulseKit
 import SecurityKit
+import AuthKitMSAL
+import ManagedConfigKit
 
 // The phone's side of the Apple Watch companion, phase 4 step B, spec 3.13.
 //
@@ -31,6 +34,9 @@ final class WatchConnector: NSObject {
     }
 
     private var handlers: Handlers?
+    /// For a request that woke the app in the background before any screen said which
+    /// mode it is in. Dropped as soon as the screens configure.
+    private var headless: Handlers?
     /// False until the app's screens have said which mode it is in. A background launch for
     /// the notification check builds no screens, and must not tell the watch "signed out".
     private var configured = false
@@ -45,6 +51,7 @@ final class WatchConnector: NSObject {
     /// Set when the mode changes: demo, live, or signed out (nil).
     func configure(_ handlers: Handlers?) {
         self.handlers = handlers
+        headless = nil
         configured = true
         Task { await push() }
     }
@@ -65,7 +72,9 @@ final class WatchConnector: NSObject {
     }
 
     fileprivate func handle(_ request: WatchRequest) async -> WatchReply {
-        guard let handlers else {
+        var active = handlers
+        if active == nil, !configured { active = await headlessHandlers() }
+        guard let handlers = active else {
             return WatchReply(outcome: .failed, message: "Sign in on your iPhone first.")
         }
         if let problem = request.problem { return WatchReply(outcome: .failed, message: problem) }
@@ -81,6 +90,28 @@ final class WatchConnector: NSObject {
         var withGlance = reply
         withGlance.glance = await handlers.glance().fitted()
         return withGlance
+    }
+
+    /// A request from the wrist can launch the app in the background, once iOS has put it
+    /// away overnight, with no screen built to configure the watch. Answering "sign in
+    /// first" then made Approve and Activate on the wrist useless until the phone app was
+    /// opened. So the live session is restored the way the background check restores it:
+    /// silently, the organization's tenant pin honoured, the live providers only, and
+    /// nothing at all when nobody is signed in.
+    private func headlessHandlers() async -> Handlers? {
+        if let headless { return headless }
+        guard let manager = await SessionAuth.shared.restoredManager(),
+              let account = await manager.currentAccount else { return nil }
+        if let pin = ManagedConfigStore.read().tenantPin, account.tenantId.lowercased() != pin { return nil }
+        let tenant = await manager.operatingTenantId ?? account.tenantId
+        let session = AppRootModel.LiveSession(auth: manager, tenantId: tenant)
+        let domain = account.username.split(separator: "@").last.map(String.init)
+        let built = WatchHandlers.live(
+            graph: session.graph, privileged: session.privileged, tenant: domain ?? "Your tenant",
+            approvals: session.approvals, tenantPulse: session.tenantPulse, security: session.security,
+            activationEnabled: AppSettings.shared.privilegedActivationEnabled)
+        headless = built
+        return built
     }
 
     /// For a step the wrist cannot do, such as a fresh MFA prompt: the phone says so where
@@ -121,6 +152,10 @@ extension WatchConnector: WCSessionDelegate {
         let box = ReplyBox(replyHandler)
         let request = WatchBridge.decode(WatchRequest.self, from: message)
         Task { @MainActor in
+            // A request can arrive with the app in the background; ask for the time to
+            // finish the Graph work and answer.
+            let background = UIApplication.shared.beginBackgroundTask(withName: "watch-request")
+            defer { UIApplication.shared.endBackgroundTask(background) }
             let reply: WatchReply
             if let request {
                 reply = await self.handle(request)

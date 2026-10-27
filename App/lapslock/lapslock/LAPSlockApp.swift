@@ -90,6 +90,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         // Alerts while the app is open, and a tap routed to its module.
         UNUserNotificationCenter.current().delegate = AlertsNotificationDelegate.shared
+        // Here rather than from a screen: a request from the watch can launch the app in the
+        // background, and no screen is built then.
+        WatchConnector.shared.start()
+        // Apple asks for push registration at every launch; a token can change.
+        RelayCoordinator.shared.registerIfOn()
         return true
     }
 

@@ -132,6 +132,20 @@ public actor MSALAuthManager: AuthManaging {
         get async { pinnedAccount }
     }
 
+    /// The user's object id in `tenantId`, from MSAL's profile of the account in that tenant,
+    /// which it records from that tenant's ID token. A guest in a customer tenant is a
+    /// different object there than at home. Falls back to the home id when MSAL has no
+    /// profile for the tenant, which is what was always sent before.
+    public func objectId(inTenant tenantId: String) async -> String? {
+        guard let account = pinnedAccount else { return nil }
+        let wanted = tenantId.lowercased()
+        guard wanted != account.tenantId.lowercased(),
+              let msalAccount = try? application.account(forIdentifier: account.id),
+              let profile = msalAccount.tenantProfiles?.first(where: { $0.tenantId?.lowercased() == wanted })
+        else { return account.objectId }
+        return (profile.claims?["oid"] as? String) ?? profile.identifier ?? account.objectId
+    }
+
     // MARK: - sign in
 
     @discardableResult
