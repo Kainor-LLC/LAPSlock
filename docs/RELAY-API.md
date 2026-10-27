@@ -396,3 +396,5 @@ Each is marked (verify) where it appears, and none changes what the relay sees:
 - 2026-10-27, draft 1. Written from the 2026-10-25 decision for route D'. One change from
   that decision: HPKE authenticated mode with a sender key the phone pins, instead of base
   mode, so pairing data alone cannot be used to show a fake alert.
+- 2026-10-27, draft 1 accepted in substance. Kainor approved authenticated mode and two-way
+  pairing. Freezing waits on the open items in section 14.
