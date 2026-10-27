@@ -366,6 +366,9 @@ struct ModuleShell: View {
             // device whether an MSP wants the tap to switch tenant as well; today it does not.
             if let raw = note.userInfo?["module"] as? String, let module = AppModule(rawValue: raw), module.isEnabled {
                 selectedModule = module
+                if module == .privilegedAccess, note.userInfo?["tab"] as? String == "approvals" {
+                    privilegedTab = .approvals
+                }
             }
         }
         .background { keyboardShortcuts }

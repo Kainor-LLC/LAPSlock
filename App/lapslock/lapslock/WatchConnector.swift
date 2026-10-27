@@ -85,7 +85,7 @@ final class WatchConnector: NSObject {
         let content = UNMutableNotificationContent()
         content.title = "Finish on your iPhone"
         content.body = body
-        content.userInfo = ["module": "privilegedAccess"]
+        content.userInfo = ["module": "privilegedAccess", "tab": "approvals"]
         let request = UNNotificationRequest(identifier: "watch-finish-" + UUID().uuidString, content: content, trigger: nil)
         try? await UNUserNotificationCenter.current().add(request)
     }

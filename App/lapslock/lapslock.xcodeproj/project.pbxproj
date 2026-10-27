@@ -13,6 +13,9 @@
 		8734CC64302FBA9E0056D699 /* AuthKitMSAL in Frameworks */ = {isa = PBXBuildFile; productRef = 8734CC63302FBA9E0056D699 /* AuthKitMSAL */; };
 		8734CC69302FBB7D0056D699 /* CredentialKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8734CC68302FBB7D0056D699 /* CredentialKit */; };
 		8751889230904259006C9B7C /* OnCallWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 8751889130904259006C9B7C /* OnCallWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8751893030904643006C9B7C /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8751892F30904643006C9B7C /* WidgetKit.framework */; };
+		8751893230904643006C9B7C /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8751893130904643006C9B7C /* SwiftUI.framework */; };
+		8751893D30904644006C9B7C /* OnCallComplicationsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 8751892E30904643006C9B7C /* OnCallComplicationsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8769AA963048CB430093ADD6 /* PrivilegedAccessKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8769AA953048CB430093ADD6 /* PrivilegedAccessKit */; };
 		8769AA9A304A023D0093ADD6 /* SubscriptionKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8769AA99304A023D0093ADD6 /* SubscriptionKit */; };
 		87C94BB73042981F009D768F /* LicensingKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87C94BB63042981F009D768F /* LicensingKit */; };
@@ -31,6 +34,7 @@
 		87CA00013052000100000018 /* ApprovalsKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000017 /* ApprovalsKit */; };
 		87CA0001305200010000001A /* WatchBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000019 /* WatchBridgeKit */; };
 		87CA0001305200010000001C /* WatchBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000001B /* WatchBridgeKit */; };
+		87CA0001305200010000001E /* WatchBridgeKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000001D /* WatchBridgeKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -40,6 +44,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 8751889030904259006C9B7C;
 			remoteInfo = "OnCallWatch Watch App";
+		};
+		8751893B30904644006C9B7C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8734CC48302FB6650056D699 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8751892D30904643006C9B7C;
+			remoteInfo = OnCallComplicationsExtension;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -55,11 +66,25 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8751894230904644006C9B7C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				8751893D30904644006C9B7C /* OnCallComplicationsExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		8734CC50302FB6650056D699 /* lapslock.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = lapslock.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8751889130904259006C9B7C /* OnCallWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OnCallWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		8751892E30904643006C9B7C /* OnCallComplicationsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OnCallComplicationsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8751892F30904643006C9B7C /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		8751893130904643006C9B7C /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		8769AA9B304A08C70093ADD6 /* LAPSlock.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = LAPSlock.storekit; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -70,6 +95,13 @@
 				Info.plist,
 			);
 			target = 8734CC4F302FB6650056D699 /* lapslock */;
+		};
+		8751894130904644006C9B7C /* Exceptions for "OnCallComplications" folder in "OnCallComplicationsExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8751892D30904643006C9B7C /* OnCallComplicationsExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -85,6 +117,14 @@
 		8751889530904259006C9B7C /* OnCallWatch Watch App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "OnCallWatch Watch App";
+			sourceTree = "<group>";
+		};
+		8751893330904643006C9B7C /* OnCallComplications */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8751894130904644006C9B7C /* Exceptions for "OnCallComplications" folder in "OnCallComplicationsExtension" target */,
+			);
+			path = OnCallComplications;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -127,6 +167,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8751892B30904643006C9B7C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				87CA0001305200010000001E /* WatchBridgeKit in Frameworks */,
+				8751893230904643006C9B7C /* SwiftUI.framework in Frameworks */,
+				8751893030904643006C9B7C /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -136,6 +186,7 @@
 				8769AA9B304A08C70093ADD6 /* LAPSlock.storekit */,
 				8734CC52302FB6650056D699 /* lapslock */,
 				8751889530904259006C9B7C /* OnCallWatch Watch App */,
+				8751893330904643006C9B7C /* OnCallComplications */,
 				8734CC62302FBA9E0056D699 /* Frameworks */,
 				8734CC51302FB6650056D699 /* Products */,
 			);
@@ -146,6 +197,7 @@
 			children = (
 				8734CC50302FB6650056D699 /* lapslock.app */,
 				8751889130904259006C9B7C /* OnCallWatch Watch App.app */,
+				8751892E30904643006C9B7C /* OnCallComplicationsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -153,6 +205,8 @@
 		8734CC62302FBA9E0056D699 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				8751892F30904643006C9B7C /* WidgetKit.framework */,
+				8751893130904643006C9B7C /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -213,10 +267,12 @@
 				8751888D30904259006C9B7C /* Sources */,
 				8751888E30904259006C9B7C /* Frameworks */,
 				8751888F30904259006C9B7C /* Resources */,
+				8751894230904644006C9B7C /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				8751893C30904644006C9B7C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				8751889530904259006C9B7C /* OnCallWatch Watch App */,
@@ -228,6 +284,29 @@
 			productName = "OnCallWatch Watch App";
 			productReference = 8751889130904259006C9B7C /* OnCallWatch Watch App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		8751892D30904643006C9B7C /* OnCallComplicationsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8751893E30904644006C9B7C /* Build configuration list for PBXNativeTarget "OnCallComplicationsExtension" */;
+			buildPhases = (
+				8751892A30904643006C9B7C /* Sources */,
+				8751892B30904643006C9B7C /* Frameworks */,
+				8751892C30904643006C9B7C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				8751893330904643006C9B7C /* OnCallComplications */,
+			);
+			name = OnCallComplicationsExtension;
+			packageProductDependencies = (
+				87CA0001305200010000001D /* WatchBridgeKit */,
+			);
+			productName = OnCallComplicationsExtension;
+			productReference = 8751892E30904643006C9B7C /* OnCallComplicationsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -244,6 +323,9 @@
 						LastSwiftMigration = 2660;
 					};
 					8751889030904259006C9B7C = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					8751892D30904643006C9B7C = {
 						CreatedOnToolsVersion = 27.1;
 					};
 				};
@@ -267,6 +349,7 @@
 			targets = (
 				8734CC4F302FB6650056D699 /* lapslock */,
 				8751889030904259006C9B7C /* OnCallWatch Watch App */,
+				8751892D30904643006C9B7C /* OnCallComplicationsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -280,6 +363,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8751888F30904259006C9B7C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8751892C30904643006C9B7C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -303,6 +393,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8751892A30904643006C9B7C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -310,6 +407,11 @@
 			isa = PBXTargetDependency;
 			target = 8751889030904259006C9B7C /* OnCallWatch Watch App */;
 			targetProxy = 8751889330904259006C9B7C /* PBXContainerItemProxy */;
+		};
+		8751893C30904644006C9B7C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8751892D30904643006C9B7C /* OnCallComplicationsExtension */;
+			targetProxy = 8751893B30904644006C9B7C /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -523,6 +625,7 @@
 		875188A030904259006C9B7C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "OnCallWatch Watch App/OnCallWatch.entitlements";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
@@ -555,6 +658,7 @@
 		875188A130904259006C9B7C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "OnCallWatch Watch App/OnCallWatch.entitlements";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
@@ -576,6 +680,72 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		8751893F30904644006C9B7C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = OnCallComplications/OnCallComplications.entitlements;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OnCallComplications/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = OnCallComplications;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslock.watchkitapp.OnCallComplications;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		8751894030904644006C9B7C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = OnCallComplications/OnCallComplications.entitlements;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OnCallComplications/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = OnCallComplications;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslock.watchkitapp.OnCallComplications;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -610,6 +780,15 @@
 			buildConfigurations = (
 				875188A030904259006C9B7C /* Debug */,
 				875188A130904259006C9B7C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8751893E30904644006C9B7C /* Build configuration list for PBXNativeTarget "OnCallComplicationsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8751893F30904644006C9B7C /* Debug */,
+				8751894030904644006C9B7C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -730,6 +909,11 @@
 			productName = ApprovalsKit;
 		};
 		87CA00013052000100000019 /* WatchBridgeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
+			productName = WatchBridgeKit;
+		};
+		87CA0001305200010000001D /* WatchBridgeKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = WatchBridgeKit;

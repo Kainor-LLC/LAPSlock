@@ -174,3 +174,59 @@ public struct WatchReply: Codable, Sendable, Equatable {
         self.glance = glance
     }
 }
+
+// MARK: - complications
+
+/// What a watch face complication shows: counts and one time, never a name. Written by the
+/// watch app when a glance arrives, read by the complication extension, in the App Group
+/// they share on the watch. Nothing here leaves the watch.
+public struct ComplicationSnapshot: Codable, Sendable, Equatable {
+    public var updatedAt: Date
+    public var approvalsWaiting: Int
+    public var degradedServices: Int?
+    public var openIncidents: Int?
+    /// When the soonest-ending active role ends, if any role is time-bound.
+    public var nextRoleEnds: Date?
+    public var isDemo: Bool
+
+    public static let appGroup = "group.com.kainor.lapslock.watch"
+    static let storageKey = "complication.snapshot"
+
+    public init(updatedAt: Date, approvalsWaiting: Int, degradedServices: Int?, openIncidents: Int?, nextRoleEnds: Date?, isDemo: Bool) {
+        self.updatedAt = updatedAt
+        self.approvalsWaiting = approvalsWaiting
+        self.degradedServices = degradedServices
+        self.openIncidents = openIncidents
+        self.nextRoleEnds = nextRoleEnds
+        self.isDemo = isDemo
+    }
+
+    public init(_ glance: WatchGlance) {
+        self.init(updatedAt: glance.updatedAt,
+                  approvalsWaiting: glance.approvals.count,
+                  degradedServices: glance.health.degradedServices,
+                  openIncidents: glance.health.openIncidents,
+                  nextRoleEnds: glance.activeRoles.compactMap(\.endsAt).filter { $0 > glance.updatedAt }.min(),
+                  isDemo: glance.isDemo)
+    }
+
+    /// Something that needs the admin: an approval, a degraded service, an open incident.
+    public var needsAttention: Bool {
+        approvalsWaiting > 0 || (degradedServices ?? 0) > 0 || (openIncidents ?? 0) > 0
+    }
+
+    public func save(to defaults: UserDefaults?) {
+        guard let defaults, let data = try? JSONEncoder().encode(self) else { return }
+        defaults.set(data, forKey: Self.storageKey)
+    }
+
+    public static func load(from defaults: UserDefaults?) -> ComplicationSnapshot? {
+        guard let data = defaults?.data(forKey: storageKey) else { return nil }
+        return try? JSONDecoder().decode(ComplicationSnapshot.self, from: data)
+    }
+
+    /// Signed out: the complication must not keep showing a previous tenant's counts.
+    public static func clear(in defaults: UserDefaults?) {
+        defaults?.removeObject(forKey: storageKey)
+    }
+}

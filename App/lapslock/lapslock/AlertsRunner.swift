@@ -121,6 +121,7 @@ enum AlertsRunner {
         content.body = alert.body
         content.threadIdentifier = alert.threadIdentifier
         content.userInfo = alert.userInfo
+        if let category = alert.categoryIdentifier { content.categoryIdentifier = category }
         // Ordinary kinds: a banner, no sound. Passive was tried first and never shows a
         // banner at all, which reads as "nothing happened". Break-glass: sound, and
         // time-sensitive so it can come through Focus; that level needs its own
@@ -134,6 +135,13 @@ enum AlertsRunner {
 
     /// Asks once, at the moment the admin turns the first switch on. Returns whether
     /// notifications may be shown.
+    /// The one action category: Review, on a PIM approval. Registered at launch.
+    static func registerCategories() {
+        let review = UNNotificationAction(identifier: PlannedAlert.reviewAction, title: "Review", options: [.foreground])
+        let category = UNNotificationCategory(identifier: PlannedAlert.reviewCategory, actions: [review], intentIdentifiers: [])
+        UNUserNotificationCenter.current().setNotificationCategories([category])
+    }
+
     static func requestAuthorization() async -> Bool {
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
@@ -265,9 +273,13 @@ final class AlertsNotificationDelegate: NSObject, UNUserNotificationCenterDelega
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let module = response.notification.request.content.userInfo["module"] as? String else { return }
+        let info = response.notification.request.content.userInfo
+        guard let module = info["module"] as? String else { return }
+        let tab = info["tab"] as? String
         await MainActor.run {
-            NotificationCenter.default.post(name: .openModuleFromAlert, object: nil, userInfo: ["module": module])
+            var route = ["module": module]
+            if let tab { route["tab"] = tab }
+            NotificationCenter.default.post(name: .openModuleFromAlert, object: nil, userInfo: route)
         }
     }
 }

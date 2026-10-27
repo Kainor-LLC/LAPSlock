@@ -875,6 +875,7 @@ struct AppRootView: View {
                 appLock.armAtLaunch(enabled: settings.appLockEffective)
                 root.prepare()
                 WatchConnector.shared.start()
+                AlertsRunner.registerCategories()
                 #if DEBUG
                 // Straight into demo mode for simulator screenshots and UI automation, which
                 // cannot tap the button on the sign-in screen. Debug builds only, and it

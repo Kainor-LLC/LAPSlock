@@ -65,3 +65,29 @@ final class WatchBridgeTests: XCTestCase {
         XCTAssertNil(WatchRequest.activate(eligibleId: "e", reason: "bench work", hours: 8).problem)
     }
 }
+
+final class ComplicationSnapshotTests: XCTestCase {
+    func testTheSnapshotHoldsCountsAndATimeOnly() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let glance = WatchGlance(updatedAt: now, tenant: "contoso.com", isDemo: false,
+                                 health: .init(degradedServices: 2, openIncidents: 0),
+                                 activeRoles: [.init(name: "A", endsAt: now.addingTimeInterval(3600)), .init(name: "B", endsAt: now.addingTimeInterval(600)), .init(name: "C", endsAt: nil)],
+                                 approvals: [.init(id: "1", requester: "Sam", target: "X", duration: nil, reason: nil, askedAt: nil)])
+        let snap = ComplicationSnapshot(glance)
+        XCTAssertEqual(snap.approvalsWaiting, 1)
+        XCTAssertEqual(snap.nextRoleEnds, now.addingTimeInterval(600))
+        XCTAssertTrue(snap.needsAttention)
+        let json = String(data: try JSONEncoder().encode(snap), encoding: .utf8) ?? ""
+        XCTAssertFalse(json.contains("contoso"), "no tenant on the watch face")
+        XCTAssertFalse(json.contains("Sam"), "no names on the watch face")
+    }
+
+    func testSaveLoadAndClear() {
+        let defaults = UserDefaults(suiteName: "complication-test-" + UUID().uuidString)
+        let snap = ComplicationSnapshot(updatedAt: Date(timeIntervalSince1970: 1), approvalsWaiting: 3, degradedServices: nil, openIncidents: 1, nextRoleEnds: nil, isDemo: true)
+        snap.save(to: defaults)
+        XCTAssertEqual(ComplicationSnapshot.load(from: defaults), snap)
+        ComplicationSnapshot.clear(in: defaults)
+        XCTAssertNil(ComplicationSnapshot.load(from: defaults))
+    }
+}

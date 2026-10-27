@@ -1,13 +1,16 @@
 import Foundation
 import Combine
 import WatchConnectivity
+import WidgetKit
 import WatchBridgeKit
 
 /// The watch's state: the latest glance the phone sent, and the requests it sends back.
 /// Nothing is written to the watch's storage; WatchConnectivity keeps the last glance.
 @MainActor
 final class WatchModel: NSObject, ObservableObject {
-    @Published private(set) var glance: WatchGlance?
+    @Published private(set) var glance: WatchGlance? {
+        didSet { updateComplications(glance) }
+    }
     @Published private(set) var sending = false
     @Published private(set) var lastReply: WatchReply?
 
@@ -55,6 +58,17 @@ final class WatchModel: NSObject, ObservableObject {
         if let fresh = WatchBridge.decode(WatchGlance.self, from: context), fresh.v == WatchBridge.version {
             glance = fresh
         }
+    }
+
+    /// Counts for the watch face, or nothing when signed out, then a complication reload.
+    private func updateComplications(_ fresh: WatchGlance?) {
+        let defaults = UserDefaults(suiteName: ComplicationSnapshot.appGroup)
+        if let fresh, !fresh.tenant.isEmpty {
+            ComplicationSnapshot(fresh).save(to: defaults)
+        } else {
+            ComplicationSnapshot.clear(in: defaults)
+        }
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 

@@ -33,6 +33,7 @@ final class AlertPlannerTests: XCTestCase {
         XCTAssertEqual(result.alerts.first?.body, "contoso.com: 1 new break-glass sign-in")
         XCTAssertEqual(result.alerts.first?.timeSensitive, true)
         XCTAssertEqual(result.alerts.first?.userInfo, ["tenantId": tenant, "module": "people"])
+        XCTAssertNil(result.alerts.first?.categoryIdentifier, "only PIM approvals carry an action")
     }
 
     func test_nothingNewMeansNothingPostedAndKindsAreIndependent() {

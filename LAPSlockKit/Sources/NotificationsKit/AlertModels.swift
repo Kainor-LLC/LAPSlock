@@ -130,8 +130,20 @@ public struct PlannedAlert: Sendable, Equatable {
     public var userInfo: [String: String] {
         var info = ["tenantId": tenantId]
         if let moduleId { info["module"] = moduleId }
+        if kind == .pimApproval { info["tab"] = "approvals" }
         return info
     }
+
+    /// The notification category, for the kinds that carry an action. A PIM approval offers
+    /// Review, which opens the requests; it does not offer Approve or Deny, because the
+    /// notification cannot show who is asking or for what (names stay off the lock screen),
+    /// and a decision needs both and a reason.
+    public var categoryIdentifier: String? {
+        kind == .pimApproval ? Self.reviewCategory : nil
+    }
+
+    public static let reviewCategory = "tenantkeep.review"
+    public static let reviewAction = "review"
 }
 
 public enum AlertCopy {
