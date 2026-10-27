@@ -46,7 +46,8 @@ let package = Package(
         .library(name: "NotificationsKit", targets: ["NotificationsKit"]),
         .library(name: "ManagedConfigKit", targets: ["ManagedConfigKit"]),
         .library(name: "UserActionsKit", targets: ["UserActionsKit"]),
-        .library(name: "GroupWritesKit", targets: ["GroupWritesKit"])
+        .library(name: "GroupWritesKit", targets: ["GroupWritesKit"]),
+        .library(name: "ApprovalsKit", targets: ["ApprovalsKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -145,6 +146,7 @@ let package = Package(
         // never CredentialKit; the Temporary Access Pass lives on the credential path.
         .target(name: "UserActionsKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
         .target(name: "GroupWritesKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
+        .target(name: "ApprovalsKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
 
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
@@ -181,6 +183,7 @@ let package = Package(
         .testTarget(name: "NotificationsKitTests", dependencies: ["NotificationsKit"]),
         .testTarget(name: "ManagedConfigKitTests", dependencies: ["ManagedConfigKit"]),
         .testTarget(name: "UserActionsKitTests", dependencies: ["UserActionsKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
-        .testTarget(name: "GroupWritesKitTests", dependencies: ["GroupWritesKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"])
+        .testTarget(name: "GroupWritesKitTests", dependencies: ["GroupWritesKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
+        .testTarget(name: "ApprovalsKitTests", dependencies: ["ApprovalsKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"])
     ]
 )

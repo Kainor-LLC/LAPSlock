@@ -882,6 +882,101 @@
     "timespan"
    ],
    "smoke": null
+  },
+  {
+   "id": "approvals.rolesPending",
+   "kit": "ApprovalsKit",
+   "method": "GET",
+   "version": "v1.0",
+   "requires": [
+    "P2"
+   ],
+   "path": "/roleManagement/directory/roleAssignmentScheduleRequests/filterByCurrentUser",
+   "select": [
+    "id",
+    "approvalId",
+    "status",
+    "justification",
+    "createdDateTime",
+    "principal",
+    "scheduleInfo",
+    "ticketInfo",
+    "roleDefinition"
+   ],
+   "smoke": "/roleManagement/directory/roleAssignmentScheduleRequests/filterByCurrentUser(on='approver')?$filter=status eq 'PendingApproval'&$expand=principal,roleDefinition"
+  },
+  {
+   "id": "approvals.groupsPending",
+   "kit": "ApprovalsKit",
+   "method": "GET",
+   "version": "v1.0",
+   "requires": [
+    "P2"
+   ],
+   "path": "/identityGovernance/privilegedAccess/group/assignmentScheduleRequests/filterByCurrentUser",
+   "select": [
+    "id",
+    "approvalId",
+    "status",
+    "justification",
+    "createdDateTime",
+    "principal",
+    "scheduleInfo",
+    "ticketInfo",
+    "accessId",
+    "group"
+   ],
+   "smoke": "/identityGovernance/privilegedAccess/group/assignmentScheduleRequests/filterByCurrentUser(on='approver')?$filter=status eq 'PendingApproval'&$expand=principal,group"
+  },
+  {
+   "id": "approvals.groupStages",
+   "kit": "ApprovalsKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/identityGovernance/privilegedAccess/group/assignmentApprovals/{id}/stages",
+   "select": [
+    "id",
+    "assignedToMe",
+    "status"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "approvals.groupDecide",
+   "kit": "ApprovalsKit",
+   "method": "PATCH",
+   "version": "v1.0",
+   "path": "/identityGovernance/privilegedAccess/group/assignmentApprovals/{id}/stages/{stageId}",
+   "select": [
+    "reviewResult",
+    "justification"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "approvals.roleSteps",
+   "kit": "ApprovalsKit",
+   "method": "GET",
+   "version": "beta",
+   "path": "/roleManagement/directory/roleAssignmentApprovals/{id}/steps",
+   "select": [
+    "id",
+    "assignedToMe",
+    "status"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "approvals.roleDecide",
+   "kit": "ApprovalsKit",
+   "method": "PATCH",
+   "version": "beta",
+   "path": "/roleManagement/directory/roleAssignmentApprovals/{id}/steps/{stepId}",
+   "select": [
+    "reviewResult",
+    "justification"
+   ],
+   "smoke": null
   }
  ],
  "feeds": [

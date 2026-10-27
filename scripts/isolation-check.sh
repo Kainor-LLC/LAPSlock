@@ -198,6 +198,17 @@ check_module "GroupWritesKit" "Foundation|AuthKit|ActionGateKit|PrivilegedAccess
   "UserActionsKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# ApprovalsKit approves or denies other people's PIM requests. A write module that grants
+# privilege to someone else, so never a credential in its link graph.
+check_module "ApprovalsKit" "Foundation|AuthKit|ActionGateKit|PrivilegedAccessKit" \
+  "CredentialKit" \
+  "InventoryKit" \
+  "LicensingKit" \
+  "SecurityKit" \
+  "UserActionsKit" \
+  "GroupWritesKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \

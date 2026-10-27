@@ -18,6 +18,7 @@ import NotificationsKit
 import ManagedConfigKit
 import UserActionsKit
 import GroupWritesKit
+import ApprovalsKit
 import UserNotifications
 import TenantPulseKit
 import SignInTriageKit
@@ -189,6 +190,7 @@ final class AppRootModel: ObservableObject {
         let deviceActions: DeviceActionsService
         let userActions: UserActionsService
         let groupWrites: GroupWritesService
+        let approvals: ApprovalsService
         /// On the credential path: the pass is a credential.
         let temporaryAccessPass: TemporaryAccessPassService
 
@@ -218,6 +220,7 @@ final class AppRootModel: ObservableObject {
             self.deviceActions = DeviceActionsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.userActions = UserActionsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.groupWrites = GroupWritesService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
+            self.approvals = ApprovalsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.temporaryAccessPass = TemporaryAccessPassService(auth: auth)
         }
 
@@ -844,6 +847,7 @@ final class AppRootModel: ObservableObject {
 private let demoDeviceActions = DemoDeviceActionsProvider()
 private let demoUserActions = DemoUserActionsProvider()
 private let demoGroupWrites = DemoGroupWritesProvider()
+private let demoApprovals = DemoApprovalsProvider()
 
 /// Demo notification choices: in memory, never the Keychain, and never checked in the
 /// background because there is no tenant to check.
@@ -980,7 +984,8 @@ struct AppRootView: View {
                     )
                 },
                 // No account, nothing to activate. The column says so rather than hiding.
-                privilegedColumn: nil
+                privilegedColumn: nil,
+                makeApprovals: { ApprovalsModel(provider: demoApprovals) }
             )
 
         case .live:
@@ -1109,7 +1114,8 @@ struct AppRootView: View {
                     },
                     privilegedColumn: {
                         privilegedAccessView(deviceName: nil, embedded: true)
-                    }
+                    },
+                    makeApprovals: { ApprovalsModel(provider: session.approvals) }
                 )
             } else {
                 // A .live mode with no session shouldn't happen. Recover to signed out

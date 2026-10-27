@@ -53,6 +53,7 @@ SCOPES = [
     "IdentityRiskyUser.Read.All",
     "UserAuthenticationMethod.Read.All",
     "ThreatHunting.Read.All",
+    "PrivilegedAssignmentSchedule.Read.AzureADGroup",
 ]
 
 PAGE = b"""<!doctype html><meta charset="utf-8"><title>Graph watch</title>

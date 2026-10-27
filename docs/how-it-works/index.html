@@ -162,7 +162,9 @@
         <p>If your access is PIM-eligible rather than active, TenantKeep On-Call can request activation without
         you leaving the bench. It reads your organization's own PIM policy first, so it offers only
         the durations your policy permits and tells you up front if a ticket number or additional
-        verification is required.</p>
+        verification is required. Where you approve other people's requests, the Approvals tab
+        shows what is waiting for you, with their reason and ticket, and sends your decision with
+        your own reason, recorded in your tenant's audit log as you.</p>
       </li>
       <li>
         <h3>Work across organizations</h3>
@@ -228,7 +230,9 @@
         <tr>
           <td>PIM role and group scopes</td>
           <td>Only if you enable role activation</td>
-          <td>Reading what you are eligible for and requesting activation. Off by default.</td>
+          <td>Reading what you are eligible for and requesting activation, and, where you are an
+          approver, seeing requests waiting for you and approving or denying them with a reason. The
+          same permissions cover both; approving asks for nothing new. Off by default.</td>
         </tr>
         <tr>
           <td><code>Policy.Read.All</code></td>

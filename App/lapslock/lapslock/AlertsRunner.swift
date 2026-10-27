@@ -7,6 +7,7 @@ import NotificationsKit
 import TenantPulseKit
 import ConditionalAccessKit
 import SignInTriageKit
+import ApprovalsKit
 import SecurityKit
 import ManagedConfigKit
 
@@ -207,6 +208,8 @@ struct AlertSources {
             case .conditionalAccessChange:
                 let policies = try await ConditionalAccessService(graph: graph).policies()
                 return Set(policies.map { $0.id + "|" + String(Int($0.lastChanged?.timeIntervalSince1970 ?? 0)) })
+            case .pimApproval:
+                return Set(try await ApprovalsService(readingWith: graph).pending().map(\.id))
             case .securityIncident:
                 let incidents = try await SecurityService(graph: graph).incidents()
                 return Set(incidents.filter { $0.isOpen && $0.severity == .high }.map(\.id))

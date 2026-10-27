@@ -22,6 +22,7 @@ public enum AlertKind: String, Codable, Sendable, CaseIterable, Identifiable, Co
     case secureScoreDrop
     case conditionalAccessChange
     case securityIncident
+    case pimApproval
 
     public var id: String { rawValue }
 
@@ -39,6 +40,7 @@ public enum AlertKind: String, Codable, Sendable, CaseIterable, Identifiable, Co
         case .secureScoreDrop:         return "Secure Score drops"
         case .conditionalAccessChange: return "Conditional Access changes"
         case .securityIncident:        return "High-severity security incidents"
+        case .pimApproval:             return "PIM approvals waiting for you"
         }
     }
 
@@ -52,6 +54,7 @@ public enum AlertKind: String, Codable, Sendable, CaseIterable, Identifiable, Co
         case .secureScoreDrop:         return "The score falls from one day to the next."
         case .conditionalAccessChange: return "A policy is created or changed."
         case .securityIncident:        return "An open high-severity incident appears."
+        case .pimApproval:             return "Someone asks to activate a role or group you approve."
         }
     }
 
@@ -65,6 +68,7 @@ public enum AlertKind: String, Codable, Sendable, CaseIterable, Identifiable, Co
         case .secureScoreDrop:         return "Secure Score drop"
         case .conditionalAccessChange: return "Conditional Access change"
         case .securityIncident:        return "high-severity incident"
+        case .pimApproval:             return "PIM request waiting for you"
         }
     }
 
@@ -77,6 +81,7 @@ public enum AlertKind: String, Codable, Sendable, CaseIterable, Identifiable, Co
         case .secureScoreDrop:         return "Secure Score drops"
         case .conditionalAccessChange: return "Conditional Access changes"
         case .securityIncident:        return "high-severity incidents"
+        case .pimApproval:             return "PIM requests waiting for you"
         }
     }
 
@@ -87,6 +92,7 @@ public enum AlertKind: String, Codable, Sendable, CaseIterable, Identifiable, Co
         case .breakGlassSignIn:        return "people"
         case .conditionalAccessChange: return "conditionalAccess"
         case .securityIncident:        return "security"
+        case .pimApproval:             return "privilegedAccess"
         }
     }
 

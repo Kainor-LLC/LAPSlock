@@ -9,6 +9,7 @@ import ManagedConfigKit
 import UserActionsKit
 import DeviceActionsKit
 import GroupWritesKit
+import ApprovalsKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -78,7 +79,7 @@ enum AppModule: String, CaseIterable, Identifiable {
     var availableInDemo: Bool {
         switch self {
         case .credentials:       return true
-        case .privilegedAccess:  return false
+        case .privilegedAccess:  return true
         case .people:            return true
         case .tenantPulse:       return true
         case .conditionalAccess: return true
@@ -191,6 +192,15 @@ struct ModuleShell: View {
     /// The privileged access column. Nil in demo, where there is no account to activate
     /// anything for, and the column says so.
     private let privilegedColumn: (() -> PrivilegedAccessView)?
+    @StateObject private var approvalsModel: ApprovalsModel
+    @State private var privilegedTab: PrivilegedTab = .activate
+    @State private var selectedApprovalId: String?
+
+    enum PrivilegedTab: String, CaseIterable, Identifiable {
+        case activate, approvals
+        var id: String { rawValue }
+        var label: String { self == .activate ? "Activate" : "Approvals" }
+    }
 
     @StateObject private var listModel: DeviceListModel
     @StateObject private var policyModel: ConditionalAccessListModel
@@ -252,7 +262,8 @@ struct ModuleShell: View {
         tenantPulse: TenantPulseColumns,
         security: SecurityColumns,
         settingsBuilder: @escaping () -> SettingsView,
-        privilegedColumn: (() -> PrivilegedAccessView)?
+        privilegedColumn: (() -> PrivilegedAccessView)?,
+        makeApprovals: @escaping @MainActor () -> ApprovalsModel
     ) {
         self.isDemo = isDemo
         self.isPro = isPro
@@ -269,6 +280,7 @@ struct ModuleShell: View {
         _triageModel = StateObject(wrappedValue: signInTriage.makeModel())
         _securityModel = StateObject(wrappedValue: security.makeModel())
         _digestModel = StateObject(wrappedValue: security.makeDigestModel())
+        _approvalsModel = StateObject(wrappedValue: makeApprovals())
         _selectedModule = State(initialValue: AppModule.lastUsed)
     }
 
@@ -335,6 +347,7 @@ struct ModuleShell: View {
             selectedPulseItem = nil
             selectedSignInId = nil
             selectedIncidentId = nil
+            selectedApprovalId = nil
             selectedDigestId = nil
             selectedHuntId = nil
             if let module { AppModule.lastUsed = module }
@@ -496,20 +509,47 @@ struct ModuleShell: View {
             securityContent
                 .safeAreaInset(edge: .top) { securityTabPicker }
         case .privilegedAccess?:
+            privilegedContent
+                .safeAreaInset(edge: .top) { privilegedTabPicker }
+        case nil:
+            ContentUnavailableView("Choose a module", systemImage: "square.grid.2x2")
+        }
+    }
+
+    /// Activate (needs a signed-in account) or Approvals, one segmented control above either.
+    @ViewBuilder
+    private var privilegedContent: some View {
+        switch privilegedTab {
+        case .activate:
             if let privilegedColumn {
                 privilegedColumn()
             } else {
                 ContentUnavailableView {
                     Label("Needs a signed-in account", systemImage: "person.badge.key")
                 } description: {
-                    Text("Demo data has no roles to activate. Sign in to use this module.")
+                    Text("Demo data has no roles to activate. The Approvals tab shows sample requests.")
                 }
                 .navigationTitle(AppModule.privilegedAccess.title)
-                .safeAreaInset(edge: .top) { DemoBanner() }
+                .navigationBarTitleDisplayMode(.inline)
             }
-        case nil:
-            ContentUnavailableView("Choose a module", systemImage: "square.grid.2x2")
+        case .approvals:
+            ApprovalsListView(model: approvalsModel, isDemo: isDemo, selection: $selectedApprovalId)
+                .navigationTitle(AppModule.privilegedAccess.title)
+                .navigationBarTitleDisplayMode(.inline)
         }
+    }
+
+    private var privilegedTabPicker: some View {
+        VStack(spacing: 0) {
+            if isDemo { DemoBanner() }
+            Picker("Privileged Access view", selection: $privilegedTab) {
+                ForEach(PrivilegedTab.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+        .background(.bar)
     }
 
     /// Incidents (Pro) or the Threat Digest (free), one segmented control above either.
@@ -689,6 +729,17 @@ struct ModuleShell: View {
                     Text(isPro || isDemo
                          ? "Pick an incident for its alerts, the recommended actions and who was involved."
                          : "Available with Pro.")
+                }
+            }
+        case .privilegedAccess? where privilegedTab == .approvals:
+            if let id = selectedApprovalId, let approval = approvalsModel.approval(id) {
+                ApprovalDetailView(model: approvalsModel, approval: approval)
+                    .id(id)
+            } else {
+                ContentUnavailableView {
+                    Label("PIM Approvals", systemImage: "checkmark.seal")
+                } description: {
+                    Text("Pick a request for who is asking, for what, for how long and why, then approve or deny it with a reason.")
                 }
             }
         case .privilegedAccess?:
