@@ -124,8 +124,18 @@ def resolve(schema, path):
                 return current, coll, None, [walked + ": a key on something that is not a collection"]
             coll = False
             continue
+        if seg in ("$ref", "$count", "$value"):
+            # OData system segments: a reference, a count, a raw value. Nothing to resolve.
+            continue
         if op is not None:
             return current, coll, op, [walked + ": path continues after the operation " + op.get("Name")]
+        if "." in name:
+            # A type cast, such as /memberOf/microsoft.graph.group.
+            cast = schema.full(name)
+            if cast not in schema.types:
+                return current, coll, None, [walked + ": no type named " + name]
+            current = cast
+            continue
         found = schema.member(current, name)
         if found and found[0] == "NavigationProperty":
             current, coll = strip_collection(found[1])

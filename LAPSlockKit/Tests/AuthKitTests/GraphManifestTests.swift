@@ -76,7 +76,7 @@ final class GraphManifestTests: XCTestCase {
 
     func testTheScanCatchesAnUnlistedPath() throws {
         let manifest = try manifestPaths()
-        XCTAssertFalse(manifest.contains { $0.hasPrefix(normalize("/groups/{id}/members")) })
+        XCTAssertFalse(manifest.contains { $0.hasPrefix(normalize("/teams/{id}/channels")) })
         XCTAssertTrue(manifest.contains { $0.hasPrefix(normalize("/v1.0/deviceManagement/managedDevices")) })
     }
 }

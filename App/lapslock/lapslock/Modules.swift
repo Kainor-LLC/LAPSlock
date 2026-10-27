@@ -8,6 +8,7 @@ import ThreatDigestKit
 import ManagedConfigKit
 import UserActionsKit
 import DeviceActionsKit
+import GroupWritesKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -133,6 +134,8 @@ struct PeopleColumns {
     var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
     /// The selected person's state at a glance; nil when user actions are off.
     var snapshot: ((UserActionTarget) async -> PersonSnapshot)? = nil
+    /// The selected person's groups; nil when group changes are off.
+    var makeGroups: ((GroupMember) -> PersonGroupsModel)? = nil
 }
 
 /// What the Tenant pulse module needs from the root, built once per session.
@@ -456,7 +459,8 @@ struct ModuleShell: View {
                     selection: $selectedSignInId,
                     requestConsent: signInTriage.requestConsent,
                     makeUserActions: signInTriage.makeUserActions,
-                    snapshot: signInTriage.snapshot
+                    snapshot: signInTriage.snapshot,
+                    groupsAvailable: signInTriage.makeGroups != nil
                 )
             } else {
                 ProGateView(
@@ -571,6 +575,11 @@ struct ModuleShell: View {
                     makeDeviceActions: signInTriage.makeDeviceActions
                 )
                 .id(user.id)
+            } else if selectedSignInId == PeopleView.groupsSelection, let makeGroups = signInTriage.makeGroups,
+                      let user = triageModel.selectedUser {
+                let member = GroupMember(userId: user.id, label: user.displayName ?? user.userPrincipalName ?? user.id)
+                PersonGroupsView(make: { makeGroups(member) })
+                    .id("groups-" + user.id)
             } else if let id = selectedSignInId, let event = triageModel.signIn(id) {
                 SignInDetailView(event: event, glossary: triageModel.glossary)
                     .id(id)

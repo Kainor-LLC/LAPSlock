@@ -45,7 +45,8 @@ let package = Package(
         .library(name: "DeviceActionsKit", targets: ["DeviceActionsKit"]),
         .library(name: "NotificationsKit", targets: ["NotificationsKit"]),
         .library(name: "ManagedConfigKit", targets: ["ManagedConfigKit"]),
-        .library(name: "UserActionsKit", targets: ["UserActionsKit"])
+        .library(name: "UserActionsKit", targets: ["UserActionsKit"]),
+        .library(name: "GroupWritesKit", targets: ["GroupWritesKit"])
     ],
     dependencies: [
         // MSAL for iOS (official). Pinned; review release notes before bumping.
@@ -143,6 +144,7 @@ let package = Package(
         // User actions: revoke, block, the authentication wipe, risk. Writes for the gate,
         // never CredentialKit; the Temporary Access Pass lives on the credential path.
         .target(name: "UserActionsKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
+        .target(name: "GroupWritesKit", dependencies: ["AuthKit", "ActionGateKit", "PrivilegedAccessKit"]),
 
         // Support diagnostics. Foundation only, and CredentialKit must never import it:
         // diagnostics are recorded by the app layer from typed errors, never from inside
@@ -178,6 +180,7 @@ let package = Package(
         .testTarget(name: "DeviceActionsKitTests", dependencies: ["DeviceActionsKit", "ActionGateKit", "AuthKit"]),
         .testTarget(name: "NotificationsKitTests", dependencies: ["NotificationsKit"]),
         .testTarget(name: "ManagedConfigKitTests", dependencies: ["ManagedConfigKit"]),
-        .testTarget(name: "UserActionsKitTests", dependencies: ["UserActionsKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"])
+        .testTarget(name: "UserActionsKitTests", dependencies: ["UserActionsKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"]),
+        .testTarget(name: "GroupWritesKitTests", dependencies: ["GroupWritesKit", "ActionGateKit", "AuthKit", "PrivilegedAccessKit"])
     ]
 )

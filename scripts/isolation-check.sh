@@ -188,6 +188,16 @@ check_module "UserActionsKit" "Foundation|AuthKit|ActionGateKit|PrivilegedAccess
   "SecurityKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# GroupWritesKit changes who is in a group. A write module, so never a credential in its
+# link graph, in either direction.
+check_module "GroupWritesKit" "Foundation|AuthKit|ActionGateKit|PrivilegedAccessKit" \
+  "CredentialKit" \
+  "InventoryKit" \
+  "LicensingKit" \
+  "SecurityKit" \
+  "UserActionsKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
 # TenantPulseKit reads tenant state. Same cap: it must never be able to see a credential.
 check_module "TenantPulseKit" "Foundation|AuthKit" \
   "CredentialKit" \

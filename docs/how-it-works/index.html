@@ -258,6 +258,18 @@
           Your organization can switch them off through Intune.</td>
         </tr>
         <tr>
+          <td><code>GroupMember.ReadWrite.All</code>, <code>Directory.Read.All</code>,
+          <code>Policy.Read.All</code>, <code>PrivilegedEligibilitySchedule.Read.AzureADGroup</code></td>
+          <td>Only if you enable group changes</td>
+          <td>Adding a person to a group or removing them, never changing the group itself; the
+          narrow membership permission, not <code>Group.ReadWrite.All</code>. The reads check each
+          group before it is offered: what it licenses or grants, whether a Conditional Access
+          policy names it, whether PIM manages it. Role-assignable, dynamic, PIM, synced and mail
+          groups are never changed. By default only groups in your helpdesk administrative unit,
+          with your prefix, or that you own. Off by default; your organization can switch it off
+          or set the scope through Intune.</td>
+        </tr>
+        <tr>
           <td><code>User.ReadBasic.All</code></td>
           <td>When you open People</td>
           <td>Finding a person by name or sign-in address. Names and addresses only.</td>

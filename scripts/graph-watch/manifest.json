@@ -1,113 +1,918 @@
 {
-  "about": "Every Microsoft Graph call TenantKeep On-Call makes, for the daily Graph change watch. A test fails when a Kit adds a Graph path that is not listed here. smoke is the read the live check makes against the Kainor tenant; null means schema check only. requires names the tenant-wide plan a live read needs (P1, P2, Intune, Defender); the live check skips it when GW_TENANT_FEATURES does not list it, and the schema and changelog checks still cover it. Nothing here ever reads a password, a recovery key or a pass. {deviceUserId} in a smoke read is the primary user of a managed device, found at run time, because Intune answers 404 for a person it does not know.",
-  "calls": [
-    {"id": "inventory.devices", "requires": ["Intune"], "kit": "InventoryKit", "method": "GET", "version": "v1.0", "path": "/deviceManagement/managedDevices",
-     "select": ["id","deviceName","managedDeviceName","operatingSystem","osVersion","azureADDeviceId","userPrincipalName","userDisplayName","emailAddress","serialNumber","model","manufacturer","complianceState","lastSyncDateTime"],
-     "smoke": "/deviceManagement/managedDevices?$top=1&$select=id,deviceName,managedDeviceName,operatingSystem,osVersion,azureADDeviceId,userPrincipalName,userDisplayName,emailAddress,serialNumber,model,manufacturer,complianceState,lastSyncDateTime"},
-    {"id": "inventory.userNames", "kit": "InventoryKit", "method": "GET", "version": "v1.0", "path": "/users",
-     "select": ["userPrincipalName","displayName"], "smoke": "/users?$top=1&$select=userPrincipalName,displayName"},
-
-    {"id": "laps.metadata", "kit": "CredentialKit", "method": "GET", "version": "v1.0", "path": "/directory/deviceLocalCredentials/{id}",
-     "select": ["id","deviceName","lastBackupDateTime","refreshDateTime"], "smoke": "/directory/deviceLocalCredentials?$top=1"},
-    {"id": "laps.reveal", "kit": "CredentialKit", "method": "GET", "version": "v1.0", "path": "/directory/deviceLocalCredentials/{id}",
-     "select": ["credentials"], "smoke": null},
-    {"id": "bitlocker.list", "kit": "CredentialKit", "method": "GET", "version": "v1.0", "path": "/informationProtection/bitlocker/recoveryKeys",
-     "select": ["id","createdDateTime","deviceId","volumeType"], "smoke": "/informationProtection/bitlocker/recoveryKeys"},
-    {"id": "bitlocker.key", "kit": "CredentialKit", "method": "GET", "version": "v1.0", "path": "/informationProtection/bitlocker/recoveryKeys/{id}",
-     "select": ["key"], "smoke": null},
-    {"id": "macLaps.reveal", "kit": "CredentialKit", "method": "GET", "version": "beta", "path": "/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail",
-     "smoke": null},
-    {"id": "tap.issue", "kit": "CredentialKit", "method": "POST", "version": "v1.0", "path": "/users/{id}/authentication/temporaryAccessPassMethods",
-     "select": ["temporaryAccessPass","isUsableOnce","lifetimeInMinutes"], "smoke": null},
-
-    {"id": "pim.roleEligibility", "requires": ["P2"], "kit": "PrivilegedAccessKit", "method": "GET", "version": "v1.0", "path": "/roleManagement/directory/roleEligibilitySchedules/filterByCurrentUser",
-     "expand": ["roleDefinition"], "smoke": "/roleManagement/directory/roleEligibilitySchedules/filterByCurrentUser(on='principal')?$expand=roleDefinition"},
-    {"id": "pim.roleActivate", "kit": "PrivilegedAccessKit", "method": "POST", "version": "v1.0", "path": "/roleManagement/directory/roleAssignmentScheduleRequests",
-     "select": ["action","principalId","roleDefinitionId","directoryScopeId","justification","scheduleInfo","ticketInfo"], "smoke": null},
-    {"id": "pim.groupEligibility", "requires": ["P2"], "kit": "PrivilegedAccessKit", "method": "GET", "version": "v1.0", "path": "/identityGovernance/privilegedAccess/group/eligibilitySchedules/filterByCurrentUser",
-     "expand": ["group"], "smoke": "/identityGovernance/privilegedAccess/group/eligibilitySchedules/filterByCurrentUser(on='principal')?$expand=group"},
-    {"id": "pim.groupActivate", "kit": "PrivilegedAccessKit", "method": "POST", "version": "v1.0", "path": "/identityGovernance/privilegedAccess/group/assignmentScheduleRequests",
-     "select": ["action","principalId","groupId","accessId","justification","scheduleInfo"], "smoke": null},
-    {"id": "pim.policy", "requires": ["P2"], "kit": "PrivilegedAccessKit", "method": "GET", "version": "v1.0", "path": "/policies/roleManagementPolicies",
-     "select": ["scopeId","scopeType"], "expand": ["rules"], "smoke": "/policies/roleManagementPolicies?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&$expand=rules&$top=1"},
-
-    {"id": "gate.activeRoles", "requires": ["P2"], "kit": "ActionGateKit", "method": "GET", "version": "v1.0", "path": "/roleManagement/directory/roleAssignmentScheduleInstances/filterByCurrentUser",
-     "select": ["roleDefinitionId","assignmentType","endDateTime"], "smoke": "/roleManagement/directory/roleAssignmentScheduleInstances/filterByCurrentUser(on='principal')?$select=roleDefinitionId,assignmentType,endDateTime"},
-
-    {"id": "people.search", "kit": "SignInTriageKit", "method": "GET", "version": "v1.0", "path": "/users",
-     "select": ["id","displayName","userPrincipalName","mail"], "smoke": "/users?$filter=startswith(displayName,'a')&$select=id,displayName,userPrincipalName,mail&$top=1"},
-    {"id": "people.signIns", "requires": ["P1"], "kit": "SignInTriageKit", "method": "GET", "version": "v1.0", "path": "/auditLogs/signIns",
-     "select": ["id","createdDateTime","userDisplayName","userPrincipalName","userId","appDisplayName","resourceDisplayName","clientAppUsed","ipAddress","location","status","conditionalAccessStatus","appliedConditionalAccessPolicies","deviceDetail","riskLevelAggregated","riskLevelDuringSignIn","riskState","riskDetail","isInteractive","correlationId"],
-     "smoke": "/auditLogs/signIns?$top=1"},
-
-    {"id": "pulse.health", "kit": "TenantPulseKit", "method": "GET", "version": "v1.0", "path": "/admin/serviceAnnouncement/healthOverviews",
-     "select": ["id","service","status"], "smoke": "/admin/serviceAnnouncement/healthOverviews"},
-    {"id": "pulse.issues", "kit": "TenantPulseKit", "method": "GET", "version": "v1.0", "path": "/admin/serviceAnnouncement/issues",
-     "select": ["id","title","service","status","isResolved","startDateTime","impactDescription","classification"], "smoke": "/admin/serviceAnnouncement/issues?$filter=isResolved eq false&$top=1"},
-    {"id": "pulse.messages", "kit": "TenantPulseKit", "method": "GET", "version": "v1.0", "path": "/admin/serviceAnnouncement/messages",
-     "select": ["id","title","services","actionRequiredByDateTime","lastModifiedDateTime","category","isMajorChange"], "smoke": "/admin/serviceAnnouncement/messages?$top=1"},
-    {"id": "pulse.appSecrets", "kit": "TenantPulseKit", "method": "GET", "version": "v1.0", "path": "/applications",
-     "select": ["id","appId","displayName","passwordCredentials","keyCredentials"], "smoke": "/applications?$top=1&$select=id,appId,displayName,passwordCredentials,keyCredentials"},
-    {"id": "pulse.samlCerts", "kit": "TenantPulseKit", "method": "GET", "version": "v1.0", "path": "/servicePrincipals",
-     "select": ["id","displayName","keyCredentials","preferredSingleSignOnMode"], "smoke": "/servicePrincipals?$filter=preferredSingleSignOnMode eq 'saml'&$select=id,displayName,keyCredentials&$top=1"},
-    {"id": "pulse.applePush", "requires": ["Intune"], "kit": "TenantPulseKit", "method": "GET", "version": "v1.0", "path": "/deviceManagement/applePushNotificationCertificate",
-     "select": ["appleIdentifier","expirationDateTime"], "smoke": "/deviceManagement/applePushNotificationCertificate", "smokeAllow": [404]},
-    {"id": "pulse.secureScore", "kit": "TenantPulseKit", "method": "GET", "version": "v1.0", "path": "/security/secureScores",
-     "select": ["currentScore","maxScore","createdDateTime"], "smoke": "/security/secureScores?$top=2"},
-
-    {"id": "ca.policies", "requires": ["P1"], "kit": "ConditionalAccessKit", "method": "GET", "version": "v1.0", "path": "/identity/conditionalAccess/policies",
-     "select": ["id","displayName","state","conditions","grantControls","sessionControls","modifiedDateTime"], "smoke": "/identity/conditionalAccess/policies?$top=1"},
-    {"id": "ca.namedLocations", "requires": ["P1"], "kit": "ConditionalAccessKit", "method": "GET", "version": "v1.0", "path": "/identity/conditionalAccess/namedLocations",
-     "select": ["id","displayName"], "smoke": "/identity/conditionalAccess/namedLocations?$select=id,displayName"},
-    {"id": "ca.resolveIds", "kit": "ConditionalAccessKit", "method": "POST", "version": "v1.0", "path": "/directoryObjects/getByIds", "smoke": null},
-    {"id": "ca.roleTemplates", "kit": "ConditionalAccessKit", "method": "GET", "version": "v1.0", "path": "/directoryRoleTemplates",
-     "select": ["id","displayName"], "smoke": "/directoryRoleTemplates?$select=id,displayName"},
-    {"id": "ca.appNames", "kit": "ConditionalAccessKit", "method": "GET", "version": "v1.0", "path": "/servicePrincipals",
-     "select": ["appId","displayName"], "smoke": "/servicePrincipals?$top=1&$select=appId,displayName"},
-    {"id": "ca.whoChanged", "kit": "ConditionalAccessKit", "method": "GET", "version": "v1.0", "path": "/auditLogs/directoryAudits",
-     "select": ["activityDisplayName","activityDateTime","initiatedBy","targetResources"], "smoke": "/auditLogs/directoryAudits?$top=1"},
-
-    {"id": "security.incidents", "requires": ["Defender"], "kit": "SecurityKit", "method": "GET", "version": "v1.0", "path": "/security/incidents",
-     "select": ["id","displayName","severity","status","lastUpdateDateTime","createdDateTime","assignedTo","classification","incidentWebUrl"], "expand": ["alerts"],
-     "smoke": "/security/incidents?$top=1&$expand=alerts"},
-    {"id": "security.incident", "kit": "SecurityKit", "method": "GET", "version": "v1.0", "path": "/security/incidents/{id}", "expand": ["alerts"], "smoke": null},
-
-    {"id": "device.record", "kit": "DeviceActionsKit", "method": "GET", "version": "v1.0", "path": "/deviceManagement/managedDevices/{id}",
-     "select": ["id","managedDeviceOwnerType","deviceEnrollmentType","managementAgent","enrollmentProfileName","complianceState","lastSyncDateTime","deviceActionResults"], "smoke": null},
-    {"id": "device.sync", "kit": "DeviceActionsKit", "method": "POST", "version": "v1.0", "path": "/deviceManagement/managedDevices/{id}/syncDevice", "smoke": null},
-    {"id": "device.restart", "kit": "DeviceActionsKit", "method": "POST", "version": "v1.0", "path": "/deviceManagement/managedDevices/{id}/rebootNow", "smoke": null},
-    {"id": "device.lock", "kit": "DeviceActionsKit", "method": "POST", "version": "v1.0", "path": "/deviceManagement/managedDevices/{id}/remoteLock", "smoke": null},
-    {"id": "device.locate", "kit": "DeviceActionsKit", "method": "POST", "version": "v1.0", "path": "/deviceManagement/managedDevices/{id}/locateDevice", "smoke": null},
-    {"id": "device.retire", "kit": "DeviceActionsKit", "method": "POST", "version": "v1.0", "path": "/deviceManagement/managedDevices/{id}/retire", "smoke": null},
-    {"id": "device.wipe", "kit": "DeviceActionsKit", "method": "POST", "version": "v1.0", "path": "/deviceManagement/managedDevices/{id}/wipe",
-     "parameters": ["keepEnrollmentData","keepUserData"], "smoke": null},
-    {"id": "device.rotateBitLocker", "kit": "DeviceActionsKit", "method": "POST", "version": "beta", "path": "/deviceManagement/managedDevices/{id}/rotateBitLockerKeys", "smoke": null},
-    {"id": "device.rotateLaps", "kit": "DeviceActionsKit", "method": "POST", "version": "beta", "path": "/deviceManagement/managedDevices/{id}/rotateLocalAdminPassword", "smoke": null},
-
-    {"id": "user.revokeSessions", "kit": "UserActionsKit", "method": "POST", "version": "v1.0", "path": "/users/{id}/revokeSignInSessions", "smoke": null},
-    {"id": "user.blockAllow", "kit": "UserActionsKit", "method": "PATCH", "version": "v1.0", "path": "/users/{id}", "select": ["accountEnabled"], "smoke": null},
-    {"id": "user.state", "kit": "UserActionsKit", "method": "GET", "version": "v1.0", "path": "/users/{id}", "select": ["accountEnabled"], "smoke": "/me?$select=accountEnabled"},
-    {"id": "user.confirmCompromised", "kit": "UserActionsKit", "method": "POST", "version": "v1.0", "path": "/identityProtection/riskyUsers/confirmCompromised", "parameters": ["userIds"], "smoke": null},
-    {"id": "user.dismissRisk", "kit": "UserActionsKit", "method": "POST", "version": "v1.0", "path": "/identityProtection/riskyUsers/dismiss", "parameters": ["userIds"], "smoke": null},
-    {"id": "user.risk", "requires": ["P2"], "kit": "UserActionsKit", "method": "GET", "version": "v1.0", "path": "/identityProtection/riskyUsers/{id}", "select": ["riskLevel"],
-     "smoke": "/identityProtection/riskyUsers?$top=1&$select=riskLevel"},
-    {"id": "user.methods", "kit": "UserActionsKit", "method": "GET", "version": "v1.0", "path": "/users/{id}/authentication/methods", "smoke": "/me/authentication/methods"},
-    {"id": "user.devices", "requires": ["Intune"], "kit": "UserActionsKit", "method": "GET", "version": "v1.0", "path": "/users/{id}/managedDevices",
-     "select": ["id","deviceName","operatingSystem","managedDeviceOwnerType","azureADDeviceId"], "smoke": "/users/{deviceUserId}/managedDevices?$select=id,deviceName,operatingSystem,managedDeviceOwnerType,azureADDeviceId"},
-    {"id": "user.removeAuthenticator", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/microsoftAuthenticatorMethods/{methodId}", "smoke": null},
-    {"id": "user.removePhone", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/phoneMethods/{methodId}", "smoke": null},
-    {"id": "user.removeFido2", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/fido2Methods/{methodId}", "smoke": null},
-    {"id": "user.removeHello", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/windowsHelloForBusinessMethods/{methodId}", "smoke": null},
-    {"id": "user.removeEmail", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/emailMethods/{methodId}", "smoke": null},
-    {"id": "user.removeOath", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/softwareOathMethods/{methodId}", "smoke": null},
-    {"id": "user.removeTap", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/temporaryAccessPassMethods/{methodId}", "smoke": null},
-    {"id": "user.removePlatformCredential", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/platformCredentialMethods/{methodId}", "smoke": null},
-    {"id": "user.removeExternalMfa", "kit": "UserActionsKit", "method": "DELETE", "version": "v1.0", "path": "/users/{id}/authentication/externalAuthenticationMethods/{methodId}", "smoke": null}
-  ],
-  "feeds": [
-    {"id": "digest.kev", "kit": "ThreatDigestKit", "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json", "kind": "json", "keys": ["vulnerabilities"], "itemKeys": ["cveID","vendorProject","product","dateAdded","shortDescription"]},
-    {"id": "digest.msrc", "kit": "ThreatDigestKit", "url": "https://api.msrc.microsoft.com/sug/v2.0/en-US/vulnerability?$top=1", "kind": "json", "keys": ["value"], "itemKeys": ["cveNumber","releaseDate","severity","exploited","publiclyDisclosed"]},
-    {"id": "digest.cisaAlerts", "kit": "ThreatDigestKit", "url": "https://www.cisa.gov/cybersecurity-advisories/alerts.xml", "kind": "rss"},
-    {"id": "digest.cisaAdvisories", "kit": "ThreatDigestKit", "url": "https://www.cisa.gov/cybersecurity-advisories/cybersecurity-advisories.xml", "kind": "rss"}
-  ]
+ "about": "Every Microsoft Graph call TenantKeep On-Call makes, for the daily Graph change watch. A test fails when a Kit adds a Graph path that is not listed here. smoke is the read the live check makes against the Kainor tenant; null means schema check only. requires names the tenant-wide plan a live read needs (P1, P2, Intune, Defender); the live check skips it when GW_TENANT_FEATURES does not list it, and the schema and changelog checks still cover it. Nothing here ever reads a password, a recovery key or a pass. {deviceUserId} in a smoke read is the primary user of a managed device, found at run time, because Intune answers 404 for a person it does not know.",
+ "calls": [
+  {
+   "id": "inventory.devices",
+   "requires": [
+    "Intune"
+   ],
+   "kit": "InventoryKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/deviceManagement/managedDevices",
+   "select": [
+    "id",
+    "deviceName",
+    "managedDeviceName",
+    "operatingSystem",
+    "osVersion",
+    "azureADDeviceId",
+    "userPrincipalName",
+    "userDisplayName",
+    "emailAddress",
+    "serialNumber",
+    "model",
+    "manufacturer",
+    "complianceState",
+    "lastSyncDateTime"
+   ],
+   "smoke": "/deviceManagement/managedDevices?$top=1&$select=id,deviceName,managedDeviceName,operatingSystem,osVersion,azureADDeviceId,userPrincipalName,userDisplayName,emailAddress,serialNumber,model,manufacturer,complianceState,lastSyncDateTime"
+  },
+  {
+   "id": "inventory.userNames",
+   "kit": "InventoryKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/users",
+   "select": [
+    "userPrincipalName",
+    "displayName"
+   ],
+   "smoke": "/users?$top=1&$select=userPrincipalName,displayName"
+  },
+  {
+   "id": "laps.metadata",
+   "kit": "CredentialKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/directory/deviceLocalCredentials/{id}",
+   "select": [
+    "id",
+    "deviceName",
+    "lastBackupDateTime",
+    "refreshDateTime"
+   ],
+   "smoke": "/directory/deviceLocalCredentials?$top=1"
+  },
+  {
+   "id": "laps.reveal",
+   "kit": "CredentialKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/directory/deviceLocalCredentials/{id}",
+   "select": [
+    "credentials"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "bitlocker.list",
+   "kit": "CredentialKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/informationProtection/bitlocker/recoveryKeys",
+   "select": [
+    "id",
+    "createdDateTime",
+    "deviceId",
+    "volumeType"
+   ],
+   "smoke": "/informationProtection/bitlocker/recoveryKeys"
+  },
+  {
+   "id": "bitlocker.key",
+   "kit": "CredentialKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/informationProtection/bitlocker/recoveryKeys/{id}",
+   "select": [
+    "key"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "macLaps.reveal",
+   "kit": "CredentialKit",
+   "method": "GET",
+   "version": "beta",
+   "path": "/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail",
+   "smoke": null
+  },
+  {
+   "id": "tap.issue",
+   "kit": "CredentialKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/temporaryAccessPassMethods",
+   "select": [
+    "temporaryAccessPass",
+    "isUsableOnce",
+    "lifetimeInMinutes"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "pim.roleEligibility",
+   "requires": [
+    "P2"
+   ],
+   "kit": "PrivilegedAccessKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/roleManagement/directory/roleEligibilitySchedules/filterByCurrentUser",
+   "expand": [
+    "roleDefinition"
+   ],
+   "smoke": "/roleManagement/directory/roleEligibilitySchedules/filterByCurrentUser(on='principal')?$expand=roleDefinition"
+  },
+  {
+   "id": "pim.roleActivate",
+   "kit": "PrivilegedAccessKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/roleManagement/directory/roleAssignmentScheduleRequests",
+   "select": [
+    "action",
+    "principalId",
+    "roleDefinitionId",
+    "directoryScopeId",
+    "justification",
+    "scheduleInfo",
+    "ticketInfo"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "pim.groupEligibility",
+   "requires": [
+    "P2"
+   ],
+   "kit": "PrivilegedAccessKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/identityGovernance/privilegedAccess/group/eligibilitySchedules/filterByCurrentUser",
+   "expand": [
+    "group"
+   ],
+   "smoke": "/identityGovernance/privilegedAccess/group/eligibilitySchedules/filterByCurrentUser(on='principal')?$expand=group"
+  },
+  {
+   "id": "pim.groupActivate",
+   "kit": "PrivilegedAccessKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/identityGovernance/privilegedAccess/group/assignmentScheduleRequests",
+   "select": [
+    "action",
+    "principalId",
+    "groupId",
+    "accessId",
+    "justification",
+    "scheduleInfo"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "pim.policy",
+   "requires": [
+    "P2"
+   ],
+   "kit": "PrivilegedAccessKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/policies/roleManagementPolicies",
+   "select": [
+    "scopeId",
+    "scopeType"
+   ],
+   "expand": [
+    "rules"
+   ],
+   "smoke": "/policies/roleManagementPolicies?$filter=scopeId eq '/' and scopeType eq 'DirectoryRole'&$expand=rules&$top=1"
+  },
+  {
+   "id": "gate.activeRoles",
+   "requires": [
+    "P2"
+   ],
+   "kit": "ActionGateKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/roleManagement/directory/roleAssignmentScheduleInstances/filterByCurrentUser",
+   "select": [
+    "roleDefinitionId",
+    "assignmentType",
+    "endDateTime"
+   ],
+   "smoke": "/roleManagement/directory/roleAssignmentScheduleInstances/filterByCurrentUser(on='principal')?$select=roleDefinitionId,assignmentType,endDateTime"
+  },
+  {
+   "id": "people.search",
+   "kit": "SignInTriageKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/users",
+   "select": [
+    "id",
+    "displayName",
+    "userPrincipalName",
+    "mail"
+   ],
+   "smoke": "/users?$filter=startswith(displayName,'a')&$select=id,displayName,userPrincipalName,mail&$top=1"
+  },
+  {
+   "id": "people.signIns",
+   "requires": [
+    "P1"
+   ],
+   "kit": "SignInTriageKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/auditLogs/signIns",
+   "select": [
+    "id",
+    "createdDateTime",
+    "userDisplayName",
+    "userPrincipalName",
+    "userId",
+    "appDisplayName",
+    "resourceDisplayName",
+    "clientAppUsed",
+    "ipAddress",
+    "location",
+    "status",
+    "conditionalAccessStatus",
+    "appliedConditionalAccessPolicies",
+    "deviceDetail",
+    "riskLevelAggregated",
+    "riskLevelDuringSignIn",
+    "riskState",
+    "riskDetail",
+    "isInteractive",
+    "correlationId"
+   ],
+   "smoke": "/auditLogs/signIns?$top=1"
+  },
+  {
+   "id": "pulse.health",
+   "kit": "TenantPulseKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/admin/serviceAnnouncement/healthOverviews",
+   "select": [
+    "id",
+    "service",
+    "status"
+   ],
+   "smoke": "/admin/serviceAnnouncement/healthOverviews"
+  },
+  {
+   "id": "pulse.issues",
+   "kit": "TenantPulseKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/admin/serviceAnnouncement/issues",
+   "select": [
+    "id",
+    "title",
+    "service",
+    "status",
+    "isResolved",
+    "startDateTime",
+    "impactDescription",
+    "classification"
+   ],
+   "smoke": "/admin/serviceAnnouncement/issues?$filter=isResolved eq false&$top=1"
+  },
+  {
+   "id": "pulse.messages",
+   "kit": "TenantPulseKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/admin/serviceAnnouncement/messages",
+   "select": [
+    "id",
+    "title",
+    "services",
+    "actionRequiredByDateTime",
+    "lastModifiedDateTime",
+    "category",
+    "isMajorChange"
+   ],
+   "smoke": "/admin/serviceAnnouncement/messages?$top=1"
+  },
+  {
+   "id": "pulse.appSecrets",
+   "kit": "TenantPulseKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/applications",
+   "select": [
+    "id",
+    "appId",
+    "displayName",
+    "passwordCredentials",
+    "keyCredentials"
+   ],
+   "smoke": "/applications?$top=1&$select=id,appId,displayName,passwordCredentials,keyCredentials"
+  },
+  {
+   "id": "pulse.samlCerts",
+   "kit": "TenantPulseKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/servicePrincipals",
+   "select": [
+    "id",
+    "displayName",
+    "keyCredentials",
+    "preferredSingleSignOnMode"
+   ],
+   "smoke": "/servicePrincipals?$filter=preferredSingleSignOnMode eq 'saml'&$select=id,displayName,keyCredentials&$top=1"
+  },
+  {
+   "id": "pulse.applePush",
+   "requires": [
+    "Intune"
+   ],
+   "kit": "TenantPulseKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/deviceManagement/applePushNotificationCertificate",
+   "select": [
+    "appleIdentifier",
+    "expirationDateTime"
+   ],
+   "smoke": "/deviceManagement/applePushNotificationCertificate",
+   "smokeAllow": [
+    404
+   ]
+  },
+  {
+   "id": "pulse.secureScore",
+   "kit": "TenantPulseKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/security/secureScores",
+   "select": [
+    "currentScore",
+    "maxScore",
+    "createdDateTime"
+   ],
+   "smoke": "/security/secureScores?$top=2"
+  },
+  {
+   "id": "ca.policies",
+   "requires": [
+    "P1"
+   ],
+   "kit": "ConditionalAccessKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/identity/conditionalAccess/policies",
+   "select": [
+    "id",
+    "displayName",
+    "state",
+    "conditions",
+    "grantControls",
+    "sessionControls",
+    "modifiedDateTime"
+   ],
+   "smoke": "/identity/conditionalAccess/policies?$top=1"
+  },
+  {
+   "id": "ca.namedLocations",
+   "requires": [
+    "P1"
+   ],
+   "kit": "ConditionalAccessKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/identity/conditionalAccess/namedLocations",
+   "select": [
+    "id",
+    "displayName"
+   ],
+   "smoke": "/identity/conditionalAccess/namedLocations?$select=id,displayName"
+  },
+  {
+   "id": "ca.resolveIds",
+   "kit": "ConditionalAccessKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/directoryObjects/getByIds",
+   "smoke": null
+  },
+  {
+   "id": "ca.roleTemplates",
+   "kit": "ConditionalAccessKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/directoryRoleTemplates",
+   "select": [
+    "id",
+    "displayName"
+   ],
+   "smoke": "/directoryRoleTemplates?$select=id,displayName"
+  },
+  {
+   "id": "ca.appNames",
+   "kit": "ConditionalAccessKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/servicePrincipals",
+   "select": [
+    "appId",
+    "displayName"
+   ],
+   "smoke": "/servicePrincipals?$top=1&$select=appId,displayName"
+  },
+  {
+   "id": "ca.whoChanged",
+   "kit": "ConditionalAccessKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/auditLogs/directoryAudits",
+   "select": [
+    "activityDisplayName",
+    "activityDateTime",
+    "initiatedBy",
+    "targetResources"
+   ],
+   "smoke": "/auditLogs/directoryAudits?$top=1"
+  },
+  {
+   "id": "security.incidents",
+   "requires": [
+    "Defender"
+   ],
+   "kit": "SecurityKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/security/incidents",
+   "select": [
+    "id",
+    "displayName",
+    "severity",
+    "status",
+    "lastUpdateDateTime",
+    "createdDateTime",
+    "assignedTo",
+    "classification",
+    "incidentWebUrl"
+   ],
+   "expand": [
+    "alerts"
+   ],
+   "smoke": "/security/incidents?$top=1&$expand=alerts"
+  },
+  {
+   "id": "security.incident",
+   "kit": "SecurityKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/security/incidents/{id}",
+   "expand": [
+    "alerts"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "device.record",
+   "kit": "DeviceActionsKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/deviceManagement/managedDevices/{id}",
+   "select": [
+    "id",
+    "managedDeviceOwnerType",
+    "deviceEnrollmentType",
+    "managementAgent",
+    "enrollmentProfileName",
+    "complianceState",
+    "lastSyncDateTime",
+    "deviceActionResults"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "device.sync",
+   "kit": "DeviceActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/deviceManagement/managedDevices/{id}/syncDevice",
+   "smoke": null
+  },
+  {
+   "id": "device.restart",
+   "kit": "DeviceActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/deviceManagement/managedDevices/{id}/rebootNow",
+   "smoke": null
+  },
+  {
+   "id": "device.lock",
+   "kit": "DeviceActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/deviceManagement/managedDevices/{id}/remoteLock",
+   "smoke": null
+  },
+  {
+   "id": "device.locate",
+   "kit": "DeviceActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/deviceManagement/managedDevices/{id}/locateDevice",
+   "smoke": null
+  },
+  {
+   "id": "device.retire",
+   "kit": "DeviceActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/deviceManagement/managedDevices/{id}/retire",
+   "smoke": null
+  },
+  {
+   "id": "device.wipe",
+   "kit": "DeviceActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/deviceManagement/managedDevices/{id}/wipe",
+   "parameters": [
+    "keepEnrollmentData",
+    "keepUserData"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "device.rotateBitLocker",
+   "kit": "DeviceActionsKit",
+   "method": "POST",
+   "version": "beta",
+   "path": "/deviceManagement/managedDevices/{id}/rotateBitLockerKeys",
+   "smoke": null
+  },
+  {
+   "id": "device.rotateLaps",
+   "kit": "DeviceActionsKit",
+   "method": "POST",
+   "version": "beta",
+   "path": "/deviceManagement/managedDevices/{id}/rotateLocalAdminPassword",
+   "smoke": null
+  },
+  {
+   "id": "user.revokeSessions",
+   "kit": "UserActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/users/{id}/revokeSignInSessions",
+   "smoke": null
+  },
+  {
+   "id": "user.blockAllow",
+   "kit": "UserActionsKit",
+   "method": "PATCH",
+   "version": "v1.0",
+   "path": "/users/{id}",
+   "select": [
+    "accountEnabled"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "user.state",
+   "kit": "UserActionsKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/users/{id}",
+   "select": [
+    "accountEnabled"
+   ],
+   "smoke": "/me?$select=accountEnabled"
+  },
+  {
+   "id": "user.confirmCompromised",
+   "kit": "UserActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/identityProtection/riskyUsers/confirmCompromised",
+   "parameters": [
+    "userIds"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "user.dismissRisk",
+   "kit": "UserActionsKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/identityProtection/riskyUsers/dismiss",
+   "parameters": [
+    "userIds"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "user.risk",
+   "requires": [
+    "P2"
+   ],
+   "kit": "UserActionsKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/identityProtection/riskyUsers/{id}",
+   "select": [
+    "riskLevel"
+   ],
+   "smoke": "/identityProtection/riskyUsers?$top=1&$select=riskLevel"
+  },
+  {
+   "id": "user.methods",
+   "kit": "UserActionsKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/methods",
+   "smoke": "/me/authentication/methods"
+  },
+  {
+   "id": "user.devices",
+   "requires": [
+    "Intune"
+   ],
+   "kit": "UserActionsKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/users/{id}/managedDevices",
+   "select": [
+    "id",
+    "deviceName",
+    "operatingSystem",
+    "managedDeviceOwnerType",
+    "azureADDeviceId"
+   ],
+   "smoke": "/users/{deviceUserId}/managedDevices?$select=id,deviceName,operatingSystem,managedDeviceOwnerType,azureADDeviceId"
+  },
+  {
+   "id": "user.removeAuthenticator",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/microsoftAuthenticatorMethods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "user.removePhone",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/phoneMethods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "user.removeFido2",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/fido2Methods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "user.removeHello",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/windowsHelloForBusinessMethods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "user.removeEmail",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/emailMethods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "user.removeOath",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/softwareOathMethods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "user.removeTap",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/temporaryAccessPassMethods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "user.removePlatformCredential",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/platformCredentialMethods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "user.removeExternalMfa",
+   "kit": "UserActionsKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/users/{id}/authentication/externalAuthenticationMethods/{methodId}",
+   "smoke": null
+  },
+  {
+   "id": "groups.memberOf",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/users/{id}/memberOf/microsoft.graph.group",
+   "select": [
+    "id",
+    "displayName",
+    "description",
+    "groupTypes",
+    "isAssignableToRole",
+    "securityEnabled",
+    "mailEnabled",
+    "onPremisesSyncEnabled",
+    "resourceProvisioningOptions",
+    "assignedLicenses"
+   ],
+   "smoke": "/me/memberOf/microsoft.graph.group?$select=id,displayName,description,groupTypes,isAssignableToRole,securityEnabled,mailEnabled,onPremisesSyncEnabled,resourceProvisioningOptions,assignedLicenses"
+  },
+  {
+   "id": "groups.search",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/groups",
+   "select": [
+    "id",
+    "displayName",
+    "description",
+    "groupTypes",
+    "isAssignableToRole",
+    "securityEnabled",
+    "mailEnabled",
+    "onPremisesSyncEnabled",
+    "resourceProvisioningOptions",
+    "assignedLicenses"
+   ],
+   "smoke": "/groups?$search=\"displayName:a\"&$select=id,displayName,description,groupTypes,isAssignableToRole,securityEnabled,mailEnabled,onPremisesSyncEnabled,resourceProvisioningOptions,assignedLicenses&$top=1&$count=true"
+  },
+  {
+   "id": "groups.helpdeskUnit",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/directory/administrativeUnits",
+   "select": [
+    "id",
+    "displayName"
+   ],
+   "smoke": "/directory/administrativeUnits?$select=id,displayName&$top=1"
+  },
+  {
+   "id": "groups.helpdeskUnitGroups",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/directory/administrativeUnits/{id}/members/microsoft.graph.group",
+   "select": [
+    "id"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "groups.owned",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/me/ownedObjects/microsoft.graph.group",
+   "select": [
+    "id"
+   ],
+   "smoke": "/me/ownedObjects/microsoft.graph.group?$select=id"
+  },
+  {
+   "id": "groups.conditionalAccess",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/identity/conditionalAccess/policies",
+   "requires": [
+    "P1"
+   ],
+   "select": [
+    "displayName",
+    "state",
+    "conditions"
+   ],
+   "smoke": "/identity/conditionalAccess/policies?$select=displayName,state,conditions&$top=1"
+  },
+  {
+   "id": "groups.pim",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/identityGovernance/privilegedAccess/group/eligibilitySchedules",
+   "requires": [
+    "P2"
+   ],
+   "select": [
+    "id",
+    "groupId"
+   ],
+   "smoke": "/identityGovernance/privilegedAccess/group/eligibilitySchedules?$filter=groupId eq '00000000-0000-0000-0000-000000000000'&$top=1"
+  },
+  {
+   "id": "groups.appAccess",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/groups/{id}/appRoleAssignments",
+   "select": [
+    "id"
+   ],
+   "smoke": null
+  },
+  {
+   "id": "groups.memberCount",
+   "kit": "GroupWritesKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/groups/{id}/members/$count",
+   "smoke": null
+  },
+  {
+   "id": "groups.addMember",
+   "kit": "GroupWritesKit",
+   "method": "POST",
+   "version": "v1.0",
+   "path": "/groups/{id}/members/$ref",
+   "smoke": null
+  },
+  {
+   "id": "groups.removeMember",
+   "kit": "GroupWritesKit",
+   "method": "DELETE",
+   "version": "v1.0",
+   "path": "/groups/{id}/members/{userId}/$ref",
+   "smoke": null
+  }
+ ],
+ "feeds": [
+  {
+   "id": "digest.kev",
+   "kit": "ThreatDigestKit",
+   "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+   "kind": "json",
+   "keys": [
+    "vulnerabilities"
+   ],
+   "itemKeys": [
+    "cveID",
+    "vendorProject",
+    "product",
+    "dateAdded",
+    "shortDescription"
+   ]
+  },
+  {
+   "id": "digest.msrc",
+   "kit": "ThreatDigestKit",
+   "url": "https://api.msrc.microsoft.com/sug/v2.0/en-US/vulnerability?$top=1",
+   "kind": "json",
+   "keys": [
+    "value"
+   ],
+   "itemKeys": [
+    "cveNumber",
+    "releaseDate",
+    "severity",
+    "exploited",
+    "publiclyDisclosed"
+   ]
+  },
+  {
+   "id": "digest.cisaAlerts",
+   "kit": "ThreatDigestKit",
+   "url": "https://www.cisa.gov/cybersecurity-advisories/alerts.xml",
+   "kind": "rss"
+  },
+  {
+   "id": "digest.cisaAdvisories",
+   "kit": "ThreatDigestKit",
+   "url": "https://www.cisa.gov/cybersecurity-advisories/cybersecurity-advisories.xml",
+   "kind": "rss"
+  }
+ ]
 }

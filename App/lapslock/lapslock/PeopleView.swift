@@ -165,6 +165,7 @@ struct PeopleView: View {
     /// Selection values for the person's own rows; every other value is a sign-in id.
     static let actionsSelection = "person.actions"
     static let leaverSelection = "person.leaver"
+    static let groupsSelection = "person.groups"
 
     @ObservedObject var model: SignInTriageModel
     let isDemo: Bool
@@ -174,6 +175,8 @@ struct PeopleView: View {
     var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
     /// The person's state at a glance. Nil when user actions are off.
     var snapshot: ((UserActionTarget) async -> PersonSnapshot)? = nil
+    /// Whether group changes are on, for the Groups row.
+    var groupsAvailable = false
 
     @State private var isRequestingConsent = false
     @State private var consentMessage: String?
@@ -195,7 +198,7 @@ struct PeopleView: View {
         .task(id: snapshotKey) { await loadSnapshot() }
         .onChange(of: selection) { old, _ in
             // Back from the actions: what was done shows in the state lines.
-            if old == Self.actionsSelection || old == Self.leaverSelection { snapshotTick += 1 }
+            if old == Self.actionsSelection || old == Self.leaverSelection || old == Self.groupsSelection { snapshotTick += 1 }
         }
         .searchable(text: $model.searchText, prompt: "Name or sign-in address")
         .refreshable { model.reloadSignIns() }
@@ -259,13 +262,15 @@ struct PeopleView: View {
         personSnapshot = await snapshot(target)
     }
 
-    /// The person at a glance, then their actions and leaver checklist. Only when user
-    /// actions are on: the state lines read on the same scopes.
+    /// The person at a glance, then their actions, leaver checklist and groups. The state
+    /// lines and actions need user actions on; the groups row needs group changes on.
     @ViewBuilder
     private var personSection: some View {
-        if makeUserActions != nil, let user = model.selectedUser {
+        if makeUserActions != nil || groupsAvailable, let user = model.selectedUser {
             Section {
-                if let snap = personSnapshot {
+                if snapshot == nil {
+                    EmptyView()
+                } else if let snap = personSnapshot {
                     let lines: [(String, String, Bool)] = [
                         snap.signInLine.map { ($0, snap.accountEnabled == false ? "nosign" : "checkmark.circle", snap.accountEnabled == false) },
                         snap.riskLine.map { ($0, "exclamationmark.triangle", snap.isRisky) },
@@ -280,11 +285,18 @@ struct PeopleView: View {
                 } else {
                     HStack(spacing: 8) { ProgressView(); Text("Reading their account").font(.footnote).foregroundStyle(.secondary) }
                 }
-                NavigationLink(value: Self.actionsSelection) {
-                    Label("Actions", systemImage: "person.badge.shield.checkmark")
+                if makeUserActions != nil {
+                    NavigationLink(value: Self.actionsSelection) {
+                        Label("Actions", systemImage: "person.badge.shield.checkmark")
+                    }
+                    NavigationLink(value: Self.leaverSelection) {
+                        Label("Leaver Checklist", systemImage: "checklist")
+                    }
                 }
-                NavigationLink(value: Self.leaverSelection) {
-                    Label("Leaver Checklist", systemImage: "checklist")
+                if groupsAvailable {
+                    NavigationLink(value: Self.groupsSelection) {
+                        Label("Groups", systemImage: "person.2.square.stack")
+                    }
                 }
             } header: {
                 Text(user.displayName ?? user.userPrincipalName ?? "")

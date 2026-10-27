@@ -4,6 +4,7 @@ import NotificationsKit
 import ManagedConfigKit
 import Combine
 import AuthKit
+import GroupWritesKit
 import CredentialKit
 import DiagnosticsKit
 import LicensingKit
@@ -73,6 +74,34 @@ final class AppSettings: ObservableObject {
 
     var userActionsEffective: Bool { userActionsEnabled && !ManagedConfigStore.read().isDisabled("userActions") }
 
+    /// Whether group membership changes are enabled. Off by default; the organization can
+    /// force them off, or set the scope to none.
+    @Published var groupWritesEnabled: Bool {
+        didSet { UserDefaults.standard.set(groupWritesEnabled, forKey: Keys.groupWrites) }
+    }
+
+    /// Tagged or all, for a deployment without managed configuration. Tagged by default.
+    @Published var groupWriteMode: GroupWriteMode {
+        didSet { UserDefaults.standard.set(groupWriteMode.rawValue, forKey: Keys.groupWriteMode) }
+    }
+
+    /// The rules in force: the organization's when its configuration sets the scope, this
+    /// device's otherwise. The administrative unit and prefix come only from configuration.
+    var groupWritePolicy: GroupWritePolicy {
+        let config = ManagedConfigStore.read()
+        let mode: GroupWriteMode
+        if config.appliedKeys.contains("groupWrite.scope") {
+            mode = GroupWriteMode(rawValue: config.groupWriteScope.rawValue) ?? .tagged
+        } else {
+            mode = groupWriteMode == .all ? .all : .tagged
+        }
+        return GroupWritePolicy(mode: mode, prefix: config.groupWritePrefix, administrativeUnit: config.groupWriteAdministrativeUnit)
+    }
+
+    var groupWritesEffective: Bool {
+        groupWritesEnabled && !ManagedConfigStore.read().isDisabled("groupWrites") && groupWritePolicy.mode != .none
+    }
+
     @Published var appearance: AppearancePreference {
         didSet { UserDefaults.standard.set(appearance.rawValue, forKey: Keys.appearance) }
     }
@@ -81,6 +110,8 @@ final class AppSettings: ObservableObject {
         static let rotation = "settings.bitLockerRotationEnabled"
         static let deviceActions = "settings.deviceActionsEnabled"
         static let userActions = "settings.userActionsEnabled"
+        static let groupWrites = "settings.groupWritesEnabled"
+        static let groupWriteMode = "settings.groupWriteMode"
         static let privilegedActivation = "settings.privilegedActivationEnabled"
         static let userNames = "settings.userNamesEnabled"
         static let appLock = "settings.appLockEnabled"
@@ -90,6 +121,8 @@ final class AppSettings: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
         self.userActionsEnabled = defaults.bool(forKey: Keys.userActions)
+        self.groupWritesEnabled = defaults.bool(forKey: Keys.groupWrites)
+        self.groupWriteMode = GroupWriteMode(rawValue: defaults.string(forKey: Keys.groupWriteMode) ?? "") ?? .tagged
         self.deviceActionsEnabled = defaults.object(forKey: Keys.deviceActions) as? Bool
             ?? defaults.bool(forKey: Keys.rotation)
         self.privilegedActivationEnabled = UserDefaults.standard.bool(forKey: Keys.privilegedActivation)
@@ -133,6 +166,8 @@ struct SettingsView: View {
     let requestDeviceActionsConsent: () async -> String?
     /// Requests consent for the user action scopes. Nil in demo.
     var requestUserActionsConsent: (() async -> String?)? = nil
+    /// Requests consent for the group membership scopes. Nil in demo.
+    var requestGroupWritesConsent: (() async -> String?)? = nil
     let isDemo: Bool
     /// The shift log, for export and clear. Nil when signed out.
     var shiftLog: (any ShiftLogging)? = nil
@@ -235,6 +270,7 @@ struct SettingsView: View {
                     }
                     deviceActionsSection
                     userActionsSection
+                    groupWritesSection
                     privilegedAccessSection
                     shiftLogSection
                     macOSSection
@@ -546,6 +582,94 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - group changes
+
+    @State private var groupWritesError: String?
+    @State private var isRequestingGroupWrites = false
+    @State private var confirmingAllGroups = false
+
+    @ViewBuilder
+    private var groupWritesSection: some View {
+        let config = managed.config
+        if config.isDisabled("groupWrites") || (config.appliedKeys.contains("groupWrite.scope") && config.groupWriteScope == .none) {
+            Section {
+                Text("Your organization has turned off group changes in this app.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } header: {
+                Text("Group Changes")
+            }
+        } else {
+            Section {
+                Toggle("Allow group changes", isOn: Binding(
+                    get: { settings.groupWritesEnabled },
+                    set: { newValue in
+                        if newValue { Task { await enableGroupWrites() } } else {
+                            settings.groupWritesEnabled = false
+                            groupWritesError = nil
+                        }
+                    }))
+                    .disabled(isRequestingGroupWrites)
+                if isRequestingGroupWrites {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Requesting permission…").font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                if let groupWritesError {
+                    Text(groupWritesError).font(.footnote).foregroundStyle(.red)
+                }
+                if settings.groupWritesEnabled {
+                    if config.appliedKeys.contains("groupWrite.scope") {
+                        LabeledContent("Which groups", value: config.groupWriteScope == .all ? "All, set by your organization" : "Helpdesk, set by your organization")
+                    } else {
+                        Picker("Which groups", selection: Binding(
+                            get: { settings.groupWriteMode },
+                            set: { mode in
+                                if mode == .all { confirmingAllGroups = true } else { settings.groupWriteMode = .tagged }
+                            })) {
+                            Text("Helpdesk").tag(GroupWriteMode.tagged)
+                            Text("All").tag(GroupWriteMode.all)
+                        }
+                    }
+                }
+            } header: {
+                Text("Group Changes")
+            } footer: {
+                Text(groupWritesFooter)
+            }
+            .alert("Allow changes to any group?", isPresented: $confirmingAllGroups) {
+                Button("Allow all groups", role: .destructive) { settings.groupWriteMode = .all }
+                Button("Keep helpdesk groups", role: .cancel) {}
+            } message: {
+                Text("Your role still limits what you can change. Role-assignable, dynamic, PIM, synced and mail groups stay off limits, and a group a Conditional Access policy names needs its name typed back.")
+            }
+        }
+    }
+
+    private var groupWritesFooter: String {
+        let policy = settings.groupWritePolicy
+        let helpdesk = "groups in the " + policy.administrativeUnit + " administrative unit" + (policy.prefix.map { ", groups whose names start " + $0 } ?? "") + ", and groups you own"
+        return "Off by default. Turning this on asks Microsoft Entra ID for permission to change group membership, never the groups themselves. "
+            + "Helpdesk means " + helpdesk + ". It appears as Groups on a person's page in People, and every change shows what the group grants before it is sent."
+    }
+
+    private func enableGroupWrites() async {
+        groupWritesError = nil
+        guard let requestGroupWritesConsent else {
+            settings.groupWritesEnabled = true
+            groupWritesError = "Demo mode: no permission was actually requested."
+            return
+        }
+        isRequestingGroupWrites = true
+        defer { isRequestingGroupWrites = false }
+        if let error = await requestGroupWritesConsent() {
+            settings.groupWritesEnabled = false
+            groupWritesError = error
+        } else {
+            settings.groupWritesEnabled = true
+        }
+    }
+
     private func enableDeviceActions() async {
         consentError = nil
         if isDemo {
@@ -604,7 +728,7 @@ struct SettingsView: View {
             } header: {
                 Text("Shift Log")
             } footer: {
-                Text("Every device action requested from this app, with the time, the device, the outcome and Microsoft's request id. On this device only; the tenant audit log is authoritative.")
+                Text("Every device, user and group action requested from this app, with the time, the target, the outcome and Microsoft's request id. On this device only; the tenant audit log is authoritative. Demo mode keeps its own log, not this one.")
             }
             .task { await refreshShiftLog(shiftLog, tenant: tenant) }
         }

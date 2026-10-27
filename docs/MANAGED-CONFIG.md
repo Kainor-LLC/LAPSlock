@@ -20,7 +20,7 @@ app under Settings, Managed by Your Organization, so a typo is visible instead o
 | `tenant.pin` | string | your tenant ID, a GUID | none | The app works only in this tenant. An account from any other tenant is signed straight back out, and the MSP organization switcher is not offered |
 | `appLock.required` | boolean, or the strings `true` and `false` | `true`, `false` | `false` | Face ID (or the passcode) to open the app, and the switch in Settings is replaced by "Required" |
 | `breakGlass.upns` | string array, or a comma-separated string | sign-in addresses | none | Emergency access accounts watched by the break-glass notification for your own tenant, added to any the user lists |
-| `groupWrite.scope` | string | `tagged`, `all`, `none` | `tagged` | Which groups the helpdesk may change membership of, when group changes ship |
+| `groupWrite.scope` | string | `tagged`, `all`, `none` | `tagged` | Which groups the helpdesk may change membership of. `tagged`: the administrative unit, the prefix and groups the admin owns, and a group a Conditional Access policy names is left alone. `all`: any group the admin's role covers, and a Conditional Access group needs its name typed back. `none`: group changes off. Role-assignable, dynamic, PIM, synced and mail groups are never changed in any mode. Set here, it replaces the in-app choice |
 | `groupWrite.administrativeUnit` | string | an administrative unit's name | `Helpdesk Managed Groups` | The unit whose groups count as helpdesk-managed under `tagged` |
 | `groupWrite.prefix` | string | a short prefix such as `HD-` | none | Groups whose name starts with it count as helpdesk-managed under `tagged` |
 

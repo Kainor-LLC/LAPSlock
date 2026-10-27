@@ -17,6 +17,7 @@ import DeviceActionsKit
 import NotificationsKit
 import ManagedConfigKit
 import UserActionsKit
+import GroupWritesKit
 import UserNotifications
 import TenantPulseKit
 import SignInTriageKit
@@ -186,6 +187,7 @@ final class AppRootModel: ObservableObject {
         let actionRunner: ActionRunner
         let deviceActions: DeviceActionsService
         let userActions: UserActionsService
+        let groupWrites: GroupWritesService
         /// On the credential path: the pass is a credential.
         let temporaryAccessPass: TemporaryAccessPassService
 
@@ -213,6 +215,7 @@ final class AppRootModel: ObservableObject {
             self.actionRunner = runner
             self.deviceActions = DeviceActionsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.userActions = UserActionsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
+            self.groupWrites = GroupWritesService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.temporaryAccessPass = TemporaryAccessPassService(auth: auth)
         }
 
@@ -799,6 +802,11 @@ final class AppRootModel: ObservableObject {
     }
 
     /// The user action scopes together, the first time user actions are turned on.
+    func requestGroupWritesConsent() async -> String? {
+        await requestConsent(scopes: GroupWriteScopes.module,
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to change group membership. An Entra administrator needs to grant it.")
+    }
+
     func requestUserActionsConsent() async -> String? {
         await requestConsent(scopes: UserActionScopes.module,
                              deniedMessage: "Your organization hasn't approved permission for TenantKeep to change people's sign-in. An Entra administrator needs to grant it.")
@@ -828,6 +836,7 @@ final class AppRootModel: ObservableObject {
 /// devices.
 private let demoDeviceActions = DemoDeviceActionsProvider()
 private let demoUserActions = DemoUserActionsProvider()
+private let demoGroupWrites = DemoGroupWritesProvider()
 
 /// Demo notification choices: in memory, never the Keychain, and never checked in the
 /// background because there is no tenant to check.
@@ -929,6 +938,14 @@ struct AppRootView: View {
                         : nil,
                     snapshot: AppSettings.shared.userActionsEffective
                         ? { target in await demoUserActions.snapshot(of: target) }
+                        : nil,
+                    makeGroups: AppSettings.shared.groupWritesEffective
+                        ? { member in
+                            // The demo groups use the HD- prefix, so a reviewer sees an allowed change.
+                            let policy = AppSettings.shared.groupWritePolicy
+                            return PersonGroupsModel(member: member, provider: demoGroupWrites,
+                                                     policy: GroupWritePolicy(mode: policy.mode, prefix: policy.prefix ?? "HD-", administrativeUnit: policy.administrativeUnit))
+                        }
                         : nil
                 ),
                 tenantPulse: TenantPulseColumns(
@@ -1040,6 +1057,9 @@ struct AppRootView: View {
                             : nil,
                         snapshot: AppSettings.shared.userActionsEffective
                             ? { target in await session.userActions.snapshot(of: target) }
+                            : nil,
+                        makeGroups: AppSettings.shared.groupWritesEffective
+                            ? { member in PersonGroupsModel(member: member, provider: session.groupWrites, policy: AppSettings.shared.groupWritePolicy) }
                             : nil
                     ),
                     tenantPulse: TenantPulseColumns(
@@ -1056,6 +1076,7 @@ struct AppRootView: View {
                             settings: AppSettings.shared,
                             requestDeviceActionsConsent: { await root.requestDeviceActionsConsent() },
                             requestUserActionsConsent: { await root.requestUserActionsConsent() },
+                            requestGroupWritesConsent: { await root.requestGroupWritesConsent() },
                             isDemo: false,
                             shiftLog: session.shiftLog,
                             shiftLogTenantId: root.operatingTenantId ?? root.signedInTenantId,
