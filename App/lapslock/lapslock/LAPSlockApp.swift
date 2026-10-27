@@ -923,6 +923,9 @@ struct AppRootView: View {
                     makeModel: { SignInTriageModel(provider: DemoSignInTriageProvider()) },
                     makeUserActions: AppSettings.shared.userActionsEffective
                         ? { target in UserActionsModel(target: target, provider: demoUserActions, tapIssuer: DemoTemporaryAccessPassService()) }
+                        : nil,
+                    makeDeviceActions: AppSettings.shared.deviceActionsEffective
+                        ? { target in DeviceActionsModel(target: target, provider: demoDeviceActions) }
                         : nil
                 ),
                 tenantPulse: TenantPulseColumns(
@@ -1028,6 +1031,9 @@ struct AppRootView: View {
                         requestConsent: { await root.requestSignInTriageConsent() },
                         makeUserActions: AppSettings.shared.userActionsEffective
                             ? { target in UserActionsModel(target: target, provider: session.userActions, tapIssuer: session.temporaryAccessPass) }
+                            : nil,
+                        makeDeviceActions: AppSettings.shared.deviceActionsEffective
+                            ? { target in DeviceActionsModel(target: target, provider: session.deviceActions) }
                             : nil
                     ),
                     tenantPulse: TenantPulseColumns(

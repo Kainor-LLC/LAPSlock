@@ -6,6 +6,7 @@ import CredentialKit
 import PlatformSecurity
 import PrivilegedAccessKit
 import ManagedConfigKit
+import DeviceActionsKit
 
 // User actions. Spec section 3.5. Opened from the person in Sign-in Triage.
 //
@@ -32,6 +33,13 @@ final class UserActionsModel: ObservableObject {
     @Published private(set) var undoing: UserActionKind?
     @Published private(set) var undoRemaining = 0
     /// The pass, while on screen. Masked text only ever leaves this through the copy button.
+    /// For the leaver checklist: what each user action came to, and what was skipped.
+    @Published private(set) var results: [UserActionKind: LeaverStepStatus] = [:]
+    @Published var skipped: Set<LeaverStep> = []
+    @Published var deviceOutcomes: [String: String] = [:]
+    @Published private(set) var devices: [UserDevice] = []
+    @Published private(set) var devicesError: String?
+    @Published private(set) var devicesLoaded = false
     @Published private(set) var passVisible = false
     @Published private(set) var passSecondsLeft = 0
     private var pass: SensitiveValue?
@@ -53,6 +61,35 @@ final class UserActionsModel: ObservableObject {
 
     func load() async {
         lastEntry = await provider.lastLogEntry(userId: target.userId)
+    }
+
+    func loadDevices() async {
+        guard !devicesLoaded else { return }
+        defer { devicesLoaded = true }
+        do {
+            devices = try await provider.devices(of: target)
+            devicesError = nil
+        } catch {
+            devicesError = "Couldn't list this person's devices."
+        }
+    }
+
+    func status(of step: LeaverStep) -> LeaverStepStatus {
+        if skipped.contains(step) { return .skipped }
+        if let kind = step.action { return results[kind] ?? .pending }
+        if step == .devices {
+            if devices.isEmpty && devicesError == nil { return .pending }
+            return deviceOutcomes.isEmpty ? .pending : .done(deviceOutcomes.count == 1 ? "1 device" : "\(deviceOutcomes.count) devices")
+        }
+        return .pending
+    }
+
+    func summary() -> String {
+        LeaverSummary.text(
+            person: target,
+            statuses: LeaverStep.allCases.map { ($0, status(of: $0)) },
+            devices: deviceOutcomes.sorted { $0.key < $1.key }.map { ($0.key, $0.value) },
+            at: Date())
     }
 
     func tapped(_ kind: UserActionKind) {
@@ -226,7 +263,8 @@ final class UserActionsModel: ObservableObject {
         hidePass()
         if let copied { SecureClipboard.clearIfHolding(copied) }
         copied = nil
-        Task { await PendingActions.shared.cancel(target.userId) }
+        // The person's countdown and any device countdown started from the checklist.
+        Task { await PendingActions.shared.cancelAll() }
     }
 
     // MARK: - helpers
@@ -249,6 +287,7 @@ final class UserActionsModel: ObservableObject {
     private func handle(_ outcome: ActionOutcome, kind: UserActionKind) {
         switch outcome {
         case .requested:
+            results[kind] = .done(kind.successCopy)
             if kind == .authenticationWipe, let result = wipeResult {
                 var text = "Removed: " + (result.removed.isEmpty ? "nothing" : result.removed.joined(separator: ", ")) + "."
                 if !result.kept.isEmpty { text += " Kept: " + result.kept.joined(separator: ", ") + "." }
@@ -260,16 +299,19 @@ final class UserActionsModel: ObservableObject {
         case .needsActivation(let eligible):
             eligibleForActivation = eligible
             errorMessage = "Your role for this isn't active. Activate it, then try again."
+            results[kind] = .failed("role not active")
         case .notAuthorized(let eligible):
             eligibleForActivation = eligible
             errorMessage = eligible.isEmpty
                 ? "Your account can't do this to this person. Admins can only be changed by a higher role."
                 : "Your account can't do this yet. Activate an eligible role, then try again."
+            results[kind] = .failed("not authorized")
         case .challenged(let challenge):
             pendingChallenge = (kind, challenge)
             errorMessage = "Microsoft wants a fresh sign-in step before changing this person's account."
         case .failed(let failure):
             errorMessage = failure.description
+            results[kind] = .failed(failure.description)
         }
     }
 }
@@ -277,18 +319,37 @@ final class UserActionsModel: ObservableObject {
 struct UserActionsSheet: View {
     @StateObject private var model: UserActionsModel
     var activate: (() -> Void)?
+    /// Device actions for the leaver checklist's devices step; nil when they are off.
+    var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @State private var mode: Mode = .actions
 
-    init(make: @escaping () -> UserActionsModel, activate: (() -> Void)? = nil) {
+    enum Mode: String, CaseIterable, Identifiable {
+        case actions, leaver
+        var id: String { rawValue }
+        var label: String { self == .actions ? "Actions" : "Leaver Checklist" }
+    }
+
+    init(make: @escaping () -> UserActionsModel, activate: (() -> Void)? = nil, makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil) {
         _model = StateObject(wrappedValue: make())
         self.activate = activate
+        self.makeDeviceActions = makeDeviceActions
     }
 
     var body: some View {
         NavigationStack {
             List {
+                Picker("View", selection: $mode) {
+                    ForEach(Mode.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .listRowBackground(Color.clear)
                 if model.passVisible { passSection }
+                if mode == .leaver {
+                    if let pending = model.undoing { Section { undoRow(pending) } }
+                    leaverSections
+                } else {
                 Section {
                     if let pending = model.undoing { undoRow(pending) }
                     ForEach(model.kinds) { kind in
@@ -328,7 +389,9 @@ struct UserActionsSheet: View {
                 } footer: {
                     Text("Each action is made as you, with your role, and recorded in your tenant's audit log by Microsoft and in the shift log here. A Temporary Access Pass is never written to the shift log or anywhere else.")
                 }
+                }
             }
+            .task(id: mode) { if mode == .leaver { await model.loadDevices() } }
             .navigationTitle("User Actions")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -356,6 +419,119 @@ struct UserActionsSheet: View {
             if phase != .active { model.hidePass() }
             if phase == .background { Task { await PendingActions.shared.cancelAll() } }
         }
+    }
+
+    // MARK: - leaver checklist
+
+    @ViewBuilder
+    private var leaverSections: some View {
+        Section {
+            ForEach([LeaverStep.blockSignIn, .revokeSessions, .removeMethods]) { step in
+                leaverActionRow(step)
+            }
+        } header: {
+            Text("Leaver Checklist for " + model.target.label)
+        } footer: {
+            Text("In order, each with its usual confirmation. Skip what does not apply; everything you do is in the shift log and the tenant audit log.")
+        }
+        Section {
+            if !model.devicesLoaded && model.devicesError == nil {
+                HStack(spacing: 8) { ProgressView(); Text("Finding their devices").font(.footnote).foregroundStyle(.secondary) }
+            } else if !model.devices.isEmpty, let makeDeviceActions {
+                ForEach(model.devices) { device in
+                    LeaverDeviceRow(device: device, make: makeDeviceActions) { outcome in
+                        model.deviceOutcomes[device.label] = outcome
+                    }
+                }
+            } else if makeDeviceActions == nil {
+                Text("Turn on device actions in Settings to retire or wipe from here.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else if let error = model.devicesError {
+                Text(error).font(.footnote).foregroundStyle(.secondary)
+            } else {
+                Text("No devices list this person as their primary user.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            skipToggle(.devices)
+        } header: {
+            Text("Retire or Wipe Their Devices")
+        } footer: {
+            Text(LeaverStep.devices.detail)
+        }
+        Section {
+            ForEach([LeaverStep.mailbox, .privilegedAccess]) { step in
+                VStack(alignment: .leading, spacing: 4) {
+                    if let url = step.portal {
+                        Link(destination: url) { Label(step.title, systemImage: "arrow.up.right.square") }
+                    }
+                    Text(step.detail).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("In the Admin Centers")
+        }
+        Section {
+            Button {
+                UIPasteboard.general.string = model.summary()
+                summaryCopied = true
+            } label: {
+                Label(summaryCopied ? "Summary copied" : "Copy summary for the ticket", systemImage: "doc.on.clipboard")
+            }
+        } footer: {
+            Text("What was done, skipped and left, with the time. No credentials.")
+        }
+    }
+
+    @State private var summaryCopied = false
+
+    private func leaverActionRow(_ step: LeaverStep) -> some View {
+        let status = model.status(of: step)
+        return HStack(alignment: .top, spacing: 12) {
+            statusIcon(status)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(step.title).font(.body.weight(.medium))
+                Text(step.detail).font(.caption).foregroundStyle(.secondary)
+                if case .failed(let why) = status {
+                    Text(why).font(.caption).foregroundStyle(.red)
+                }
+            }
+            Spacer()
+            if let kind = step.action {
+                if case .pending = status {
+                    Menu {
+                        Button(kind.title) { model.tapped(kind) }
+                        Button("Skip") { model.skipped.insert(step) }
+                    } label: {
+                        Text(model.working == kind ? "Working" : "Run")
+                    }
+                    .disabled(model.working != nil || model.undoing != nil)
+                } else if case .skipped = status {
+                    Button("Undo skip") { model.skipped.remove(step) }.buttonStyle(.borderless)
+                } else if case .failed = status {
+                    Button("Retry") { model.tapped(kind) }.buttonStyle(.borderless)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func skipToggle(_ step: LeaverStep) -> some View {
+        Toggle("Skip this step", isOn: Binding(
+            get: { model.skipped.contains(step) },
+            set: { if $0 { model.skipped.insert(step) } else { model.skipped.remove(step) } }))
+            .font(.footnote)
+    }
+
+    private func statusIcon(_ status: LeaverStepStatus) -> some View {
+        let (name, color): (String, Color) = {
+            switch status {
+            case .pending: return ("circle", .secondary)
+            case .done:    return ("checkmark.circle.fill", .green)
+            case .skipped: return ("arrow.uturn.forward.circle", .secondary)
+            case .failed:  return ("exclamationmark.circle.fill", .red)
+            }
+        }()
+        return Image(systemName: name).foregroundStyle(color).accessibilityLabel(status.word)
     }
 
     private var passSection: some View {
@@ -430,5 +606,83 @@ struct UserActionsSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+/// One of the person's devices in the leaver checklist: Retire and Wipe through the device
+/// actions' own flow, with their ownership rules, typed name, Face ID and countdown.
+struct LeaverDeviceRow: View {
+    let device: UserDevice
+    @StateObject private var model: DeviceActionsModel
+    let report: (String) -> Void
+    @State private var appeared = Date()
+
+    init(device: UserDevice, make: @escaping (DeviceActionTarget) -> DeviceActionsModel, report: @escaping (String) -> Void) {
+        self.device = device
+        self.report = report
+        let platform: DeviceActionTarget.Platform = {
+            let os = (device.operatingSystem ?? "").lowercased()
+            if os.contains("windows") { return .windows }
+            if os.contains("mac") { return .macOS }
+            if os.contains("ios") || os.contains("ipad") { return .iOS }
+            if os.contains("android") { return .android }
+            return .other
+        }()
+        let target = DeviceActionTarget(managedDeviceId: device.id, deviceName: device.label, platform: platform,
+                                        ownerType: device.managedDeviceOwnerType, hasEntraIdentity: device.hasEntraIdentity)
+        _model = StateObject(wrappedValue: make(target))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(device.label).font(.body.monospaced())
+                Spacer()
+                Text(DeviceRecord.words(device.managedDeviceOwnerType) ?? "").font(.caption).foregroundStyle(.secondary)
+            }
+            if let pending = model.undoing {
+                HStack {
+                    Text(pending.title + ", sending in \(model.undoRemaining) s").font(.caption).monospacedDigit()
+                    Spacer()
+                    Button("Send now") { model.sendNow() }.buttonStyle(.borderless)
+                    Button("Undo") { model.undo() }.buttonStyle(.borderedProminent)
+                }
+                .accessibilityElement(children: .contain)
+            } else {
+                HStack(spacing: 16) {
+                    ForEach([DeviceActionKind.retire, .wipe]) { kind in
+                        let reason = model.reason(for: kind)
+                        Button(kind.title) { model.tapped(kind) }
+                            .buttonStyle(.bordered)
+                            .disabled(reason != nil || model.working != nil)
+                            .accessibilityHint(reason ?? kind.confirmation)
+                    }
+                    if let reason = model.reason(for: .wipe) {
+                        Text(reason).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            if let note = model.note { Text(note).font(.caption).foregroundStyle(.secondary) }
+            if let error = model.errorMessage { Text(error).font(.caption).foregroundStyle(.red) }
+        }
+        .padding(.vertical, 4)
+        .task { await model.load() }
+        .onChange(of: model.lastEntry) { _, entry in
+            // Only a retire or wipe made from this checklist counts, not the device's history.
+            guard let entry, entry.at >= appeared,
+                  [DeviceActionKind.retire.actionId, DeviceActionKind.wipe.actionId].contains(entry.actionId) else { return }
+            report(entry.actionTitle.lowercased() + " " + entry.outcome)
+        }
+        .confirmationDialog(model.confirming.map(\.title) ?? "",
+                            isPresented: Binding(get: { model.confirming != nil }, set: { if !$0 { model.confirming = nil } }),
+                            titleVisibility: .visible) {
+            if let kind = model.confirming {
+                Button(kind.title) { model.confirmed(kind) }
+                Button("Cancel", role: .cancel) { model.confirming = nil }
+            }
+        }
+        .sheet(item: $model.destructive) { kind in
+            DestructiveActionSheet(model: model, kind: kind)
+        }
     }
 }

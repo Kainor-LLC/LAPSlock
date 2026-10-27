@@ -251,6 +251,130 @@ public struct AuthenticationWipeResult: Sendable, Equatable {
     }
 }
 
+/// A device the person is the primary user of, for the leaver checklist.
+public struct UserDevice: Sendable, Equatable, Identifiable, Decodable {
+    public let id: String
+    public let deviceName: String?
+    public let operatingSystem: String?
+    public let managedDeviceOwnerType: String?
+    public let azureADDeviceId: String?
+
+    public init(id: String, deviceName: String?, operatingSystem: String?, managedDeviceOwnerType: String?, azureADDeviceId: String?) {
+        self.id = id
+        self.deviceName = deviceName
+        self.operatingSystem = operatingSystem
+        self.managedDeviceOwnerType = managedDeviceOwnerType
+        self.azureADDeviceId = azureADDeviceId
+    }
+
+    public var label: String { deviceName ?? id }
+
+    /// The all-zeros id Intune uses for "none" counts as no Entra identity.
+    public var hasEntraIdentity: Bool {
+        guard let value = azureADDeviceId, !value.isEmpty else { return false }
+        return value != "00000000-0000-0000-0000-000000000000"
+    }
+}
+
+/// The leaver checklist's steps, in order. Spec 8a and D8. Each runs the action it names
+/// through its usual tier; the two that Graph cannot do as designed are links.
+public enum LeaverStep: String, CaseIterable, Sendable, Identifiable {
+    case blockSignIn
+    case revokeSessions
+    case removeMethods
+    case devices
+    case mailbox
+    case privilegedAccess
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .blockSignIn:      return "Block sign-in"
+        case .revokeSessions:   return "Revoke sessions"
+        case .removeMethods:    return "Remove all sign-in methods"
+        case .devices:          return "Retire or wipe their devices"
+        case .mailbox:          return "Hand over the mailbox"
+        case .privilegedAccess: return "Remove privileged access"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .blockSignIn:      return "First, so nothing new starts while the rest runs."
+        case .revokeSessions:   return "Ends what is already signed in."
+        case .removeMethods:    return "Authenticator, phone, keys. The password stays, and sign-in is blocked anyway."
+        case .devices:          return "Corporate devices can be wiped; personal ones retired."
+        case .mailbox:          return "Converting to a shared mailbox or forwarding is done in the Exchange admin center; it is not in Microsoft Graph."
+        case .privilegedAccess: return "PIM eligibility and group ownership are removed in the Entra admin center."
+        }
+    }
+
+    /// The user action a step runs, when it is one.
+    public var action: UserActionKind? {
+        switch self {
+        case .blockSignIn:    return .blockSignIn
+        case .revokeSessions: return .revokeSessions
+        case .removeMethods:  return .authenticationWipe
+        default:              return nil
+        }
+    }
+
+    public var portal: URL? {
+        switch self {
+        case .mailbox:          return URL(string: "https://admin.exchange.microsoft.com/#/mailboxes")
+        case .privilegedAccess: return URL(string: "https://entra.microsoft.com/#view/Microsoft_Azure_PIMCommon/CommonMenuBlade/~/quickStart")
+        default:                return nil
+        }
+    }
+}
+
+public enum LeaverStepStatus: Sendable, Equatable {
+    case pending
+    case done(String)
+    case skipped
+    case failed(String)
+
+    public var word: String {
+        switch self {
+        case .pending:          return "not done"
+        case .done:             return "done"
+        case .skipped:          return "skipped"
+        case .failed:           return "failed"
+        }
+    }
+}
+
+/// The text a leaver checklist leaves behind for the ticket: what was done, what was not,
+/// and when. Never a credential; nothing in a step's status could hold one.
+public enum LeaverSummary {
+    public static func text(person: UserActionTarget, statuses: [(LeaverStep, LeaverStepStatus)], devices: [(String, String)], at: Date) -> String {
+        let stamp: String = {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = TimeZone(identifier: "UTC")
+            f.dateFormat = "yyyy-MM-dd HH:mm'Z'"
+            return f.string(from: at)
+        }()
+        var lines = ["Leaver checklist for " + person.label + " (" + person.userPrincipalName + ")", "Recorded " + stamp + " from TenantKeep On-Call", ""]
+        for (step, status) in statuses {
+            var line = "- " + step.title + ": " + status.word
+            switch status {
+            case .done(let detail) where !detail.isEmpty: line += " (" + detail + ")"
+            case .failed(let detail): line += " (" + detail + ")"
+            default: break
+            }
+            lines.append(line)
+            if step == .devices {
+                for (name, outcome) in devices { lines.append("    " + name + ": " + outcome) }
+            }
+        }
+        lines.append("")
+        lines.append("The tenant audit log is authoritative.")
+        return lines.joined(separator: "\n")
+    }
+}
+
 public protocol UserActionsProviding: Sendable {
     func run(_ kind: UserActionKind, on target: UserActionTarget) async -> ActionOutcome
     func resume(_ kind: UserActionKind, on target: UserActionTarget, satisfying challenge: ClaimsChallenge) async -> ActionOutcome
@@ -260,6 +384,8 @@ public protocol UserActionsProviding: Sendable {
     func checkRoles(_ kind: UserActionKind, on target: UserActionTarget) async -> ActionOutcome?
     func logOffGate(_ kind: UserActionKind, on target: UserActionTarget, outcome: ActionOutcome) async
     func lastLogEntry(userId: String) async -> ShiftLogEntry?
+    /// Devices the person is the primary user of.
+    func devices(of target: UserActionTarget) async throws -> [UserDevice]
 }
 
 public actor UserActionsService: UserActionsProviding {
@@ -357,6 +483,15 @@ public actor UserActionsService: UserActionsProviding {
         let tenant = await tenantId()
         return await log.entries(tenantId: tenant).first { $0.targetId == userId }
     }
+
+    /// GET /users/{id}/managedDevices, on the device-read scope consented at sign-in.
+    public func devices(of target: UserActionTarget) async throws -> [UserDevice] {
+        let request = GraphRequest(path: "/users/" + target.userId + "/managedDevices",
+                                   template: "/users/{id}/managedDevices",
+                                   query: [URLQueryItem(name: "$select", value: "id,deviceName,operatingSystem,managedDeviceOwnerType,azureADDeviceId")],
+                                   scopes: ["DeviceManagementManagedDevices.Read.All"])
+        return try await graph.collection(UserDevice.self, from: request, maxPages: 2).items
+    }
 }
 
 /// Demo: every action succeeds after a pause and lands in an in-memory log; the person has
@@ -419,6 +554,14 @@ public actor DemoUserActionsProvider: UserActionsProviding {
         await log.append(ShiftLogEntry(at: Date(), tenantId: Self.tenant, actionId: "user", actionTitle: title,
                                        targetLabel: target.userPrincipalName, targetId: target.userId,
                                        outcome: "requested", requestId: "demo"))
+    }
+
+    public func devices(of target: UserActionTarget) async throws -> [UserDevice] {
+        try? await Task.sleep(for: .milliseconds(300))
+        return [
+            UserDevice(id: "demo-w-003", deviceName: "LT-FIELD-207", operatingSystem: "Windows", managedDeviceOwnerType: "company", azureADDeviceId: "demo-entra-003"),
+            UserDevice(id: "demo-w-008", deviceName: "WS-ENG-041", operatingSystem: "Windows", managedDeviceOwnerType: "personal", azureADDeviceId: "demo-entra-008")
+        ]
     }
 
     public var shiftLog: any ShiftLogging { log }

@@ -81,4 +81,34 @@ final class UserActionsTests: XCTestCase {
         let last = await demo.lastLogEntry(userId: "u-1")
         XCTAssertEqual(last?.actionTitle, "Remove all sign-in methods")
     }
+
+    func test_leaverStepsInOrderWithActionsAndLinks() {
+        XCTAssertEqual(LeaverStep.allCases.map(\.action), [.blockSignIn, .revokeSessions, .authenticationWipe, nil, nil, nil])
+        XCTAssertNotNil(LeaverStep.mailbox.portal)
+        XCTAssertNotNil(LeaverStep.privilegedAccess.portal)
+        XCTAssertNil(LeaverStep.devices.portal)
+        for step in LeaverStep.allCases { XCTAssertFalse(step.detail.contains("\u{2014}")) }
+    }
+
+    func test_leaverSummaryForTheTicket() {
+        let text = LeaverSummary.text(
+            person: jane,
+            statuses: [(.blockSignIn, .done("Sign-in blocked.")), (.revokeSessions, .skipped), (.removeMethods, .failed("needs a role")),
+                       (.devices, .done("")), (.mailbox, .pending), (.privilegedAccess, .pending)],
+            devices: [("LT-FIELD-207", "wipe requested"), ("WS-ENG-041", "retire requested")],
+            at: Date(timeIntervalSince1970: 1_800_000_000))
+        XCTAssertTrue(text.hasPrefix("Leaver checklist for Jane Okafor (jane.okafor@demo.example)\nRecorded 2027-01-15 08:00Z"))
+        XCTAssertTrue(text.contains("- Block sign-in: done (Sign-in blocked.)"))
+        XCTAssertTrue(text.contains("- Revoke sessions: skipped"))
+        XCTAssertTrue(text.contains("- Remove all sign-in methods: failed (needs a role)"))
+        XCTAssertTrue(text.contains("    LT-FIELD-207: wipe requested"))
+        XCTAssertTrue(text.contains("- Hand over the mailbox: not done"))
+        XCTAssertTrue(text.hasSuffix("The tenant audit log is authoritative."))
+    }
+
+    func test_userDeviceEntraIdentity() {
+        XCTAssertTrue(UserDevice(id: "1", deviceName: nil, operatingSystem: nil, managedDeviceOwnerType: nil, azureADDeviceId: "abc").hasEntraIdentity)
+        XCTAssertFalse(UserDevice(id: "1", deviceName: nil, operatingSystem: nil, managedDeviceOwnerType: nil, azureADDeviceId: "00000000-0000-0000-0000-000000000000").hasEntraIdentity)
+        XCTAssertFalse(UserDevice(id: "1", deviceName: nil, operatingSystem: nil, managedDeviceOwnerType: nil, azureADDeviceId: nil).hasEntraIdentity)
+    }
 }

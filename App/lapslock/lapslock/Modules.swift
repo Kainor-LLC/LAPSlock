@@ -7,6 +7,7 @@ import SecurityKit
 import ThreatDigestKit
 import ManagedConfigKit
 import UserActionsKit
+import DeviceActionsKit
 
 // The module registry and the shell that hosts the modules.
 //
@@ -128,6 +129,8 @@ struct SignInTriageColumns {
     var requestConsent: (() async -> String?)? = nil
     /// User actions for the selected person; nil when they are off.
     var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
+    /// Device actions for the leaver checklist; nil when they are off.
+    var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
 }
 
 /// What the Tenant pulse module needs from the root, built once per session.
@@ -450,7 +453,8 @@ struct ModuleShell: View {
                     isDemo: isDemo,
                     selection: $selectedSignInId,
                     requestConsent: signInTriage.requestConsent,
-                    makeUserActions: signInTriage.makeUserActions
+                    makeUserActions: signInTriage.makeUserActions,
+                    makeDeviceActions: signInTriage.makeDeviceActions
                 )
             } else {
                 ProGateView(

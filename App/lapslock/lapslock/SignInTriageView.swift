@@ -3,6 +3,7 @@ import Combine
 import SignInTriageKit
 import DiagnosticsKit
 import UserActionsKit
+import DeviceActionsKit
 
 // Sign-in triage. Spec section 3.4. The "Jane can't sign in" screen.
 //
@@ -162,6 +163,7 @@ struct SignInTriageView: View {
     var requestConsent: (() async -> String?)? = nil
     /// Builds the actions for one person. Nil when user actions are off.
     var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
+    var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
     var activate: (() -> Void)? = nil
 
     @State private var isRequestingConsent = false
@@ -189,7 +191,7 @@ struct SignInTriageView: View {
                     }
                     .accessibilityLabel("Actions for " + (user.displayName ?? upn))
                     .sheet(item: $actionsFor) { target in
-                        UserActionsSheet(make: { makeUserActions(target) }, activate: activate)
+                        UserActionsSheet(make: { makeUserActions(target) }, activate: activate, makeDeviceActions: makeDeviceActions)
                     }
                 }
             }
