@@ -72,6 +72,11 @@ public actor FileShiftLog: ShiftLogging {
     private let url: URL
     private var cache: [ShiftLogEntry]?
 
+    /// The one instance the app uses. Each instance keeps the file in memory after its
+    /// first read, so two over the same file, two iPad windows or two sessions either side
+    /// of a tenant switch, would each write back their own copy and drop the other's lines.
+    public static let shared = FileShiftLog.standard()
+
     /// The app's location: Application Support/TenantKeep/shift-log.json.
     public static func standard() -> FileShiftLog {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first

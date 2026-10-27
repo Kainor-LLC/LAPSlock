@@ -298,6 +298,7 @@ public final class GraphClient: Sendable {
         var next: URL? = start
         var pages = 0
         while let pageURL = next, pages < max(1, maxPages) {
+            guard Self.isPageLink(pageURL, on: base) else { throw GraphError.decodeFailure }
             let response = try await perform(url: pageURL, request: request)
             let page: Page<T>
             do {
@@ -310,6 +311,13 @@ public final class GraphClient: Sendable {
             pages += 1
         }
         return GraphCollection(items: items, nextLink: next)
+    }
+
+    /// Whether a page link may be followed. The bearer token goes with every request, so a
+    /// link is followed only over https to the host this client was built for. Graph never
+    /// sends anything else; this makes sure a response that did could not collect a token.
+    public static func isPageLink(_ url: URL, on base: URL = GraphClient.defaultBase) -> Bool {
+        url.scheme?.lowercased() == "https" && url.host?.lowercased() == base.host?.lowercased()
     }
 
     private struct Page<T: Decodable>: Decodable {

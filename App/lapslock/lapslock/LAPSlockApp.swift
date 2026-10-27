@@ -204,11 +204,26 @@ final class AppRootModel: ObservableObject {
         /// On the credential path: the pass is a credential.
         let temporaryAccessPass: TemporaryAccessPassService
 
-        init(auth: MSALAuthManager) {
+        /// The tenant this session was built for, captured once. A tenant switch builds a
+        /// new session, so everything this one records, the shift log above all, names this
+        /// tenant and never whichever tenant the manager has moved to when a response lands.
+        let tenantId: String
+        /// What every service here asks for tokens: bound to `tenantId`, so work still in
+        /// flight after a switch is never served the next tenant's tokens.
+        let pinnedAuth: SessionPinnedAuth
+        /// One PIM service for the session, shared by the Activate sheet, the role gate and
+        /// the watch, rather than a new one, and a new connection, for every call.
+        let privileged: PrivilegedAccessService
+
+        init(auth: MSALAuthManager, tenantId: String) {
             self.auth = auth
-            self.inventory = DeviceInventoryService(auth: auth)
-            self.names = UserNameResolver(auth: auth)
-            let graph = GraphClient(auth: auth, observer: { record in
+            let sessionTenant = tenantId.lowercased()
+            self.tenantId = sessionTenant
+            let pinned = SessionPinnedAuth(base: auth, tenantId: sessionTenant)
+            self.pinnedAuth = pinned
+            self.inventory = DeviceInventoryService(auth: pinned)
+            self.names = UserNameResolver(auth: pinned)
+            let graph = GraphClient(auth: pinned, observer: { record in
                 Task { await DiagnosticsRecorder.shared.record(GraphDiagnostics.event(for: record)) }
             })
             self.graph = graph
@@ -218,12 +233,14 @@ final class AppRootModel: ObservableObject {
             self.security = SecurityService(graph: graph)
             self.emailHunting = EmailHuntingService(graph: graph)
             self.threatDigest = ThreatDigestService()
-            let shiftLog = FileShiftLog.standard()
+            let shiftLog = FileShiftLog.shared
             self.shiftLog = shiftLog
-            let tenant: @Sendable () async -> String = { await auth.operatingTenantId ?? "" }
+            let tenant: @Sendable () async -> String = { sessionTenant }
+            let privileged = PrivilegedAccessService(auth: pinned)
+            self.privileged = privileged
             let runner = ActionRunner(
                 graph: graph,
-                gate: GraphRoleGate(graph: graph, privileged: PrivilegedAccessService(auth: auth)),
+                gate: GraphRoleGate(graph: graph, privileged: privileged),
                 log: shiftLog,
                 tenantId: tenant)
             self.actionRunner = runner
@@ -231,26 +248,26 @@ final class AppRootModel: ObservableObject {
             self.userActions = UserActionsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.groupWrites = GroupWritesService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.approvals = ApprovalsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
-            self.temporaryAccessPass = TemporaryAccessPassService(auth: auth)
+            self.temporaryAccessPass = TemporaryAccessPassService(auth: pinned)
         }
 
         /// Live credential provider for one platform, sharing the authenticated session.
         func provider(for platform: DevicePlatform) -> any LocalAdminCredentialProviding {
             switch platform {
             case .windows:
-                return WindowsLapsProvider(auth: auth)
+                return WindowsLapsProvider(auth: pinnedAuth)
             case .macOS:
-                return MacOSLapsProvider(auth: auth)
+                return MacOSLapsProvider(auth: pinnedAuth)
             case .other:
                 // MacOSLapsProvider is not used for iOS devices; the platform seam reports
                 // .other as unsupported before any request is made.
-                return MacOSLapsProvider(auth: auth)
+                return MacOSLapsProvider(auth: pinnedAuth)
             }
         }
 
         /// Live BitLocker service, sharing the authenticated session.
         func bitLocker() -> any BitLockerKeyProviding {
-            BitLockerService(auth: auth)
+            BitLockerService(auth: pinnedAuth)
         }
     }
 
@@ -433,8 +450,9 @@ final class AppRootModel: ObservableObject {
         // the old one, including caches a later module adds and nobody remembers to reset.
         // The module shell is keyed by the operating tenant, so every screen model is
         // rebuilt from the new session as well.
-        liveSession = LiveSession(auth: session.auth)
-        operatingTenantId = await session.auth.operatingTenantId
+        let tenant = await session.auth.operatingTenantId ?? session.tenantId
+        operatingTenantId = tenant
+        liveSession = LiveSession(auth: session.auth, tenantId: tenant)
         return nil
     }
 
@@ -485,7 +503,9 @@ final class AppRootModel: ObservableObject {
             signInError = refusal
             return
         }
-        liveSession = LiveSession(auth: auth)
+        let tenant = await auth.operatingTenantId ?? account.tenantId
+        operatingTenantId = tenant
+        liveSession = LiveSession(auth: auth, tenantId: tenant)
         mode = .live(account)
         AlertsRunner.unpauseAll()
         recomputeEntitlement()
@@ -513,7 +533,9 @@ final class AppRootModel: ObservableObject {
                 signInError = refusal
                 return
             }
-            liveSession = LiveSession(auth: auth)
+            let tenant = await auth.operatingTenantId ?? account.tenantId
+            operatingTenantId = tenant
+            liveSession = LiveSession(auth: auth, tenantId: tenant)
             mode = .live(account)
             AlertsRunner.unpauseAll()
             recomputeEntitlement()
@@ -602,6 +624,7 @@ final class AppRootModel: ObservableObject {
         // Tenant-scoped data must not survive an account change (§7). Dropping the session
         // drops every service's cache with it.
         liveSession = nil
+        operatingTenantId = nil
         demoCustomer = .contoso
         savedSearches.clear()
         pendingSearch = nil
@@ -634,7 +657,7 @@ final class AppRootModel: ObservableObject {
     @Published private(set) var demoCustomer: DemoCustomer = .contoso
 
     /// Saved searches: one file on this device, read on first use in the foreground.
-    let savedSearches = SavedSearchLibrary(store: FileSavedSearchStore.standard())
+    let savedSearches = SavedSearchLibrary.shared
     /// Demo mode's, in memory with three examples, fresh each time demo starts.
     private(set) var demoSavedSearches = SavedSearchLibrary(store: MemorySavedSearchStore(SavedSearch.demoExamples))
 
@@ -860,14 +883,14 @@ final class AppRootModel: ObservableObject {
     /// The tenant's activation rules for one piece of eligible access.
     func privilegedPolicy(for access: EligibleAccess) async -> ActivationPolicy {
         guard let session = liveSession else { return .unknown }
-        return await PrivilegedAccessService(auth: session.auth).policy(for: access)
+        return await session.privileged.policy(for: access)
     }
 
     /// Reads what the signed-in user could activate.
     func loadEligibleAccess() async -> Result<[EligibleAccess], PrivilegedAccessError> {
         guard let session = liveSession else { return .failure(.notAuthorized) }
         do {
-            return .success(try await PrivilegedAccessService(auth: session.auth).eligibleAccess())
+            return .success(try await session.privileged.eligibleAccess())
         } catch let error as PrivilegedAccessError {
             return .failure(error)
         } catch {
@@ -884,7 +907,7 @@ final class AppRootModel: ObservableObject {
     ) async -> Result<ActivationOutcome, PrivilegedAccessError> {
         guard let session = liveSession else { return .failure(.notAuthorized) }
         do {
-            let outcome = try await PrivilegedAccessService(auth: session.auth).activate(
+            let outcome = try await session.privileged.activate(
                 access, justification: justification, ticketNumber: ticketNumber, duration: duration)
             return .success(outcome)
         } catch let error as PrivilegedAccessError {
@@ -908,7 +931,7 @@ final class AppRootModel: ObservableObject {
     ) async -> Result<ActivationOutcome, PrivilegedAccessError> {
         guard let session = liveSession else { return .failure(.notAuthorized) }
         do {
-            let outcome = try await PrivilegedAccessService(auth: session.auth)
+            let outcome = try await session.privileged
                 .status(ofRequest: requestId, for: access)
             return .success(outcome)
         } catch let error as PrivilegedAccessError {
@@ -1016,18 +1039,24 @@ struct AppRootView: View {
     @ObservedObject private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingSignedOutSettings = false
+    @State private var lockPresenter = AppLockPresenter()
 
     var body: some View {
         content
+            .accessibilityHidden(appLock.isLocked)
+            // The lock itself is a window above everything in this scene, sheets and alerts
+            // included; see AppLockPresenter. This copy inside the app is the fallback for the
+            // moment before that window exists, and it never prompts on its own.
             // A full cover rather than a conditional branch, so the app underneath keeps its
             // state, an admin who unlocks lands back exactly where they were rather than on
             // a freshly reloaded device list.
             .overlay {
                 if appLock.isLocked {
-                    AppLockScreen(model: appLock)
-                        .transition(.opacity)
+                    AppLockScreen(model: appLock, promptsOnAppear: false)
                 }
             }
+            .background(WindowSceneReader { scene in lockPresenter.attach(to: scene, model: appLock) })
+            .onChange(of: appLock.isLocked, initial: true) { _, locked in lockPresenter.setLocked(locked) }
             .task {
                 appLock.armAtLaunch(enabled: settings.appLockEffective)
                 root.prepare()
@@ -1106,7 +1135,7 @@ struct AppRootView: View {
         case .live:
             if let session = root.liveSession {
                 WatchConnector.shared.configure(WatchHandlers.live(
-                    graph: session.graph, auth: session.auth, tenant: root.operatingTenantLabel ?? "Your tenant",
+                    graph: session.graph, privileged: session.privileged, tenant: root.operatingTenantLabel ?? "Your tenant",
                     approvals: session.approvals, tenantPulse: session.tenantPulse, security: session.security,
                     activationEnabled: settings.privilegedActivationEnabled))
             } else {
@@ -1338,7 +1367,7 @@ struct AppRootView: View {
                             requestGroupWritesConsent: { await root.requestGroupWritesConsent() },
                             isDemo: false,
                             shiftLog: session.shiftLog,
-                            shiftLogTenantId: root.operatingTenantId ?? root.signedInTenantId,
+                            shiftLogTenantId: session.tenantId,
                             notificationTenants: root.notificationTenants,
                             notificationsStore: AlertsRunner.preferencesStore,
                             tenantId: root.signedInTenantId,

@@ -23,10 +23,13 @@ public actor ThreatDigestService: ThreatDigestProviding {
 
     private let session: URLSession
     private let now: @Sendable () -> Date
+    private let byteLimit: Int
 
-    public init(session: URLSession? = nil, now: @escaping @Sendable () -> Date = { Date() }) {
+    /// - byteLimit: injected by tests so the cap can be crossed without megabytes of input.
+    public init(session: URLSession? = nil, now: @escaping @Sendable () -> Date = { Date() }, byteLimit: Int = ThreatDigestService.maxBytes) {
         self.session = session ?? Self.makeSession()
         self.now = now
+        self.byteLimit = byteLimit
     }
 
     public static func makeSession() -> URLSession {
@@ -93,19 +96,67 @@ public actor ThreatDigestService: ThreatDigestProviding {
     }
 
     /// One GET. The host check is here, on the URL about to be sent, not on a constant
-    /// somewhere else, so a redirect or a typo cannot widen where this target talks to.
+    /// somewhere else, so a typo cannot widen where this target talks to; and again on every
+    /// redirect, which URLSession would otherwise follow to any host on its own.
+    ///
+    /// The size cap is enforced while reading, so a feed that grew is abandoned at the cap
+    /// rather than read into memory whole and refused afterwards.
     func get(_ url: URL) async throws -> Data {
-        guard let host = url.host?.lowercased(), Self.allowedHosts.contains(host), url.scheme == "https" else {
-            throw DigestError.hostNotAllowed(url.host ?? "")
-        }
+        guard Self.isAllowed(url) else { throw DigestError.hostNotAllowed(url.host ?? "") }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        let (data, response) = try await session.data(for: request)
+        let redirects = RedirectGuard()
+        let bytes: URLSession.AsyncBytes
+        let response: URLResponse
+        do {
+            (bytes, response) = try await session.bytes(for: request, delegate: redirects)
+        } catch {
+            // A refused redirect can surface as the 3xx itself or as a failed load,
+            // depending on the loading path. Either way it is the refusal that matters.
+            if let refused = redirects.refusedHost { throw DigestError.hostNotAllowed(refused) }
+            throw error
+        }
+        if let refused = redirects.refusedHost { throw DigestError.hostNotAllowed(refused) }
         guard let http = response as? HTTPURLResponse else { throw DigestError.transport(status: 0) }
         guard (200..<300).contains(http.statusCode) else { throw DigestError.transport(status: http.statusCode) }
-        guard data.count <= Self.maxBytes else { throw DigestError.tooLarge }
-        return data
+        guard http.expectedContentLength <= Int64(byteLimit) else { throw DigestError.tooLarge }
+
+        var body: [UInt8] = []
+        body.reserveCapacity(http.expectedContentLength > 0 ? Int(http.expectedContentLength) : 64 * 1024)
+        for try await byte in bytes {
+            body.append(byte)
+            if body.count > byteLimit { throw DigestError.tooLarge }
+        }
+        return Data(body)
+    }
+
+    static func isAllowed(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        return allowedHosts.contains(host) && url.scheme?.lowercased() == "https"
+    }
+
+    /// Refuses any redirect that leaves the allowlist, and remembers where it pointed so the
+    /// refusal is reported as one rather than as a strange status.
+    private final class RedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        private let lock = NSLock()
+        private var refused: String?
+
+        var refusedHost: String? {
+            lock.lock(); defer { lock.unlock() }
+            return refused
+        }
+
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest
+        ) async -> URLRequest? {
+            guard let url = request.url, ThreatDigestService.isAllowed(url) else {
+                lock.lock(); refused = request.url?.host ?? ""; lock.unlock()
+                return nil
+            }
+            return request
+        }
     }
 
     public static func describe(_ error: DigestError) -> String {

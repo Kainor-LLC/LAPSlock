@@ -22,6 +22,10 @@ final class SavedSearchLibrary: ObservableObject {
         self.store = store
     }
 
+    /// The one library over the saved-search file. Two over the same file, two iPad
+    /// windows, would each save their own list over the other's.
+    static let shared = SavedSearchLibrary(store: FileSavedSearchStore.standard())
+
     /// Reads the file once, in the foreground.
     func loadIfNeeded() {
         guard !loaded else { return }

@@ -100,14 +100,21 @@ public actor DeviceInventoryService {
     private let session: URLSession
     private let pageSize: Int
 
-    /// Cached devices keyed by tenant id, so a session in one tenant can never render
-    /// another tenant's inventory.
+    /// Cached devices keyed by the OPERATING tenant, so a session in one tenant can never
+    /// render another tenant's inventory. Not the signed-in account's home tenant: an MSP
+    /// working in a customer would otherwise file the customer's devices under their own.
     private var cache: [String: [ManagedDeviceSummary]] = [:]
     private var nextLinkByTenant: [String: String?] = [:]
 
-    public init(auth: AuthManaging, pageSize: Int = 100) {
+    /// Moves on every first-page load and every reset. A page that was asked for under an
+    /// older generation is dropped when it arrives, so a refresh or a reset can never be
+    /// followed by a stale page appended to the fresh list or overwriting its next link.
+    private var generation = 0
+
+    /// - session: injected by tests. Production gets an ephemeral session.
+    public init(auth: AuthManaging, pageSize: Int = 100, session: URLSession? = nil) {
         self.auth = auth
-        self.session = InventoryHTTP.makeSession()
+        self.session = session ?? InventoryHTTP.makeSession()
         // Graph accepts up to 1000; 100 keeps the first page fast on a phone.
         self.pageSize = max(1, min(pageSize, 1000))
     }
@@ -118,8 +125,12 @@ public actor DeviceInventoryService {
     /// Call on initial load and on pull-to-refresh.
     @discardableResult
     public func loadFirstPage() async throws -> DevicePage {
+        generation += 1
+        let asked = generation
         let tenantId = try await currentTenantId()
         let page = try await fetch(url: InventoryHTTP.firstPageURL(pageSize: pageSize))
+        // A newer load or a reset happened while this one was out. It owns the cache now.
+        guard asked == generation else { return page }
         cache[tenantId] = page.devices
         nextLinkByTenant[tenantId] = page.nextLink
         return page
@@ -128,27 +139,18 @@ public actor DeviceInventoryService {
     /// Fetches the next page and appends it. Returns nil when there is nothing more.
     @discardableResult
     public func loadNextPage() async throws -> DevicePage? {
+        let asked = generation
         let tenantId = try await currentTenantId()
         guard let link = nextLinkByTenant[tenantId] ?? nil, let url = URL(string: link) else {
             return nil
         }
+        // The bearer token goes with the request, so only a Graph link is followed.
+        guard GraphClient.isPageLink(url) else { throw InventoryError.decodeFailure }
         let page = try await fetch(url: url)
+        guard asked == generation else { throw CancellationError() }
         cache[tenantId, default: []].append(contentsOf: page.devices)
         nextLinkByTenant[tenantId] = page.nextLink
         return page
-    }
-
-    /// Pages until exhausted, up to `maxPages`. Client-side search needs the full set
-    /// (Graph's managedDevices does not support a usable server-side name search), so
-    /// this backstops very large tenants rather than paging forever.
-    @discardableResult
-    public func loadAll(maxPages: Int = 50) async throws -> [ManagedDeviceSummary] {
-        _ = try await loadFirstPage()
-        var pages = 1
-        while pages < maxPages, try await loadNextPage() != nil {
-            pages += 1
-        }
-        return try await cachedDevices()
     }
 
     private func fetch(url: URL) async throws -> DevicePage {
@@ -187,13 +189,14 @@ public actor DeviceInventoryService {
 
     /// Full teardown. MUST be called on sign-out and on account switch (§7).
     public func reset() {
+        generation += 1
         cache.removeAll()
         nextLinkByTenant.removeAll()
     }
 
     private func currentTenantId() async throws -> String {
         guard let account = await auth.currentAccount else { throw InventoryError.consentRequired }
-        return account.tenantId
+        return (await auth.operatingTenantId ?? account.tenantId).lowercased()
     }
 }
 

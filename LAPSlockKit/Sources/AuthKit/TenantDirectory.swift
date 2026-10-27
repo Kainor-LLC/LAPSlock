@@ -26,13 +26,18 @@ public enum TenantDirectoryError: Error, Sendable, Equatable {
 
 public enum TenantDirectory {
 
+    /// No disk cache and no cookie store. The domains an MSP looks up are their customers,
+    /// and the shared session would leave the answers in Library/Caches and Microsoft's
+    /// sign-in cookies in a persistent jar.
+    public static let session: URLSession = GraphClient.makeSession()
+
     /// Resolves a domain or a GUID to a lowercase tenant GUID.
     ///
     /// A GUID passes straight through after validation: somebody who already has the tenant
     /// ID should not need a network round trip to use it.
     public static func resolve(
         _ input: String,
-        session: URLSession = .shared
+        session: URLSession = TenantDirectory.session
     ) async throws -> String {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 

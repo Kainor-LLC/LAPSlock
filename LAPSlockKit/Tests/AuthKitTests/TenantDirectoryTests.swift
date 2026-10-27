@@ -6,6 +6,14 @@ import XCTest
 /// in a way nobody notices.
 final class TenantDirectoryTests: XCTestCase {
 
+    func test_lookupsKeepNothingOnDisk() {
+        let config = TenantDirectory.session.configuration
+        XCTAssertNil(config.urlCache)
+        XCTAssertNil(config.httpCookieStorage)
+        XCTAssertFalse(config.httpShouldSetCookies)
+        XCTAssertEqual(config.httpCookieAcceptPolicy, .never)
+    }
+
     private let tenant = "4470dc21-a4b7-4729-a232-56d4c0eedf73"
 
     func test_theTenantIsExtractedFromAnIssuer() {

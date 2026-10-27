@@ -62,6 +62,13 @@ public extension AuthManaging {
     func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String {
         try await token(scopes: scopes, allowInteractive: allowInteractive)
     }
+
+    /// Default: the signed-in account's own tenant, which is the only tenant a provider
+    /// that cannot switch ever operates in. `MSALAuthManager`, `TenantScopedAuth` and
+    /// `SessionPinnedAuth` say otherwise.
+    var operatingTenantId: String? {
+        get async { await currentAccount?.tenantId }
+    }
 }
 
 public enum AuthError: Error, Sendable, Equatable {
@@ -104,6 +111,11 @@ public protocol AuthManaging: Sendable {
     /// under it. A requirement with a default, for the same dispatch reason as the claims
     /// method above.
     func silentToken(scopes: [String], tenantId: String) async throws -> String
+
+    /// The tenant tokens are issued for, which is not the home tenant once an MSP has
+    /// switched. Anything keyed by tenant (a cache, a log entry) keys by this. A requirement
+    /// with a default, for the same dispatch reason as the claims method above.
+    var operatingTenantId: String? { get async }
 
     /// Interactive account selection sign-in (uses /common or /organizations, §2.1).
     @discardableResult

@@ -20,6 +20,8 @@ public struct TenantScopedAuth: AuthManaging {
         get async { await base.currentAccount }
     }
 
+    public var operatingTenantId: String? { tenantId }
+
     public func token(scopes: [String], allowInteractive: Bool) async throws -> String {
         try await base.silentToken(scopes: scopes, tenantId: tenantId)
     }

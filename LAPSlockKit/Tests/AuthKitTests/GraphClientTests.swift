@@ -372,6 +372,21 @@ final class GraphClientTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests.count, 1)
     }
 
+    func test_aNextLinkToAnotherHostIsNeverFollowed() async {
+        let first = #"{"value":[{"id":"p1","displayName":"A"}],"@odata.nextLink":"https://graph.microsoft.com.example.net/v1.0/identity/conditionalAccess/policies?$skiptoken=abc"}"#
+        StubProtocol.replies = ["policies": [.init(status: 200, body: first)]]
+        await assertThrows(.decodeFailure) { try await client.collection(Policy.self, from: policies()) }
+        XCTAssertEqual(StubProtocol.requests.count, 1)
+    }
+
+    func test_onlyHttpsGraphLinksArePageLinks() {
+        XCTAssertTrue(GraphClient.isPageLink(URL(string: "https://graph.microsoft.com/v1.0/x?$skiptoken=a")!))
+        XCTAssertTrue(GraphClient.isPageLink(URL(string: "https://GRAPH.microsoft.com/beta/x")!))
+        XCTAssertFalse(GraphClient.isPageLink(URL(string: "http://graph.microsoft.com/v1.0/x")!))
+        XCTAssertFalse(GraphClient.isPageLink(URL(string: "https://graph.microsoft.com.example.net/v1.0/x")!))
+        XCTAssertFalse(GraphClient.isPageLink(URL(string: "https://example.com/graph.microsoft.com")!))
+    }
+
     // MARK: helpers
 
     private func assertThrows<T>(

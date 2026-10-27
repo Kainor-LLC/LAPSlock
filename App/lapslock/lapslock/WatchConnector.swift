@@ -165,9 +165,8 @@ enum WatchHandlers {
 
     /// Live: the session's services, every read silent, every write through the gate.
     @MainActor
-    static func live(graph: GraphClient, auth: any AuthManaging, tenant: String, approvals: any ApprovalsProviding,
+    static func live(graph: GraphClient, privileged: PrivilegedAccessService, tenant: String, approvals: any ApprovalsProviding,
                      tenantPulse: TenantPulseService, security: SecurityService, activationEnabled: Bool) -> WatchConnector.Handlers {
-        let privileged = PrivilegedAccessService(auth: auth)
         let gate = GraphRoleGate(graph: graph, privileged: privileged)
         return WatchConnector.Handlers(
             glance: {

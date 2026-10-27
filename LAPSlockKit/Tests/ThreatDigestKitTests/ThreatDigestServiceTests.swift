@@ -2,7 +2,7 @@ import XCTest
 @testable import ThreatDigestKit
 
 private final class StubProtocol: URLProtocol {
-    struct Reply { var status: Int; var body: String }
+    struct Reply { var status: Int; var body: String; var redirect: String? = nil }
     nonisolated(unsafe) static var replies: [String: Reply] = [:]
     nonisolated(unsafe) static var requests: [URLRequest] = []
     /// URLSession calls startLoading on its own threads, and the services under test send
@@ -17,6 +17,12 @@ private final class StubProtocol: URLProtocol {
         let url = request.url?.absoluteString ?? ""
         let reply = Self.replies.first { url.contains($0.key) }?.value ?? Reply(status: 599, body: "")
         Self.lock.unlock()
+        if let redirect = reply.redirect, let target = URL(string: redirect) {
+            let moved = HTTPURLResponse(url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: ["Location": redirect])!
+            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: target), redirectResponse: moved)
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
         let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: nil)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(reply.body.utf8))
@@ -113,6 +119,40 @@ final class ThreatDigestServiceTests: XCTestCase {
             XCTAssertEqual(error as? DigestError, .hostNotAllowed("www.cisa.gov"))
         }
         XCTAssertTrue(StubProtocol.requests.isEmpty)
+    }
+
+    func test_aRedirectOffTheAllowlistIsRefusedAndNotFollowed() async {
+        StubProtocol.replies = ["known_exploited": .init(status: 200, body: "", redirect: "https://evil.example/kev.json")]
+        do {
+            _ = try await service.get(URL(string: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json")!)
+            XCTFail("expected refusal")
+        } catch {
+            XCTAssertEqual(error as? DigestError, .hostNotAllowed("evil.example"))
+        }
+        XCTAssertFalse(StubProtocol.requests.contains { $0.url?.host == "evil.example" })
+    }
+
+    func test_aRedirectWithinTheAllowlistIsFollowed() async throws {
+        StubProtocol.replies = [
+            "old-feed.json": .init(status: 200, body: "", redirect: "https://www.cisa.gov/new-feed.json"),
+            "new-feed.json": .init(status: 200, body: "moved")
+        ]
+        let data = try await service.get(URL(string: "https://www.cisa.gov/old-feed.json")!)
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), "moved")
+    }
+
+    func test_aFeedPastTheCapIsAbandonedWhileReading() async {
+        let small = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, byteLimit: 10)
+        StubProtocol.replies = ["big.json": .init(status: 200, body: String(repeating: "x", count: 11))]
+        do {
+            _ = try await small.get(URL(string: "https://www.cisa.gov/big.json")!)
+            XCTFail("expected too large")
+        } catch {
+            XCTAssertEqual(error as? DigestError, .tooLarge)
+        }
+        StubProtocol.replies = ["fits.json": .init(status: 200, body: String(repeating: "x", count: 10))]
+        let fits = try? await small.get(URL(string: "https://www.cisa.gov/fits.json")!)
+        XCTAssertEqual(fits?.count, 10)
     }
 
     func test_theSessionSendsNoCookiesAndOnlyAnAcceptHeader() {

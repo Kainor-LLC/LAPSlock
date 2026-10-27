@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Combine
 import PlatformSecurity
 
@@ -33,7 +34,18 @@ final class AppLockModel: ObservableObject {
     /// Long enough that a broker round trip, an Authenticator push, or a glance at a
     /// calendar never costs a second prompt. Short enough that a phone left on a desk is
     /// protected within the span anybody would leave it unattended.
-    static let graceInterval: TimeInterval = 5 * 60
+    ///
+    /// A DEBUG build launched with `-LAPSlockLockGraceSeconds N` uses N instead, so an
+    /// automated pass can see the lock engage without leaving the app for five minutes.
+    static let graceInterval: TimeInterval = {
+        #if DEBUG
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "-LAPSlockLockGraceSeconds"), i + 1 < args.count, let n = TimeInterval(args[i + 1]) {
+            return max(1, n)
+        }
+        #endif
+        return 5 * 60
+    }()
 
     /// True when the app must be unlocked before anything is shown.
     @Published private(set) var isLocked = false
@@ -106,10 +118,100 @@ final class AppLockModel: ObservableObject {
     }
 }
 
+/// The lock, in a window of its own above everything else in its scene.
+///
+/// Drawn as a view in the app's own hierarchy, the lock sat UNDER anything that hierarchy
+/// presents: a sheet left open when the phone was put down (Settings with Sign out, the
+/// organization list, cross-tenant results naming devices and people) stayed visible and
+/// usable on top of it, and so did alerts and the switch notice. A window above the alert
+/// level covers all of them. It is made key while locked, so a hardware keyboard's
+/// shortcuts reach the lock rather than the app behind it, and its content is modal to
+/// VoiceOver. Unlocking hides it and hands key status back to the app's window, so the
+/// admin lands exactly where they were, open sheet included.
+///
+/// One per scene: each iPad window has its own root view, its own lock and its own
+/// presenter.
+@MainActor
+final class AppLockPresenter {
+    private weak var scene: UIWindowScene?
+    private var model: AppLockModel?
+    private var window: UIWindow?
+    private var locked = false
+    /// The app's own windows, hidden from VoiceOver while locked. Hiding the window rather
+    /// than a view reaches what the window presents too: a sheet is not inside the root
+    /// view, so marking the root view hidden left an open sheet readable under the lock.
+    private var silenced: [UIWindow] = []
+
+    func attach(to scene: UIWindowScene, model: AppLockModel) {
+        guard self.scene !== scene else { return }
+        self.scene = scene
+        self.model = model
+        apply()
+    }
+
+    func setLocked(_ locked: Bool) {
+        self.locked = locked
+        apply()
+    }
+
+    private func apply() {
+        if locked {
+            guard window == nil, let scene, let model else { return }
+            let host = UIHostingController(rootView: AppLockScreen(model: model))
+            host.view.accessibilityViewIsModal = true
+            let lockWindow = UIWindow(windowScene: scene)
+            lockWindow.windowLevel = .alert + 1
+            lockWindow.rootViewController = host
+            silenced = scene.windows.filter { $0.windowLevel == .normal && !$0.accessibilityElementsHidden }
+            silenced.forEach { $0.accessibilityElementsHidden = true }
+            lockWindow.makeKeyAndVisible()
+            window = lockWindow
+        } else if let lockWindow = window {
+            lockWindow.isHidden = true
+            window = nil
+            silenced.forEach { $0.accessibilityElementsHidden = false }
+            silenced = []
+            scene?.windows
+                .first { $0 !== lockWindow && $0.windowLevel == .normal && !$0.isHidden }?
+                .makeKey()
+        }
+    }
+}
+
+/// Reports the window scene a view is shown in, so the lock can put its window there.
+struct WindowSceneReader: UIViewRepresentable {
+    let found: @MainActor (UIWindowScene) -> Void
+
+    func makeUIView(context: Context) -> ReaderView { ReaderView(found: found) }
+    func updateUIView(_ view: ReaderView, context: Context) {}
+
+    final class ReaderView: UIView {
+        private let found: @MainActor (UIWindowScene) -> Void
+
+        init(found: @escaping @MainActor (UIWindowScene) -> Void) {
+            self.found = found
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard let scene = window?.windowScene else { return }
+            // After this layout pass, not during it: attaching can create and key a window.
+            Task { @MainActor [found] in found(scene) }
+        }
+    }
+}
+
 /// The lock screen. Deliberately says nothing about the tenant, the account, or how many
 /// devices are behind it, a lock screen that leaks what it is protecting is decoration.
 struct AppLockScreen: View {
     @ObservedObject var model: AppLockModel
+    /// Off for the fallback copy drawn inside the app, so only the window's copy prompts.
+    var promptsOnAppear = true
 
     var body: some View {
         VStack(spacing: 18) {
@@ -150,6 +252,9 @@ struct AppLockScreen: View {
         .background(Color(.systemBackground))
         // Prompt immediately, so the common case is Face ID appearing on its own and the
         // button existing only for a retry.
-        .task { await model.unlock() }
+        .task {
+            guard promptsOnAppear else { return }
+            await model.unlock()
+        }
     }
 }
