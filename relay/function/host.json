@@ -1,0 +1,20 @@
+{
+  "version": "2.0",
+  "logging": {
+    "logLevel": {
+      "default": "Warning",
+      "Function": "Warning",
+      "Host.Results": "Error",
+      "Host.Aggregator": "Error",
+      "Microsoft": "Warning",
+      "Azure.Core": "Warning",
+      "Azure.Identity": "Warning"
+    },
+    "applicationInsights": {
+      "samplingSettings": { "isEnabled": true }
+    }
+  },
+  "extensions": {
+    "http": { "routePrefix": "" }
+  }
+}

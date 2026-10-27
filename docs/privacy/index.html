@@ -265,6 +265,18 @@
     reveal. The full request and response format, what our server keeps, and how to check all of it
     with a proxy are published in the
     <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/ENTITLEMENT-API.md">entitlement API contract</a>.</p>
+    <p><strong>Alert relay (Pro, off by default).</strong> If your organization turns on relayed alerts,
+    TenantKeep Watch in your own Azure Automation account encrypts each alert for your phone
+    and sends it through <code>kainor-relay-prod-func.azurewebsites.net</code>, which passes it to Apple
+    for delivery. Kainor cannot read these alerts and keeps nothing: the relay has no
+    database and writes no log line containing your phone's device token, your tenant ID or
+    the alert. While a request is in flight the relay can see your tenant ID (to check your
+    plan), your phone's device token (to address Apple), whether the alert is time-sensitive,
+    and the sending address, which our telemetry masks. Turning the relay off in the app
+    discards the phone's key, after which nothing sent to it can be read. The phone itself never
+    contacts the relay; the format is published in the
+    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/RELAY-API.md">relay contract</a>, and the relay's
+    source is in the same repository.</p>
     <p>You can verify this yourself with a network proxy in about ten minutes. We think observed
     behavior is better evidence than a privacy policy, which is why we're telling you how to check.</p>
 

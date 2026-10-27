@@ -17,6 +17,12 @@ TenantKeep On-Call talks to exactly these hosts. There is no sixth.
 | `api.msrc.microsoft.com` | Microsoft | Only when you open the Digest tab | A GET for the public Security Update Guide, filtered to the last thirty days. Same rule: nothing of yours in the request. |
 | `kainor-lapslock-prod-func.azurewebsites.net` | Kainor LLC | **Only after you activate an organization license**, then about monthly | A version number and your Microsoft tenant ID. Nothing else. A signed license statement comes back. |
 
+**Relayed alerts add no host to this list.** When an organization turns on relayed alerts,
+its own Azure Automation account sends encrypted alerts to `kainor-relay-prod-func.azurewebsites.net`,
+which passes them to Apple's push service, and the phone receives them as ordinary notifications
+from Apple. The app never makes a request to the relay. What the relay sees and keeps is in
+[RELAY-API.md](RELAY-API.md), section 9; its source is under `relay/` in this repository.
+
 **A free-tier installation never contacts Kainor.** It talks to the two Microsoft hosts for
 your data, the two public feed hosts for the Digest, and nothing else, and there is no code
 path that can change that without a tap on *Activate organization license* in Settings. Demo

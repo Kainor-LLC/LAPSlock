@@ -82,3 +82,10 @@ CLAUDE.md
 .claude/
 CLAUDE.local.md
 workshop/
+
+## The relay function (.NET)
+relay/function/bin/
+relay/function/obj/
+relay/function/tests/**/bin/
+relay/function/tests/**/obj/
+relay/function/local.settings.json
