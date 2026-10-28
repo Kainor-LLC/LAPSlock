@@ -224,7 +224,7 @@ struct ThreatDigestListView: View {
     }
 
     private var cardsFooter: String {
-        var parts = ["Ranked on the phone from CISA KEV, CISA advisories and Microsoft MSRC; the words are theirs."]
+        var parts = ["Ranked on this device from CISA KEV, CISA advisories and Microsoft MSRC; the words are theirs."]
         parts.append(model.microsoftOnly ? "Microsoft products only; advisories always show." : "Every vendor.")
         if let fetchedAt = model.snapshot?.fetchedAt {
             // The copy kept on the phone can be from another day; say which.

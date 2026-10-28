@@ -144,6 +144,7 @@ struct ApprovalDetailView: View {
     @Environment(\.confirmMethod) private var confirm
     @State private var justification = ""
     @State private var confirming: ApprovalDecision?
+    @FocusState private var reasonFocused: Bool
     @Environment(\.awayTenant) private var awayTenant
 
     private var isPending: Bool { model.pending.contains { $0.id == approval.id } }
@@ -176,6 +177,7 @@ struct ApprovalDetailView: View {
                 Section {
                     TextField("Your reason, for the audit log", text: $justification, axis: .vertical)
                         .lineLimit(2...4)
+                        .focused($reasonFocused)
                     HStack(spacing: 12) {
                         Button {
                             confirming = .approve
@@ -203,6 +205,14 @@ struct ApprovalDetailView: View {
         }
         .navigationTitle(approval.requester)
         .navigationBarTitleDisplayMode(.inline)
+        // On iPhone the keyboard covers Approve and Deny while the reason is typed; Done
+        // puts them back without a scroll.
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { reasonFocused = false }
+            }
+        }
         .task(id: approval.id) { await model.prepare(approval) }
         .confirmationDialog(confirming.map { $0.title + " " + approval.requester + "?" } ?? "",
                             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),

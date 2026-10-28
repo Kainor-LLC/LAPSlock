@@ -72,7 +72,7 @@ final class RelayCoordinator {
             try phone.turnOn(environment: Self.environment)
             UIApplication.shared.registerForRemoteNotifications()
         } catch {
-            problem = "Couldn't make the relay key on this phone."
+            problem = "Couldn't make the relay key on this device."
         }
         reload()
     }
@@ -123,7 +123,7 @@ final class RelayCoordinator {
     }
 
     func registrationFailed() {
-        if phone.isOn { problem = "This phone couldn't register for push. Check that notifications are allowed." }
+        if phone.isOn { problem = "This device couldn't register for push. Check that notifications are allowed." }
     }
 
     func pin(_ text: String) -> Bool {
@@ -216,7 +216,7 @@ struct RelaySettingsSection: View {
     var body: some View {
         Section {
             if isDemo {
-                Text("Relayed alerts pair this phone with TenantKeep Watch in your own Azure Automation account. Sign in to set them up.")
+                Text("Relayed alerts pair this device with TenantKeep Watch in your own Azure Automation account. Sign in to set them up.")
                     .font(.footnote).foregroundStyle(.secondary)
             } else if !isPro {
                 Text("Relayed alerts are part of Pro.").font(.footnote).foregroundStyle(.secondary)
@@ -230,7 +230,7 @@ struct RelaySettingsSection: View {
                         Button("Turn off", role: .destructive) { relay.turnOff() }
                         Button("Keep on", role: .cancel) {}
                     } message: {
-                        Text("This phone's relay key is deleted. To turn it on again you pair with Watch again.")
+                        Text("This device's relay key is deleted. To turn it on again you pair with Watch again.")
                     }
                 if relay.isOn {
                     pairingRows
@@ -242,7 +242,7 @@ struct RelaySettingsSection: View {
         } header: {
             Text("Relayed Alerts")
         } footer: {
-            Text("Off by default. Watch encrypts each alert for this phone in your own Automation account and sends it through Kainor's relay to Apple. Kainor cannot read it and keeps nothing; while it passes through, the relay sees your tenant ID, this phone's push token and the time. Turning this off deletes the key, so nothing sent to it can be read.")
+            Text("Off by default. Watch encrypts each alert for this device in your own Automation account and sends it through Kainor's relay to Apple. Kainor cannot read it and keeps nothing; while it passes through, the relay sees your tenant ID, this device's push token and the time. Turning this off deletes the key, so nothing sent to it can be read.")
         }
     }
 
@@ -250,7 +250,7 @@ struct RelaySettingsSection: View {
     private var pairingRows: some View {
         if let pairing = relay.pairing {
             if relay.pairingOutOfDate {
-                Label("This phone's push address changed. Give TenantKeep Watch the new pairing code below, or relayed alerts will not arrive.",
+                Label("This device's push address changed. Give TenantKeep Watch the new pairing code below, or relayed alerts will not arrive.",
                       systemImage: "exclamationmark.triangle")
                     .font(.footnote)
                     .foregroundStyle(.orange)
@@ -292,7 +292,7 @@ struct RelaySettingsSection: View {
         } else {
             HStack(spacing: 8) {
                 ProgressView()
-                Text("Registering this phone for push").font(.footnote).foregroundStyle(.secondary)
+                Text("Registering this device for push").font(.footnote).foregroundStyle(.secondary)
             }
         }
     }

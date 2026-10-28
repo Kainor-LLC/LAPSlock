@@ -149,7 +149,7 @@ public struct SignInView: View {
                 .font(.headline)
             InfoRow(
                 icon: "arrow.left.arrow.right",
-                title: "Straight from Microsoft to your phone",
+                title: "Straight from Microsoft to your device",
                 detail: "There's no middleman server. Passwords go from Microsoft Graph to this device and nowhere else, so there's nothing in between that could see, store, or log them."
             )
             InfoRow(
