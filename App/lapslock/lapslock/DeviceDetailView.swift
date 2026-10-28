@@ -1122,7 +1122,7 @@ struct DeviceDetailView: View {
                 } else if ManagedConfigStore.shared.config.isDisabled("deviceActions") {
                     Text("Reading keys needs no write permission. Your organization has turned off device actions here, so rotate keys from the Intune admin center.")
                 } else {
-                    Text("Reading keys needs no write permission. Rotating them does: turn on **Allow device actions** in Settings, or rotate from the Intune admin center.")
+                    Text("Reading keys needs no write permission. Rotating them does: turn on **Allow device actions** in Settings, under Actions and Permissions, or rotate from the Intune admin center.")
                 }
             } icon: {
                 Image(systemName: model.actionsEnabled ? "lock.open" : "lock.shield")

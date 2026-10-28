@@ -113,7 +113,7 @@ public enum ApprovalsError: Error, Sendable, Equatable {
 
     public var message: String {
         switch self {
-        case .consentRequired: return "This organization hasn't granted TenantKeep the PIM permissions yet. Turn on role activation in Settings."
+        case .consentRequired: return "This organization hasn't granted TenantKeep the PIM permissions yet. Turn on role activation in Settings, under Actions and Permissions."
         case .notAuthorized:   return "Your account can't read PIM approvals here."
         case .unavailable:     return "Microsoft Entra isn't answering right now. Try again shortly."
         case .nothingToDecide: return "This request no longer needs your decision. Someone may have answered it already."

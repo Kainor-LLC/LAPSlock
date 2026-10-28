@@ -409,7 +409,7 @@ struct DeviceActionsDisabledSection: View {
                 if turnedOffByOrganization {
                     Text("Your organization has turned off device actions in this app. Sync, restart, lock, locate and key rotation stay in the Intune admin center.")
                 } else {
-                    Text("Sync, restart, lock, locate and BitLocker key rotation are off until you turn on **Allow device actions** in Settings. Turning it on asks your organization for permission to modify devices; leaving it off keeps this app read-only.")
+                    Text("Sync, restart, lock, locate and BitLocker key rotation are off until you turn on **Allow device actions** in Settings, under Actions and Permissions. Turning it on asks your organization for permission to modify devices; leaving it off keeps this app read-only.")
                 }
             } icon: {
                 Image(systemName: "lock.shield")

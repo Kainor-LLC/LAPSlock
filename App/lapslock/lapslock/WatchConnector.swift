@@ -335,7 +335,7 @@ enum WatchHandlers {
             },
             activate: { id, reason, hours in
                 guard activationEnabled else {
-                    return WatchReply(outcome: .failed, message: "Turn on role activation in Settings on your iPhone first.")
+                    return WatchReply(outcome: .failed, message: "Turn on role activation in Settings on your iPhone, under Actions and Permissions, first.")
                 }
                 var known = memory.eligible.first(where: { $0.id == id })
                 if known == nil { known = (try? await privileged.eligibleAccess())?.first(where: { $0.id == id }) }

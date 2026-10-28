@@ -471,7 +471,7 @@ struct PersonActionsView: View {
                     }
                 }
             } else if makeDeviceActions == nil {
-                Text("Turn on device actions in Settings to retire or wipe from here.")
+                Text("Turn on device actions in Settings, under Actions and Permissions, to retire or wipe from here.")
                     .font(.footnote).foregroundStyle(.secondary)
             } else if let error = model.devicesError {
                 Text(error).font(.footnote).foregroundStyle(.secondary)

@@ -5,13 +5,13 @@ import ManagedConfigKit
 import AuthKit
 import GroupWritesKit
 import CredentialKit
-import DiagnosticsKit
 import LicensingKit
-import PrivilegedAccessKit
 import SubscriptionKit
 import StoreKit
 
-// Settings. Three toggles, each with a deliberate design decision behind it.
+// Settings. The first page holds what has to be found without looking: the organization's
+// managed settings, the plan and its purchase, and Sign out. Everything else is a page of
+// its own, which keeps its own state and reads it when it opens.
 //
 // Where this lives: a gear in the device list toolbar, opening a sheet. Not on the device
 // list itself, that screen's job is find-a-device-fast, and controls there compete with
@@ -233,36 +233,13 @@ struct SettingsView: View {
     var hasSession: Bool = true
 
     @Environment(\.dismiss) private var dismiss
-    @State private var isRequestingConsent = false
-    @State private var consentError: String?
-
-    // Diagnostics
-    @State private var includeTenantId = false
-    @State private var report: String?
-    @State private var isBuildingReport = false
-    @State private var showingReport = false
-    @State private var mailError: String?
-    @Environment(\.openURL) private var openURL
 
     // Free tier
     @State private var remainingReveals = 0
     @State private var nextAvailable: Date?
 
-    @State private var copiedTenantId = false
-    @State private var isRequestingPrivilegedConsent = false
-    @State private var privilegedConsentError: String?
     @State private var showingManageSubscriptions = false
     @State private var purchaseMessage: String?
-    @State private var isRequestingNamesConsent = false
-    @State private var namesConsentError: String?
-    @State private var showingPrivilegedSheet = false
-
-    // Organization license
-    @State private var license: EntitlementState = .free
-    @State private var isLicenseActivated = false
-    @State private var licenseIsForAnotherOrganization = false
-    @State private var isFetchingLicense = false
-    @State private var licenseMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -270,29 +247,11 @@ struct SettingsView: View {
                 if managed.config.isManaged {
                     managedSection
                 }
-                appearanceSection
-                appLockSection
-                if hasSession {
-                    userNamesSection
-                    if let notificationsStore, !notificationTenants.isEmpty {
-                        NotificationsSettingsSection(
-                            model: NotificationsSettingsModel(tenants: notificationTenants, store: notificationsStore),
-                            isPro: isPro,
-                            isDemo: isDemo)
-                    }
-                    RelaySettingsSection(isPro: isPro, isDemo: isDemo)
-                    deviceActionsSection
-                    userActionsSection
-                    groupWritesSection
-                    privilegedAccessSection
-                    shiftLogSection
-                    macOSSection
-                }
+                // The plan stays on the first page: App Review has to find the purchase
+                // without knowing where to look.
                 freeTierSection
                 subscriptionSection
-                licenseSection
-                diagnosticsSection
-                aboutSection
+                pagesSection
                 sessionSection
                 #if DEBUG
                 debugSection
@@ -300,7 +259,6 @@ struct SettingsView: View {
             }
             .task {
                 refreshMeter()
-                refreshLicense()
                 // Defensive: if a previous visit left the purchase spinner up because
                 // StoreKit never answered, reopening Settings must not inherit it.
                 subscriptions?.stopWaiting()
@@ -309,18 +267,13 @@ struct SettingsView: View {
                 await subscriptions?.loadOffersIfNeeded()
             }
             .navigationTitle("Settings")
+            .navigationDestination(for: SettingsPage.self) { page in
+                destination(page)
+                    .toolbarBackground(.visible, for: .navigationBar)
+            }
             .toolbarBackground(.visible, for: .navigationBar)
-            // Attached to the NavigationStack, not to the Section. A Section re-renders
-            // on every form state change, which dismissed the sheet the instant it opened.
-            .sheet(isPresented: $showingReport) {
-                reportPreview
-            }
-            .sheet(isPresented: $showingPrivilegedSheet) {
-                if let privilegedSheet { privilegedSheet() }
-            }
-            // On the NavigationStack for the same reason as the two above: a Section
-            // re-renders on every form state change, which dismissed a sheet the instant it
-            // opened once before.
+            // On the NavigationStack, not a Section: a Section re-renders on every form
+            // state change, which dismissed a sheet the instant it opened once before.
             .manageSubscriptionsSheet(isPresented: $showingManageSubscriptions)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -330,123 +283,72 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - appearance
+    // MARK: - pages
 
-    private var appearanceSection: some View {
-        Section("Appearance") {
-            Picker("Theme", selection: $settings.appearance) {
-                ForEach(AppearancePreference.allCases) { pref in
-                    Text(pref.label).tag(pref)
+    enum SettingsPage: Hashable {
+        case general, notifications, actions, shiftLog, license, diagnostics, about
+    }
+
+    /// One row per page. A page that needs a session or a tenant is absent rather than
+    /// present and broken, the rule the sections followed when they were one form.
+    private var pagesSection: some View {
+        Section {
+            NavigationLink(value: SettingsPage.general) {
+                Label("General", systemImage: "gearshape")
+            }
+            if hasSession {
+                NavigationLink(value: SettingsPage.notifications) {
+                    Label("Notifications", systemImage: "bell.badge")
                 }
-            }
-            .pickerStyle(.segmented)
-        }
-    }
-
-    // MARK: - app lock
-
-    /// Holds the whole app behind Face ID.
-    ///
-    /// Unlike the other toggles this asks Microsoft for nothing, it is entirely local, so
-    /// there is no consent prompt and no new permission on anybody's consent screen.
-    private var appLockSection: some View {
-        Section {
-            if managed.config.appLockRequired {
-                LabeledContent("Require Face ID to open TenantKeep", value: "Required")
-                Text("Your organization requires the app lock.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Toggle("Require Face ID to open TenantKeep", isOn: $settings.appLockEnabled)
-            }
-        } header: {
-            Text("App Lock")
-        } footer: {
-            Text(managed.config.appLockRequired ? """
-                Separate from the check before each password reveal, which always runs. This \
-                one protects the device list itself, and your organization requires it.
-
-                TenantKeep re-locks after a few minutes in the background, not instantly, so \
-                switching to Microsoft Authenticator and back does not ask twice.
-                """ : """
-                Off by default. Separate from the check before each password reveal, which \
-                always runs. This one protects the device list itself: hostnames, primary \
-                users and compliance state are worth something to an attacker even with no \
-                password on screen.
-
-                TenantKeep re-locks after a few minutes in the background, not instantly, so \
-                switching to Microsoft Authenticator and back does not ask twice.
-                """)
-        }
-    }
-
-    // MARK: - user names
-
-    /// Display names for device rows, behind an opt-in toggle.
-    ///
-    /// Intune often leaves `userDisplayName` empty, so rows show the UPN. Filling the gap
-    /// means reading user objects from Entra, which puts `User.ReadBasic.All` on the
-    /// customer's consent screen, a password app asking to read the user list. That is a
-    /// choice for the customer, so it has the same shape as rotation: off by default, consent
-    /// requested at the moment of the decision, and the footer says exactly what it adds.
-    private var userNamesSection: some View {
-        Section {
-            Toggle("Show user names", isOn: Binding(
-                get: { settings.userNamesEnabled },
-                set: { newValue in
-                    if newValue {
-                        Task { await enableUserNames() }
-                    } else {
-                        settings.userNamesEnabled = false
-                        namesConsentError = nil
+                NavigationLink(value: SettingsPage.actions) {
+                    Label("Actions and Permissions", systemImage: "hand.raised")
+                }
+                if shiftLog != nil, shiftLogTenantId != nil {
+                    NavigationLink(value: SettingsPage.shiftLog) {
+                        Label("Shift Log", systemImage: "list.bullet.rectangle")
                     }
                 }
-            ))
-            .disabled(isRequestingNamesConsent)
-
-            if isRequestingNamesConsent {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Requesting permission…").font(.footnote).foregroundStyle(.secondary)
+            }
+            if entitlement != nil, !isDemo {
+                NavigationLink(value: SettingsPage.license) {
+                    Label("Organization License", systemImage: "checkmark.seal")
                 }
             }
-
-            if let namesConsentError {
-                Text(namesConsentError)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
+            NavigationLink(value: SettingsPage.diagnostics) {
+                Label("Diagnostics", systemImage: "stethoscope")
             }
-        } header: {
-            Text("Device List")
-        } footer: {
-            Text("""
-                Off by default. Intune often leaves a device's primary user as a sign-in \
-                address rather than a name. Turning this on looks the name up in Microsoft \
-                Entra ID, which adds one permission to what TenantKeep requests from your \
-                organization: reading basic user profiles (User.ReadBasic.All). Names are \
-                kept in memory for this session and never stored.
-
-                Leaving it off means TenantKeep never reads your user directory.
-                """)
+            NavigationLink(value: SettingsPage.about) {
+                Label("About", systemImage: "info.circle")
+            }
         }
     }
 
-    private func enableUserNames() async {
-        namesConsentError = nil
-        if isDemo {
-            settings.userNamesEnabled = true
-            namesConsentError = "Demo mode: no permission was actually requested."
-            return
-        }
-        guard let requestUserNamesConsent else { return }
-        isRequestingNamesConsent = true
-        defer { isRequestingNamesConsent = false }
-
-        if let error = await requestUserNamesConsent() {
-            settings.userNamesEnabled = false
-            namesConsentError = error
-        } else {
-            settings.userNamesEnabled = true
+    /// Each page owns its state and reads it when it opens.
+    @ViewBuilder
+    private func destination(_ page: SettingsPage) -> some View {
+        switch page {
+        case .general:
+            SettingsGeneralPage(settings: settings, isDemo: isDemo, hasSession: hasSession,
+                                requestUserNamesConsent: requestUserNamesConsent)
+        case .notifications:
+            SettingsNotificationsPage(notificationTenants: notificationTenants, notificationsStore: notificationsStore,
+                                      isPro: isPro, isDemo: isDemo)
+        case .actions:
+            SettingsActionsPage(settings: settings, isDemo: isDemo,
+                                requestDeviceActionsConsent: requestDeviceActionsConsent,
+                                requestUserActionsConsent: requestUserActionsConsent,
+                                requestGroupWritesConsent: requestGroupWritesConsent,
+                                requestPrivilegedConsent: requestPrivilegedConsent,
+                                privilegedSheet: privilegedSheet)
+        case .shiftLog:
+            SettingsShiftLogPage(shiftLog: shiftLog, shiftLogTenantId: shiftLogTenantId)
+        case .license:
+            SettingsLicensePage(entitlement: entitlement, isDemo: isDemo, tenantId: tenantId,
+                                signedInDomain: signedInDomain, entitlementDidChange: entitlementDidChange)
+        case .diagnostics:
+            SettingsDiagnosticsPage(tenantId: tenantId, lastAuthFailure: lastAuthFailure)
+        case .about:
+            SettingsAboutPage(tenantId: tenantId, isDemo: isDemo)
         }
     }
 
@@ -468,395 +370,6 @@ struct SettingsView: View {
             Text("Managed by Your Organization")
         } footer: {
             Text("These settings come from your organization's Intune app configuration policy and can't be changed here. A setting with a warning was not understood and is being ignored; tell whoever manages the policy.")
-        }
-    }
-
-    // MARK: - device actions
-
-    @ViewBuilder
-    private var deviceActionsSection: some View {
-        if managed.config.isDisabled("deviceActions") {
-            Section {
-                Text("Your organization has turned off device actions in this app.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Device Actions")
-            }
-        } else {
-            deviceActionsToggleSection
-        }
-    }
-
-    private var deviceActionsToggleSection: some View {
-        Section {
-            Toggle("Allow device actions", isOn: Binding(
-                get: { settings.deviceActionsEnabled },
-                set: { newValue in
-                    if newValue {
-                        // Ask for consent NOW, at the moment of the decision, rather than
-                        // later when the admin is standing at a broken machine. Finding
-                        // out your org blocked the permission should not happen mid-repair.
-                        Task { await enableDeviceActions() }
-                    } else {
-                        settings.deviceActionsEnabled = false
-                        consentError = nil
-                    }
-                }
-            ))
-            .disabled(isRequestingConsent)
-
-            if isRequestingConsent {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Requesting permission…").font(.footnote).foregroundStyle(.secondary)
-                }
-            }
-
-            if let consentError {
-                Text(consentError)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
-        } header: {
-            Text("Device Actions")
-        } footer: {
-            Text("""
-                Off by default. Turning this on asks Microsoft Entra ID for permission to \
-                **modify** devices in your tenant, not just read them; your administrator \
-                may need to approve it. It adds sync, restart, remote lock, locate and \
-                BitLocker key rotation to every device screen. Each action asks before it \
-                fires, is queued by Intune, and is written to the shift log below.
-
-                Leaving it off means TenantKeep only ever requests read access.
-                """)
-        }
-    }
-
-    // MARK: - user actions
-
-    @State private var userActionsError: String?
-    @State private var isRequestingUserActions = false
-
-    @ViewBuilder
-    private var userActionsSection: some View {
-        if managed.config.isDisabled("userActions") {
-            Section {
-                Text("Your organization has turned off user actions in this app.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            } header: {
-                Text("User Actions")
-            }
-        } else {
-            Section {
-                Toggle("Allow user actions", isOn: Binding(
-                    get: { settings.userActionsEnabled },
-                    set: { newValue in
-                        if newValue { Task { await enableUserActions() } } else {
-                            settings.userActionsEnabled = false
-                            userActionsError = nil
-                        }
-                    }))
-                    .disabled(isRequestingUserActions)
-                if isRequestingUserActions {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Requesting permission…").font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                if let userActionsError {
-                    Text(userActionsError).font(.footnote).foregroundStyle(.red)
-                }
-            } header: {
-                Text("User Actions")
-            } footer: {
-                Text("""
-                    Off by default. Turning this on asks Microsoft Entra ID for permission to \
-                    sign people out, block and allow sign-in, remove their sign-in methods, \
-                    issue a Temporary Access Pass, and, on Entra ID P2, mark risk. They appear \
-                    on a person's page in People, with their leaver checklist. Each asks before it is \
-                    sent; removing sign-in methods asks for the address typed back.
-                    """)
-            }
-        }
-    }
-
-    private func enableUserActions() async {
-        userActionsError = nil
-        guard let requestUserActionsConsent else {
-            settings.userActionsEnabled = true
-            userActionsError = "Demo mode: no permission was actually requested."
-            return
-        }
-        isRequestingUserActions = true
-        defer { isRequestingUserActions = false }
-        if let error = await requestUserActionsConsent() {
-            settings.userActionsEnabled = false
-            userActionsError = error
-        } else {
-            settings.userActionsEnabled = true
-        }
-    }
-
-    // MARK: - group changes
-
-    @State private var groupWritesError: String?
-    @State private var isRequestingGroupWrites = false
-    @State private var confirmingAllGroups = false
-
-    @ViewBuilder
-    private var groupWritesSection: some View {
-        let config = managed.config
-        if config.isDisabled("groupWrites") || (config.appliedKeys.contains("groupWrite.scope") && config.groupWriteScope == .none) {
-            Section {
-                Text("Your organization has turned off group changes in this app.")
-                    .font(.footnote).foregroundStyle(.secondary)
-            } header: {
-                Text("Group Changes")
-            }
-        } else {
-            Section {
-                Toggle("Allow group changes", isOn: Binding(
-                    get: { settings.groupWritesEnabled },
-                    set: { newValue in
-                        if newValue { Task { await enableGroupWrites() } } else {
-                            settings.groupWritesEnabled = false
-                            groupWritesError = nil
-                        }
-                    }))
-                    .disabled(isRequestingGroupWrites)
-                if isRequestingGroupWrites {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Requesting permission…").font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                if let groupWritesError {
-                    Text(groupWritesError).font(.footnote).foregroundStyle(.red)
-                }
-                if settings.groupWritesEnabled {
-                    if config.appliedKeys.contains("groupWrite.scope") {
-                        LabeledContent("Which groups", value: config.groupWriteScope == .all ? "All, set by your organization" : "Helpdesk, set by your organization")
-                    } else {
-                        Picker("Which groups", selection: Binding(
-                            get: { settings.groupWriteMode },
-                            set: { mode in
-                                if mode == .all { confirmingAllGroups = true } else { settings.groupWriteMode = .tagged }
-                            })) {
-                            Text("Helpdesk").tag(GroupWriteMode.tagged)
-                            Text("All").tag(GroupWriteMode.all)
-                        }
-                        // On the row that asks, not the Section: a Section's modifiers are
-                        // copied onto each of its rows, and the copies race to present.
-                        .alert("Allow changes to any group?", isPresented: $confirmingAllGroups) {
-                            Button("Allow all groups", role: .destructive) { settings.groupWriteMode = .all }
-                            Button("Keep helpdesk groups", role: .cancel) {}
-                        } message: {
-                            Text("Your role still limits what you can change. Role-assignable, dynamic, PIM, synced and mail groups stay off limits, and a group a Conditional Access policy names needs its name typed back.")
-                        }
-                    }
-                }
-            } header: {
-                Text("Group Changes")
-            } footer: {
-                Text(groupWritesFooter)
-            }
-        }
-    }
-
-    private var groupWritesFooter: String {
-        let policy = settings.groupWritePolicy
-        let helpdesk = "groups in the " + policy.administrativeUnit + " administrative unit" + (policy.prefix.map { ", groups whose names start " + $0 } ?? "") + ", and groups you own"
-        return "Off by default. Turning this on asks Microsoft Entra ID for permission to change group membership, never the groups themselves. "
-            + "Helpdesk means " + helpdesk + ". It appears as Groups on a person's page in People, and every change shows what the group grants before it is sent."
-    }
-
-    private func enableGroupWrites() async {
-        groupWritesError = nil
-        guard let requestGroupWritesConsent else {
-            settings.groupWritesEnabled = true
-            groupWritesError = "Demo mode: no permission was actually requested."
-            return
-        }
-        isRequestingGroupWrites = true
-        defer { isRequestingGroupWrites = false }
-        if let error = await requestGroupWritesConsent() {
-            settings.groupWritesEnabled = false
-            groupWritesError = error
-        } else {
-            settings.groupWritesEnabled = true
-        }
-    }
-
-    private func enableDeviceActions() async {
-        consentError = nil
-        if isDemo {
-            // No real tenant to consent against; let the toggle work so the UI is
-            // explorable, and say so plainly.
-            settings.deviceActionsEnabled = true
-            consentError = "Demo mode: no permission was actually requested."
-            return
-        }
-        isRequestingConsent = true
-        defer { isRequestingConsent = false }
-
-        if let error = await requestDeviceActionsConsent() {
-            settings.deviceActionsEnabled = false
-            consentError = error
-        } else {
-            settings.deviceActionsEnabled = true
-        }
-    }
-
-    // MARK: - shift log
-
-    @State private var shiftLogExport: String?
-    @State private var shiftLogCount: Int?
-    @State private var confirmingClear = false
-
-    @ViewBuilder
-    private var shiftLogSection: some View {
-        if let shiftLog, let tenant = shiftLogTenantId {
-            Section {
-                if let count = shiftLogCount {
-                    LabeledContent("Entries", value: String(count))
-                }
-                if let export = shiftLogExport {
-                    ShareLink(item: export, subject: Text("TenantKeep shift log")) {
-                        Label("Export shift log", systemImage: "square.and.arrow.up")
-                    }
-                }
-                Button(role: .destructive) {
-                    confirmingClear = true
-                } label: {
-                    Label("Clear shift log", systemImage: "trash")
-                }
-                .disabled((shiftLogCount ?? 0) == 0)
-                .confirmationDialog("Clear the shift log for this tenant?", isPresented: $confirmingClear, titleVisibility: .visible) {
-                    Button("Clear", role: .destructive) {
-                        Task {
-                            await shiftLog.clear(tenantId: tenant)
-                            await refreshShiftLog(shiftLog, tenant: tenant)
-                        }
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("The tenant's audit log at Microsoft is not affected.")
-                }
-            } header: {
-                Text("Shift Log")
-            } footer: {
-                Text("Every device, user and group action requested from this app, with the time, the target, the outcome and Microsoft's request id. On this device only; the tenant audit log is authoritative. Demo mode keeps its own log, not this one.")
-            }
-            .task { await refreshShiftLog(shiftLog, tenant: tenant) }
-        }
-    }
-
-    private func refreshShiftLog(_ log: any ShiftLogging, tenant: String) async {
-        let entries = await log.entries(tenantId: tenant)
-        shiftLogCount = entries.count
-        shiftLogExport = await log.export(tenantId: tenant, now: Date())
-    }
-
-    // MARK: - privileged access
-
-    /// Just-in-time role activation, behind an opt-in toggle.
-    ///
-    /// Same shape as the rotation toggle above, and the same reason: the permission this
-    /// asks for, requesting a privilege escalation, reads worse on a consent screen than
-    /// reading a password does. A customer who never turns it on never sees it requested.
-    ///
-    /// The button appears only once the toggle is on, because offering an action whose
-    /// permission has not been granted just produces a failure the user cannot act on.
-    @ViewBuilder
-    private var privilegedAccessSection: some View {
-        if requestPrivilegedConsent != nil {
-            Section {
-                Toggle("Allow role activation", isOn: Binding(
-                    get: { settings.privilegedActivationEnabled },
-                    set: { newValue in
-                        if newValue {
-                            // Ask at the moment of the decision, like rotation. Discovering
-                            // your organization blocked it while standing at a broken
-                            // machine is the wrong time to find out.
-                            Task { await enablePrivilegedActivation() }
-                        } else {
-                            settings.privilegedActivationEnabled = false
-                            privilegedConsentError = nil
-                        }
-                    }
-                ))
-                .disabled(isRequestingPrivilegedConsent)
-
-                if settings.privilegedActivationEnabled, privilegedSheet != nil {
-                    Button {
-                        showingPrivilegedSheet = true
-                    } label: {
-                        Label("Activate a role now", systemImage: "person.badge.key")
-                    }
-                }
-
-                if let privilegedConsentError {
-                    Text(privilegedConsentError)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Privileged Access")
-            } footer: {
-                Text("""
-                    If your role is eligible through Privileged Identity Management rather than permanently assigned, TenantKeep can activate it here instead of sending you to the portal.
-
-                    This asks Microsoft for permission to request activation of your own eligible roles, never anyone else's. Leave it off and that permission is never requested.
-
-                    This switch is your preference; the permission itself is granted per organization. Signing in to a different one asks again, and the activation screen offers it there when needed.
-                    """)
-            }
-        }
-    }
-
-    private func enablePrivilegedActivation() async {
-        privilegedConsentError = nil
-        guard let requestPrivilegedConsent else { return }
-
-        if isDemo {
-            settings.privilegedActivationEnabled = true
-            privilegedConsentError = "Demo mode: no permission was actually requested."
-            return
-        }
-
-        isRequestingPrivilegedConsent = true
-        defer { isRequestingPrivilegedConsent = false }
-
-        if let error = await requestPrivilegedConsent() {
-            settings.privilegedActivationEnabled = false
-            privilegedConsentError = error
-        } else {
-            settings.privilegedActivationEnabled = true
-        }
-    }
-
-    // MARK: - macOS
-
-    /// Shown DISABLED rather than hidden. A hidden toggle is dead code nobody remembers,
-    /// and an admin wondering "why can't I see Mac passwords?" deserves an answer instead
-    /// of an absence. When Microsoft ships an API, this becomes live.
-    private var macOSSection: some View {
-        Section {
-            Toggle("macOS local admin passwords", isOn: .constant(false))
-                .disabled(true)
-        } header: {
-            Text("macOS")
-        } footer: {
-            Text("""
-                Unavailable. Microsoft doesn't currently offer an API for reading macOS \
-                local administrator passwords. Intune keeps them encrypted on its own \
-                service, and only the admin center can display them. TenantKeep will enable \
-                this automatically if that changes.
-
-                Rotation schedules for macOS devices are still shown where Microsoft \
-                returns them.
-                """)
         }
     }
 
@@ -1053,154 +566,6 @@ struct SettingsView: View {
             : "No subscription was found for this Apple Account. If you bought one with a different Apple ID, sign into that one in the App Store."
     }
 
-    // MARK: - organization license
-
-    /// Contract section 7.1: the app contacts Kainor's server only after the user taps
-    /// Activate here (or Refresh, later, or on the monthly schedule once activated). This
-    /// section is the whole user-facing surface of that decision, so the footer says it out
-    /// loud: until you activate, the app talks to Microsoft and nothing else.
-    ///
-    /// No pitch, no price. The same rule as the reveals section, this is a status readout
-    /// and an action, for an audience that resents being sold to inside a settings screen.
-    @ViewBuilder
-    private var licenseSection: some View {
-        if let entitlement, !isDemo {
-            Section {
-                if isLicenseActivated, licenseIsForAnotherOrganization {
-                    // Activated, but for a different tenant. Not unlicensed, so do not
-                    // show a bare Activate button as if nothing had happened, but the
-                    // license does not apply here, so Refresh would fetch for the wrong
-                    // organization. Say which situation this is and offer the way out.
-                    LabeledContent("Plan", value: "Free here")
-                    Button {
-                        guard let tenantId else { return }
-                        Task { await runLicenseAction { await entitlement.activate(tenantId: tenantId) } }
-                    } label: {
-                        Label(Self.activateLabel(signedInDomain), systemImage: "checkmark.seal")
-                    }
-                    .disabled(isFetchingLicense || tenantId == nil)
-                    Button(role: .destructive) {
-                        entitlement.remove()
-                        licenseMessage = nil
-                        refreshLicense()
-                        entitlementDidChange?()
-                    } label: {
-                        Label("Remove license", systemImage: "xmark.circle")
-                    }
-                    .disabled(isFetchingLicense)
-                } else if isLicenseActivated {
-                    LabeledContent("Plan", value: Self.tierName(license.tier))
-                    if let expires = license.expiresAt {
-                        LabeledContent(
-                            license.isInGrace ? "Could not refresh" : "Renews by",
-                            value: Self.relative(expires)
-                        )
-                    }
-                    Button {
-                        Task { await runLicenseAction { await entitlement.refreshNow() } }
-                    } label: {
-                        Label("Refresh license", systemImage: "arrow.clockwise")
-                    }
-                    .disabled(isFetchingLicense)
-                    Button(role: .destructive) {
-                        entitlement.remove()
-                        licenseMessage = nil
-                        refreshLicense()
-                        entitlementDidChange?()
-                    } label: {
-                        Label("Remove license", systemImage: "xmark.circle")
-                    }
-                    .disabled(isFetchingLicense)
-                } else {
-                    Button {
-                        guard let tenantId else { return }
-                        Task { await runLicenseAction { await entitlement.activate(tenantId: tenantId) } }
-                    } label: {
-                        Label(Self.activateLabel(signedInDomain), systemImage: "checkmark.seal")
-                    }
-                    .disabled(isFetchingLicense || tenantId == nil)
-                }
-                if let licenseMessage {
-                    Text(licenseMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                Text("Organization License")
-            } footer: {
-                Text(licenseIsForAnotherOrganization
-                    ? """
-                      This license belongs to a different Microsoft organization, so it does \
-                      not apply while you are signed in here. Activating replaces it; an \
-                      install holds one license at a time.
-
-                      If you manage several organizations, activate against your own \
-                      instead. An MSP license covers you in every tenant you sign into, \
-                      with nothing to re-activate.
-                      """
-                    : isLicenseActivated
-                    ? """
-                      Your license is keyed to this Microsoft tenant and checked against \
-                      Kainor about once a month. Nothing about which devices or credentials \
-                      you look at is ever sent.
-                      """
-                    : """
-                      An organization license is keyed to your Microsoft tenant. Until you \
-                      activate one, TenantKeep never contacts Kainor: it talks to Microsoft and \
-                      nothing else, which you can confirm with a network proxy.
-
-                      If you manage several organizations, activate while signed in to your \
-                      own. An MSP license then covers every tenant you sign into.
-                      """)
-            }
-        }
-    }
-
-    /// Names the organization being licensed. Falls back to generic wording rather than
-    /// showing a GUID, which would mean nothing to the person reading it.
-    static func activateLabel(_ domain: String?) -> String {
-        guard let domain else { return "Activate organization license" }
-        return "Activate license for \(domain)"
-    }
-
-    private func refreshLicense() {
-        guard let entitlement else { return }
-        isLicenseActivated = entitlement.isActivated
-        license = entitlement.state(signedInTenantId: tenantId)
-        licenseIsForAnotherOrganization = entitlement.isBoundToAnotherTenant(signedInTenantId: tenantId)
-    }
-
-    private func runLicenseAction(_ action: () async -> EntitlementFetchOutcome?) async {
-        isFetchingLicense = true
-        defer { isFetchingLicense = false }
-        let outcome = await action()
-        licenseMessage = Self.describe(outcome)
-        refreshLicense()
-        entitlementDidChange?()
-    }
-
-    static func tierName(_ tier: EntitlementTier) -> String {
-        switch tier {
-        case .free: return "Free"
-        case .pro: return "Pro"
-        case .msp: return "MSP"
-        case .enterprise: return "Enterprise"
-        }
-    }
-
-    /// One line, no drama. Contract section 7.6: every failure lands the user on the free
-    /// tier, and none of them is an alert.
-    static func describe(_ outcome: EntitlementFetchOutcome?) -> String? {
-        switch outcome {
-        case nil: return nil
-        case .updated(.free): return "No organization license was found for this tenant."
-        case .updated(let tier): return "\(tierName(tier)) license active."
-        case .offline: return "Couldn't reach the license service. Your current license still applies."
-        case .serverError: return "The license service is temporarily unavailable. Try again later."
-        case .rejected: return "The license service returned something this app could not accept."
-        }
-    }
-
     private var meterTotal: Int {
         meter?.policy.freeRevealsPerWindow ?? 5
     }
@@ -1240,144 +605,6 @@ struct SettingsView: View {
         }
     }
     #endif
-
-    // MARK: - diagnostics
-
-    private var diagnosticsSection: some View {
-        Section {
-            Toggle("Include tenant ID", isOn: $includeTenantId)
-                .disabled(tenantId == nil)
-
-            Button {
-                Task { await buildReport() }
-            } label: {
-                if isBuildingReport {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Gathering…")
-                    }
-                } else {
-                    Label("Gather diagnostics", systemImage: "stethoscope")
-                }
-            }
-            .disabled(isBuildingReport)
-
-            if let report {
-                // Email first, since that's the path most people will take.
-                Button {
-                    emailReport(report)
-                } label: {
-                    Label("Email to support", systemImage: "envelope")
-                }
-
-                if let mailError {
-                    Text(mailError)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                // Share carries the complete report with no length limit.
-                ShareLink(item: report) {
-                    Label("Share full report", systemImage: "square.and.arrow.up")
-                }
-                Button {
-                    showingReport = true
-                } label: {
-                    Label("Review before sending", systemImage: "doc.text.magnifyingglass")
-                }
-            }
-        } header: {
-            Text("Diagnostics")
-        } footer: {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Collects what happened, not what you saw: operation outcomes, HTTP status codes, and Microsoft Graph request IDs. It contains no passwords, recovery keys, usernames, device names, or response data. Those cannot be represented in the report at all.")
-                Text("Kept in memory only and cleared when the app closes, so reproduce the problem first, then gather.")
-            }
-        }
-    }
-
-    /// Let people read exactly what they're about to send. For an audience that audits
-    /// source code, "trust us, it's redacted" is the wrong posture.
-    private var reportPreview: some View {
-        NavigationStack {
-            ScrollView {
-                Text(report ?? "")
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-            }
-            .navigationTitle("Diagnostic report")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { showingReport = false }
-                }
-            }
-        }
-    }
-
-    /// Opens the default mail client with the report prefilled. Reports failure rather
-    /// than doing nothing: on the simulator (and on a device with no mail account) there
-    /// is nothing to open, and a silent no-op looks like a broken button.
-    private func emailReport(_ report: String) {
-        mailError = nil
-        guard let url = DiagnosticsExport.mailtoURL(
-            subject: DiagnosticsExport.subject(appVersion: Self.versionString),
-            body: DiagnosticsExport.trimmedForEmail(report)
-        ) else {
-            mailError = "Couldn't build the email. Use Share full report instead."
-            return
-        }
-        openURL(url) { accepted in
-            if !accepted {
-                mailError = "No mail app is set up on this device. Use Share full report instead, or send it to \(DiagnosticsExport.supportAddress)."
-            }
-        }
-    }
-
-    private func buildReport() async {
-        isBuildingReport = true
-        defer { isBuildingReport = false }
-        let env = DiagnosticsExport.environment(tenantId: tenantId)
-        var text = await DiagnosticsRecorder.shared.buildReport(
-            environment: env,
-            includeTenantId: includeTenantId && tenantId != nil
-        )
-        // The single most useful line for an auth problem. `reportFragment` is fixed keys
-        // and allowlisted values only; there is no free text for a description to hide in.
-        if let detail = await lastAuthFailure?() {
-            text += "\n\nLast sign-in or token failure\n  \(detail.reportFragment)"
-        }
-        report = text
-    }
-
-    // MARK: - about
-
-    private var aboutSection: some View {
-        Section("About") {
-            LabeledContent("Version", value: Self.versionString)
-            if let tenantId, !isDemo {
-                // Feeds the organization purchase flow, which is keyed to the tenant. A
-                // plain copy, not the expiring local-only pasteboard used for credentials:
-                // a tenant ID is public, any domain's is returned by unauthenticated OIDC
-                // discovery, and the buyer needs to paste it into a web form.
-                Button {
-                    UIPasteboard.general.string = tenantId
-                    copiedTenantId = true
-                } label: {
-                    LabeledContent("Tenant ID", value: copiedTenantId ? "Copied" : "Copy")
-                }
-                .buttonStyle(.plain)
-            }
-            Link("Privacy policy", destination: URL(string: "https://kainor.com/privacy")!)
-            Link("Terms", destination: URL(string: "https://kainor.com/terms")!)
-            Link("Source code", destination: URL(string: "https://github.com/Kainor-LLC/LAPSlock")!)
-            Text("TenantKeep On-Call is not affiliated with, endorsed by, or sponsored by Microsoft Corporation.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
 
     // MARK: - session
 

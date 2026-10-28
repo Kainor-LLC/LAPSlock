@@ -33,7 +33,7 @@ instead.
 - The app version (Settings → About) and the iOS version.
 - Whether you were in demo mode or signed in.
 - What you did, what you expected, what happened.
-- If it is an auth or Graph failure: the diagnostics report from Settings → *Gather
+- If it is an auth or Graph failure: the diagnostics report from Settings → Diagnostics → *Gather
   diagnostics*. It is designed to be safe to share, it structurally cannot contain a
   credential, a device name or a user name, and you can read the whole thing before
   sending it. It does contain Microsoft request IDs, which are what actually lets a failure
