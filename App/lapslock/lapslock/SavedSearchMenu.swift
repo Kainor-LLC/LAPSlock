@@ -1,6 +1,5 @@
 import SwiftUI
 import SavedSearchKit
-import Combine
 
 // Saved searches on screen, phase 5 step C. A bookmark menu in each searchable module's
 // toolbar: recall a saved search, save the one on screen, remove one. Pro, like the

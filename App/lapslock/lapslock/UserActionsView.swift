@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import ActionGateKit
 import UserActionsKit
 import CredentialKit
@@ -19,32 +18,33 @@ import DeviceActionsKit
 // foreground, and never logged.
 
 @MainActor
-final class UserActionsModel: ObservableObject {
-    @Published private(set) var working: UserActionKind?
-    @Published private(set) var note: String?
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var eligibleForActivation: [EligibleAccess] = []
-    @Published private(set) var pendingChallenge: (kind: UserActionKind, challenge: ClaimsChallenge)?
-    @Published private(set) var lastEntry: ShiftLogEntry?
-    @Published private(set) var wipeResult: AuthenticationWipeResult?
-    @Published var confirming: UserActionKind?
-    @Published var destructive: UserActionKind?
-    @Published var typedUPN = ""
-    @Published private(set) var undoing: UserActionKind?
-    @Published private(set) var undoRemaining = 0
+@Observable
+final class UserActionsModel {
+    private(set) var working: UserActionKind?
+    private(set) var note: String?
+    private(set) var errorMessage: String?
+    private(set) var eligibleForActivation: [EligibleAccess] = []
+    private(set) var pendingChallenge: (kind: UserActionKind, challenge: ClaimsChallenge)?
+    private(set) var lastEntry: ShiftLogEntry?
+    private(set) var wipeResult: AuthenticationWipeResult?
+    var confirming: UserActionKind?
+    var destructive: UserActionKind?
+    var typedUPN = ""
+    private(set) var undoing: UserActionKind?
+    private(set) var undoRemaining = 0
     /// The pass, while on screen. Masked text only ever leaves this through the copy button.
     /// For the leaver checklist: what each user action came to, and what was skipped.
-    @Published private(set) var results: [UserActionKind: LeaverStepStatus] = [:]
-    @Published var skipped: Set<LeaverStep> = []
-    @Published var deviceOutcomes: [String: String] = [:]
-    @Published private(set) var devices: [UserDevice] = []
-    @Published private(set) var devicesError: String?
-    @Published private(set) var devicesLoaded = false
-    @Published private(set) var passVisible = false
-    @Published private(set) var passSecondsLeft = 0
+    private(set) var results: [UserActionKind: LeaverStepStatus] = [:]
+    var skipped: Set<LeaverStep> = []
+    var deviceOutcomes: [String: String] = [:]
+    private(set) var devices: [UserDevice] = []
+    private(set) var devicesError: String?
+    private(set) var devicesLoaded = false
+    private(set) var passVisible = false
+    private(set) var passSecondsLeft = 0
     private var pass: SensitiveValue?
-    private var copied: String?
-    private var undoWindow: UndoWindow?
+    @ObservationIgnored private var copied: String?
+    @ObservationIgnored private var undoWindow: UndoWindow?
 
     let target: UserActionTarget
     private let provider: any UserActionsProviding
@@ -320,7 +320,7 @@ final class UserActionsModel: ObservableObject {
 /// person, so switching between the two views keeps one model and its countdown, and
 /// choosing another person or a sign-in replaces it, which cancels anything pending.
 struct PersonActionsView: View {
-    @StateObject private var model: UserActionsModel
+    @StateModel private var model: UserActionsModel
     var activate: (() -> Void)?
     /// Device actions for the leaver checklist's devices step; nil when they are off.
     var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
@@ -335,7 +335,7 @@ struct PersonActionsView: View {
     }
 
     init(make: @escaping () -> UserActionsModel, mode: Binding<Mode>, activate: (() -> Void)? = nil, makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil) {
-        _model = StateObject(wrappedValue: make())
+        _model = StateModel(wrappedValue: make())
         _mode = mode
         self.activate = activate
         self.makeDeviceActions = makeDeviceActions
@@ -630,7 +630,7 @@ struct PersonActionsView: View {
 /// actions' own flow, with their ownership rules, typed name, Face ID and countdown.
 struct LeaverDeviceRow: View {
     let device: UserDevice
-    @StateObject private var model: DeviceActionsModel
+    @StateModel private var model: DeviceActionsModel
     let report: (String) -> Void
     @State private var appeared = Date()
     @Environment(\.awayTenant) private var awayTenant
@@ -648,7 +648,7 @@ struct LeaverDeviceRow: View {
         }()
         let target = DeviceActionTarget(managedDeviceId: device.id, deviceName: device.label, platform: platform,
                                         ownerType: device.managedDeviceOwnerType, hasEntraIdentity: device.hasEntraIdentity)
-        _model = StateObject(wrappedValue: make(target))
+        _model = StateModel(wrappedValue: make(target))
     }
 
     var body: some View {

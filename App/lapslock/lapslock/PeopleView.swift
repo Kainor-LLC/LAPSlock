@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import SignInTriageKit
 import DiagnosticsKit
 import UserActionsKit
@@ -17,40 +16,50 @@ import DeviceActionsKit
 // Demo mode shows it in full so App Review can evaluate it.
 
 @MainActor
-final class SignInTriageModel: ObservableObject {
-    @Published var searchText = ""
-    @Published private(set) var users: [DirectoryUser] = []
-    @Published private(set) var isSearching = false
-    @Published private(set) var searchError: String?
+@Observable
+final class SignInTriageModel {
+    /// What is typed. The directory is searched once typing pauses.
+    var searchText = "" {
+        didSet { if searchText != oldValue { scheduleSearch() } }
+    }
+    private(set) var users: [DirectoryUser] = []
+    private(set) var isSearching = false
+    private(set) var searchError: String?
     /// The text the current results answer, so "nobody matches" waits for the search.
-    @Published private(set) var searchedText = ""
+    private(set) var searchedText = ""
 
-    @Published private(set) var selectedUser: DirectoryUser?
-    @Published private(set) var signIns: [SignInEvent] = []
-    @Published private(set) var isLoadingSignIns = false
-    @Published private(set) var signInsError: String?
-    @Published private(set) var lastFailureWasConsent = false
+    private(set) var selectedUser: DirectoryUser?
+    private(set) var signIns: [SignInEvent] = []
+    private(set) var isLoadingSignIns = false
+    private(set) var signInsError: String?
+    private(set) var lastFailureWasConsent = false
 
-    @Published var failuresOnly = false {
+    var failuresOnly = false {
         didSet { if selectedUser != nil { reloadSignIns() } }
     }
-    @Published var last24Hours = false {
+    var last24Hours = false {
         didSet { if selectedUser != nil { reloadSignIns() } }
     }
 
     let glossary = ErrorGlossary.bundled
     private let provider: any SignInTriageProviding
-    private var cancellables = Set<AnyCancellable>()
-    private var searchTask: Task<Void, Never>?
-    private var signInsTask: Task<Void, Never>?
+    @ObservationIgnored private var debounceTask: Task<Void, Never>?
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
+    @ObservationIgnored private var signInsTask: Task<Void, Never>?
 
     init(provider: any SignInTriageProviding) {
         self.provider = provider
-        $searchText
-            .removeDuplicates()
-            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-            .sink { [weak self] text in self?.search(text) }
-            .store(in: &cancellables)
+    }
+
+    deinit { debounceTask?.cancel() }
+
+    private func scheduleSearch() {
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+            self.search(self.searchText)
+        }
     }
 
     func signIn(_ id: String) -> SignInEvent? {
@@ -167,7 +176,7 @@ struct PeopleView: View {
     static let leaverSelection = "person.leaver"
     static let groupsSelection = "person.groups"
 
-    @ObservedObject var model: SignInTriageModel
+    @Bindable var model: SignInTriageModel
     let isDemo: Bool
     @Binding var selection: String?
     var requestConsent: (() async -> String?)? = nil

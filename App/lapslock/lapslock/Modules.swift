@@ -193,7 +193,7 @@ struct ModuleShell: View {
     /// The privileged access column. Nil in demo, where there is no account to activate
     /// anything for, and the column says so.
     private let privilegedColumn: (() -> PrivilegedAccessView)?
-    @StateObject private var approvalsModel: ApprovalsModel
+    @StateModel private var approvalsModel: ApprovalsModel
     /// A tapped alert to open, set by the root once it has switched to the alert's
     /// organization. Cleared here when opened.
     @Binding private var openRoute: AlertRoute?
@@ -218,12 +218,12 @@ struct ModuleShell: View {
         var label: String { self == .activate ? "Activate" : "Approvals" }
     }
 
-    @StateObject private var listModel: DeviceListModel
-    @StateObject private var policyModel: ConditionalAccessListModel
-    @StateObject private var pulseModel: TenantPulseModel
-    @StateObject private var triageModel: SignInTriageModel
-    @StateObject private var securityModel: SecurityListModel
-    @StateObject private var digestModel: ThreatDigestModel
+    @StateModel private var listModel: DeviceListModel
+    @StateModel private var policyModel: ConditionalAccessListModel
+    @StateModel private var pulseModel: TenantPulseModel
+    @StateModel private var triageModel: SignInTriageModel
+    @StateModel private var securityModel: SecurityListModel
+    @StateModel private var digestModel: ThreatDigestModel
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
     /// The device as it was when opened. A pull to refresh starts the list again from its
@@ -303,13 +303,13 @@ struct ModuleShell: View {
         self.security = security
         self.settingsBuilder = settingsBuilder
         self.privilegedColumn = privilegedColumn
-        _listModel = StateObject(wrappedValue: credentials.makeListModel())
-        _policyModel = StateObject(wrappedValue: conditionalAccess.makeListModel())
-        _pulseModel = StateObject(wrappedValue: tenantPulse.makeModel())
-        _triageModel = StateObject(wrappedValue: signInTriage.makeModel())
-        _securityModel = StateObject(wrappedValue: security.makeModel())
-        _digestModel = StateObject(wrappedValue: security.makeDigestModel())
-        _approvalsModel = StateObject(wrappedValue: makeApprovals())
+        _listModel = StateModel(wrappedValue: credentials.makeListModel())
+        _policyModel = StateModel(wrappedValue: conditionalAccess.makeListModel())
+        _pulseModel = StateModel(wrappedValue: tenantPulse.makeModel())
+        _triageModel = StateModel(wrappedValue: signInTriage.makeModel())
+        _securityModel = StateModel(wrappedValue: security.makeModel())
+        _digestModel = StateModel(wrappedValue: security.makeDigestModel())
+        _approvalsModel = StateModel(wrappedValue: makeApprovals())
         _selectedModule = State(initialValue: AppModule.lastUsed)
     }
 
@@ -794,17 +794,16 @@ struct ModuleShell: View {
     private var detailColumn: some View {
         switch selectedModule {
         case .credentials?:
-            if let id = selectedDeviceId, let device = device(id) {
-                // Keyed by id so choosing another device replaces the screen outright, which
-                // is what makes the previous one's onDisappear fire and its reveal wipe.
-                credentials.detailBuilder(device)
-                    .id(id)
+            if let id = selectedDeviceId {
+                // Its own view: until the shell has recorded the opened device it is found
+                // in the device list, and that read belongs to this column, not the shell.
+                DeviceDetailColumn(
+                    id: id,
+                    list: listModel,
+                    openedDevice: openedDevice,
+                    detailBuilder: credentials.detailBuilder)
             } else {
-                ContentUnavailableView {
-                    Label("No device selected", systemImage: "laptopcomputer")
-                } description: {
-                    Text("Pick a device from the list, or search for one.")
-                }
+                NoDeviceSelectedView()
             }
         case .people?:
             if let id = selectedSignInId, id == PeopleView.actionsSelection || id == PeopleView.leaverSelection,
@@ -954,7 +953,7 @@ struct ModuleShell: View {
     }
 
     private func device(_ id: String) -> ManagedDeviceSummary? {
-        listModel.devices.first { $0.id == id } ?? (openedDevice?.id == id ? openedDevice : nil)
+        DeviceDetailColumn.device(id, in: listModel, openedDevice: openedDevice)
     }
 
     // MARK: - keyboard
@@ -982,5 +981,43 @@ struct ModuleShell: View {
         .opacity(0)
         .accessibilityHidden(true)
         .allowsHitTesting(false)
+    }
+}
+
+/// The detail column for an open device: the device as it was when opened, or from the
+/// list for the moment before the shell has recorded it. Not from the list once opened:
+/// the detail's model keeps the device it was built with anyway, and reading the list here
+/// would redraw the open device on every page of the fill. It also covers a pull to
+/// refresh, which can leave the open device out of the list for a while.
+private struct DeviceDetailColumn: View {
+    let id: String
+    let list: DeviceListModel
+    let openedDevice: ManagedDeviceSummary?
+    let detailBuilder: (ManagedDeviceSummary) -> DeviceDetailView
+
+    var body: some View {
+        if let device = Self.device(id, in: list, openedDevice: openedDevice) {
+            // Keyed by id so choosing another device replaces the screen outright, which
+            // is what makes the previous one's onDisappear fire and its reveal wipe.
+            detailBuilder(device)
+                .id(id)
+        } else {
+            NoDeviceSelectedView()
+        }
+    }
+
+    static func device(_ id: String, in list: DeviceListModel, openedDevice: ManagedDeviceSummary?) -> ManagedDeviceSummary? {
+        if let openedDevice, openedDevice.id == id { return openedDevice }
+        return list.devices.first { $0.id == id }
+    }
+}
+
+private struct NoDeviceSelectedView: View {
+    var body: some View {
+        ContentUnavailableView {
+            Label("No device selected", systemImage: "laptopcomputer")
+        } description: {
+            Text("Pick a device from the list, or search for one.")
+        }
     }
 }

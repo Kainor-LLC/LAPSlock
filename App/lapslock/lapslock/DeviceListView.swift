@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import CredentialKit
 import InventoryKit
 import DiagnosticsKit
@@ -16,13 +15,25 @@ import LicensingKit
 // coverage to anyone holding the phone.
 
 @MainActor
-final class DeviceListModel: ObservableObject {
-    @Published var devices: [ManagedDeviceSummary] = []
-    @Published var query: String = ""
-    @Published var isLoading = false
-    @Published var isLoadingMore = false
-    @Published var hasMore = false
-    @Published var errorMessage: String?
+@Observable
+final class DeviceListModel {
+    /// Every change refilters at once and fills in missing names. Device changes (first
+    /// page, paging, refresh) are not typing bursts, so they are not debounced: delaying
+    /// them would only make loading look slower than it is.
+    var devices: [ManagedDeviceSummary] = [] {
+        didSet {
+            refilter()
+            enrichNames()
+        }
+    }
+    /// What is typed. The list filters on `appliedQuery`, which follows this after a pause.
+    var query: String = "" {
+        didSet { if query != oldValue { scheduleFilter() } }
+    }
+    var isLoading = false
+    var isLoadingMore = false
+    var hasMore = false
+    var errorMessage: String?
 
     /// Where the background fill has got to. Drives every "still loading" indicator, and
     /// the search empty state reads it to avoid the lie this exists to fix, "no devices
@@ -36,8 +47,8 @@ final class DeviceListModel: ObservableObject {
         /// still works, and search must say it is incomplete.
         case incomplete(loaded: Int)
     }
-    @Published private(set) var fill: FillState = .idle
-    private var fillTask: Task<Void, Never>?
+    private(set) var fill: FillState = .idle
+    @ObservationIgnored private var fillTask: Task<Void, Never>?
 
     /// True while the background fill is paging. Manual paging is a no-op meanwhile: two
     /// concurrent pagers read the same next link across the fetch suspension and append the
@@ -58,7 +69,11 @@ final class DeviceListModel: ObservableObject {
     ///
     /// Now it is recomputed only when the inputs actually change, and the query side is
     /// debounced, so typing "connor" costs one pass instead of six.
-    @Published private(set) var visibleDevices: [ManagedDeviceSummary] = []
+    private(set) var visibleDevices: [ManagedDeviceSummary] = []
+
+    /// The query `visibleDevices` was filtered with: `query` once typing pauses.
+    @ObservationIgnored private var appliedQuery = ""
+    @ObservationIgnored private var filterTask: Task<Void, Never>?
 
     /// How long to wait after the last keystroke before filtering. Short enough to feel
     /// immediate, long enough that a burst of typing collapses into one pass.
@@ -79,9 +94,8 @@ final class DeviceListModel: ObservableObject {
 
     /// The stored IDs. Devices are resolved from `devices` at render time, so a favourite
     /// pointing at a machine that has left the tenant simply stops appearing.
-    @Published private(set) var shortcuts: DeviceShortcuts = .empty
-    private var enrichTask: Task<Void, Never>?
-    private var cancellables = Set<AnyCancellable>()
+    private(set) var shortcuts: DeviceShortcuts = .empty
+    @ObservationIgnored private var enrichTask: Task<Void, Never>?
 
     /// Free-tier meter, shared with the detail screen so both read one ledger.
     private let meter: RevealMeter
@@ -90,7 +104,7 @@ final class DeviceListModel: ObservableObject {
     /// Reveals left in the current window. Shown on the LIST, not just on the detail
     /// screen, because an admin scrolling twenty machines should already know they are
     /// on their last one. Finding out only after opening a device is half a warning.
-    @Published private(set) var remainingReveals: Int = 0
+    private(set) var remainingReveals: Int = 0
 
     init(
         inventory: any DeviceInventoryProviding,
@@ -115,31 +129,27 @@ final class DeviceListModel: ObservableObject {
         self.meter = resolvedMeter
         self.isPro = isPro
         self.remainingReveals = resolvedMeter.remaining(isPro: isPro)
+    }
 
-        // Names are filled in whenever the device set changes, first page, each page the
-        // fill delivers, a manual page, and when the toggle flips on mid-session. The
-        // resolver caches misses as well as hits, so this settles after one round: devices
-        // that gained a name no longer need one, and devices whose user has none stay
-        // exactly as they were, which reassigns nothing and so does not re-trigger.
-        $devices
-            .dropFirst()
-            .sink { [weak self] _ in self?.enrichNames() }
-            .store(in: &cancellables)
+    // MARK: - search
 
-        // Only the query is debounced. Device changes (first page, paging, refresh) flow
-        // through immediately, because those are not user-typing bursts and delaying them
-        // would make loading look slower than it is.
-        let debouncedQuery = $query
-            .removeDuplicates()
-            .debounce(for: .milliseconds(Self.searchDebounce), scheduler: DispatchQueue.main)
+    /// Filters once typing pauses. Each keystroke cancels the wait before it, so a burst
+    /// of typing costs one pass.
+    private func scheduleFilter() {
+        filterTask?.cancel()
+        filterTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(Self.searchDebounce))
+            guard !Task.isCancelled, let self, self.query != self.appliedQuery else { return }
+            self.appliedQuery = self.query
+            self.refilter()
+        }
+    }
 
-        Publishers.CombineLatest($devices, debouncedQuery)
-            .map { devices, query in
-                PerfProbe.measure("deviceFilter", "devices=" + String(devices.count) + " queryLength=" + String(query.count)) {
-                    DeviceSearch.filter(devices, query: query)
-                }
-            }
-            .assign(to: &$visibleDevices)
+    private func refilter() {
+        let query = appliedQuery
+        visibleDevices = PerfProbe.measure("deviceFilter", "devices=" + String(devices.count) + " queryLength=" + String(query.count)) {
+            DeviceSearch.filter(devices, query: query)
+        }
     }
 
     // MARK: - favourites and recents
@@ -256,17 +266,22 @@ final class DeviceListModel: ObservableObject {
         }
     }
 
-    /// Fills in display names Intune left empty, if the customer has opted in.
-    ///
-    /// Silent on failure. Names are a nicety; a row falling back to the UPN is the
-    /// default experience, not an error, and a toggle left on in a tenant that has not
-    /// consented should degrade to that rather than complain on every page.
     /// Whether the Settings toggle is on. The list view watches it, and calls
     /// `userNamesTurnedOn()` when it flips on mid-session.
     var userNamesEnabled: Bool { settings?.userNamesEnabled ?? false }
 
     func userNamesTurnedOn() { enrichNames() }
 
+    /// Fills in display names Intune left empty, if the customer has opted in. Runs
+    /// whenever the device set changes (first page, each page the fill delivers, a manual
+    /// page) and when the toggle flips on mid-session. The resolver caches misses as well
+    /// as hits, so this settles after one round: devices that gained a name no longer need
+    /// one, and devices whose user has none stay exactly as they were, which reassigns
+    /// nothing and so does not run it again.
+    ///
+    /// Silent on failure. Names are a nicety; a row falling back to the UPN is the
+    /// default experience, not an error, and a toggle left on in a tenant that has not
+    /// consented should degrade to that rather than complain on every page.
     private func enrichNames() {
         guard let nameResolver, settings?.userNamesEnabled == true else { return }
         let needed = UserNameResolver.upnsNeedingNames(in: devices)
@@ -285,6 +300,7 @@ final class DeviceListModel: ObservableObject {
     deinit {
         fillTask?.cancel()
         enrichTask?.cancel()
+        filterTask?.cancel()
     }
 
     func loadMore() async {
@@ -370,7 +386,7 @@ final class DeviceListModel: ObservableObject {
 struct DeviceListView: View {
     /// Owned by the shell, which also owns the selection, so the list and the detail column
     /// read one model and one answer to which device is open.
-    @ObservedObject var model: DeviceListModel
+    @Bindable var model: DeviceListModel
     let isDemo: Bool
     /// The open device, by id. Set by a tap here, cleared by the shell when the module
     /// changes, and cleared by the system on the way back on iPhone.

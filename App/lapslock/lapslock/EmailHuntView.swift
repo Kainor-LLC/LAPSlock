@@ -1,7 +1,6 @@
 import SwiftUI
 import SecurityKit
 import SavedSearchKit
-import Combine
 
 // Investigate email: the Security module's Email tab, phase 3 step H, spec 3.12.
 //
@@ -12,16 +11,17 @@ import Combine
 // Results live in memory for the session and are never written to disk.
 
 @MainActor
-final class EmailHuntModel: ObservableObject {
-    @Published var value = ""
-    @Published var window: HuntWindow = .day
-    @Published private(set) var running = false
-    @Published private(set) var result: HuntResult?
-    @Published private(set) var ranValue: String?
-    @Published private(set) var ranWindow: HuntWindow = .day
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var needsConsent = false
-    @Published private(set) var copied = false
+@Observable
+final class EmailHuntModel {
+    var value = ""
+    var window: HuntWindow = .day
+    private(set) var running = false
+    private(set) var result: HuntResult?
+    private(set) var ranValue: String?
+    private(set) var ranWindow: HuntWindow = .day
+    private(set) var errorMessage: String?
+    private(set) var needsConsent = false
+    private(set) var copied = false
 
     let hunt: EmailHunt
     private let provider: any EmailHuntingProviding
@@ -132,7 +132,7 @@ struct EmailHuntListView: View {
 // MARK: - detail column
 
 struct EmailHuntDetailView: View {
-    @StateObject private var model: EmailHuntModel
+    @StateModel private var model: EmailHuntModel
     /// Saved searches, saved and recalled from here because this is where the query is.
     private let savedSearches: SavedSearchLibrary?
     private let apply: ((SavedSearch) -> Void)?
@@ -140,7 +140,7 @@ struct EmailHuntDetailView: View {
 
     init(make: @escaping () -> EmailHuntModel, savedSearches: SavedSearchLibrary? = nil, apply: ((SavedSearch) -> Void)? = nil,
          runEverywhere: ((SavedSearch) -> Void)? = nil) {
-        _model = StateObject(wrappedValue: make())
+        _model = StateModel(wrappedValue: make())
         self.savedSearches = savedSearches
         self.apply = apply
         self.runEverywhere = runEverywhere

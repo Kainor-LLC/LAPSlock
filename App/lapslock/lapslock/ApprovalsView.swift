@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import ActionGateKit
 import ApprovalsKit
 import ManagedConfigKit
@@ -13,15 +12,16 @@ import PlatformSecurity
 // Watch will ask the phone to do exactly this, through the same model.
 
 @MainActor
-final class ApprovalsModel: ObservableObject {
-    @Published private(set) var pending: [PendingApproval] = []
-    @Published private(set) var loading = false
-    @Published private(set) var loaded = false
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var deciding: String?
-    @Published private(set) var notes: [String: String] = [:]
-    @Published private(set) var failures: [String: String] = [:]
-    @Published private(set) var decided: [PendingApproval] = []
+@Observable
+final class ApprovalsModel {
+    private(set) var pending: [PendingApproval] = []
+    private(set) var loading = false
+    private(set) var loaded = false
+    private(set) var errorMessage: String?
+    private(set) var deciding: String?
+    private(set) var notes: [String: String] = [:]
+    private(set) var failures: [String: String] = [:]
+    private(set) var decided: [PendingApproval] = []
 
     private let provider: any ApprovalsProviding
 
@@ -91,7 +91,7 @@ extension PendingApproval {
 // MARK: - content column
 
 struct ApprovalsListView: View {
-    @ObservedObject var model: ApprovalsModel
+    let model: ApprovalsModel
     let isDemo: Bool
     @Binding var selection: String?
 
@@ -132,7 +132,7 @@ struct ApprovalsListView: View {
 // MARK: - detail column
 
 struct ApprovalDetailView: View {
-    @ObservedObject var model: ApprovalsModel
+    let model: ApprovalsModel
     let approval: PendingApproval
     @State private var justification = ""
     @State private var confirming: ApprovalDecision?

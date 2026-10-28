@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import TenantPulseKit
 import DiagnosticsKit
 
@@ -10,7 +9,8 @@ import DiagnosticsKit
 // content column is the cards; the detail column is whichever item was tapped.
 
 @MainActor
-final class TenantPulseModel: ObservableObject {
+@Observable
+final class TenantPulseModel {
 
     enum Card<Value: Equatable>: Equatable {
         case idle
@@ -19,13 +19,13 @@ final class TenantPulseModel: ObservableObject {
         case failed(message: String, needsConsent: Bool)
     }
 
-    @Published private(set) var health: Card<ServiceHealthReport> = .idle
-    @Published private(set) var messages: Card<[ServiceMessage]> = .idle
-    @Published private(set) var expiring: Card<[ExpiringItem]> = .idle
-    @Published private(set) var score: Card<SecureScoreSummary?> = .idle
-    @Published private(set) var isLoading = false
+    private(set) var health: Card<ServiceHealthReport> = .idle
+    private(set) var messages: Card<[ServiceMessage]> = .idle
+    private(set) var expiring: Card<[ExpiringItem]> = .idle
+    private(set) var score: Card<SecureScoreSummary?> = .idle
+    private(set) var isLoading = false
     /// How far back the Secure Score change looks. Seven days or thirty; remembered.
-    @Published var scoreWindowDays: Int {
+    var scoreWindowDays: Int {
         didSet { UserDefaults.standard.set(scoreWindowDays, forKey: Self.scoreWindowKey) }
     }
     static let scoreWindowKey = "settings.secureScoreWindowDays"
@@ -143,7 +143,7 @@ enum TenantPulseSelection {
 // MARK: - content column
 
 struct TenantPulseView: View {
-    @ObservedObject var model: TenantPulseModel
+    @Bindable var model: TenantPulseModel
     let isDemo: Bool
     @Binding var selection: String?
     /// Interactive consent for the module's scopes. Nil in demo.
@@ -422,7 +422,7 @@ struct TenantPulseView: View {
 // MARK: - detail column
 
 struct TenantPulseDetailView: View {
-    @ObservedObject var model: TenantPulseModel
+    let model: TenantPulseModel
     let selection: String
 
     var body: some View {

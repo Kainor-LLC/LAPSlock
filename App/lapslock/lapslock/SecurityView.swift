@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import SecurityKit
 import DiagnosticsKit
 
@@ -15,68 +14,90 @@ import DiagnosticsKit
 // Pro, by decision in the phase 2 plan, like People. Demo shows it in full.
 
 @MainActor
-final class SecurityListModel: ObservableObject {
-    @Published private(set) var incidents: [SecurityIncident] = []
-    @Published var query = ""
-    @Published var openOnly: Bool {
-        didSet { UserDefaults.standard.set(openOnly, forKey: Self.openOnlyKey) }
+@Observable
+final class SecurityListModel {
+    private(set) var incidents: [SecurityIncident] = [] {
+        didSet {
+            openHighCount = incidents.filter { $0.isOpen && $0.severity == .high }.count
+            refilter()
+        }
     }
-    @Published var severity: SecurityFilter.SeverityFloor {
-        didSet { UserDefaults.standard.set(severity.rawValue, forKey: Self.severityKey) }
+    /// What is typed. The list searches with it once typing pauses.
+    var query = "" {
+        didSet { if query != oldValue { scheduleSearch() } }
     }
-    @Published private(set) var visible: [SecurityIncident] = []
+    var openOnly: Bool {
+        didSet {
+            UserDefaults.standard.set(openOnly, forKey: Self.openOnlyKey)
+            if openOnly != oldValue { filterChanged() }
+        }
+    }
+    var severity: SecurityFilter.SeverityFloor {
+        didSet {
+            UserDefaults.standard.set(severity.rawValue, forKey: Self.severityKey)
+            if severity != oldValue { filterChanged() }
+        }
+    }
+    private(set) var visible: [SecurityIncident] = []
+    /// Open incidents at high severity, for the sidebar badge. Stored, so the sidebar
+    /// redraws when the count changes and not on every change to the incidents.
+    private(set) var openHighCount = 0
     /// Where the list continues when more incidents matched than were read. The screen
     /// says so, with a way to read on, rather than presenting part of the list as all of it.
-    @Published private(set) var more: URL?
-    @Published private(set) var isLoadingMore = false
-    @Published private(set) var isLoading = false
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var lastFailureWasConsent = false
+    private(set) var more: URL?
+    private(set) var isLoadingMore = false
+    private(set) var isLoading = false
+    private(set) var errorMessage: String?
+    private(set) var lastFailureWasConsent = false
     /// Set once the module has loaded at least once this session; the sidebar badge
     /// reads it, so the badge costs no call of its own.
-    @Published private(set) var hasLoaded = false
+    private(set) var hasLoaded = false
 
     static let openOnlyKey = "settings.securityOpenOnly"
     static let severityKey = "settings.securitySeverity"
 
     private let provider: any SecurityProviding
-    private var cancellables = Set<AnyCancellable>()
+    /// The query `visible` was searched with: `query` once typing pauses.
+    @ObservationIgnored private var appliedQuery = ""
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
     /// Moves on every load, so a slower load that started under the previous filter
     /// cannot land on top of the current one.
-    private var generation = 0
+    @ObservationIgnored private var generation = 0
 
     init(provider: any SecurityProviding) {
         self.provider = provider
         let defaults = UserDefaults.standard
         self.openOnly = defaults.object(forKey: Self.openOnlyKey) as? Bool ?? true
         self.severity = SecurityFilter.SeverityFloor(rawValue: defaults.string(forKey: Self.severityKey) ?? "") ?? .all
-        Publishers.CombineLatest4(
-            $incidents,
-            $query.removeDuplicates().debounce(for: .milliseconds(150), scheduler: DispatchQueue.main),
-            $openOnly.removeDuplicates(),
-            $severity.removeDuplicates())
-            .map { incidents, query, openOnly, severity in
-                Self.search(SecurityFilter(openOnly: openOnly, severity: severity).apply(incidents), query: query)
-            }
-            .assign(to: &$visible)
-        // The filter is applied by Graph, so a change of filter is a new read: turning
-        // "open only" off has to fetch the resolved incidents it never asked for.
-        Publishers.CombineLatest($openOnly.removeDuplicates(), $severity.removeDuplicates())
-            .dropFirst()
-            .sink { [weak self] _, _ in
-                guard let self, self.hasLoaded else { return }
-                Task { await self.load() }
-            }
-            .store(in: &cancellables)
     }
+
+    deinit { searchTask?.cancel() }
 
     var isFiltered: Bool { openOnly || severity != .all }
 
     var filter: SecurityFilter { SecurityFilter(openOnly: openOnly, severity: severity) }
 
-    /// Open incidents at high severity, for the sidebar badge.
-    var openHighCount: Int {
-        incidents.filter { $0.isOpen && $0.severity == .high }.count
+    /// The filter is applied by Graph, so a change of filter is a new read: turning "open
+    /// only" off has to fetch the resolved incidents it never asked for. What is loaded
+    /// is refiltered at once meanwhile.
+    private func filterChanged() {
+        refilter()
+        guard hasLoaded else { return }
+        Task { await load() }
+    }
+
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, let self, self.query != self.appliedQuery else { return }
+            self.appliedQuery = self.query
+            self.refilter()
+        }
+    }
+
+    private func refilter() {
+        visible = Self.search(filter.apply(incidents), query: appliedQuery)
     }
 
     static func search(_ incidents: [SecurityIncident], query: String) -> [SecurityIncident] {
@@ -186,7 +207,7 @@ final class SecurityListModel: ObservableObject {
 // MARK: - content column
 
 struct SecurityListView: View {
-    @ObservedObject var model: SecurityListModel
+    @Bindable var model: SecurityListModel
     let isDemo: Bool
     @Binding var selection: String?
     /// Requests the module's scope interactively. Nil in demo.

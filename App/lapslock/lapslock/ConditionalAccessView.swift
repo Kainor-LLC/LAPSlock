@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import ConditionalAccessKit
 import DiagnosticsKit
 
@@ -15,12 +14,21 @@ import DiagnosticsKit
 // shortened rather than hidden, so a policy never looks narrower than it is.
 
 @MainActor
-final class ConditionalAccessListModel: ObservableObject {
-    @Published private(set) var policies: [ConditionalAccessPolicy] = []
-    @Published var query = ""
+@Observable
+final class ConditionalAccessListModel {
+    private(set) var policies: [ConditionalAccessPolicy] = [] {
+        didSet { refilter() }
+    }
+    /// What is typed. The list searches with it once typing pauses.
+    var query = "" {
+        didSet { if query != oldValue { scheduleSearch() } }
+    }
     /// Last change first, or by name. Remembered between launches.
-    @Published var sortOrder: SortOrder {
-        didSet { UserDefaults.standard.set(sortOrder.rawValue, forKey: Self.sortKey) }
+    var sortOrder: SortOrder {
+        didSet {
+            UserDefaults.standard.set(sortOrder.rawValue, forKey: Self.sortKey)
+            if sortOrder != oldValue { refilter() }
+        }
     }
     static let sortKey = "settings.conditionalAccessSort"
 
@@ -35,27 +43,39 @@ final class ConditionalAccessListModel: ObservableObject {
             }
         }
     }
-    @Published private(set) var visible: [ConditionalAccessPolicy] = []
-    @Published private(set) var isLoading = false
-    @Published private(set) var errorMessage: String?
+    private(set) var visible: [ConditionalAccessPolicy] = []
+    private(set) var isLoading = false
+    private(set) var errorMessage: String?
     /// True when the failure was a missing consent, so the screen can offer the prompt.
-    @Published private(set) var lastFailureWasConsent = false
-    @Published private(set) var names: [DirectoryReference: String] = [:]
+    private(set) var lastFailureWasConsent = false
+    private(set) var names: [DirectoryReference: String] = [:]
 
     static let recentWindowDays = 7
 
     private let provider: any ConditionalAccessProviding
-    private var cancellables = Set<AnyCancellable>()
+    /// The query `visible` was searched with: `query` once typing pauses.
+    @ObservationIgnored private var appliedQuery = ""
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
 
     init(provider: any ConditionalAccessProviding) {
         self.provider = provider
         self.sortOrder = SortOrder(rawValue: UserDefaults.standard.string(forKey: Self.sortKey) ?? "") ?? .lastChanged
-        Publishers.CombineLatest3(
-            $policies,
-            $query.removeDuplicates().debounce(for: .milliseconds(150), scheduler: DispatchQueue.main),
-            $sortOrder.removeDuplicates())
-            .map { policies, query, order in Self.sorted(Self.filter(policies, query: query), by: order) }
-            .assign(to: &$visible)
+    }
+
+    deinit { searchTask?.cancel() }
+
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        searchTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, let self, self.query != self.appliedQuery else { return }
+            self.appliedQuery = self.query
+            self.refilter()
+        }
+    }
+
+    private func refilter() {
+        visible = Self.sorted(Self.filter(policies, query: appliedQuery), by: sortOrder)
     }
 
     static func filter(_ policies: [ConditionalAccessPolicy], query: String) -> [ConditionalAccessPolicy] {
@@ -154,12 +174,13 @@ final class ConditionalAccessListModel: ObservableObject {
 
 /// One policy's audit trail, loaded on request because it costs a scope the list does not.
 @MainActor
-final class ConditionalAccessDetailModel: ObservableObject {
+@Observable
+final class ConditionalAccessDetailModel {
     let policy: ConditionalAccessPolicy
-    @Published private(set) var changes: [PolicyChange]?
-    @Published private(set) var isLoadingChanges = false
-    @Published private(set) var changesError: String?
-    @Published private(set) var changesNeedConsent = false
+    private(set) var changes: [PolicyChange]?
+    private(set) var isLoadingChanges = false
+    private(set) var changesError: String?
+    private(set) var changesNeedConsent = false
 
     private let provider: any ConditionalAccessProviding
 
@@ -187,7 +208,7 @@ final class ConditionalAccessDetailModel: ObservableObject {
 // MARK: - list column
 
 struct ConditionalAccessListView: View {
-    @ObservedObject var model: ConditionalAccessListModel
+    @Bindable var model: ConditionalAccessListModel
     let isDemo: Bool
     @Binding var selection: String?
     /// Requests the module's scopes interactively. Nil in demo.
@@ -374,7 +395,7 @@ struct PolicyStatePill: View {
 // MARK: - detail column
 
 struct ConditionalAccessDetailView: View {
-    @StateObject var model: ConditionalAccessDetailModel
+    @StateModel var model: ConditionalAccessDetailModel
     /// Resolves an id to a name, from the list model's cache.
     let name: (DirectoryReference) -> String
     let isDemo: Bool

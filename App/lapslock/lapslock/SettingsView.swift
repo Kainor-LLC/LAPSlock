@@ -2,7 +2,6 @@ import SwiftUI
 import ActionGateKit
 import NotificationsKit
 import ManagedConfigKit
-import Combine
 import AuthKit
 import GroupWritesKit
 import CredentialKit
@@ -644,18 +643,20 @@ struct SettingsView: View {
                             Text("Helpdesk").tag(GroupWriteMode.tagged)
                             Text("All").tag(GroupWriteMode.all)
                         }
+                        // On the row that asks, not the Section: a Section's modifiers are
+                        // copied onto each of its rows, and the copies race to present.
+                        .alert("Allow changes to any group?", isPresented: $confirmingAllGroups) {
+                            Button("Allow all groups", role: .destructive) { settings.groupWriteMode = .all }
+                            Button("Keep helpdesk groups", role: .cancel) {}
+                        } message: {
+                            Text("Your role still limits what you can change. Role-assignable, dynamic, PIM, synced and mail groups stay off limits, and a group a Conditional Access policy names needs its name typed back.")
+                        }
                     }
                 }
             } header: {
                 Text("Group Changes")
             } footer: {
                 Text(groupWritesFooter)
-            }
-            .alert("Allow changes to any group?", isPresented: $confirmingAllGroups) {
-                Button("Allow all groups", role: .destructive) { settings.groupWriteMode = .all }
-                Button("Keep helpdesk groups", role: .cancel) {}
-            } message: {
-                Text("Your role still limits what you can change. Role-assignable, dynamic, PIM, synced and mail groups stay off limits, and a group a Conditional Access policy names needs its name typed back.")
             }
         }
     }

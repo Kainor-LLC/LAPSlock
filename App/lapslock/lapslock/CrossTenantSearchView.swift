@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import AuthKit
 import InventoryKit
 import SignInTriageKit
@@ -203,22 +202,20 @@ final class CrossTenantSearchModel {
         stop = await CrossTenantRunner().run(
             rows.map(\.target),
             search: { target in try await sources(target).hits(for: search) },
-            report: { [weak self] index, outcome in
-                await MainActor.run { self?.rows[index].outcome = outcome }
+            report: { @MainActor [weak self] index, outcome in
+                self?.rows[index].outcome = outcome
             })
     }
 }
 
 struct CrossTenantSearchView: View {
-    @State private var model: CrossTenantSearchModel
+    @StateModel private var model: CrossTenantSearchModel
     let currentTenantId: String?
     let open: (CrossTenantTarget) -> Void
     @Environment(\.dismiss) private var dismiss
 
     init(model: @escaping () -> CrossTenantSearchModel, currentTenantId: String?, open: @escaping (CrossTenantTarget) -> Void) {
-        // Built on every init of this view, kept on the first; the initializer only maps the
-        // targets to rows, so the discarded ones cost nothing.
-        _model = State(initialValue: model())
+        _model = StateModel(wrappedValue: model())
         self.currentTenantId = currentTenantId
         self.open = open
     }

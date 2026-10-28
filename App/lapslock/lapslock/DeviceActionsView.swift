@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import ActionGateKit
 import DeviceActionsKit
 import PrivilegedAccessKit
@@ -18,24 +17,25 @@ import PlatformSecurity
 // device sits under the actions so the admin sees what they already asked for.
 
 @MainActor
-final class DeviceActionsModel: ObservableObject {
-    @Published private(set) var record: DeviceRecord?
-    @Published private(set) var isLoadingRecord = false
-    @Published private(set) var recordError: String?
-    @Published private(set) var working: DeviceActionKind?
-    @Published private(set) var note: String?
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var eligibleForActivation: [EligibleAccess] = []
-    @Published private(set) var pendingChallenge: (kind: DeviceActionKind, challenge: ClaimsChallenge)?
-    @Published private(set) var lastEntry: ShiftLogEntry?
-    @Published var confirming: DeviceActionKind?
+@Observable
+final class DeviceActionsModel {
+    private(set) var record: DeviceRecord?
+    private(set) var isLoadingRecord = false
+    private(set) var recordError: String?
+    private(set) var working: DeviceActionKind?
+    private(set) var note: String?
+    private(set) var errorMessage: String?
+    private(set) var eligibleForActivation: [EligibleAccess] = []
+    private(set) var pendingChallenge: (kind: DeviceActionKind, challenge: ClaimsChallenge)?
+    private(set) var lastEntry: ShiftLogEntry?
+    var confirming: DeviceActionKind?
     /// The destructive tier's first step: the sheet asking for the device name.
-    @Published var destructive: DeviceActionKind?
-    @Published var typedName = ""
+    var destructive: DeviceActionKind?
+    var typedName = ""
     /// The ten seconds between confirming and sending, with what is pending.
-    @Published private(set) var undoing: DeviceActionKind?
-    @Published private(set) var undoRemaining = 0
-    private var undoWindow: UndoWindow?
+    private(set) var undoing: DeviceActionKind?
+    private(set) var undoRemaining = 0
+    @ObservationIgnored private var undoWindow: UndoWindow?
 
     private(set) var target: DeviceActionTarget
     private let provider: any DeviceActionsProviding
@@ -222,12 +222,12 @@ final class DeviceActionsModel: ObservableObject {
 /// background, during the countdown cancels it: an action is sent only while its Undo is
 /// on screen.
 struct DeviceActionsContainer: View {
-    @StateObject private var model: DeviceActionsModel
+    @StateModel private var model: DeviceActionsModel
     var activate: (() -> Void)?
     @Environment(\.scenePhase) private var scenePhase
 
     init(make: @escaping () -> DeviceActionsModel, activate: (() -> Void)?) {
-        _model = StateObject(wrappedValue: make())
+        _model = StateModel(wrappedValue: make())
         self.activate = activate
     }
 
@@ -245,7 +245,7 @@ struct DeviceActionsContainer: View {
 
 /// Both sections, for the device screen's List.
 struct DeviceActionsSections: View {
-    @ObservedObject var model: DeviceActionsModel
+    let model: DeviceActionsModel
     /// Opens the PIM activation sheet. Nil where PIM is not opted in.
     var activate: (() -> Void)? = nil
     @Environment(\.awayTenant) private var awayTenant
@@ -329,23 +329,6 @@ struct DeviceActionsSections: View {
         } footer: {
             Text("Each action is queued by Intune and runs at the device's next check-in. Every request is written to the shift log in Settings, and to your tenant's audit log by Microsoft. If a role has to be activated first, the app offers it, before the call when it can read your roles and after Microsoft refuses when it cannot.")
         }
-        .confirmationDialog(
-            model.confirming.map(\.title) ?? "",
-            isPresented: Binding(get: { model.confirming != nil }, set: { if !$0 { model.confirming = nil } }),
-            titleVisibility: .visible
-        ) {
-            if let kind = model.confirming {
-                Button(kind.title) { model.confirmed(kind) }
-                Button("Cancel", role: .cancel) { model.confirming = nil }
-            }
-        } message: {
-            if let kind = model.confirming {
-                Text(confirmationMessage(kind.confirmation, awayTenant: awayTenant))
-            }
-        }
-        .sheet(item: $model.destructive) { kind in
-            DestructiveActionSheet(model: model, kind: kind)
-        }
     }
 
     private func undoRow(_ kind: DeviceActionKind) -> some View {
@@ -386,6 +369,9 @@ struct DeviceActionsSections: View {
     @ViewBuilder
     private func actionRow(_ kind: DeviceActionKind) -> some View {
         let reason = model.reason(for: kind)
+        // Read here, so the row redraws when its own confirmation or name sheet is asked for.
+        let confirming = model.confirming == kind
+        let typingName = model.destructive == kind
         Button {
             model.tapped(kind)
         } label: {
@@ -406,6 +392,23 @@ struct DeviceActionsSections: View {
         .foregroundStyle(reason == nil ? .primary : .secondary)
         .accessibilityLabel(kind.title)
         .accessibilityHint(reason ?? kind.confirmation)
+        // On the row, so each action has one presenter of its own, anchored where it was
+        // tapped. Attached to the Section they were copied onto every row of it, about ten
+        // presenters raced for one sheet, and the first Retire or Wipe tap on a newly
+        // opened device showed nothing (OPTIMIZATION-PLAN.md, step O2).
+        .confirmationDialog(
+            kind.title,
+            isPresented: Binding(get: { confirming }, set: { if !$0, model.confirming == kind { model.confirming = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(kind.title) { model.confirmed(kind) }
+            Button("Cancel", role: .cancel) { model.confirming = nil }
+        } message: {
+            Text(confirmationMessage(kind.confirmation, awayTenant: awayTenant))
+        }
+        .sheet(isPresented: Binding(get: { typingName }, set: { if !$0, model.destructive == kind { model.destructive = nil } })) {
+            DestructiveActionSheet(model: model, kind: kind)
+        }
     }
 
     private func relative(_ date: Date?) -> String {
@@ -463,7 +466,7 @@ extension DeviceActionTarget {
 /// The destructive tier's first step: what the action does, in full, and the device's name
 /// typed back before anything else can happen.
 struct DestructiveActionSheet: View {
-    @ObservedObject var model: DeviceActionsModel
+    @Bindable var model: DeviceActionsModel
     let kind: DeviceActionKind
     @Environment(\.dismiss) private var dismiss
     @FocusState private var focused: Bool

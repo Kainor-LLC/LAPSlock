@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import Combine
 import PlatformSecurity
 
 // App lock: Face ID over the whole app, distinct from the per-reveal gate.

@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import Combine
 import AuthKit
 import AuthKitMSAL
 import CredentialKit
@@ -352,13 +351,14 @@ final class AppRootModel {
     /// **Takes the subscription as an argument rather than reading it, and that is the whole
     /// point of this method existing separately.**
     ///
-    /// `@Published` emits in `willSet`, the publisher fires BEFORE the stored property is
-    /// updated. So a sink that reacted by reading `subscriptions.entitlement` read the
-    /// PREVIOUS value, and buying MSP left `canSwitchTenants` false until the next launch
-    /// recomputed it from scratch. Without this, the tenant switcher only
-    /// appeared after force-quitting the app.
+    /// When the store was an `ObservableObject`, `@Published` emitted in `willSet`, BEFORE
+    /// the stored property was updated. So a sink that reacted by reading
+    /// `subscriptions.entitlement` read the PREVIOUS value, and buying MSP left
+    /// `canSwitchTenants` false until the next launch recomputed it from scratch. Without
+    /// this, the tenant switcher only appeared after force-quitting the app.
     ///
-    /// Combine hands the new value to the closure. Use that; never re-read the source.
+    /// The store's `onEntitlementChange` hands over the new value. Use that; never re-read
+    /// the source.
     private func apply(subscription: SubscriptionEntitlement) {
         let merged = SubscriptionEntitlement.merge(
             subscription: subscription,

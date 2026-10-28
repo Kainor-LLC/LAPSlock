@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import ThreatDigestKit
 
 // The Threat Digest. Spec section 3.14. The second tab of the Security module.
@@ -14,16 +13,22 @@ import ThreatDigestKit
 // is phase 3 and Pro.
 
 @MainActor
-final class ThreatDigestModel: ObservableObject {
-    @Published private(set) var snapshot: DigestSnapshot?
-    @Published private(set) var isLoading = false
-    @Published private(set) var errorMessage: String?
-    @Published var microsoftOnly: Bool {
-        didSet { UserDefaults.standard.set(microsoftOnly, forKey: Self.microsoftOnlyKey) }
+@Observable
+final class ThreatDigestModel {
+    private(set) var snapshot: DigestSnapshot? {
+        didSet { rank() }
     }
-    @Published private(set) var cards: [(item: DigestItem, ranking: DigestRanking)] = []
-    @Published private(set) var rest: [(item: DigestItem, ranking: DigestRanking)] = []
-    @Published var showRest = false
+    private(set) var isLoading = false
+    private(set) var errorMessage: String?
+    var microsoftOnly: Bool {
+        didSet {
+            UserDefaults.standard.set(microsoftOnly, forKey: Self.microsoftOnlyKey)
+            if microsoftOnly != oldValue { rank() }
+        }
+    }
+    private(set) var cards: [(item: DigestItem, ranking: DigestRanking)] = []
+    private(set) var rest: [(item: DigestItem, ranking: DigestRanking)] = []
+    var showRest = false
 
     static let microsoftOnlyKey = "settings.digestMicrosoftOnly"
     /// Before ids were kept: the time of the last look. Read once, for the first visit
@@ -37,28 +42,28 @@ final class ThreatDigestModel: ObservableObject {
     /// Ids, not a time. The KEV catalog dates an entry by day, which reads as midnight, so
     /// anything CISA added after a look earlier the same day compared as older than the
     /// look and was never marked new.
-    @Published private(set) var seenIds: Set<String>?
-    @Published private(set) var seenBefore: Date?
+    private(set) var seenIds: Set<String>?
+    private(set) var seenBefore: Date?
     private let provider: any ThreatDigestProviding
-    private var cancellables = Set<AnyCancellable>()
 
     init(provider: any ThreatDigestProviding) {
         self.provider = provider
         self.microsoftOnly = UserDefaults.standard.object(forKey: Self.microsoftOnlyKey) as? Bool ?? true
         self.seenIds = (UserDefaults.standard.array(forKey: Self.seenIdsKey) as? [String]).map(Set.init)
         self.seenBefore = UserDefaults.standard.object(forKey: Self.lastSeenKey) as? Date
-        Publishers.CombineLatest($snapshot, $microsoftOnly.removeDuplicates())
-            .map { snapshot, microsoftOnly -> (cards: [(item: DigestItem, ranking: DigestRanking)], rest: [(item: DigestItem, ranking: DigestRanking)]) in
-                guard let snapshot else { return ([], []) }
-                let ranker = DigestRanker(now: snapshot.fetchedAt)
-                let visible = Self.filter(snapshot.items, microsoftOnly: microsoftOnly)
-                return ranker.split(ranker.ranked(visible))
-            }
-            .sink { [weak self] split in
-                self?.cards = split.cards
-                self?.rest = split.rest
-            }
-            .store(in: &cancellables)
+    }
+
+    /// Ranks what is loaded under the current filter, into the cards and the rest.
+    private func rank() {
+        guard let snapshot else {
+            cards = []
+            rest = []
+            return
+        }
+        let ranker = DigestRanker(now: snapshot.fetchedAt)
+        let split = ranker.split(ranker.ranked(Self.filter(snapshot.items, microsoftOnly: microsoftOnly)))
+        cards = split.cards
+        rest = split.rest
     }
 
     /// The default filter hides vulnerabilities in other vendors' products. Advisories
@@ -116,7 +121,7 @@ final class ThreatDigestModel: ObservableObject {
 // MARK: - content column
 
 struct ThreatDigestListView: View {
-    @ObservedObject var model: ThreatDigestModel
+    @Bindable var model: ThreatDigestModel
     let isDemo: Bool
     @Binding var selection: String?
 

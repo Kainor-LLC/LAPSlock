@@ -27,14 +27,15 @@ import ManagedConfigKit
 // for a reveal the admin never completed.
 
 @MainActor
-final class DeviceDetailModel: ObservableObject {
+@Observable
+final class DeviceDetailModel {
     // Displayed state
-    @Published var metadata: CredentialMetadata?
-    @Published var isLoadingMetadata = false
-    @Published var revealState: RevealState = .masked
-    @Published var secondsRemaining = 0
-    @Published var progress: Double = 0
-    @Published var errorMessage: String?
+    var metadata: CredentialMetadata?
+    var isLoadingMetadata = false
+    var revealState: RevealState = .masked
+    var secondsRemaining = 0
+    var progress: Double = 0
+    var errorMessage: String?
 
     /// True when the last failure was specifically "your account holds no role that can
     /// read this", which is the one error a user can fix from inside the app.
@@ -42,13 +43,13 @@ final class DeviceDetailModel: ObservableObject {
     /// Kept separate from `errorMessage` deliberately. Matching on the prose to decide
     /// whether to offer activation would break the first time somebody reworded the copy,
     /// and it would break silently, the button would just stop appearing.
-    @Published var lastFailureWasMissingRole = false
-    @Published var statusNote: String?
-    @Published var isWorking = false
-    @Published var isCaptured = false
+    var lastFailureWasMissingRole = false
+    var statusNote: String?
+    var isWorking = false
+    var isCaptured = false
     /// Account name for the CURRENT reveal only. Cleared on hide, expiry, and
     /// revocation, alongside the password.
-    @Published var revealedAccountName: String?
+    var revealedAccountName: String?
 
     /// Which single secret is currently on screen. Only ever one: two credentials
     /// visible at once doubles exposure for no workflow benefit (at the machine you use
@@ -58,13 +59,13 @@ final class DeviceDetailModel: ObservableObject {
         case lapsPassword
         case bitLockerKey(id: String)
     }
-    @Published var revealedItem: RevealedItem = .none
+    var revealedItem: RevealedItem = .none
 
     // BitLocker
-    @Published var bitLockerKeys: [BitLockerKeyInfo] = []
-    @Published var isLoadingKeys = false
-    @Published var bitLockerListError: String?
-    @Published var revealedKeyInfo: BitLockerKeyInfo?
+    var bitLockerKeys: [BitLockerKeyInfo] = []
+    var isLoadingKeys = false
+    var bitLockerListError: String?
+    var revealedKeyInfo: BitLockerKeyInfo?
 
     let device: ManagedDeviceSummary
     let capabilities: CredentialCapabilities
@@ -74,7 +75,7 @@ final class DeviceDetailModel: ObservableObject {
     let isDemo: Bool
     /// Mirrors the Settings toggle for device actions. When false, the actions section
     /// says how to turn them on and nothing in this screen can write.
-    @Published var actionsEnabled: Bool
+    var actionsEnabled: Bool
 
     /// Every version of the LAPS password from the current reveal, newest first.
     ///
@@ -86,11 +87,11 @@ final class DeviceDetailModel: ObservableObject {
     /// Which version is on screen. **The one-at-a-time rule holds across versions too**:
     /// showing four passwords at once would quadruple exposure to earn nothing, since at a
     /// machine you type one of them.
-    @Published private(set) var visibleLapsVersion = 0
+    private(set) var visibleLapsVersion = 0
 
     /// The version list for the UI. Dates and account names only, **no secrets**, so the
     /// list can be rendered without any view holding a credential.
-    @Published private(set) var lapsVersionSummaries: [LapsVersionSummary] = []
+    private(set) var lapsVersionSummaries: [LapsVersionSummary] = []
 
     /// One row in the version list.
     struct LapsVersionSummary: Identifiable, Equatable {
@@ -101,7 +102,7 @@ final class DeviceDetailModel: ObservableObject {
         var isCurrent: Bool { id == 0 }
     }
     /// Kept solely so the clipboard can be cleared if it still holds this value.
-    private var lastCopiedValue: String?
+    @ObservationIgnored private var lastCopiedValue: String?
     /// Currently revealed BitLocker key, if any.
     private var bitLockerSecret: SensitiveValue?
     private let bitLocker: any BitLockerKeyProviding
@@ -112,7 +113,7 @@ final class DeviceDetailModel: ObservableObject {
     /// Pro removes metering entirely. Wired to the entitlement check once that exists.
     let isPro: Bool
     /// Reveals left in the current window, for display BEFORE the user taps anything.
-    @Published var remainingReveals: Int = 0
+    var remainingReveals: Int = 0
 
     init(
         device: ManagedDeviceSummary,
@@ -226,10 +227,10 @@ final class DeviceDetailModel: ObservableObject {
     // MARK: - publishing a reveal only once the screen can actually show it
 
     /// Whether the scene is `.active`, pushed in by the view.
-    private var isSceneActive = true
+    @ObservationIgnored private var isSceneActive = true
 
     /// True when a credential has been fetched but the scene is not `.active` yet.
-    private var revealAwaitingActiveScene = false
+    @ObservationIgnored private var revealAwaitingActiveScene = false
 
     /// Starts the visible window, or holds it until the scene is active.
     ///
@@ -718,7 +719,7 @@ final class DeviceDetailModel: ObservableObject {
 // MARK: - view
 
 struct DeviceDetailView: View {
-    @StateObject var model: DeviceDetailModel
+    @StateModel var model: DeviceDetailModel
     @StateObject private var privacy = ScreenPrivacyMonitor()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize

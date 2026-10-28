@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import ActionGateKit
 import GroupWritesKit
 import PlatformSecurity
@@ -14,7 +13,8 @@ import ManagedConfigKit
 // with Undo and Send now, and is cancelled if the page goes, like every destructive write.
 
 @MainActor
-final class PersonGroupsModel: ObservableObject {
+@Observable
+final class PersonGroupsModel {
     struct Pending: Identifiable, Equatable {
         let kind: GroupWriteKind
         let group: DirectoryGroup
@@ -23,42 +23,51 @@ final class PersonGroupsModel: ObservableObject {
         var id: String { kind.rawValue + ":" + group.id }
     }
 
-    @Published private(set) var groups: [DirectoryGroup] = []
-    @Published private(set) var loading = true
-    @Published private(set) var loadError: String?
-    @Published private(set) var facts: [String: GroupFacts] = [:]
-    @Published var searchText = ""
-    @Published private(set) var results: [DirectoryGroup] = []
-    @Published private(set) var searching = false
-    @Published private(set) var searchedText = ""
-    @Published var reviewing: Pending?
-    @Published var typing: Pending?
-    @Published var typedName = ""
-    @Published private(set) var undoing: Pending?
-    @Published private(set) var undoRemaining = 0
-    @Published private(set) var working: String?
-    @Published private(set) var note: String?
-    @Published private(set) var errorMessage: String?
-    @Published private(set) var pendingChallenge: (action: WriteAction, pending: Pending, challenge: ClaimsChallenge)?
-    @Published private(set) var lastEntry: ShiftLogEntry?
+    private(set) var groups: [DirectoryGroup] = []
+    private(set) var loading = true
+    private(set) var loadError: String?
+    private(set) var facts: [String: GroupFacts] = [:]
+    /// What is typed. The directory is searched once typing pauses.
+    var searchText = "" {
+        didSet { if searchText != oldValue { scheduleSearch() } }
+    }
+    private(set) var results: [DirectoryGroup] = []
+    private(set) var searching = false
+    private(set) var searchedText = ""
+    var reviewing: Pending?
+    var typing: Pending?
+    var typedName = ""
+    private(set) var undoing: Pending?
+    private(set) var undoRemaining = 0
+    private(set) var working: String?
+    private(set) var note: String?
+    private(set) var errorMessage: String?
+    private(set) var pendingChallenge: (action: WriteAction, pending: Pending, challenge: ClaimsChallenge)?
+    private(set) var lastEntry: ShiftLogEntry?
 
     let member: GroupMember
     let policy: GroupWritePolicy
     private let provider: any GroupWritesProviding
-    private var context: GroupWriteContext?
-    private var undoWindow: UndoWindow?
-    private var cancellables = Set<AnyCancellable>()
-    private var searchTask: Task<Void, Never>?
+    @ObservationIgnored private var context: GroupWriteContext?
+    @ObservationIgnored private var undoWindow: UndoWindow?
+    @ObservationIgnored private var debounceTask: Task<Void, Never>?
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
 
     init(member: GroupMember, provider: any GroupWritesProviding, policy: GroupWritePolicy) {
         self.member = member
         self.provider = provider
         self.policy = policy
-        $searchText
-            .removeDuplicates()
-            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
-            .sink { [weak self] text in self?.search(text) }
-            .store(in: &cancellables)
+    }
+
+    deinit { debounceTask?.cancel() }
+
+    private func scheduleSearch() {
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+            self.search(self.searchText)
+        }
     }
 
     private var pendingKey: String { "groups:" + member.userId }
@@ -259,11 +268,11 @@ final class PersonGroupsModel: ObservableObject {
 // MARK: - the page
 
 struct PersonGroupsView: View {
-    @StateObject private var model: PersonGroupsModel
+    @StateModel private var model: PersonGroupsModel
     @Environment(\.scenePhase) private var scenePhase
 
     init(make: @escaping () -> PersonGroupsModel) {
-        _model = StateObject(wrappedValue: make())
+        _model = StateModel(wrappedValue: make())
     }
 
     var body: some View {
@@ -399,7 +408,7 @@ private struct GroupRow: View {
 
 /// Before any change: who, which group, how many members, what it grants, and the warnings.
 private struct GroupReviewSheet: View {
-    @ObservedObject var model: PersonGroupsModel
+    let model: PersonGroupsModel
     let pending: PersonGroupsModel.Pending
     @Environment(\.dismiss) private var dismiss
 
@@ -447,7 +456,7 @@ private struct GroupReviewSheet: View {
 }
 
 private struct GroupTypedNameSheet: View {
-    @ObservedObject var model: PersonGroupsModel
+    @Bindable var model: PersonGroupsModel
     let pending: PersonGroupsModel.Pending
     @Environment(\.dismiss) private var dismiss
 

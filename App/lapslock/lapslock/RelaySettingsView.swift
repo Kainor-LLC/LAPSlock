@@ -1,5 +1,4 @@
 import SwiftUI
-import Combine
 import CoreImage.CIFilterBuiltins
 import UserNotifications
 import RelayKit
@@ -214,6 +213,14 @@ struct RelaySettingsSection: View {
                 Toggle("Relay alerts from TenantKeep Watch", isOn: Binding(
                     get: { relay.isOn },
                     set: { on in if on { relay.turnOn() } else { confirmingOff = true } }))
+                    // On the row that asks, not the Section: a Section's modifiers are copied
+                    // onto each of its rows, and the copies race to present.
+                    .alert("Turn off relayed alerts?", isPresented: $confirmingOff) {
+                        Button("Turn off", role: .destructive) { relay.turnOff() }
+                        Button("Keep on", role: .cancel) {}
+                    } message: {
+                        Text("This phone's relay key is deleted. To turn it on again you pair with Watch again.")
+                    }
                 if relay.isOn {
                     pairingRows
                 }
@@ -225,12 +232,6 @@ struct RelaySettingsSection: View {
             Text("Relayed Alerts")
         } footer: {
             Text("Off by default. Watch encrypts each alert for this phone in your own Automation account and sends it through Kainor's relay to Apple. Kainor cannot read it and keeps nothing; while it passes through, the relay sees your tenant ID, this phone's push token and the time. Turning this off deletes the key, so nothing sent to it can be read.")
-        }
-        .alert("Turn off relayed alerts?", isPresented: $confirmingOff) {
-            Button("Turn off", role: .destructive) { relay.turnOff() }
-            Button("Keep on", role: .cancel) {}
-        } message: {
-            Text("This phone's relay key is deleted. To turn it on again you pair with Watch again.")
         }
     }
 
