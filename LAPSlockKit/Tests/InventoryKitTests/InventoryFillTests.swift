@@ -53,10 +53,14 @@ private actor ScriptedInventory: DeviceInventoryProviding {
     func reset() async { loaded = []; cursor = 0 }
 }
 
-/// Collects what the fill reports after each page.
+/// Collects what the fill reports after each page: how many it added, and the total.
 private actor PageLog {
+    private(set) var added: [Int] = []
     private(set) var counts: [Int] = []
-    func record(_ devices: [ManagedDeviceSummary]) { counts.append(devices.count) }
+    func record(_ devices: [ManagedDeviceSummary], _ total: Int) {
+        added.append(devices.count)
+        counts.append(total)
+    }
 }
 
 final class InventoryFillTests: XCTestCase {
@@ -80,10 +84,13 @@ final class InventoryFillTests: XCTestCase {
         let inv = try await inventory(pages: 4)
         let log = PageLog()
 
-        let outcome = await InventoryFill.run(inv) { await log.record($0) }
+        let outcome = await InventoryFill.run(inv) { await log.record($0, $1) }
 
         XCTAssertEqual(outcome, .complete)
-        // First page was 3; each subsequent page reports the full cached list so far.
+        // First page was 3; each subsequent page hands over only what it added, so the
+        // list merges a page instead of re-sorting everything, and says the total so far.
+        let added = await log.added
+        XCTAssertEqual(added, [3, 3, 3])
         let counts = await log.counts
         XCTAssertEqual(counts, [6, 9, 12])
         let loaded = await inv.loaded.count
@@ -93,17 +100,18 @@ final class InventoryFillTests: XCTestCase {
     func test_nothingToDoWhenTheFirstPageWasTheOnlyPage() async throws {
         let inv = try await inventory(pages: 1)
         let log = PageLog()
-        let outcome = await InventoryFill.run(inv) { await log.record($0) }
+        let outcome = await InventoryFill.run(inv) { await log.record($0, $1) }
         XCTAssertEqual(outcome, .complete)
         let counts = await log.counts
         XCTAssertTrue(counts.isEmpty, "no page, no callback — the UI must not flicker a loading state")
     }
 
     func test_stopsAtTheCapAndSaysSo() async throws {
-        // 10 pages available, cap at 3 more. The outcome MUST be capped, not complete:
-        // the search UI shows "not all loaded" off this distinction.
+        // 10 pages of 3 available, cap at 12 devices: the first page and 3 more. The
+        // outcome MUST be capped, not complete: the search UI shows "not all loaded" off
+        // this distinction.
         let inv = try await inventory(pages: 10)
-        let outcome = await InventoryFill.run(inv, maxPages: 3) { _ in }
+        let outcome = await InventoryFill.run(inv, maxDevices: 12) { _, _ in }
         XCTAssertEqual(outcome, .capped)
         let fetches = await inv.fetches
         XCTAssertEqual(fetches, 3, "exactly the cap, no more")
@@ -114,7 +122,7 @@ final class InventoryFillTests: XCTestCase {
     func test_aTenantOfExactlyTheCapIsCompleteNotCapped() async throws {
         // Reaching the cap is not the same as being cut off by it.
         let inv = try await inventory(pages: 4)
-        let outcome = await InventoryFill.run(inv, maxPages: 3) { _ in }
+        let outcome = await InventoryFill.run(inv, maxDevices: 12) { _, _ in }
         XCTAssertEqual(outcome, .complete)
     }
 
@@ -123,7 +131,7 @@ final class InventoryFillTests: XCTestCase {
         // is fetched again and succeeds; nothing is skipped or duplicated.
         let inv = try await inventory(pages: 4, failures: [2: [.throttled(retryAfter: 0)]])
         let log = PageLog()
-        let outcome = await InventoryFill.run(inv) { await log.record($0) }
+        let outcome = await InventoryFill.run(inv) { await log.record($0, $1) }
         XCTAssertEqual(outcome, .complete)
         let counts = await log.counts
         XCTAssertEqual(counts, [6, 9, 12], "the throttled page was retried, not skipped")
@@ -136,7 +144,7 @@ final class InventoryFillTests: XCTestCase {
             2: [.throttled(retryAfter: 0)],
             3: [.throttled(retryAfter: 0)],
         ])
-        let outcome = await InventoryFill.run(inv) { _ in }
+        let outcome = await InventoryFill.run(inv) { _, _ in }
         XCTAssertEqual(outcome, .failed(.throttled(retryAfter: 0)))
         let loaded = await inv.loaded.count
         XCTAssertEqual(loaded, 6, "page 2 landed before the second throttle")
@@ -145,7 +153,7 @@ final class InventoryFillTests: XCTestCase {
     func test_anyOtherErrorStopsTheFillWithoutLosingPages() async throws {
         let inv = try await inventory(pages: 5, failures: [3: [.serviceUnavailable(status: 503)]])
         let log = PageLog()
-        let outcome = await InventoryFill.run(inv) { await log.record($0) }
+        let outcome = await InventoryFill.run(inv) { await log.record($0, $1) }
         XCTAssertEqual(outcome, .failed(.serviceUnavailable(status: 503)))
         let counts = await log.counts
         XCTAssertEqual(counts, [6], "the page before the failure was delivered")
@@ -157,7 +165,7 @@ final class InventoryFillTests: XCTestCase {
         // Refresh, sign-out and tenant switch all cancel the fill. It must notice at the
         // next suspension point rather than finishing a 50-page run nobody wants.
         let inv = try await inventory(pages: 50, latency: .milliseconds(20))
-        let task = Task { await InventoryFill.run(inv) { _ in } }
+        let task = Task { await InventoryFill.run(inv) { _, _ in } }
         try await Task.sleep(for: .milliseconds(50))
         task.cancel()
         let outcome = await task.value
@@ -166,9 +174,9 @@ final class InventoryFillTests: XCTestCase {
         XCTAssertLessThan(fetches, 10, "cancelled after a handful of pages, not fifty")
     }
 
-    func test_theDefaultCapCoversFiveThousandDevices() {
-        // 50 pages at the service's 100-per-page default. Pinned so that a change to
-        // either number is a deliberate decision with this test in front of it.
-        XCTAssertEqual(InventoryFill.defaultMaxPages * 100, 5_000)
+    func test_theDefaultCapIsFiftyThousandDevices() {
+        // In devices, not pages, so the page size cannot quietly change it. Pinned so that
+        // a change is a deliberate decision with this test in front of it.
+        XCTAssertEqual(InventoryFill.defaultMaxDevices, 50_000)
     }
 }

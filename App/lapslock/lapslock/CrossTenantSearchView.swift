@@ -35,7 +35,9 @@ struct CrossTenantSources: Sendable {
         }
         let graph = GraphClient(auth: scoped, session: session)
         return CrossTenantSources(
-            inventory: DeviceInventoryService(auth: scoped, session: session),
+            // No first page to paint here, so every page is a large one: a 5,000-device
+            // customer in 5 requests rather than 50, inside the run's 30 seconds.
+            inventory: DeviceInventoryService(auth: scoped, pageSize: 1000, session: session),
             signIns: SignInTriageService(graph: graph),
             security: SecurityService(graph: graph),
             hunting: EmailHuntingService(graph: graph))

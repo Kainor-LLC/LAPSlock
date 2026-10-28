@@ -48,12 +48,17 @@ enum InventoryHTTP {
     ]
 
     static func firstPageURL(pageSize: Int) -> URL {
+        listURL(top: pageSize, filter: nil)
+    }
+
+    static func listURL(top: Int, filter: String?) -> URL {
         var comps = URLComponents(string: base)!
         comps.path = "/v1.0/deviceManagement/managedDevices"
         comps.queryItems = [
             URLQueryItem(name: "$select", value: selectFields.joined(separator: ",")),
-            URLQueryItem(name: "$top", value: String(pageSize))
+            URLQueryItem(name: "$top", value: String(top))
         ]
+        if let filter { comps.queryItems?.append(URLQueryItem(name: "$filter", value: filter)) }
         return comps.url!
     }
 
@@ -107,24 +112,36 @@ public actor DeviceInventoryService {
     private let auth: AuthManaging
     private let session: URLSession
     private let pageSize: Int
+    private let fillPageSize: Int
 
     /// Cached devices keyed by the OPERATING tenant, so a session in one tenant can never
     /// render another tenant's inventory. Not the signed-in account's home tenant: an MSP
     /// working in a customer would otherwise file the customer's devices under their own.
     private var cache: [String: [ManagedDeviceSummary]] = [:]
     private var nextLinkByTenant: [String: String?] = [:]
+    /// Ids already in the cache, per tenant, so no device is ever added twice.
+    private var knownIds: [String: Set<String>] = [:]
+    /// Tenants whose first page was the small one and whose next page starts the large
+    /// walk from the beginning.
+    private var freshWalkPending: Set<String> = []
+    /// Whether Graph accepted `startswith` on deviceName, once asked. Nil until then.
+    private var prefixLookupWorks: Bool?
 
     /// Moves on every first-page load and every reset. A page that was asked for under an
     /// older generation is dropped when it arrives, so a refresh or a reset can never be
     /// followed by a stale page appended to the fresh list or overwriting its next link.
     private var generation = 0
 
-    /// - session: injected by tests. Production gets an ephemeral session.
-    public init(auth: AuthManaging, pageSize: Int = 100, session: URLSession? = nil) {
+    /// - pageSize: the first page. 100 keeps it fast on a phone.
+    /// - fillPageSize: every page after it. Larger pages are fewer round trips: 20,000
+    ///   devices in 20 requests rather than 200. Graph documents no maximum for this
+    ///   resource; if it returns fewer, the walk simply takes more pages.
+    /// - session: the signed-in session's shared one; tests pass their own.
+    public init(auth: AuthManaging, pageSize: Int = 100, fillPageSize: Int = 1000, session: URLSession? = nil) {
         self.auth = auth
         self.session = session ?? InventoryHTTP.makeSession()
-        // Graph accepts up to 1000; 100 keeps the first page fast on a phone.
         self.pageSize = max(1, min(pageSize, 1000))
+        self.fillPageSize = max(self.pageSize, min(fillPageSize, 1000))
     }
 
     // MARK: - fetching
@@ -136,32 +153,117 @@ public actor DeviceInventoryService {
         generation += 1
         let asked = generation
         let tenantId = try await currentTenantId()
-        let page = try await fetch(url: InventoryHTTP.firstPageURL(pageSize: pageSize))
+        let page = try await fetch(url: InventoryHTTP.firstPageURL(pageSize: pageSize), pageSize: pageSize)
         // A newer load or a reset happened while this one was out. It owns the cache now.
         guard asked == generation else { return page }
-        cache[tenantId] = page.devices
+        let unique = Self.unique(page.devices, known: [])
+        cache[tenantId] = unique.devices
+        knownIds[tenantId] = unique.ids
         nextLinkByTenant[tenantId] = page.nextLink
-        return page
+        // More to come, in pages larger than this one: the next page starts that walk.
+        if page.nextLink != nil, fillPageSize > pageSize {
+            freshWalkPending.insert(tenantId)
+        } else {
+            freshWalkPending.remove(tenantId)
+        }
+        return DevicePage(devices: unique.devices, nextLink: page.nextLink)
     }
 
-    /// Fetches the next page and appends it. Returns nil when there is nothing more.
+    /// Fetches the next page and appends what it adds. Returns nil when there is nothing
+    /// more. The page returned holds only devices not already loaded.
+    ///
+    /// After a small first page, the first call starts the walk again from the beginning
+    /// in large pages and skips the devices already on screen; a `nextLink` keeps the page
+    /// size it was made with, so the small walk cannot simply be continued in large pages.
     @discardableResult
     public func loadNextPage() async throws -> DevicePage? {
         let asked = generation
         let tenantId = try await currentTenantId()
-        guard let link = nextLinkByTenant[tenantId] ?? nil, let url = URL(string: link) else {
-            return nil
+        let url: URL
+        if freshWalkPending.contains(tenantId) {
+            url = InventoryHTTP.firstPageURL(pageSize: fillPageSize)
+        } else {
+            guard let link = nextLinkByTenant[tenantId] ?? nil, let next = URL(string: link) else {
+                return nil
+            }
+            // The bearer token goes with the request, so only a Graph link is followed.
+            guard GraphClient.isPageLink(next) else { throw InventoryError.decodeFailure }
+            url = next
         }
-        // The bearer token goes with the request, so only a Graph link is followed.
-        guard GraphClient.isPageLink(url) else { throw InventoryError.decodeFailure }
-        let page = try await fetch(url: url)
+        let page = try await fetch(url: url, pageSize: fillPageSize)
         guard asked == generation else { throw CancellationError() }
-        cache[tenantId, default: []].append(contentsOf: page.devices)
+        let unique = Self.unique(page.devices, known: knownIds[tenantId] ?? [])
+        cache[tenantId, default: []].append(contentsOf: unique.devices)
+        knownIds[tenantId] = unique.ids
         nextLinkByTenant[tenantId] = page.nextLink
-        return page
+        freshWalkPending.remove(tenantId)
+        return DevicePage(devices: unique.devices, nextLink: page.nextLink)
     }
 
-    private func fetch(url: URL) async throws -> DevicePage {
+    /// The devices whose ids are not already known, in order, and the ids known after them.
+    private static func unique(_ devices: [ManagedDeviceSummary], known: Set<String>) -> (devices: [ManagedDeviceSummary], ids: Set<String>) {
+        var ids = known
+        var out: [ManagedDeviceSummary] = []
+        out.reserveCapacity(devices.count)
+        for device in devices where ids.insert(device.id).inserted {
+            out.append(device)
+        }
+        return (out, ids)
+    }
+
+    // MARK: - asking Graph directly
+
+    /// Devices Graph finds for what was typed, for while the list is still loading and
+    /// the devices already here match nothing. Exact matches on the device name, the
+    /// serial number and the primary user's sign-in address, and names starting with it.
+    ///
+    /// Best effort and never interactive: a lookup that fails returns nothing. Graph
+    /// documents no filter support for this resource, so `startswith` is tried once, and
+    /// if Graph refuses it, not again this session. Every device returned is checked
+    /// against the query here, because a filter Graph does not understand can come back
+    /// ignored rather than refused, and the first devices of the tenant are not matches.
+    public func lookup(_ query: String) async -> [ManagedDeviceSummary] {
+        let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty, typed.count <= 120 else { return [] }
+        let literal = "'" + typed.replacingOccurrences(of: "'", with: "''") + "'"
+        var filters = ["deviceName eq " + literal, "serialNumber eq " + literal]
+        if typed.contains("@") { filters.append("userPrincipalName eq " + literal) }
+        let tryPrefix = prefixLookupWorks != false
+        if tryPrefix { filters.append("startswith(deviceName," + literal + ")") }
+        let prefixFilter = filters.last
+
+        var found: [ManagedDeviceSummary] = []
+        var prefixRefused = false
+        await withTaskGroup(of: (filter: String, devices: [ManagedDeviceSummary]?, refused: Bool).self) { group in
+            for filter in filters {
+                group.addTask { [self] in
+                    do {
+                        let page = try await fetch(url: InventoryHTTP.listURL(top: 25, filter: filter), pageSize: 25)
+                        return (filter, page.devices, false)
+                    } catch InventoryError.transport(let status) where status == 400 {
+                        return (filter, nil, true)
+                    } catch {
+                        return (filter, nil, false)
+                    }
+                }
+            }
+            for await result in group {
+                if let devices = result.devices { found.append(contentsOf: devices) }
+                if result.refused, tryPrefix, result.filter == prefixFilter { prefixRefused = true }
+            }
+        }
+        if tryPrefix { prefixLookupWorks = !prefixRefused }
+
+        let folded = typed.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        var seen = Set<String>()
+        return found.filter { device in
+            guard seen.insert(device.id).inserted else { return false }
+            let key = device.searchKey
+            return key.name == folded || key.name.hasPrefix(folded) || key.others.contains(folded)
+        }
+    }
+
+    private func fetch(url: URL, pageSize: Int) async throws -> DevicePage {
         let token = try await auth.token(scopes: Self.requiredScopes, allowInteractive: false)
         var req = URLRequest(url: url)
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -200,6 +302,8 @@ public actor DeviceInventoryService {
         generation += 1
         cache.removeAll()
         nextLinkByTenant.removeAll()
+        knownIds.removeAll()
+        freshWalkPending.removeAll()
     }
 
     private func currentTenantId() async throws -> String {
@@ -211,18 +315,16 @@ public actor DeviceInventoryService {
 // MARK: - search
 
 /// Client-side search. Graph's managedDevices resource has no dependable server-side
-/// substring search on deviceName, so filtering happens locally over the cached page set.
+/// substring search on deviceName, so filtering happens locally over the devices loaded.
 ///
-/// Known limitation: "the cached page set" means the pages loaded so far. A device that
-/// exists but has not been paged in will not be found. `InventoryFill` pages the rest in
-/// the background for this reason.
+/// Known limitation: "loaded" means the pages fetched so far. A device that exists but
+/// has not been paged in will not be found. `InventoryFill` pages the rest in the
+/// background for this reason, and the list asks Graph directly while it runs.
 ///
-/// Performance: this runs on the main thread on every keystroke. Each field and the query
-/// are folded once (case and diacritics), then compared with plain `==`, `hasPrefix` and
-/// `contains`, and every device is scored in a single pass before one sort on the
-/// precomputed rank. Folding inside the comparator instead costs roughly 100,000 Unicode
-/// folds per keystroke on a 500-device tenant. If it ever needs to be faster, cache folded
-/// fields by device id; not before measurement says so.
+/// Performance: every device carries its fields folded once (`DeviceSearchKey`), so a
+/// search is one substring check per device, and only the devices that pass are ranked.
+/// It used to fold every field of every device on every keystroke, 56 ms over 20,000
+/// devices in a release build on a Mac, several times that on a phone.
 public enum DeviceSearch {
 
     private static let foldOptions: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
@@ -232,53 +334,90 @@ public enum DeviceSearch {
         s.folding(options: foldOptions, locale: nil)
     }
 
-    /// Searchable fields other than the device name, ordered roughly by how often an admin
-    /// has that value to hand when working a ticket.
-    private static func secondaryFields(_ device: ManagedDeviceSummary) -> [String] {
-        [
-            device.userDisplayName,
-            device.userPrincipalName,
-            device.emailAddress,
-            device.serialNumber,
-            device.model,
-            device.managedDeviceName
-        ].compactMap { $0 }
-    }
-
     /// Case- and diacritic-insensitive substring match across the fields an admin would
     /// actually type: device name, the primary user by real name, UPN or mail address,
     /// serial number, model, and Intune's own device name.
     public static func matches(_ device: ManagedDeviceSummary, query: String) -> Bool {
         let raw = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty else { return true }
-        return score(device, foldedQuery: fold(raw)) != nil
+        return score(device.searchKey, foldedQuery: fold(raw)) != nil
     }
 
     /// Filters and orders results. Exact and prefix name matches sort above the rest,
-    /// because an admin typing a device name usually wants that device first.
+    /// because an admin typing a device name usually wants that device first. An empty
+    /// query is every device, by name.
     public static func filter(_ devices: [ManagedDeviceSummary], query: String) -> [ManagedDeviceSummary] {
         let raw = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !raw.isEmpty else {
-            return devices.sorted { $0.deviceName.localizedCaseInsensitiveCompare($1.deviceName) == .orderedAscending }
-        }
+        guard !raw.isEmpty else { return devices.sorted(by: inNameOrder) }
+        return ranked(devices, foldedQuery: fold(raw)).map(\.device)
+    }
 
+    /// Adds devices to a list already in name order, keeping it in order: the newcomers
+    /// are sorted, then both are walked once, instead of sorting everything again.
+    public static func merged(_ sorted: [ManagedDeviceSummary], adding newcomers: [ManagedDeviceSummary]) -> [ManagedDeviceSummary] {
+        merge(sorted, newcomers.sorted(by: inNameOrder), by: inNameOrder)
+    }
+
+    /// Adds devices to search results already in result order: only the newcomers are
+    /// matched and ranked, then merged in. The same list `filter` would give for all of
+    /// them together.
+    public static func merged(results: [ManagedDeviceSummary], query: String,
+                              adding newcomers: [ManagedDeviceSummary]) -> [ManagedDeviceSummary] {
+        let raw = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return merged(results, adding: newcomers) }
         let q = fold(raw)
+        let hits = ranked(newcomers, foldedQuery: q)
+        guard !hits.isEmpty else { return results }
+        let existing = results.map { (device: $0, rank: score($0.searchKey, foldedQuery: q) ?? Int.max) }
+        return merge(existing, hits, by: inRankOrder).map(\.device)
+    }
 
-        // One pass: match and score together, so no device is examined twice and no score
-        // is recomputed inside the comparator.
+    /// Name order: the folded name, then the id, so equal names keep one order everywhere.
+    /// A plain comparison of folded names rather than a locale-aware one; the two differ
+    /// only on punctuation and accented letters, and this one costs a fraction as much.
+    public static func inNameOrder(_ a: ManagedDeviceSummary, _ b: ManagedDeviceSummary) -> Bool {
+        if a.searchKey.name != b.searchKey.name { return a.searchKey.name < b.searchKey.name }
+        return a.id < b.id
+    }
+
+    private static func inRankOrder(_ a: (device: ManagedDeviceSummary, rank: Int),
+                                    _ b: (device: ManagedDeviceSummary, rank: Int)) -> Bool {
+        if a.rank != b.rank { return a.rank < b.rank }
+        return inNameOrder(a.device, b.device)
+    }
+
+    /// Matches and ranks in one pass, so no device is examined twice and no rank is
+    /// recomputed inside the comparator.
+    private static func ranked(_ devices: [ManagedDeviceSummary], foldedQuery q: String) -> [(device: ManagedDeviceSummary, rank: Int)] {
         var scored: [(device: ManagedDeviceSummary, rank: Int)] = []
-        scored.reserveCapacity(devices.count)
         for device in devices {
-            if let rank = score(device, foldedQuery: q) {
+            if let rank = score(device.searchKey, foldedQuery: q) {
                 scored.append((device, rank))
             }
         }
+        scored.sort(by: inRankOrder)
+        return scored
+    }
 
-        scored.sort { a, b in
-            if a.rank != b.rank { return a.rank < b.rank }
-            return a.device.deviceName.localizedCaseInsensitiveCompare(b.device.deviceName) == .orderedAscending
+    private static func merge<T>(_ a: [T], _ b: [T], by before: (T, T) -> Bool) -> [T] {
+        guard !b.isEmpty else { return a }
+        guard !a.isEmpty else { return b }
+        var out: [T] = []
+        out.reserveCapacity(a.count + b.count)
+        var i = 0
+        var j = 0
+        while i < a.count, j < b.count {
+            if before(b[j], a[i]) {
+                out.append(b[j])
+                j += 1
+            } else {
+                out.append(a[i])
+                i += 1
+            }
         }
-        return scored.map(\.device)
+        out.append(contentsOf: a[i...])
+        out.append(contentsOf: b[j...])
+        return out
     }
 
     /// Ranks a hit by HOW it matched, not just whether it did. Nil means no match.
@@ -290,17 +429,20 @@ public enum DeviceSearch {
     ///   0 exact on device name        1 exact on any other field
     ///   2 prefix on device name       3 prefix on any other field
     ///   4 substring on device name    5 substring on any other field
-    private static func score(_ device: ManagedDeviceSummary, foldedQuery q: String) -> Int? {
+    private static func score(_ key: DeviceSearchKey, foldedQuery q: String) -> Int? {
+        // Most devices do not match at all; one check rules them out.
+        guard key.all.contains(q) else { return nil }
+
         var best: Int?
 
-        if let s = strength(fold(device.deviceName), q) {
+        if let s = strength(key.name, q) {
             // Exact on the device name is the best possible outcome; stop looking.
             if s == 0 { return 0 }
             best = s * 2
         }
 
-        for field in secondaryFields(device) {
-            guard let s = strength(fold(field), q) else { continue }
+        for field in key.others {
+            guard let s = strength(field, q) else { continue }
             let rank = s * 2 + 1
             if best == nil || rank < best! { best = rank }
             // Rank 1 is the best a secondary field can achieve, and rank 0 already

@@ -22,6 +22,8 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
     /// rather than snapping instantly and hiding a spinner bug.
     private let latency: Duration
     private let pageSize: Int
+    /// Every page after the first, as the live service pages in larger steps after it.
+    private let fillPageSize: Int
     private var loaded: [ManagedDeviceSummary] = []
     private var cursor: Int = 0
     /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
@@ -31,10 +33,12 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
     /// Set for the large demo tenant, which replaces the twelve hand-built devices.
     private let customFleet: [ManagedDeviceSummary]?
 
-    public init(latency: Duration = .milliseconds(400), pageSize: Int = 8, quiet: Bool = false, fleet: [ManagedDeviceSummary]? = nil) {
+    public init(latency: Duration = .milliseconds(400), pageSize: Int = 8, fillPageSize: Int? = nil,
+                quiet: Bool = false, fleet: [ManagedDeviceSummary]? = nil) {
         self.latency = latency
         self.quiet = quiet
         self.pageSize = max(1, pageSize)
+        self.fillPageSize = max(self.pageSize, fillPageSize ?? pageSize)
         self.customFleet = fleet
     }
 
@@ -47,14 +51,25 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
         try await Task.sleep(for: latency)
         loaded = []
         cursor = 0
-        return nextChunk()
+        return nextChunk(pageSize)
     }
 
     @discardableResult
     public func loadNextPage() async throws -> DevicePage? {
         guard cursor < fleet.count else { return nil }
         try await Task.sleep(for: latency)
-        return nextChunk()
+        return nextChunk(fillPageSize)
+    }
+
+    /// Exact matches on name, serial or sign-in address, and names starting with it, over
+    /// the whole sample fleet, as the live lookup asks Graph.
+    public func lookup(_ query: String) async -> [ManagedDeviceSummary] {
+        let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty, (try? await Task.sleep(for: latency)) != nil else { return [] }
+        let folded = typed.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        return Array(fleet.filter { device in
+            device.searchKey.name.hasPrefix(folded) || device.searchKey.others.contains(folded)
+        }.prefix(25))
     }
 
     public func cachedDevices() async throws -> [ManagedDeviceSummary] { loaded }
@@ -66,8 +81,8 @@ public actor DemoInventoryProvider: DeviceInventoryProviding {
         cursor = 0
     }
 
-    private func nextChunk() -> DevicePage {
-        let end = min(cursor + pageSize, fleet.count)
+    private func nextChunk(_ size: Int) -> DevicePage {
+        let end = min(cursor + size, fleet.count)
         let slice = Array(fleet[cursor..<end])
         loaded.append(contentsOf: slice)
         cursor = end

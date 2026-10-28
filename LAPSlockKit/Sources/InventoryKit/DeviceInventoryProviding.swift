@@ -29,6 +29,13 @@ public protocol DeviceInventoryProviding: Sendable {
     func hasMore() async throws -> Bool
     /// Full teardown, called on sign-out and account switch (§7).
     func reset() async
+    /// Devices the source finds for what was typed, for while the list is still loading
+    /// and the devices loaded match nothing. Best effort: nothing on failure.
+    func lookup(_ query: String) async -> [ManagedDeviceSummary]
+}
+
+extension DeviceInventoryProviding {
+    public func lookup(_ query: String) async -> [ManagedDeviceSummary] { [] }
 }
 
 extension DeviceInventoryService: DeviceInventoryProviding {}

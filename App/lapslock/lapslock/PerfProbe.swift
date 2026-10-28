@@ -10,6 +10,9 @@ import InventoryKit
 //                        200 Message Center posts and 600 expiring items.
 //   -LAPSlockPerfLog     timings and view body evaluations as notice lines in the "perf"
 //                        category, read back with `log show` or `log stream`.
+//   -LAPSlockRefreshAfter N
+//                        a pull to refresh on the device list N seconds after it first
+//                        loads, for a simulator whose synthesized drags do not set one off.
 //
 // A Release build compiles every call here to nothing and never looks at the arguments.
 
@@ -27,6 +30,17 @@ enum PerfProbe {
         return CommandLine.arguments.contains("-LAPSlockPerfLog")
         #else
         return false
+        #endif
+    }()
+
+    /// Seconds after the device list's first load to refresh it, when asked for.
+    static let refreshAfter: Double? = {
+        #if DEBUG
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "-LAPSlockRefreshAfter"), i + 1 < args.count else { return nil }
+        return Double(args[i + 1])
+        #else
+        return nil
         #endif
     }()
 

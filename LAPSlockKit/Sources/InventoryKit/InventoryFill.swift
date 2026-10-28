@@ -9,10 +9,10 @@ import Foundation
 // device that EXISTS returned nothing, and that never read as "still loading", it read as
 // "this app cannot find my machine". It got worse the bigger the customer.
 //
-// THE SHAPE. The first page renders immediately, then this pages onward in the background
-// until exhausted or capped, and the list re-filters as each page lands. The UI says "still
-// loading" while it runs, because the actual defect was that an empty result during a
-// partial load was a lie.
+// THE SHAPE. The first page renders immediately, then this pages onward in the background,
+// in larger pages, until exhausted or capped, and each page's new devices are merged into
+// the list as it lands. The UI says "still loading" while it runs, because the actual defect
+// was that an empty result during a partial load was a lie.
 //
 // One pager at a time. `DeviceInventoryService` is an actor, but `loadNextPage` reads the
 // next link, suspends on the fetch, then appends, so two concurrent callers read the same
@@ -21,10 +21,10 @@ import Foundation
 
 public enum InventoryFill {
 
-    /// 50 pages at 100 devices each: 5,000 devices before stopping. Named so the day a
-    /// customer with more reports it, the change is one line and the search UI already
-    /// knows how to say "not all loaded".
-    public static let defaultMaxPages = 50
+    /// Devices before stopping, not pages: a cap in pages meant whatever the page size
+    /// made it, and at 50 pages of 100 a 20,000-device tenant was a quarter searchable.
+    /// Beyond this the search UI says "not all loaded", and the list asks Graph directly.
+    public static let defaultMaxDevices = 50_000
 
     /// Longest `Retry-After` honoured before stopping instead. Anything longer means Graph
     /// is genuinely unhappy with this tenant and a background job should get out of the way.
@@ -45,8 +45,9 @@ public enum InventoryFill {
         case failed(InventoryError)
     }
 
-    /// Pages onward from wherever `inventory` currently is, calling `onPage` with the full
-    /// cached list after every page so the caller can re-render as results arrive.
+    /// Pages onward from wherever `inventory` currently is, calling `onPage` after every
+    /// page with the devices that page added and how many are loaded in all, so the caller
+    /// merges a page rather than re-sorting everything as results arrive.
     ///
     /// Expects `loadFirstPage` to have been called already: the first page is what the user
     /// is looking at, and it is fetched on the foreground path with its own error handling.
@@ -56,19 +57,19 @@ public enum InventoryFill {
     /// would be a background job competing with the user's own taps for the same budget.
     public static func run(
         _ inventory: any DeviceInventoryProviding,
-        maxPages: Int = defaultMaxPages,
-        onPage: @Sendable ([ManagedDeviceSummary]) async -> Void
+        maxDevices: Int = defaultMaxDevices,
+        onPage: @Sendable (_ added: [ManagedDeviceSummary], _ total: Int) async -> Void
     ) async -> Outcome {
-        var pages = 0
+        var total = (try? await inventory.cachedDevices().count) ?? 0
         var throttledOnce = false
 
-        while pages < maxPages {
+        while total < maxDevices {
             if Task.isCancelled { return .cancelled }
             do {
                 guard try await inventory.hasMore() else { return .complete }
-                guard try await inventory.loadNextPage() != nil else { return .complete }
-                pages += 1
-                await onPage(try await inventory.cachedDevices())
+                guard let page = try await inventory.loadNextPage() else { return .complete }
+                total += page.devices.count
+                await onPage(page.devices, total)
             } catch InventoryError.throttled(let retryAfter) where !throttledOnce {
                 throttledOnce = true
                 let wait = min(retryAfter ?? defaultRetryWait, maxRetryWait)
@@ -87,7 +88,7 @@ public enum InventoryFill {
         }
 
         // At the cap. Only "capped" if something actually remains, a tenant of exactly
-        // maxPages pages is complete, not cut off.
+        // maxDevices devices is complete, not cut off.
         let more = (try? await inventory.hasMore()) ?? true
         return more ? .capped : .complete
     }

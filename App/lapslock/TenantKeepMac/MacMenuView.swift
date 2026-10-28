@@ -99,6 +99,7 @@ struct MacDevicesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             TextField("Device, person, serial or model", text: $model.query)
+                .task { await model.devicesTabOpened() }
                 .textFieldStyle(.roundedBorder)
             if model.devicesLoading && model.devices.isEmpty {
                 ProgressView("Reading devices").controlSize(.small)

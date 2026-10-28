@@ -1202,7 +1202,7 @@ struct AppRootView: View {
                     makeListModel: {
                         DeviceListModel(
                             inventory: PerfProbe.largeDemo
-                                ? DemoInventoryProvider(latency: .milliseconds(450), pageSize: 100, quiet: quiet, fleet: PerfProbe.largeFleet)
+                                ? DemoInventoryProvider(latency: .milliseconds(450), pageSize: 100, fillPageSize: 1000, quiet: quiet, fleet: PerfProbe.largeFleet)
                                 : DemoInventoryProvider(quiet: quiet),
                             meter: RevealMeters.demo
                         )

@@ -33,6 +33,9 @@ public actor UserNameResolver: UserNameResolving {
     /// Graph's `in` operator accepts at most this many values.
     public static let batchSize = 15
 
+    /// Lookups sent at once. One at a time was 167 requests in a row for 2,500 people.
+    static let parallelBatches = 4
+
     private let auth: any AuthManaging
     private let session: URLSession
     private let base: String
@@ -42,6 +45,11 @@ public actor UserNameResolver: UserNameResolving {
     /// otherwise be looked up again on every page the fill delivers.
     private var cache: [String: String?] = [:]
 
+    /// Lookups on their way, by lowercased UPN. Two callers asking for the same people at
+    /// once share one lookup instead of both sending it, and a caller that gives up and
+    /// asks again picks up the lookup it started rather than throwing it away.
+    private var inFlight: [String: Task<[String: String], Error>] = [:]
+
     public init(auth: any AuthManaging, base: String = "https://graph.microsoft.com", session: URLSession? = nil) {
         self.auth = auth
         self.base = base
@@ -50,16 +58,53 @@ public actor UserNameResolver: UserNameResolving {
 
     public func displayNames(forUserPrincipalNames upns: [String]) async throws -> [String: String] {
         let wanted = Set(upns.map { $0.lowercased() }).filter { !$0.isEmpty }
-        let missing = wanted.filter { cache[$0] == nil }.sorted()
+        let missing = wanted.filter { cache[$0] == nil && inFlight[$0] == nil }.sorted()
 
         // Never interactive. Consent for the scope is requested by the Settings toggle, at
         // the moment of the decision; a list that pops a permission prompt while scrolling
         // would be asking at the worst possible time.
         if !missing.isEmpty {
-            let token = try await auth.token(scopes: [Self.scope], allowInteractive: false)
-            for batch in Self.batches(missing) {
-                let found = try await fetch(batch, token: token)
-                for upn in batch { cache[upn] = .some(found[upn]) }
+            let rounds = Self.rounds(Self.batches(missing))
+            let auth = auth
+            let session = session
+            let base = base
+            // Registered before anything here waits, the token included, so a caller
+            // arriving meanwhile finds it rather than starting the same lookup. Not a child
+            // of the caller: it finishes even if the caller is cancelled, so the work is
+            // there for whoever asks next.
+            let work = Task { () async throws -> [String: String] in
+                let token = try await auth.token(scopes: [Self.scope], allowInteractive: false)
+                var found: [String: String] = [:]
+                for round in rounds {
+                    try await withThrowingTaskGroup(of: [String: String].self) { group in
+                        for batch in round {
+                            group.addTask { try await Self.fetch(batch, token: token, session: session, base: base) }
+                        }
+                        for try await part in group { found.merge(part) { first, _ in first } }
+                    }
+                }
+                return found
+            }
+            for upn in missing { inFlight[upn] = work }
+        }
+
+        // Every lookup that covers what was asked, this caller's and any already running.
+        var lookups: [Task<[String: String], Error>] = []
+        for upn in wanted {
+            if let task = inFlight[upn], !lookups.contains(task) { lookups.append(task) }
+        }
+        for task in lookups {
+            let found: [String: String]
+            do {
+                found = try await task.value
+            } catch {
+                // A failed lookup leaves nothing cached, so the next caller tries again.
+                for (upn, running) in inFlight where running == task { inFlight[upn] = nil }
+                throw error
+            }
+            for (upn, running) in inFlight where running == task {
+                cache[upn] = .some(found[upn])
+                inFlight[upn] = nil
             }
         }
 
@@ -70,7 +115,7 @@ public actor UserNameResolver: UserNameResolving {
         return result
     }
 
-    private func fetch(_ upns: [String], token: String) async throws -> [String: String] {
+    private static func fetch(_ upns: [String], token: String, session: URLSession, base: String) async throws -> [String: String] {
         var comps = URLComponents(string: base)!
         comps.path = "/v1.0/users"
         comps.queryItems = [
@@ -103,6 +148,13 @@ public actor UserNameResolver: UserNameResolving {
     static func batches(_ upns: [String]) -> [[String]] {
         stride(from: 0, to: upns.count, by: batchSize).map {
             Array(upns[$0 ..< min($0 + batchSize, upns.count)])
+        }
+    }
+
+    /// Batches grouped into rounds sent together, `parallelBatches` at a time.
+    static func rounds(_ batches: [[String]]) -> [[[String]]] {
+        stride(from: 0, to: batches.count, by: parallelBatches).map {
+            Array(batches[$0 ..< min($0 + parallelBatches, batches.count)])
         }
     }
 

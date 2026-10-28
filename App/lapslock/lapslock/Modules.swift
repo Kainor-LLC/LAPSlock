@@ -1008,7 +1008,7 @@ private struct DeviceDetailColumn: View {
 
     static func device(_ id: String, in list: DeviceListModel, openedDevice: ManagedDeviceSummary?) -> ManagedDeviceSummary? {
         if let openedDevice, openedDevice.id == id { return openedDevice }
-        return list.devices.first { $0.id == id }
+        return list.devicesById[id]
     }
 }
 

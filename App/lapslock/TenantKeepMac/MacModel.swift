@@ -19,8 +19,14 @@ final class MacModel {
     var message: String?
 
     // Devices
-    var query = ""
+    /// What is typed. The results follow it once typing pauses.
+    var query = "" {
+        didSet { if query != oldValue { scheduleResults() } }
+    }
+    /// Every device loaded, in name order.
     private(set) var devices: [ManagedDeviceSummary] = []
+    /// The first dozen matches, kept rather than worked out on every redraw of the menu.
+    private(set) var results: [ManagedDeviceSummary] = []
     private(set) var devicesLoading = false
     private(set) var devicesError: String?
 
@@ -39,6 +45,13 @@ final class MacModel {
     @ObservationIgnored private var inventory: (any DeviceInventoryProviding)?
     @ObservationIgnored private var pulse: (any TenantPulseProviding)?
     @ObservationIgnored private var privileged: PrivilegedAccessService?
+    /// The one device load running. A second request for one waits for it instead of
+    /// paging the tenant again alongside it, which appended the same pages twice.
+    @ObservationIgnored private var deviceLoad: Task<Void, Never>?
+    /// Set once the Devices tab has been opened. Until then a menu bar app that runs for
+    /// days holds no copy of the tenant's devices.
+    @ObservationIgnored private var devicesWanted = false
+    @ObservationIgnored private var resultsTask: Task<Void, Never>?
 
     /// The same app registration as the iPhone and iPad app, with this app's own redirect,
     /// which the registration's iOS / macOS platform must list for this bundle id.
@@ -48,8 +61,17 @@ final class MacModel {
 
     var attention: Bool { !degraded.isEmpty || sessionProblem != nil }
 
-    var results: [ManagedDeviceSummary] {
-        Array(DeviceSearch.filter(devices, query: query).prefix(12))
+    private func scheduleResults() {
+        resultsTask?.cancel()
+        resultsTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            self?.updateResults()
+        }
+    }
+
+    private func updateResults() {
+        results = Array(DeviceSearch.filter(devices, query: query).prefix(12))
     }
 
     /// `demo` is for previews; the app itself starts signed out or restores a session.
@@ -110,7 +132,7 @@ final class MacModel {
     private func goLive(_ auth: MSALAuthManager, _ signed: AdminAccount) {
         mode = .live
         account = signed
-        inventory = DeviceInventoryService(auth: auth, pageSize: 200)
+        inventory = DeviceInventoryService(auth: auth, pageSize: 1000)
         pulse = TenantPulseService(graph: GraphClient(auth: auth))
         privileged = PrivilegedAccessService(auth: auth)
         Task { await refreshAll() }
@@ -118,10 +140,17 @@ final class MacModel {
 
     func refreshAll() async {
         await checkSession()
-        async let a: Void = loadDevices()
+        async let a: Void = devicesWanted ? loadDevices() : ()
         async let b: Void = loadRoles()
         async let c: Void = loadPulse()
         _ = await (a, b, c)
+    }
+
+    /// The Devices tab is on screen: load them the first time.
+    func devicesTabOpened() async {
+        guard !devicesWanted else { return }
+        devicesWanted = true
+        await loadDevices()
     }
 
     /// A silent token for the base scope says whether the session still works, without a
@@ -138,21 +167,33 @@ final class MacModel {
     }
 
     func loadDevices() async {
+        if let deviceLoad { return await deviceLoad.value }
         guard let inventory else { return }
-        devicesLoading = true
-        defer { devicesLoading = false }
-        do {
-            await inventory.reset()
-            _ = try await inventory.loadFirstPage()
-            while try await inventory.hasMore() {
-                _ = try await inventory.loadNextPage()
-                devices = try await inventory.cachedDevices()
+        let load = Task { [weak self] in
+            guard let self else { return }
+            devicesLoading = true
+            defer { devicesLoading = false }
+            do {
+                await inventory.reset()
+                // A thousand a page: a 20,000-device tenant in 20 requests. Each page is
+                // merged into the sorted list, not the whole list sorted again.
+                var loaded = try await inventory.loadFirstPage().devices.sorted(by: DeviceSearch.inNameOrder)
+                devices = loaded
+                updateResults()
+                while try await inventory.hasMore() {
+                    guard let page = try await inventory.loadNextPage() else { break }
+                    loaded = DeviceSearch.merged(loaded, adding: page.devices)
+                    devices = loaded
+                    updateResults()
+                }
+                devicesError = nil
+            } catch {
+                devicesError = "Couldn't read the device list."
             }
-            devices = try await inventory.cachedDevices()
-            devicesError = nil
-        } catch {
-            devicesError = "Couldn't read the device list."
         }
+        deviceLoad = load
+        await load.value
+        deviceLoad = nil
     }
 
     func loadRoles() async {

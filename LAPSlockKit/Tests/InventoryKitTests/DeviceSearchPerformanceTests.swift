@@ -35,8 +35,8 @@ final class DeviceSearchPerformanceTests: XCTestCase {
         }
     }
 
-    /// Today's fill: 50 pages of 100, and after each one the whole accumulated list is
-    /// filtered again for the screen.
+    /// The step C fill: 50 pages of 100, and after each one the whole accumulated list
+    /// filtered again for the screen. Kept to compare against the one below.
     func test_performance_todaysFillRefiltersEveryPage() {
         let fleet = Array(Self.fleet.prefix(5_000))
         measure {
@@ -44,6 +44,41 @@ final class DeviceSearchPerformanceTests: XCTestCase {
             for start in stride(from: 0, to: fleet.count, by: 100) {
                 loaded.append(contentsOf: fleet[start..<min(start + 100, fleet.count)])
                 _ = DeviceSearch.filter(loaded, query: "")
+            }
+        }
+    }
+
+    /// The step E fill over the whole tenant: 20 pages of 1,000, each merged into the
+    /// sorted list rather than the list sorted again.
+    func test_performance_theFillMergesEachPage() {
+        let fleet = Self.fleet
+        measure {
+            var list: [ManagedDeviceSummary] = []
+            for start in stride(from: 0, to: fleet.count, by: 1_000) {
+                list = DeviceSearch.merged(list, adding: Array(fleet[start..<min(start + 1_000, fleet.count)]))
+            }
+        }
+    }
+
+    /// A page landing while something is typed: only the page is matched, then merged.
+    func test_performance_aPageMergedIntoSearchResults() {
+        let fleet = Self.fleet
+        let results = DeviceSearch.filter(Array(fleet.prefix(19_000)), query: "sales")
+        let page = Array(fleet.suffix(1_000))
+        measure {
+            _ = DeviceSearch.merged(results: results, query: "sales", adding: page)
+        }
+    }
+
+    /// What moved out of every keystroke: folding each device's fields, now once when the
+    /// device is built, on the inventory actor rather than the main thread.
+    func test_performance_buildingTheSearchKeysForTwentyThousandDevices() {
+        let fleet = Self.fleet
+        measure {
+            _ = fleet.map {
+                DeviceSearchKey(deviceName: $0.deviceName, userDisplayName: $0.userDisplayName,
+                                userPrincipalName: $0.userPrincipalName, emailAddress: $0.emailAddress,
+                                serialNumber: $0.serialNumber, model: $0.model, managedDeviceName: $0.managedDeviceName)
             }
         }
     }

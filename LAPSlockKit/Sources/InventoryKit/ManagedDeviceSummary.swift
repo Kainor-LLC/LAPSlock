@@ -47,6 +47,10 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
     public let manufacturer: String?
     public let complianceState: String?
     public let lastSyncDateTime: Date?
+    /// The searchable fields folded once, when the device is built, so a search compares
+    /// strings instead of folding every field of every device on every keystroke. Built
+    /// from the fields above and nothing else.
+    public let searchKey: DeviceSearchKey
 
     public init(
         id: String,
@@ -80,6 +84,9 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
         self.manufacturer = manufacturer
         self.complianceState = complianceState
         self.lastSyncDateTime = lastSyncDateTime
+        self.searchKey = DeviceSearchKey(
+            deviceName: deviceName, userDisplayName: userDisplayName, userPrincipalName: userPrincipalName,
+            emailAddress: emailAddress, serialNumber: serialNumber, model: model, managedDeviceName: managedDeviceName)
     }
 
     /// The same device with the primary user's display name filled in. Used when the name
@@ -178,6 +185,9 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
         self.manufacturer = obj["manufacturer"] as? String
         self.complianceState = obj["complianceState"] as? String
         self.lastSyncDateTime = InventoryHTTP.date(obj["lastSyncDateTime"])
+        self.searchKey = DeviceSearchKey(
+            deviceName: deviceName, userDisplayName: userDisplayName, userPrincipalName: userPrincipalName,
+            emailAddress: emailAddress, serialNumber: serialNumber, model: model, managedDeviceName: managedDeviceName)
     }
 
     /// Graph returns "" rather than null for user fields on devices with no primary user.
@@ -188,6 +198,30 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
         guard let s = any as? String else { return nil }
         let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+/// A device's searchable fields, folded for case and diacritics once.
+public struct DeviceSearchKey: Sendable, Hashable {
+    /// The device name folded: what the list sorts by, and what a name match compares.
+    public let name: String
+    /// The other searchable fields folded, in the order a search ranks them: the user's
+    /// name, sign-in address and mail, then serial number, model and Intune's own name.
+    public let others: [String]
+    /// All of them joined by a character nobody can type, so a device that cannot match is
+    /// ruled out with one check before any ranking.
+    public let all: String
+
+    static let separator = "\u{1F}"
+
+    init(deviceName: String, userDisplayName: String?, userPrincipalName: String?, emailAddress: String?,
+         serialNumber: String?, model: String?, managedDeviceName: String?) {
+        let fold = { (s: String) in s.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) }
+        name = fold(deviceName)
+        others = [userDisplayName, userPrincipalName, emailAddress, serialNumber, model, managedDeviceName]
+            .compactMap { $0 }
+            .map(fold)
+        all = ([name] + others).joined(separator: Self.separator)
     }
 }
 
