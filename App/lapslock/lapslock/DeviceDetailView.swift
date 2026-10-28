@@ -732,7 +732,7 @@ struct DeviceDetailView: View {
     /// inactive for a moment, which redraws it. The countdown lived on the discarded model,
     /// kept running out of sight, and sent a wipe with no Undo on screen.
     var makeActionsModel: (() -> DeviceActionsModel)? = nil
-    @ObservedObject var settings: AppSettings = .shared
+    var settings: AppSettings = .shared
     @State private var showingPrivilegedSheet = false
 
     /// Drives the countdown. Half-second cadence so the label never appears to stall.

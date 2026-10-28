@@ -27,7 +27,8 @@ import PlatformSecurity
 // as "the app was put away" would fight the reveal publishing logic in DeviceDetailModel.
 
 @MainActor
-final class AppLockModel: ObservableObject {
+@Observable
+final class AppLockModel {
 
     /// How long the app may sit in the background before it re-locks.
     ///
@@ -48,13 +49,13 @@ final class AppLockModel: ObservableObject {
     }()
 
     /// True when the app must be unlocked before anything is shown.
-    @Published private(set) var isLocked = false
+    private(set) var isLocked = false
     /// Set when authentication failed, so the screen can offer a retry rather than sit blank.
-    @Published private(set) var failureMessage: String?
-    @Published private(set) var isAuthenticating = false
+    private(set) var failureMessage: String?
+    private(set) var isAuthenticating = false
 
-    private let gate = BiometricGate()
-    private var backgroundedAt: Date?
+    @ObservationIgnored private let gate = BiometricGate()
+    @ObservationIgnored private var backgroundedAt: Date?
 
     /// Locks at launch if the setting is on. Called once, before anything is rendered.
     func armAtLaunch(enabled: Bool) {
@@ -160,6 +161,7 @@ final class AppLockPresenter {
             let host = UIHostingController(rootView: AppLockScreen(model: model))
             host.view.accessibilityViewIsModal = true
             let lockWindow = UIWindow(windowScene: scene)
+            lockWindow.overrideUserInterfaceStyle = AppSettings.shared.appearance.interfaceStyle
             lockWindow.windowLevel = .alert + 1
             lockWindow.rootViewController = host
             silenced = scene.windows.filter { $0.windowLevel == .normal && !$0.accessibilityElementsHidden }
@@ -178,17 +180,22 @@ final class AppLockPresenter {
     }
 }
 
-/// Reports the window scene a view is shown in, so the lock can put its window there.
+/// Reports the window and scene a view is shown in: the window at once, during the layout
+/// pass that adds the view, so a setting applied to it is there for the first frame; the
+/// scene a moment later, so the lock can put its own window there.
 struct WindowSceneReader: UIViewRepresentable {
+    var window: (@MainActor (UIWindow) -> Void)? = nil
     let found: @MainActor (UIWindowScene) -> Void
 
-    func makeUIView(context: Context) -> ReaderView { ReaderView(found: found) }
+    func makeUIView(context: Context) -> ReaderView { ReaderView(window: window, found: found) }
     func updateUIView(_ view: ReaderView, context: Context) {}
 
     final class ReaderView: UIView {
+        private let onWindow: (@MainActor (UIWindow) -> Void)?
         private let found: @MainActor (UIWindowScene) -> Void
 
-        init(found: @escaping @MainActor (UIWindowScene) -> Void) {
+        init(window: (@MainActor (UIWindow) -> Void)?, found: @escaping @MainActor (UIWindowScene) -> Void) {
+            self.onWindow = window
             self.found = found
             super.init(frame: .zero)
             isUserInteractionEnabled = false
@@ -199,7 +206,8 @@ struct WindowSceneReader: UIViewRepresentable {
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            guard let scene = window?.windowScene else { return }
+            guard let window, let scene = window.windowScene else { return }
+            onWindow?(window)
             // After this layout pass, not during it: attaching can create and key a window.
             Task { @MainActor [found] in found(scene) }
         }
@@ -209,7 +217,7 @@ struct WindowSceneReader: UIViewRepresentable {
 /// The lock screen. Deliberately says nothing about the tenant, the account, or how many
 /// devices are behind it, a lock screen that leaks what it is protecting is decoration.
 struct AppLockScreen: View {
-    @ObservedObject var model: AppLockModel
+    let model: AppLockModel
     /// Off for the fallback copy drawn inside the app, so only the window's copy prompts.
     var promptsOnAppear = true
 

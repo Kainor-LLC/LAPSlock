@@ -7,16 +7,17 @@ import Combine
 // modules most of them belong to; demo shows three examples kept in memory.
 
 @MainActor
-final class SavedSearchLibrary: ObservableObject {
-    @Published private(set) var all: [SavedSearch] = []
+@Observable
+final class SavedSearchLibrary {
+    private(set) var all: [SavedSearch] = []
     /// Why the last save did not happen, in words for an alert.
-    @Published var problem: String?
+    var problem: String?
 
-    private let store: any SavedSearchStoring
+    @ObservationIgnored private let store: any SavedSearchStoring
     /// False until a load has succeeded. The file has complete protection, so it cannot be
     /// read while the phone is locked, and a background launch must never be mistaken for
     /// an empty list that the next save would then write over the real one.
-    private var loaded = false
+    @ObservationIgnored private var loaded = false
 
     init(store: any SavedSearchStoring) {
         self.store = store
@@ -79,7 +80,7 @@ final class SavedSearchLibrary: ObservableObject {
 /// query lives in the detail column). `runEverywhere` is the MSP run across organizations,
 /// nil where it is not offered.
 struct SavedSearchMenu: View {
-    @ObservedObject var library: SavedSearchLibrary
+    let library: SavedSearchLibrary
     let scope: SavedSearch.Scope
     var current: (() -> (query: String, options: [String: String])?)? = nil
     let apply: (SavedSearch) -> Void

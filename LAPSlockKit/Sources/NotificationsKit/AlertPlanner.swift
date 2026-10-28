@@ -32,7 +32,7 @@ public struct AlertPlanner: Sendable {
     public func plan(
         tenantId: String,
         label: String,
-        observations: [Observation],
+        observations: [AlertObservation],
         lastSeen: (AlertKind) -> Set<String>?
     ) -> Result {
         var alerts: [PlannedAlert] = []

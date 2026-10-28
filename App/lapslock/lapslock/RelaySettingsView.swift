@@ -10,17 +10,18 @@ import RelayKit
 // prints, and turn off, which deletes the key so nothing sent to it can be read again.
 
 @MainActor
-final class RelayCoordinator: ObservableObject {
+@Observable
+final class RelayCoordinator {
     static let shared = RelayCoordinator()
 
-    @Published private(set) var isOn: Bool
-    @Published private(set) var pairing: PairingCode?
-    @Published private(set) var pinned: [String] = []
-    @Published var problem: String?
+    private(set) var isOn: Bool
+    private(set) var pairing: PairingCode?
+    private(set) var pinned: [String] = []
+    var problem: String?
     /// APNs gave this phone a different token since Watch was paired. Every envelope is
     /// bound to the token, so until Watch has the new pairing code nothing it sends arrives.
     /// Kept until the new code is copied, across launches.
-    @Published private(set) var pairingOutOfDate = UserDefaults.standard.bool(forKey: RelayCoordinator.outOfDateKey)
+    private(set) var pairingOutOfDate = UserDefaults.standard.bool(forKey: RelayCoordinator.outOfDateKey)
 
     static let outOfDateKey = "relay.pairingOutOfDate"
 
@@ -195,7 +196,7 @@ private extension Data {
 #endif
 
 struct RelaySettingsSection: View {
-    @ObservedObject var relay = RelayCoordinator.shared
+    let relay = RelayCoordinator.shared
     let isPro: Bool
     let isDemo: Bool
     @State private var senderText = ""

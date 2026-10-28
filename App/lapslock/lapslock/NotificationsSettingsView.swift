@@ -15,20 +15,29 @@ struct NotificationTenant: Identifiable, Equatable {
 }
 
 @MainActor
-final class NotificationsSettingsModel: ObservableObject {
-    @Published private(set) var preferences = NotificationPreferences()
-    @Published var permissionMessage: String?
+@Observable
+final class NotificationsSettingsModel {
+    private(set) var preferences = NotificationPreferences()
+    var permissionMessage: String?
     /// Shown under the field it is about, per organization.
-    @Published var upnMessage: [String: String] = [:]
-    @Published var newUPN: [String: String] = [:]
+    var upnMessage: [String: String] = [:]
+    var newUPN: [String: String] = [:]
 
     let tenants: [NotificationTenant]
-    private let store: any NotificationPreferencesStoring
+    @ObservationIgnored private let store: any NotificationPreferencesStoring
+    @ObservationIgnored private var loaded = false
 
+    /// Reads nothing: Settings builds one of these on every redraw and keeps the first, so
+    /// the Keychain read waits for `loadIfNeeded`, once, when the section appears.
     init(tenants: [NotificationTenant], store: any NotificationPreferencesStoring) {
         self.tenants = tenants
         self.store = store
-        self.preferences = (try? store.load()) ?? NotificationPreferences()
+    }
+
+    func loadIfNeeded() {
+        guard !loaded else { return }
+        loaded = true
+        preferences = (try? store.load()) ?? NotificationPreferences()
     }
 
     func prefs(for tenant: NotificationTenant) -> TenantAlertPreferences {
@@ -85,6 +94,8 @@ final class NotificationsSettingsModel: ObservableObject {
     }
 
     private func save(_ value: TenantAlertPreferences) {
+        // Never write over what is stored with defaults the section has not read yet.
+        loadIfNeeded()
         preferences.upsert(value)
         try? store.save(preferences)
         AlertsRunner.scheduleIfNeeded()
@@ -92,12 +103,25 @@ final class NotificationsSettingsModel: ObservableObject {
 }
 
 struct NotificationsSettingsSection: View {
-    @StateObject var model: NotificationsSettingsModel
+    @State private var model: NotificationsSettingsModel
     let isPro: Bool
     let isDemo: Bool
-    var openPlans: (() -> Void)? = nil
+    var openPlans: (() -> Void)?
+
+    init(model: NotificationsSettingsModel, isPro: Bool, isDemo: Bool, openPlans: (() -> Void)? = nil) {
+        _model = State(initialValue: model)
+        self.isPro = isPro
+        self.isDemo = isDemo
+        self.openPlans = openPlans
+    }
 
     var body: some View {
+        Group { content }
+            .onAppear { model.loadIfNeeded() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         if !isPro && !isDemo {
             Section {
                 Text("Notifications are part of Pro: service health, Message Center deadlines, break-glass sign-ins, expiring credentials, Secure Score, Conditional Access changes and security incidents, per organization.")

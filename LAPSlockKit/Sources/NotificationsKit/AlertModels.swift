@@ -102,7 +102,7 @@ public enum AlertKind: String, Codable, Sendable, CaseIterable, Identifiable, Co
 }
 
 /// What the background run saw for one kind in one tenant: opaque keys, nothing else.
-public struct Observation: Sendable, Equatable {
+public struct AlertObservation: Sendable, Equatable {
     public let kind: AlertKind
     /// Stable identity for "have I told them about this". For an item that can be updated
     /// (a service incident) the key includes the update time, so an update is new.

@@ -47,7 +47,6 @@ struct LAPSlockApp: App {
         WindowGroup {
             AppRootView()
                 .tint(Brand.accent)
-                .preferredColorScheme(AppSettings.shared.appearance.colorScheme)
                 // THIS is the handler that actually runs. See the note on AppDelegate.
                 .onOpenURL { url in
                     MSALRedirect.handle(url, sourceApplication: nil)
@@ -163,7 +162,8 @@ enum Entitlements {
 }
 
 @MainActor
-final class AppRootModel: ObservableObject {
+@Observable
+final class AppRootModel {
     enum Mode: Equatable {
         case signedOut
         case demo
@@ -276,13 +276,13 @@ final class AppRootModel: ObservableObject {
         }
     }
 
-    @Published var mode: Mode = .signedOut
-    @Published var isSigningIn = false
+    var mode: Mode = .signedOut
+    var isSigningIn = false
     /// True while the launch restore is running, so the sign-in screen does not flash up for
     /// a moment before the device list replaces it.
-    @Published private(set) var isRestoringSession = false
-    @Published var consentState: ConsentState?
-    @Published var signInError: String?
+    private(set) var isRestoringSession = false
+    var consentState: ConsentState?
+    var signInError: String?
 
     /// The authenticated manager. Exposed (read-only) so provider construction can
     /// share the same session rather than creating a second one.
@@ -324,19 +324,20 @@ final class AppRootModel: ObservableObject {
 
     /// Contract section 7.7: `storeKit || tier != free`. StoreKit is not wired yet, so the
     /// second operand is a literal false. When it lands, it goes here and nowhere else.
-    @Published private(set) var isPro = false
+    private(set) var isPro = false
 
     /// True when the MSP tenant switcher is available. **Stored rather than computed**, and
     /// that is not a style choice: it now depends on the Apple subscription, which changes
     /// asynchronously when a renewal or refund lands, and a computed property would give
     /// SwiftUI nothing to observe.
-    @Published private(set) var canSwitchTenants = false
+    private(set) var canSwitchTenants = false
 
     /// Apple's side of the entitlement. Owned here, at the root, so one listener serves the
     /// whole app.
     let subscriptions = SubscriptionStore()
 
-    private var cancellables = Set<AnyCancellable>()
+    /// Set once the subscription listener is running; `prepare()` can run more than once.
+    @ObservationIgnored private var subscriptionsStarted = false
 
     /// Recomputes both capabilities from the organization licence AND the Apple subscription.
     ///
@@ -371,7 +372,7 @@ final class AppRootModel: ObservableObject {
     }
 
     /// Customer organizations, most recently used first.
-    @Published private(set) var savedTenants: [TenantReference] = []
+    private(set) var savedTenants: [TenantReference] = []
 
     /// The organizations Notifications offers a switch for: the admin's own, then every
     /// customer organization an MSP has saved.
@@ -387,7 +388,7 @@ final class AppRootModel: ObservableObject {
         return list
     }
     /// The tenant being operated in, which differs from the account's own only for an MSP.
-    @Published private(set) var operatingTenantId: String?
+    private(set) var operatingTenantId: String?
 
     /// True only for the msp tier. Enterprise and Pro are single-organization by design, so
     /// the switcher does not appear for them at all rather than appearing and refusing.
@@ -477,11 +478,11 @@ final class AppRootModel: ObservableObject {
         // would miss every one of them.
         // Guarded: `prepare()` runs from a .task that can fire more than once, and a second
         // subscription would recompute twice for every change.
-        if cancellables.isEmpty {
+        if !subscriptionsStarted {
+            subscriptionsStarted = true
+            subscriptions.onEntitlementChange = { [weak self] entitlement in self?.apply(subscription: entitlement) }
             subscriptions.start()
-            subscriptions.$entitlement
-                .sink { [weak self] entitlement in self?.apply(subscription: entitlement) }
-                .store(in: &cancellables)
+            apply(subscription: subscriptions.entitlement)
         }
 
         guard auth == nil else { return }
@@ -659,7 +660,7 @@ final class AppRootModel: ObservableObject {
         }
     }
 
-    @Published private(set) var demoCustomer: DemoCustomer = .contoso
+    private(set) var demoCustomer: DemoCustomer = .contoso
 
     /// Saved searches: one file on this device, read on first use in the foreground.
     let savedSearches = SavedSearchLibrary.shared
@@ -667,11 +668,11 @@ final class AppRootModel: ObservableObject {
     private(set) var demoSavedSearches = SavedSearchLibrary(store: MemorySavedSearchStore(SavedSearch.demoExamples))
 
     /// A tapped alert ready for the shell to open, after any switch it needed.
-    @Published var openRoute: AlertRoute?
+    var openRoute: AlertRoute?
     /// "Switched to contoso.com for this alert", shown briefly over the shell.
-    @Published var alertNotice: String?
+    var alertNotice: String?
     /// Why a tapped alert was not opened. Nothing is opened in its place.
-    @Published var alertFailure: String?
+    var alertFailure: String?
 
     /// Handles a tapped alert once there is a session to open it in. An alert about another
     /// organization switches to it first (decided 2026-10-27), so an MSP never reads
@@ -723,9 +724,9 @@ final class AppRootModel: ObservableObject {
     // MARK: - a saved search across organizations (phase 5 step D)
 
     /// A saved search for the shell to put on screen, after any switch it needed.
-    @Published var pendingSearch: SavedSearch?
+    var pendingSearch: SavedSearch?
     /// Why a row from the run across organizations was not opened.
-    @Published var searchFailure: String?
+    var searchFailure: String?
 
     /// Every organization a saved search runs in: the admin's own, then each saved customer.
     var crossTenantTargets: [CrossTenantTarget] {
@@ -1039,9 +1040,11 @@ private let demoQuietApprovals = DemoApprovalsProvider(quiet: true)
 private let demoNotificationPreferences = InMemoryNotificationPreferencesStore()
 
 struct AppRootView: View {
-    @StateObject private var root = AppRootModel()
-    @StateObject private var appLock = AppLockModel()
-    @ObservedObject private var settings = AppSettings.shared
+    // Built on every init of this view and kept on the first: both initializers only set
+    // defaults, and the work waits for `prepare()` and `armAtLaunch` in the task below.
+    @State private var root = AppRootModel()
+    @State private var appLock = AppLockModel()
+    private let settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingSignedOutSettings = false
     @State private var lockPresenter = AppLockPresenter()
@@ -1061,7 +1064,9 @@ struct AppRootView: View {
                     AppLockScreen(model: appLock, promptsOnAppear: false)
                 }
             }
-            .background(WindowSceneReader { scene in lockPresenter.attach(to: scene, model: appLock) })
+            .background(WindowSceneReader(
+                window: { $0.overrideUserInterfaceStyle = settings.appearance.interfaceStyle },
+                found: { scene in lockPresenter.attach(to: scene, model: appLock) }))
             .onChange(of: appLock.isLocked, initial: true) { _, locked in lockPresenter.setLocked(locked) }
             .task {
                 appLock.armAtLaunch(enabled: settings.appLockEffective)

@@ -173,17 +173,18 @@ struct CrossTenantSearchSetup {
 }
 
 @MainActor
-final class CrossTenantSearchModel: ObservableObject {
+@Observable
+final class CrossTenantSearchModel {
     struct Row: Identifiable {
         let target: CrossTenantTarget
         var outcome: CrossTenantOutcome
         var id: String { target.id }
     }
 
-    @Published private(set) var rows: [Row]
-    @Published private(set) var stop: CrossTenantStop?
+    private(set) var rows: [Row]
+    private(set) var stop: CrossTenantStop?
     let search: SavedSearch
-    private let sources: @Sendable (CrossTenantTarget) async throws -> CrossTenantSources
+    @ObservationIgnored private let sources: @Sendable (CrossTenantTarget) async throws -> CrossTenantSources
 
     init(search: SavedSearch, targets: [CrossTenantTarget],
          sources: @escaping @Sendable (CrossTenantTarget) async throws -> CrossTenantSources) {
@@ -209,13 +210,15 @@ final class CrossTenantSearchModel: ObservableObject {
 }
 
 struct CrossTenantSearchView: View {
-    @StateObject private var model: CrossTenantSearchModel
+    @State private var model: CrossTenantSearchModel
     let currentTenantId: String?
     let open: (CrossTenantTarget) -> Void
     @Environment(\.dismiss) private var dismiss
 
     init(model: @escaping () -> CrossTenantSearchModel, currentTenantId: String?, open: @escaping (CrossTenantTarget) -> Void) {
-        _model = StateObject(wrappedValue: model())
+        // Built on every init of this view, kept on the first; the initializer only maps the
+        // targets to rows, so the discarded ones cost nothing.
+        _model = State(initialValue: model())
         self.currentTenantId = currentTenantId
         self.open = open
     }

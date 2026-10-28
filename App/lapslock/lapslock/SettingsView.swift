@@ -21,14 +21,15 @@ import StoreKit
 /// Persisted preferences. Plain UserDefaults: none of this is sensitive, and it must
 /// survive a relaunch.
 @MainActor
-final class AppSettings: ObservableObject {
+@Observable
+final class AppSettings {
     static let shared = AppSettings()
 
     /// Whether device actions are enabled: sync, restart, lock, locate and BitLocker key
     /// rotation. Gating every write on one toggle is the whole point: customers who leave
     /// it off never see a "modify your devices" permission on their consent screen.
     /// Replaces the BitLocker rotation toggle; an install that had rotation on carries over.
-    @Published var deviceActionsEnabled: Bool {
+    var deviceActionsEnabled: Bool {
         didSet { UserDefaults.standard.set(deviceActionsEnabled, forKey: Keys.deviceActions) }
     }
 
@@ -38,7 +39,7 @@ final class AppSettings: ObservableObject {
     /// lets the app request a privilege escalation, which reads worse on a consent screen
     /// than reading a password does. Off by default: a customer who never turns it on never
     /// sees that permission requested at all.
-    @Published var privilegedActivationEnabled: Bool {
+    var privilegedActivationEnabled: Bool {
         didSet { UserDefaults.standard.set(privilegedActivationEnabled, forKey: Keys.privilegedActivation) }
     }
 
@@ -46,7 +47,7 @@ final class AppSettings: ObservableObject {
     /// field empty. The UPN is the default;
     /// names are optional because they cost a permission, `User.ReadBasic.All` on the
     /// consent screen, that a customer should choose, not inherit.
-    @Published var userNamesEnabled: Bool {
+    var userNamesEnabled: Bool {
         didSet { UserDefaults.standard.set(userNamesEnabled, forKey: Keys.userNames) }
     }
 
@@ -55,40 +56,40 @@ final class AppSettings: ObservableObject {
     /// What it protects is NOT a credential, those already have their own gate. It is the
     /// device inventory: hostnames, primary users, compliance state. That is reconnaissance
     /// for an entire tenant, and a borrowed unlocked phone should not hand it over.
-    @Published var appLockEnabled: Bool {
+    var appLockEnabled: Bool {
         didSet { UserDefaults.standard.set(appLockEnabled, forKey: Keys.appLock) }
     }
 
     /// The organization can require the app lock; then it is on whatever the toggle says.
-    var appLockEffective: Bool { appLockEnabled || ManagedConfigStore.read().appLockRequired }
+    var appLockEffective: Bool { appLockEnabled || ManagedConfigStore.shared.config.appLockRequired }
 
     /// The organization can switch device actions off; then they are off whatever the
     /// toggle says, and the toggle is not offered.
-    var deviceActionsEffective: Bool { deviceActionsEnabled && !ManagedConfigStore.read().isDisabled("deviceActions") }
+    var deviceActionsEffective: Bool { deviceActionsEnabled && !ManagedConfigStore.shared.config.isDisabled("deviceActions") }
 
     /// Whether user actions are enabled: revoke, block, the authentication wipe, a
     /// Temporary Access Pass, risk. Off by default; the organization can force it off.
-    @Published var userActionsEnabled: Bool {
+    var userActionsEnabled: Bool {
         didSet { UserDefaults.standard.set(userActionsEnabled, forKey: Keys.userActions) }
     }
 
-    var userActionsEffective: Bool { userActionsEnabled && !ManagedConfigStore.read().isDisabled("userActions") }
+    var userActionsEffective: Bool { userActionsEnabled && !ManagedConfigStore.shared.config.isDisabled("userActions") }
 
     /// Whether group membership changes are enabled. Off by default; the organization can
     /// force them off, or set the scope to none.
-    @Published var groupWritesEnabled: Bool {
+    var groupWritesEnabled: Bool {
         didSet { UserDefaults.standard.set(groupWritesEnabled, forKey: Keys.groupWrites) }
     }
 
     /// Tagged or all, for a deployment without managed configuration. Tagged by default.
-    @Published var groupWriteMode: GroupWriteMode {
+    var groupWriteMode: GroupWriteMode {
         didSet { UserDefaults.standard.set(groupWriteMode.rawValue, forKey: Keys.groupWriteMode) }
     }
 
     /// The rules in force: the organization's when its configuration sets the scope, this
     /// device's otherwise. The administrative unit and prefix come only from configuration.
     var groupWritePolicy: GroupWritePolicy {
-        let config = ManagedConfigStore.read()
+        let config = ManagedConfigStore.shared.config
         let mode: GroupWriteMode
         if config.appliedKeys.contains("groupWrite.scope") {
             mode = GroupWriteMode(rawValue: config.groupWriteScope.rawValue) ?? .tagged
@@ -99,11 +100,14 @@ final class AppSettings: ObservableObject {
     }
 
     var groupWritesEffective: Bool {
-        groupWritesEnabled && !ManagedConfigStore.read().isDisabled("groupWrites") && groupWritePolicy.mode != .none
+        groupWritesEnabled && !ManagedConfigStore.shared.config.isDisabled("groupWrites") && groupWritePolicy.mode != .none
     }
 
-    @Published var appearance: AppearancePreference {
-        didSet { UserDefaults.standard.set(appearance.rawValue, forKey: Keys.appearance) }
+    var appearance: AppearancePreference {
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: Keys.appearance)
+            AppearancePreference.applyToAllWindows(appearance)
+        }
     }
 
     private enum Keys {
@@ -147,12 +151,21 @@ enum AppearancePreference: String, CaseIterable, Identifiable {
         }
     }
 
-    /// nil means "follow the system", which is what SwiftUI expects.
-    var colorScheme: ColorScheme? {
+    var interfaceStyle: UIUserInterfaceStyle {
         switch self {
-        case .system: return nil
+        case .system: return .unspecified
         case .light:  return .light
         case .dark:   return .dark
+        }
+    }
+
+    /// Applied to every window rather than through `preferredColorScheme`: a sheet already
+    /// open did not follow a change back to System that way, and stayed dark. A window's
+    /// override reaches everything it presents, and `.unspecified` returns to the system.
+    @MainActor
+    static func applyToAllWindows(_ preference: AppearancePreference) {
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows { window.overrideUserInterfaceStyle = preference.interfaceStyle }
         }
     }
 }
@@ -160,7 +173,7 @@ enum AppearancePreference: String, CaseIterable, Identifiable {
 // MARK: - view
 
 struct SettingsView: View {
-    @ObservedObject var settings: AppSettings
+    @Bindable var settings: AppSettings
     /// Requests consent for the two write scopes. Returns nil on success, or a message.
     /// Injected so the sheet doesn't need to know about MSAL.
     let requestDeviceActionsConsent: () async -> String?
@@ -437,7 +450,7 @@ struct SettingsView: View {
 
     // MARK: - managed by the organization
 
-    @ObservedObject private var managed = ManagedConfigStore.shared
+    private let managed = ManagedConfigStore.shared
 
     private var managedSection: some View {
         Section {

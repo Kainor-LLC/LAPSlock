@@ -92,13 +92,13 @@ enum AlertsRunner {
 
             let graph = GraphClient(auth: scoped)
             let sources = AlertSources(graph: graph, breakGlassUPNs: tenant.breakGlassUPNs)
-            var observations: [Observation] = []
+            var observations: [AlertObservation] = []
             for kind in tenant.activeKinds {
                 if Task.isCancelled { break }
                 // A kind whose module was never consented in this tenant fails here and is
                 // skipped quietly; the others still run.
                 if let keys = await sources.keys(for: kind) {
-                    observations.append(Observation(kind: kind, keys: keys))
+                    observations.append(AlertObservation(kind: kind, keys: keys))
                 }
             }
             let result = AlertPlanner().plan(

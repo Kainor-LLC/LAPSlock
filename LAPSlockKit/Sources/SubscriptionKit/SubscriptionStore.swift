@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import StoreKit
 
 // The live StoreKit layer: what Apple says this Apple ID owns, and how to buy.
@@ -15,22 +16,30 @@ import StoreKit
 // apps get their paid tier unlocked for free, and it is one `case .unverified` away.
 
 @MainActor
-public final class SubscriptionStore: ObservableObject {
+@Observable
+public final class SubscriptionStore {
 
     /// What Apple currently vouches for. Starts empty and stays empty until proven otherwise.
-    @Published public private(set) var entitlement: SubscriptionEntitlement = .none
+    public private(set) var entitlement: SubscriptionEntitlement = .none {
+        didSet { if entitlement != oldValue { onEntitlementChange?(entitlement) } }
+    }
 
     /// What can be bought, in the order the UI should show it.
-    @Published public private(set) var offers: [SubscriptionOffer] = []
+    public private(set) var offers: [SubscriptionOffer] = []
 
     /// True while a purchase or restore is in flight, so the UI can disable its buttons.
-    @Published public private(set) var isWorking = false
+    public private(set) var isWorking = false
 
     /// Set when Apple could not be reached for the product list. Not an error worth an
     /// alarming screen: the app works fine unpaid, so this degrades to "plans unavailable".
-    @Published public private(set) var loadFailed = false
+    public private(set) var loadFailed = false
 
-    private var updatesTask: Task<Void, Never>?
+    /// Called on the main actor when the entitlement changes, and only then, for the app's
+    /// tier logic outside any view. A callback rather than a publisher: Observation on the
+    /// iOS 17 floor has no stream of changes to subscribe to.
+    @ObservationIgnored public var onEntitlementChange: ((SubscriptionEntitlement) -> Void)?
+
+    @ObservationIgnored private var updatesTask: Task<Void, Never>?
 
     public init() {}
 

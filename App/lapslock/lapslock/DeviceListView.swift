@@ -125,11 +125,6 @@ final class DeviceListModel: ObservableObject {
             .dropFirst()
             .sink { [weak self] _ in self?.enrichNames() }
             .store(in: &cancellables)
-        settings?.$userNamesEnabled
-            .dropFirst()
-            .filter { $0 }
-            .sink { [weak self] _ in self?.enrichNames() }
-            .store(in: &cancellables)
 
         // Only the query is debounced. Device changes (first page, paging, refresh) flow
         // through immediately, because those are not user-typing bursts and delaying them
@@ -266,6 +261,12 @@ final class DeviceListModel: ObservableObject {
     /// Silent on failure. Names are a nicety; a row falling back to the UPN is the
     /// default experience, not an error, and a toggle left on in a tenant that has not
     /// consented should degrade to that rather than complain on every page.
+    /// Whether the Settings toggle is on. The list view watches it, and calls
+    /// `userNamesTurnedOn()` when it flips on mid-session.
+    var userNamesEnabled: Bool { settings?.userNamesEnabled ?? false }
+
+    func userNamesTurnedOn() { enrichNames() }
+
     private func enrichNames() {
         guard let nameResolver, settings?.userNamesEnabled == true else { return }
         let needed = UserNameResolver.upnsNeedingNames(in: devices)
@@ -407,6 +408,9 @@ struct DeviceListView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .searchable(text: $model.query, isPresented: $searchPresented, prompt: "Device, user, or serial")
         .refreshable { await model.load() }
+        .onChange(of: model.userNamesEnabled) { _, on in
+            if on { model.userNamesTurnedOn() }
+        }
         .toolbar {
             if settingsBuilder != nil {
                 ToolbarItem(placement: .topBarTrailing) {

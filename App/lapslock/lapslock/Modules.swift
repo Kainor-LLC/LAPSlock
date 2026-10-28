@@ -99,7 +99,7 @@ enum AppModule: String, CaseIterable, Identifiable {
 
     /// The registry flag. The organization's managed app configuration turns modules off
     /// here and nowhere else.
-    var isEnabled: Bool { !ManagedConfigStore.read().isDisabled(rawValue) }
+    var isEnabled: Bool { !ManagedConfigStore.shared.config.isDisabled(rawValue) }
 
     static var enabled: [AppModule] { allCases.filter(\.isEnabled) }
 
@@ -267,7 +267,7 @@ struct ModuleShell: View {
     /// How wide the list column is, from the menu, remembered between launches.
     @State private var listWidth: ListWidthPreset = ListWidthPreset.stored
     /// Re-renders the sidebar when the organization pushes a new policy.
-    @ObservedObject private var managed = ManagedConfigStore.shared
+    private let managed = ManagedConfigStore.shared
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     /// Open across the fold with room for two columns: the layout puts a boundary on the

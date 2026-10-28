@@ -8,7 +8,7 @@ final class AlertPlannerTests: XCTestCase {
 
     func test_theFirstRunIsABaselineAndAnnouncesNothing() {
         let result = planner.plan(tenantId: tenant, label: "contoso.com",
-                                  observations: [Observation(kind: .serviceIncident, keys: ["a", "b", "c"])],
+                                  observations: [AlertObservation(kind: .serviceIncident, keys: ["a", "b", "c"])],
                                   lastSeen: { _ in nil })
         XCTAssertTrue(result.alerts.isEmpty)
         XCTAssertEqual(result.remembered[.serviceIncident], ["a", "b", "c"])
@@ -16,7 +16,7 @@ final class AlertPlannerTests: XCTestCase {
 
     func test_newKeysOfOneKindBecomeOneNotificationWithACount() {
         let result = planner.plan(tenantId: tenant, label: "contoso.com",
-                                  observations: [Observation(kind: .serviceIncident, keys: ["a", "b", "c", "d"])],
+                                  observations: [AlertObservation(kind: .serviceIncident, keys: ["a", "b", "c", "d"])],
                                   lastSeen: { _ in ["a", "b"] })
         XCTAssertEqual(result.alerts.count, 1)
         XCTAssertEqual(result.alerts.first?.body, "contoso.com: 2 new service incidents")
@@ -28,7 +28,7 @@ final class AlertPlannerTests: XCTestCase {
 
     func test_singularCopyAndTimeSensitivityForBreakGlass() {
         let result = planner.plan(tenantId: tenant, label: "contoso.com",
-                                  observations: [Observation(kind: .breakGlassSignIn, keys: ["x"])],
+                                  observations: [AlertObservation(kind: .breakGlassSignIn, keys: ["x"])],
                                   lastSeen: { _ in [] })
         XCTAssertEqual(result.alerts.first?.body, "contoso.com: 1 new break-glass sign-in")
         XCTAssertEqual(result.alerts.first?.timeSensitive, true)
@@ -39,9 +39,9 @@ final class AlertPlannerTests: XCTestCase {
     func test_nothingNewMeansNothingPostedAndKindsAreIndependent() {
         let seen: [AlertKind: Set<String>] = [.serviceIncident: ["a"], .conditionalAccessChange: ["p1"]]
         let result = planner.plan(tenantId: tenant, label: "contoso.com",
-                                  observations: [Observation(kind: .serviceIncident, keys: ["a"]),
-                                                 Observation(kind: .conditionalAccessChange, keys: ["p1", "p2"]),
-                                                 Observation(kind: .securityIncident, keys: ["s1"])],
+                                  observations: [AlertObservation(kind: .serviceIncident, keys: ["a"]),
+                                                 AlertObservation(kind: .conditionalAccessChange, keys: ["p1", "p2"]),
+                                                 AlertObservation(kind: .securityIncident, keys: ["s1"])],
                                   lastSeen: { seen[$0] })
         XCTAssertEqual(result.alerts.map(\.kind), [.conditionalAccessChange])
         XCTAssertEqual(result.remembered[.securityIncident], ["s1"], "a kind checked for the first time is a baseline")
@@ -50,7 +50,7 @@ final class AlertPlannerTests: XCTestCase {
     func test_rememberedKeysAreCappedKeepingWhatIsCurrent() {
         let old = Set((0..<600).map { "old-\(String(format: "%04d", $0))" })
         let result = planner.plan(tenantId: tenant, label: "x",
-                                  observations: [Observation(kind: .expiringCredential, keys: ["now"])],
+                                  observations: [AlertObservation(kind: .expiringCredential, keys: ["now"])],
                                   lastSeen: { _ in old })
         let kept = result.remembered[.expiringCredential]!
         XCTAssertEqual(kept.count, AlertPlanner.rememberedCap)
@@ -61,7 +61,7 @@ final class AlertPlannerTests: XCTestCase {
         // The structural guarantee: nothing but a key enters the planner, and a key never
         // reaches the text. A key that looks like a person's address stays out of it.
         let result = planner.plan(tenantId: tenant, label: "contoso.com",
-                                  observations: [Observation(kind: .breakGlassSignIn, keys: ["bg-admin@contoso.com"])],
+                                  observations: [AlertObservation(kind: .breakGlassSignIn, keys: ["bg-admin@contoso.com"])],
                                   lastSeen: { _ in [] })
         let alert = try! XCTUnwrap(result.alerts.first)
         XCTAssertFalse(alert.title.contains("@"))
