@@ -247,11 +247,12 @@ struct SettingsView: View {
                 if managed.config.isManaged {
                     managedSection
                 }
-                // The plan stays on the first page: App Review has to find the purchase
-                // without knowing where to look.
                 freeTierSection
-                subscriptionSection
                 pagesSection
+                // The plan stays on the first page, where App Review has to find the
+                // purchase without knowing where to look; below the pages, because the
+                // plans arrive late and pushed the page rows down under a finger.
+                subscriptionSection
                 sessionSection
                 #if DEBUG
                 debugSection
