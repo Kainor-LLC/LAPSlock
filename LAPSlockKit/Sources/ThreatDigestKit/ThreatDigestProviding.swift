@@ -296,8 +296,7 @@ public actor ThreatDigestService: ThreatDigestProviding {
         private var refused: String?
 
         var refusedHost: String? {
-            lock.lock(); defer { lock.unlock() }
-            return refused
+            lock.withLock { refused }
         }
 
         func urlSession(
@@ -305,7 +304,7 @@ public actor ThreatDigestService: ThreatDigestProviding {
             willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest
         ) async -> URLRequest? {
             guard let url = request.url, ThreatDigestService.isAllowed(url) else {
-                lock.lock(); refused = request.url?.host ?? ""; lock.unlock()
+                lock.withLock { refused = request.url?.host ?? "" }
                 return nil
             }
             return request
