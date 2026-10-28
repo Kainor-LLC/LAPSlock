@@ -44,7 +44,7 @@ final class UserActionsModel {
     private(set) var passSecondsLeft = 0
     private var pass: SensitiveValue?
     @ObservationIgnored private var copied: String?
-    @ObservationIgnored private var undoWindow: UndoWindow?
+    @ObservationIgnored private var countdown: UndoCountdown?
 
     let target: UserActionTarget
     private let provider: any UserActionsProviding
@@ -143,24 +143,12 @@ final class UserActionsModel {
         guard typedUPNMatches else { return }
         clearMessages()
         guard await faceID() else { return }
-        let window = UndoWindow()
-        let seconds = DeviceActionsModel.undoSeconds
-        undoWindow = window
+        let countdown = UndoCountdown(key: target.userId, seconds: DeviceActionsModel.undoSeconds)
+        self.countdown = countdown
         undoing = kind
-        undoRemaining = seconds
-        await PendingActions.shared.register(window, for: target.userId)
-        let started = Date()
-        let ticker = Task { @MainActor [weak self] in
-            while let self, self.undoing != nil {
-                self.undoRemaining = max(0, seconds - Int(Date().timeIntervalSince(started)))
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-        let proceed = await window.wait(seconds: seconds)
-        ticker.cancel()
-        await PendingActions.shared.finished(target.userId)
+        let proceed = await countdown.run { @MainActor [weak self] left in self?.undoRemaining = left }
         undoing = nil
-        undoWindow = nil
+        self.countdown = nil
         if proceed {
             if kind == .authenticationWipe { await wipe(challenge: nil) } else { await run(kind) }
         } else {
@@ -169,14 +157,14 @@ final class UserActionsModel {
     }
 
     func undo() {
-        guard let window = undoWindow else { return }
-        Task { await window.cancel() }
+        guard let countdown else { return }
+        Task { await countdown.undo() }
     }
 
     /// Ends the wait and sends, for an admin who is sure.
     func sendNow() {
-        guard let window = undoWindow else { return }
-        Task { await window.proceedNow() }
+        guard let countdown else { return }
+        Task { await countdown.sendNow() }
     }
 
     func continueSignIn() async {
@@ -408,9 +396,8 @@ struct PersonActionsView: View {
             // The countdown sits above the bottom edge so the list does not jump while it runs.
             .safeAreaInset(edge: .bottom) {
                 if let pending = model.undoing {
-                    undoRow(pending)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(.regularMaterial)
+                    UndoBar(title: pending.title, spokenAction: pending.title, remaining: model.undoRemaining, floating: true,
+                            sendNow: { model.sendNow() }, undo: { model.undo() })
                 }
             }
             .navigationTitle("User Actions")
@@ -584,29 +571,6 @@ struct PersonActionsView: View {
         } footer: {
             Text("Hides in \(model.passSecondsLeft) s. Give it to the person over a channel you trust; it is not shown again. The clipboard clears itself.")
         }
-    }
-
-    private func undoRow(_ kind: UserActionKind) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(kind.title).font(.body.weight(.semibold))
-                Text("Sending in \(model.undoRemaining) s").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-            }
-            Spacer()
-            Button { model.sendNow() } label: {
-                Text("Send now").padding(.horizontal, 8).padding(.vertical, 8)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Send " + kind.title + " now")
-            Button { model.undo() } label: {
-                Text("Undo").font(.body.weight(.bold)).padding(.horizontal, 16).padding(.vertical, 8)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Undo " + kind.title)
-        }
-        .padding(.vertical, 4)
-        // Both buttons reachable: a list row otherwise exposes only one of them.
-        .accessibilityElement(children: .contain)
     }
 
     private func typedUPNSheet(_ kind: UserActionKind) -> some View {

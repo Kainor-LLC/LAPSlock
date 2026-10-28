@@ -52,7 +52,7 @@ final class PersonGroupsModel {
     let policy: GroupWritePolicy
     private let provider: any GroupWritesProviding
     @ObservationIgnored private var context: GroupWriteContext?
-    @ObservationIgnored private var undoWindow: UndoWindow?
+    @ObservationIgnored private var countdown: UndoCountdown?
     @ObservationIgnored private var debounceTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     /// Facts are read for the rows on screen, `factsWidth` groups at a time, rather than
@@ -210,24 +210,12 @@ final class PersonGroupsModel {
         case .unavailable(let reason): errorMessage = reason; return
         default: errorMessage = "Not confirmed. Nothing was sent."; return
         }
-        let window = UndoWindow()
-        let seconds = DeviceActionsModel.undoSeconds
-        undoWindow = window
+        let countdown = UndoCountdown(key: pendingKey, seconds: DeviceActionsModel.undoSeconds)
+        self.countdown = countdown
         undoing = pending
-        undoRemaining = seconds
-        await PendingActions.shared.register(window, for: pendingKey)
-        let started = Date()
-        let ticker = Task { @MainActor [weak self] in
-            while let self, self.undoing != nil {
-                self.undoRemaining = max(0, seconds - Int(Date().timeIntervalSince(started)))
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-        let proceed = await window.wait(seconds: seconds)
-        ticker.cancel()
-        await PendingActions.shared.finished(pendingKey)
+        let proceed = await countdown.run { @MainActor [weak self] left in self?.undoRemaining = left }
         undoing = nil
-        undoWindow = nil
+        self.countdown = nil
         if proceed {
             await send(pending)
         } else {
@@ -236,13 +224,13 @@ final class PersonGroupsModel {
     }
 
     func undo() {
-        guard let window = undoWindow else { return }
-        Task { await window.cancel() }
+        guard let countdown else { return }
+        Task { await countdown.undo() }
     }
 
     func sendNow() {
-        guard let window = undoWindow else { return }
-        Task { await window.proceedNow() }
+        guard let countdown else { return }
+        Task { await countdown.sendNow() }
     }
 
     func continueSignIn() async {
@@ -384,23 +372,8 @@ struct PersonGroupsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
             if let pending = model.undoing {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(pending.kind.title).font(.body.weight(.semibold))
-                        Text(pending.group.name).font(.caption).lineLimit(2)
-                        Text("Sending in \(model.undoRemaining) s").font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                    }
-                    Spacer()
-                    Button { model.sendNow() } label: { Text("Send now").padding(8) }
-                        .buttonStyle(.borderless)
-                        .accessibilityLabel("Send " + pending.kind.title.lowercased() + " now")
-                    Button { model.undo() } label: { Text("Undo").font(.body.weight(.bold)).padding(.horizontal, 16).padding(.vertical, 8) }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityLabel("Undo " + pending.kind.title.lowercased())
-                }
-                .accessibilityElement(children: .contain)
-                .padding(.horizontal, 16).padding(.vertical, 8)
-                .background(.regularMaterial)
+                UndoBar(title: pending.kind.title, detail: pending.group.name, spokenAction: pending.kind.title,
+                        remaining: model.undoRemaining, floating: true, sendNow: { model.sendNow() }, undo: { model.undo() })
             }
         }
         .sheet(item: $model.reviewing) { pending in

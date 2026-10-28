@@ -194,7 +194,6 @@ struct PeopleView: View {
     /// Whether group changes are on, for the Groups row.
     var groupsAvailable = false
 
-    @State private var isRequestingConsent = false
     @State private var consentMessage: String?
     @State private var personSnapshot: PersonSnapshot?
     @State private var snapshotTick = 0
@@ -369,20 +368,10 @@ struct PeopleView: View {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
         }
         if model.lastFailureWasConsent, let requestConsent {
-            Button {
-                Task {
-                    isRequestingConsent = true
-                    consentMessage = await requestConsent()
-                    isRequestingConsent = false
-                    if consentMessage == nil { model.reloadSignIns() }
-                }
-            } label: {
-                HStack {
-                    if isRequestingConsent { ProgressView().padding(.trailing, 6) }
-                    Text(isRequestingConsent ? "Requesting…" : "Request permission")
-                }
+            ConsentRequestButton(request: requestConsent) { refusal in
+                consentMessage = refusal
+                if refusal == nil { model.reloadSignIns() }
             }
-            .disabled(isRequestingConsent)
             if let consentMessage {
                 Text(consentMessage).font(.footnote).foregroundStyle(.secondary)
             }

@@ -222,7 +222,6 @@ struct SecurityListView: View {
     /// Requests the module's scope interactively. Nil in demo.
     var requestConsent: (() async -> String?)? = nil
 
-    @State private var isRequestingConsent = false
     @State private var consentMessage: String?
 
     var body: some View {
@@ -345,20 +344,10 @@ struct SecurityListView: View {
             }
         } actions: {
             if model.lastFailureWasConsent, let requestConsent {
-                Button {
-                    Task {
-                        isRequestingConsent = true
-                        consentMessage = await requestConsent()
-                        isRequestingConsent = false
-                        if consentMessage == nil { await model.load() }
-                    }
-                } label: {
-                    HStack {
-                        if isRequestingConsent { ProgressView().padding(.trailing, 6) }
-                        Text(isRequestingConsent ? "Requesting…" : "Request permission")
-                    }
+                ConsentRequestButton(request: requestConsent) { refusal in
+                    consentMessage = refusal
+                    if refusal == nil { await model.load() }
                 }
-                .disabled(isRequestingConsent)
             }
             Button("Try again") { Task { await model.load() } }
         }

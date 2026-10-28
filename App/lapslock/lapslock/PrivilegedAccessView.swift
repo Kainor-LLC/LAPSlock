@@ -391,24 +391,13 @@ struct PrivilegedAccessView: View {
             // every time they reach a new one, and it is a permission prompt away, not a
             // configuration change.
             if problem.isConsent, let requestConsent {
-                Button {
-                    Task {
-                        s.isRequestingConsent = true
-                        let error = await requestConsent()
-                        s.isRequestingConsent = false
-                        if error == nil {
-                            await load()
-                        } else {
-                            s.failure = PrivilegedFailure(consentDenied: error!)
-                        }
-                    }
-                } label: {
-                    HStack {
-                        if s.isRequestingConsent { ProgressView().padding(.trailing, 6) }
-                        Text(s.isRequestingConsent ? "Requesting…" : "Request permission")
+                ConsentRequestButton(request: requestConsent) { refusal in
+                    if let refusal {
+                        s.failure = PrivilegedFailure(consentDenied: refusal)
+                    } else {
+                        await load()
                     }
                 }
-                .disabled(s.isRequestingConsent)
             }
         } header: {
             Text("Couldn't Activate")
@@ -511,7 +500,6 @@ final class ActivateFormState {
     var phase: Phase = .loading
     var failure: PrivilegedFailure?
     var outcome: ActivationOutcome?
-    var isRequestingConsent = false
     var duration = ActivationRequest.defaultDuration
     var activePolicy: ActivationPolicy = .unknown
     var isLoadingPolicy = false

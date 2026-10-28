@@ -214,7 +214,6 @@ struct ConditionalAccessListView: View {
     /// Requests the module's scopes interactively. Nil in demo.
     var requestConsent: (() async -> String?)? = nil
 
-    @State private var isRequestingConsent = false
     @State private var consentMessage: String?
 
     var body: some View {
@@ -311,20 +310,10 @@ struct ConditionalAccessListView: View {
             // Recoverable right here. Consent is granted per organization, so somebody who
             // works across tenants meets this every time they reach a new one.
             if model.lastFailureWasConsent, let requestConsent {
-                Button {
-                    Task {
-                        isRequestingConsent = true
-                        consentMessage = await requestConsent()
-                        isRequestingConsent = false
-                        if consentMessage == nil { await model.load() }
-                    }
-                } label: {
-                    HStack {
-                        if isRequestingConsent { ProgressView().padding(.trailing, 6) }
-                        Text(isRequestingConsent ? "Requesting…" : "Request permission")
-                    }
+                ConsentRequestButton(request: requestConsent) { refusal in
+                    consentMessage = refusal
+                    if refusal == nil { await model.load() }
                 }
-                .disabled(isRequestingConsent)
             }
             Button("Try again") { Task { await model.load() } }
         }
@@ -400,7 +389,6 @@ struct ConditionalAccessDetailView: View {
     /// Requests the audit scope interactively. Nil in demo.
     var requestChangesConsent: (() async -> String?)? = nil
 
-    @State private var isRequestingConsent = false
     @State private var consentMessage: String?
 
     private var policy: ConditionalAccessPolicy { model.policy }
@@ -619,20 +607,10 @@ struct ConditionalAccessDetailView: View {
             } else if let error = model.changesError {
                 Text(error).font(.footnote).foregroundStyle(.secondary)
                 if model.changesNeedConsent, let requestChangesConsent {
-                    Button {
-                        Task {
-                            isRequestingConsent = true
-                            consentMessage = await requestChangesConsent()
-                            isRequestingConsent = false
-                            if consentMessage == nil { await model.loadChanges() }
-                        }
-                    } label: {
-                        HStack {
-                            if isRequestingConsent { ProgressView().padding(.trailing, 6) }
-                            Text(isRequestingConsent ? "Requesting…" : "Request permission")
-                        }
+                    ConsentRequestButton(request: requestChangesConsent) { refusal in
+                        consentMessage = refusal
+                        if refusal == nil { await model.loadChanges() }
                     }
-                    .disabled(isRequestingConsent)
                     if let consentMessage {
                         Text(consentMessage).font(.footnote).foregroundStyle(.secondary)
                     }

@@ -84,8 +84,6 @@ final class ThreatDigestModel {
         return published > seenBefore
     }
 
-    var newCount: Int { (cards + rest).filter { isNew($0.item) }.count }
-
     var unavailable: [DigestSourceStatus] { snapshot?.unavailable ?? [] }
 
     /// `refresh` asks every feed again, for pull to refresh; otherwise a digest read in

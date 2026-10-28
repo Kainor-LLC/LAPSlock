@@ -160,17 +160,27 @@ public actor UndoWindow {
 
     /// Waits the window out. Returns true when the time passed with no cancel, false when
     /// somebody changed their mind. Calling it twice is a programming error and returns
-    /// false, so a second tap can never fire a second write.
-    public func wait(seconds: Int = UndoWindow.standardSeconds, sleep: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }) async -> Bool {
+    /// false, so a second tap can never fire a second write. `tick` hears the whole seconds
+    /// left, from the full count down to 1, each time that changes.
+    public func wait(seconds: Int = UndoWindow.standardSeconds,
+                     sleep: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
+                     tick: @Sendable (Int) async -> Void = { _ in }) async -> Bool {
         guard !started else { return false }
         started = true
         let step: TimeInterval = 0.25
         var elapsed: TimeInterval = 0
+        var shown = seconds
+        await tick(shown)
         while elapsed < TimeInterval(seconds) {
             if cancelled { return false }
             if sendNow { return true }
             do { try await sleep(step) } catch { return false }
             elapsed += step
+            let left = seconds - Int(elapsed)
+            if left != shown, left > 0 {
+                shown = left
+                await tick(left)
+            }
         }
         return !cancelled
     }
@@ -221,4 +231,38 @@ public actor PendingActions {
     }
 
     public var count: Int { windows.count }
+}
+
+/// One write's undo countdown from start to finish. It is registered with PendingActions
+/// for the whole wait, so a screen that goes away or an app that leaves the foreground
+/// cancels it, and it is removed when it ends either way. Never shorter than ten seconds.
+public final class UndoCountdown: Sendable {
+    public let key: String
+    public let seconds: Int
+    private let window = UndoWindow()
+    private let pending: PendingActions
+
+    public init(key: String, seconds: Int = UndoWindow.standardSeconds, pending: PendingActions = .shared) {
+        self.key = key
+        self.seconds = max(UndoWindow.standardSeconds, seconds)
+        self.pending = pending
+    }
+
+    /// Runs the countdown. Returns true to send, false when it was undone or cancelled.
+    public func run(sleep: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
+                    tick: @Sendable (Int) async -> Void) async -> Bool {
+        await pending.register(window, for: key)
+        let proceed = await window.wait(seconds: seconds, sleep: sleep, tick: tick)
+        await pending.finished(key)
+        return proceed
+    }
+
+    public func undo() async {
+        await window.cancel()
+    }
+
+    /// Ends the wait and sends. An undo that already landed wins.
+    public func sendNow() async {
+        await window.proceedNow()
+    }
 }

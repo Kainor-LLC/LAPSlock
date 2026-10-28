@@ -36,7 +36,7 @@ final class DeviceActionsModel {
     /// The ten seconds between confirming and sending, with what is pending.
     private(set) var undoing: DeviceActionKind?
     private(set) var undoRemaining = 0
-    @ObservationIgnored private var undoWindow: UndoWindow?
+    @ObservationIgnored private var countdown: UndoCountdown?
 
     private(set) var target: DeviceActionTarget
     private let provider: any DeviceActionsProviding
@@ -128,24 +128,12 @@ final class DeviceActionsModel {
             errorMessage = "Not confirmed. Nothing was sent."
             return
         }
-        let window = UndoWindow()
-        let seconds = Self.undoSeconds
-        undoWindow = window
+        let countdown = UndoCountdown(key: target.managedDeviceId, seconds: Self.undoSeconds)
+        self.countdown = countdown
         undoing = kind
-        undoRemaining = seconds
-        await PendingActions.shared.register(window, for: target.managedDeviceId)
-        let started = Date()
-        let ticker = Task { @MainActor [weak self] in
-            while let self, self.undoing != nil {
-                self.undoRemaining = max(0, seconds - Int(Date().timeIntervalSince(started)))
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-        }
-        let proceed = await window.wait(seconds: seconds)
-        ticker.cancel()
-        await PendingActions.shared.finished(target.managedDeviceId)
+        let proceed = await countdown.run { @MainActor [weak self] left in self?.undoRemaining = left }
         undoing = nil
-        undoWindow = nil
+        self.countdown = nil
         if proceed {
             await run(kind)
         } else {
@@ -154,14 +142,14 @@ final class DeviceActionsModel {
     }
 
     func undo() {
-        guard let window = undoWindow else { return }
-        Task { await window.cancel() }
+        guard let countdown else { return }
+        Task { await countdown.undo() }
     }
 
     /// Ends the wait and sends, for an admin who is sure.
     func sendNow() {
-        guard let window = undoWindow else { return }
-        Task { await window.proceedNow() }
+        guard let countdown else { return }
+        Task { await countdown.sendNow() }
     }
 
     /// Ten seconds, or longer in a DEBUG build launched with `-LAPSlockUndoSeconds N` so a
@@ -352,38 +340,8 @@ struct DeviceActionsSections: View {
     }
 
     private func undoRow(_ kind: DeviceActionKind) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(kind.title + " " + model.target.deviceName)
-                    .font(.body.weight(.semibold))
-                Text("Sending in \(model.undoRemaining) s")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-            }
-            Spacer()
-            Button {
-                model.sendNow()
-            } label: {
-                Text("Send now")
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-            }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Send " + kind.title + " now")
-            Button {
-                model.undo()
-            } label: {
-                Text("Undo")
-                    .font(.body.weight(.bold))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityLabel("Undo " + kind.title)
-        }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .contain)
+        UndoBar(title: kind.title + " " + model.target.deviceName, spokenAction: kind.title,
+                remaining: model.undoRemaining, sendNow: { model.sendNow() }, undo: { model.undo() })
     }
 
     @ViewBuilder

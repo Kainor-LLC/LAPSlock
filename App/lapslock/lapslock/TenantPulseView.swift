@@ -203,7 +203,6 @@ struct TenantPulseView: View {
     /// Interactive consent for the module's scopes. Nil in demo.
     var requestConsent: (() async -> String?)? = nil
 
-    @State private var isRequestingConsent = false
     @State private var consentMessage: String?
 
     var body: some View {
@@ -230,20 +229,10 @@ struct TenantPulseView: View {
         Section {
             Text("Some cards need permissions this organization hasn't granted TenantKeep yet.")
                 .font(.footnote)
-            Button {
-                Task {
-                    isRequestingConsent = true
-                    consentMessage = await requestConsent?()
-                    isRequestingConsent = false
-                    if consentMessage == nil { await model.load() }
-                }
-            } label: {
-                HStack {
-                    if isRequestingConsent { ProgressView().padding(.trailing, 6) }
-                    Text(isRequestingConsent ? "Requesting…" : "Request permissions")
-                }
+            ConsentRequestButton(title: "Request permissions", request: { await requestConsent?() }) { refusal in
+                consentMessage = refusal
+                if refusal == nil { await model.load() }
             }
-            .disabled(isRequestingConsent)
             if let consentMessage {
                 Text(consentMessage).font(.footnote).foregroundStyle(.secondary)
             }
