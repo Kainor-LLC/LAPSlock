@@ -63,6 +63,9 @@ final class DeviceDetailModel {
     // BitLocker
     var bitLockerKeys: [BitLockerKeyInfo] = []
     var isLoadingKeys = false
+    /// Set once the key list has been read, found or not. Until then the section says it is
+    /// loading: before the read began it said no keys were backed up.
+    private(set) var keysRead = false
     var bitLockerListError: String?
     var revealedKeyInfo: BitLockerKeyInfo?
 
@@ -427,7 +430,10 @@ final class DeviceDetailModel {
         guard device.platform == .windows else { return }
         isLoadingKeys = true
         bitLockerListError = nil
-        defer { isLoadingKeys = false }
+        defer {
+            isLoadingKeys = false
+            keysRead = true
+        }
         do {
             bitLockerKeys = try await bitLocker.keys(forEntraDeviceId: entraDeviceId)
         } catch {
@@ -801,8 +807,11 @@ struct DeviceDetailView: View {
             privacy.onUnsafeCondition = { reason in model.revoke(reason) }
             privacy.start()
             model.isCaptured = privacy.isCaptured
-            await model.loadMetadata()
-            await model.loadBitLockerKeys()
+            // Together: neither read needs the other, and the keys used to wait out the
+            // management record first.
+            async let metadata: Void = model.loadMetadata()
+            async let keys: Void = model.loadBitLockerKeys()
+            _ = await (metadata, keys)
         }
         .onChange(of: privacy.isCaptured) { _, captured in
             model.isCaptured = captured
@@ -1013,7 +1022,7 @@ struct DeviceDetailView: View {
                         "This device isn't joined to Microsoft Entra ID, so no recovery keys are backed up to it.",
                         icon: "info.circle"
                     )
-                } else if model.isLoadingKeys {
+                } else if model.isLoadingKeys || !model.keysRead {
                     HStack(spacing: 10) {
                         ProgressView()
                         Text("Loading recovery keys…").font(.footnote).foregroundStyle(.secondary)
