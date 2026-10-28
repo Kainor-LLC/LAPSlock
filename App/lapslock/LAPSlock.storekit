@@ -80,7 +80,7 @@
           ],
           "localizations" : [
             {
-              "description" : "Everything in Pro, plus tenant switching",
+              "description" : "Everything in Pro, across customer tenants",
               "displayName" : "TenantKeep MSP",
               "locale" : "en_US"
             }
@@ -132,7 +132,7 @@
           ],
           "localizations" : [
             {
-              "description" : "Unlimited password and BitLocker key reveals",
+              "description" : "Unlimited reveals, plus People and Security",
               "displayName" : "TenantKeep Pro",
               "locale" : "en_US"
             }
@@ -184,7 +184,7 @@
           ],
           "localizations" : [
             {
-              "description" : "Unlimited password and BitLocker key reveals",
+              "description" : "Unlimited reveals, plus People and Security",
               "displayName" : "TenantKeep Pro",
               "locale" : "en_US"
             }
