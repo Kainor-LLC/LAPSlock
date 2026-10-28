@@ -41,7 +41,9 @@ struct WatchHomeView: View {
         Section {
             VStack(alignment: .leading, spacing: 2) {
                 Text(glance.tenant).font(.headline).lineLimit(1)
-                Text("Updated " + glance.updatedAt.formatted(.relative(presentation: .named)))
+                // A relative date style keeps time on its own. Formatted once, the line said
+                // "1 second ago" until the next glance arrived.
+                Text("Updated \(glance.updatedAt, style: .relative) ago")
                     .font(.caption2).foregroundStyle(.secondary)
                 if glance.isDemo { Text("Demo data").font(.caption2).foregroundStyle(.orange) }
                 if let problem = glance.problem { Text(problem).font(.caption2).foregroundStyle(.orange) }

@@ -99,6 +99,13 @@ final class SignInTriageModel {
         reloadSignIns()
     }
 
+    /// Pull to refresh: the same reload, waited for, so the indicator stays until the rows
+    /// have changed rather than snapping back at once.
+    func refreshSignIns() async {
+        reloadSignIns()
+        await signInsTask?.value
+    }
+
     func reloadSignIns() {
         guard let user = selectedUser, let upn = user.userPrincipalName else { return }
         signInsTask?.cancel()
@@ -210,7 +217,7 @@ struct PeopleView: View {
             if old == Self.actionsSelection || old == Self.leaverSelection || old == Self.groupsSelection { snapshotTick += 1 }
         }
         .searchable(text: $model.searchText, prompt: "Name or sign-in address")
-        .refreshable { model.reloadSignIns() }
+        .refreshable { await model.refreshSignIns() }
         .safeAreaInset(edge: .top) {
             if isDemo { DemoBanner() }
         }
@@ -275,12 +282,28 @@ struct PeopleView: View {
         personSnapshot = fresh
     }
 
-    /// The person at a glance, then their actions, leaver checklist and groups. The state
-    /// lines and actions need user actions on; the groups row needs group changes on.
+    /// The person's actions, leaver checklist and groups, then their account at a glance.
+    /// The links come first so they are where they will stay: the account lines arrive a
+    /// moment later, and above the links they pushed them down by about 160 points, under
+    /// a tap already on its way. The state lines and actions need user actions on; the
+    /// groups row needs group changes on.
     @ViewBuilder
     private var personSection: some View {
         if makeUserActions != nil || groupsAvailable, let user = model.selectedUser {
             Section {
+                if makeUserActions != nil {
+                    NavigationLink(value: Self.actionsSelection) {
+                        Label("Actions", systemImage: "person.badge.shield.checkmark")
+                    }
+                    NavigationLink(value: Self.leaverSelection) {
+                        Label("Leaver Checklist", systemImage: "checklist")
+                    }
+                }
+                if groupsAvailable {
+                    NavigationLink(value: Self.groupsSelection) {
+                        Label("Groups", systemImage: "person.2.square.stack")
+                    }
+                }
                 if snapshot == nil {
                     EmptyView()
                 } else if let snap = personSnapshot {
@@ -297,19 +320,6 @@ struct PeopleView: View {
                     }
                 } else {
                     HStack(spacing: 8) { ProgressView(); Text("Reading their account").font(.footnote).foregroundStyle(.secondary) }
-                }
-                if makeUserActions != nil {
-                    NavigationLink(value: Self.actionsSelection) {
-                        Label("Actions", systemImage: "person.badge.shield.checkmark")
-                    }
-                    NavigationLink(value: Self.leaverSelection) {
-                        Label("Leaver Checklist", systemImage: "checklist")
-                    }
-                }
-                if groupsAvailable {
-                    NavigationLink(value: Self.groupsSelection) {
-                        Label("Groups", systemImage: "person.2.square.stack")
-                    }
                 }
             } header: {
                 Text(user.displayName ?? user.userPrincipalName ?? "")

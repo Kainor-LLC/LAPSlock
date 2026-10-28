@@ -194,6 +194,8 @@ struct ModuleShell: View {
     /// anything for, and the column says so.
     private let privilegedColumn: (() -> PrivilegedAccessView)?
     @StateModel private var approvalsModel: ApprovalsModel
+    /// The Activate column's form, kept across module and tab switches.
+    @StateModel private var activateForm = ActivateFormState()
     /// A tapped alert to open, set by the root once it has switched to the alert's
     /// organization. Cleared here when opened.
     @Binding private var openRoute: AlertRoute?
@@ -315,32 +317,37 @@ struct ModuleShell: View {
 
     var body: some View {
         let _ = PerfProbe.body("ModuleShell")
-        GeometryReader { geometry in
-            let fullWidth = geometry.size.width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing
-            let hingeWidth = HingeLayout.contentWidth(
-                fullWidth: fullWidth,
-                leadingInset: geometry.safeAreaInsets.leading,
-                sidebarShown: false,
-                open: true,
-                ideal: 380,
-                fraction: listWidth.openFraction)
+        // The geometry is read only open across the fold, where the list's width is the
+        // hinge's. Around the whole shell it re-ran everything on every size change: each
+        // frame of a Stage Manager resize, and rotation (OPTIMIZATION-PLAN.md, step H).
+        Group {
             if hingeOpen {
-                // Open across the fold. A two-column split view, which tiles on the
-                // phone idiom; the three-column one only ever overlays the list on the
-                // detail there, and the one state where the detail could be tapped was
-                // the detail alone, with the left half empty. The list takes the left
-                // half to the pixel of the hinge, the detail the right. Modules move to
-                // a menu in the list's toolbar, and the sidebar toggle is removed so
-                // nothing can put the detail across the fold.
-                NavigationSplitView(columnVisibility: $openVisibility) {
-                    moduleColumn
-                        .toolbar(removing: .sidebarToggle)
-                        .toolbar { ToolbarItem(placement: .topBarLeading) { modulesMenu } }
-                        .navigationSplitViewColumnWidth(min: hingeWidth, ideal: hingeWidth, max: hingeWidth)
-                } detail: {
-                    detailColumn
+                GeometryReader { geometry in
+                    let fullWidth = geometry.size.width + geometry.safeAreaInsets.leading + geometry.safeAreaInsets.trailing
+                    let hingeWidth = HingeLayout.contentWidth(
+                        fullWidth: fullWidth,
+                        leadingInset: geometry.safeAreaInsets.leading,
+                        sidebarShown: false,
+                        open: true,
+                        ideal: 380,
+                        fraction: listWidth.openFraction)
+                    // Open across the fold. A two-column split view, which tiles on the
+                    // phone idiom; the three-column one only ever overlays the list on the
+                    // detail there, and the one state where the detail could be tapped was
+                    // the detail alone, with the left half empty. The list takes the left
+                    // half to the pixel of the hinge, the detail the right. Modules move to
+                    // a menu in the list's toolbar, and the sidebar toggle is removed so
+                    // nothing can put the detail across the fold.
+                    NavigationSplitView(columnVisibility: $openVisibility) {
+                        moduleColumn
+                            .toolbar(removing: .sidebarToggle)
+                            .toolbar { ToolbarItem(placement: .topBarLeading) { modulesMenu } }
+                            .navigationSplitViewColumnWidth(min: hingeWidth, ideal: hingeWidth, max: hingeWidth)
+                    } detail: {
+                        detailColumn
+                    }
+                    .navigationSplitViewStyle(.balanced)
                 }
-                .navigationSplitViewStyle(.balanced)
             } else {
                 NavigationSplitView(columnVisibility: $columnVisibility, preferredCompactColumn: $compactColumn) {
                     sidebar
@@ -615,6 +622,11 @@ struct ModuleShell: View {
                 // Open high-severity incidents, once the module has loaded this session.
                 // Zero hides the badge, so no module pays for a count it does not have.
                 .badge(module == .security ? securityModel.openHighCount : 0)
+                // Tagged with the module itself. Untagged, a selectable List tags a row with
+                // its ForEach id, here the module's raw string, which never equals the
+                // selection, so the highlight showed only for a moment after a tap: never at
+                // launch, and gone after a sheet or a tab in another column.
+                .tag(module)
                 .accessibilityLabel(module.title)
                 .accessibilityHint(module.subtitle)
             }
@@ -708,7 +720,7 @@ struct ModuleShell: View {
         switch privilegedTab {
         case .activate:
             if let privilegedColumn {
-                privilegedColumn()
+                privilegedColumn().holding(activateForm)
             } else {
                 ContentUnavailableView {
                     Label("Needs a signed-in account", systemImage: "person.badge.key")

@@ -48,25 +48,17 @@ struct PrivilegedAccessView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-    @State private var eligible: [EligibleAccess] = []
-    @State private var selected: EligibleAccess?
-    @State private var justification = ""
-    @State private var ticket = ""
-    @State private var phase: Phase = .loading
-    @State private var failure: PrivilegedFailure?
-    @State private var outcome: ActivationOutcome?
-    @State private var isRequestingConsent = false
-    @State private var duration = ActivationRequest.defaultDuration
-    @State private var activePolicy: ActivationPolicy = .unknown
-    @State private var isLoadingPolicy = false
-    @State private var isChecking = false
-    @State private var lastCheckFailed = false
+    /// The shell's, for the module column, so a module switch keeps what was chosen and
+    /// typed. Nil for a sheet, which keeps its own for as long as it is up.
+    var state: ActivateFormState? = nil
+    @StateModel private var ownState = ActivateFormState()
+    private var s: ActivateFormState { state ?? ownState }
 
-    private enum Phase: Equatable {
-        case loading
-        case ready
-        case activating
-        case finished
+    /// This view, holding the form in `state`.
+    func holding(_ state: ActivateFormState) -> PrivilegedAccessView {
+        var copy = self
+        copy.state = state
+        return copy
     }
 
     var body: some View {
@@ -79,12 +71,12 @@ struct PrivilegedAccessView: View {
 
     private var form: some View {
         Form {
-            switch phase {
+            switch s.phase {
             case .loading:
                 Section { HStack { ProgressView(); Text("Checking what you can activate").padding(.leading, 6) } }
             case .ready, .activating:
-                if let failure { failureSection(failure) }
-                if !eligible.isEmpty {
+                if let failure = s.failure { failureSection(failure) }
+                if !s.eligible.isEmpty {
                     rolesSection
                     justificationSection
                     activateSection
@@ -99,19 +91,20 @@ struct PrivilegedAccessView: View {
         .toolbar {
             if !isEmbedded {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(phase == .finished ? "Done" : "Cancel") { dismiss() }
+                    Button(s.phase == .finished ? "Done" : "Cancel") { dismiss() }
                 }
             }
         }
-        .task { await load() }
-        .disabled(phase == .activating)
+        .task { if !s.hasLoaded { await load() } }
+        .refreshable { await load() }
+        .disabled(s.phase == .activating)
     }
 
     /// A column has no Done to tap, so the way back to the list of eligible access is a row.
     private var startOverSection: some View {
         Section {
             Button("Activate something else") {
-                outcome = nil
+                s.outcome = nil
                 Task { await load() }
             }
         }
@@ -121,9 +114,9 @@ struct PrivilegedAccessView: View {
 
     private var rolesSection: some View {
         Section {
-            ForEach(eligible) { access in
+            ForEach(s.eligible) { access in
                 Button {
-                    selected = access
+                    s.selected = access
                     Task { await loadPolicy(for: access) }
                 } label: {
                     HStack(alignment: .top) {
@@ -134,7 +127,7 @@ struct PrivilegedAccessView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 8)
-                        if selected == access {
+                        if s.selected == access {
                             Image(systemName: "checkmark").foregroundStyle(Brand.accent)
                         }
                     }
@@ -142,7 +135,7 @@ struct PrivilegedAccessView: View {
                 .buttonStyle(.plain)
             }
         } header: {
-            Text(eligible.count == 1 ? "Eligible access" : "Choose what to activate")
+            Text(s.eligible.count == 1 ? "Eligible access" : "Choose what to activate")
         }
     }
 
@@ -154,16 +147,16 @@ struct PrivilegedAccessView: View {
     /// hedging about what tenants generally require.
     private var reasonFooter: String {
         var parts = ["The reason is recorded in your organization's own audit log alongside the activation."]
-        if activePolicy.justificationRequired {
+        if s.activePolicy.justificationRequired {
             parts.append("Your organization requires one.")
         }
-        if activePolicy.ticketRequired {
+        if s.activePolicy.ticketRequired {
             parts.append("Your organization also requires a ticket number.")
         }
-        if let maximum = activePolicy.maximumDuration, let hours = ActivationPolicy.hours(maximum) {
+        if let maximum = s.activePolicy.maximumDuration, let hours = ActivationPolicy.hours(maximum) {
             parts.append("The longest it permits is \(ActivationPolicy.label(hours: hours)).")
         }
-        if activePolicy.authenticationContextClaim != nil {
+        if s.activePolicy.authenticationContextClaim != nil {
             parts.append("It also requires you to verify your identity, so expect a sign-in prompt.")
         }
         return parts.joined(separator: " ")
@@ -188,17 +181,17 @@ struct PrivilegedAccessView: View {
 
     private var justificationSection: some View {
         Section {
-            TextField("Why you need this", text: $justification, axis: .vertical)
+            TextField("Why you need this", text: Bindable(s).justification, axis: .vertical)
                 .lineLimit(2...4)
-            TextField("Ticket number (optional)", text: $ticket)
+            TextField("Ticket number (optional)", text: Bindable(s).ticket)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
-            Picker("Activate for", selection: $duration) {
-                ForEach(activePolicy.offeredDurations, id: \.iso) { option in
+            Picker("Activate for", selection: Bindable(s).duration) {
+                ForEach(s.activePolicy.offeredDurations, id: \.iso) { option in
                     Text(option.label).tag(option.iso)
                 }
             }
-            .disabled(isLoadingPolicy)
+            .disabled(s.isLoadingPolicy)
         } header: {
             Text("Reason")
         } footer: {
@@ -212,8 +205,8 @@ struct PrivilegedAccessView: View {
                 Task { await performActivation() }
             } label: {
                 HStack {
-                    if phase == .activating { ProgressView().padding(.trailing, 6) }
-                    Text(phase == .activating ? "Activating…" : "Activate")
+                    if s.phase == .activating { ProgressView().padding(.trailing, 6) }
+                    Text(s.phase == .activating ? "Activating…" : "Activate")
                 }
             }
             .disabled(!canActivate)
@@ -228,9 +221,9 @@ struct PrivilegedAccessView: View {
 
     /// Everything the tenant's own policy requires, so Activate is not a button that fails.
     private var canActivate: Bool {
-        guard selected != nil, phase != .activating, !isLoadingPolicy else { return false }
-        guard !justification.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
-        if activePolicy.ticketRequired, ticket.trimmingCharacters(in: .whitespaces).isEmpty {
+        guard s.selected != nil, s.phase != .activating, !s.isLoadingPolicy else { return false }
+        guard !s.justification.trimmingCharacters(in: .whitespaces).isEmpty else { return false }
+        if s.activePolicy.ticketRequired, s.ticket.trimmingCharacters(in: .whitespaces).isEmpty {
             return false
         }
         return true
@@ -240,7 +233,7 @@ struct PrivilegedAccessView: View {
 
     @ViewBuilder
     private var outcomeSection: some View {
-        switch outcome {
+        switch s.outcome {
         case .activated(let until):
             Section {
                 Label("Access activated", systemImage: "checkmark.seal.fill")
@@ -327,7 +320,7 @@ struct PrivilegedAccessView: View {
                     """)
             }
         case nil:
-            if let failure { failureSection(failure) }
+            if let failure = s.failure { failureSection(failure) }
         }
     }
 
@@ -343,31 +336,31 @@ struct PrivilegedAccessView: View {
     /// avoid offering it: an active grant has nothing to check and a refusal will never change.
     @ViewBuilder
     private func checkAgainButton(_ requestId: String?) -> some View {
-        if let requestId, let recheck, let access = selected {
+        if let requestId, let recheck, let access = s.selected {
             Button {
                 Task {
-                    isChecking = true
-                    lastCheckFailed = false
+                    s.isChecking = true
+                    s.lastCheckFailed = false
                     switch await recheck(requestId, access) {
                     case .success(let updated):
-                        outcome = updated
+                        s.outcome = updated
                     case .failure:
                         // Deliberately NOT the failure section: the activation itself did
                         // not fail, a status read did, and replacing the outcome with an
                         // error would throw away what we already know about the request.
-                        lastCheckFailed = true
+                        s.lastCheckFailed = true
                     }
-                    isChecking = false
+                    s.isChecking = false
                 }
             } label: {
                 HStack {
-                    if isChecking { ProgressView().padding(.trailing, 6) }
-                    Text(isChecking ? "Checking…" : "Check again")
+                    if s.isChecking { ProgressView().padding(.trailing, 6) }
+                    Text(s.isChecking ? "Checking…" : "Check again")
                 }
             }
-            .disabled(isChecking)
+            .disabled(s.isChecking)
 
-            if lastCheckFailed {
+            if s.lastCheckFailed {
                 Text("Couldn't reach Microsoft to check. The activation itself is unaffected.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -388,34 +381,34 @@ struct PrivilegedAccessView: View {
     }
 
     @ViewBuilder
-    private func failureSection(_ failure: PrivilegedFailure) -> some View {
+    private func failureSection(_ problem: PrivilegedFailure) -> some View {
         Section {
-            Text(failure.title).font(.subheadline.weight(.semibold))
-            Text(failure.explanation).font(.footnote).foregroundStyle(.secondary)
+            Text(problem.title).font(.subheadline.weight(.semibold))
+            Text(problem.explanation).font(.footnote).foregroundStyle(.secondary)
 
             // Recoverable right here rather than by sending the user to Settings. Consent is
             // granted per organization, so an admin who works across tenants will meet this
             // every time they reach a new one, and it is a permission prompt away, not a
             // configuration change.
-            if failure.isConsent, let requestConsent {
+            if problem.isConsent, let requestConsent {
                 Button {
                     Task {
-                        isRequestingConsent = true
+                        s.isRequestingConsent = true
                         let error = await requestConsent()
-                        isRequestingConsent = false
+                        s.isRequestingConsent = false
                         if error == nil {
                             await load()
                         } else {
-                            self.failure = PrivilegedFailure(consentDenied: error!)
+                            s.failure = PrivilegedFailure(consentDenied: error!)
                         }
                     }
                 } label: {
                     HStack {
-                        if isRequestingConsent { ProgressView().padding(.trailing, 6) }
-                        Text(isRequestingConsent ? "Requesting…" : "Request permission")
+                        if s.isRequestingConsent { ProgressView().padding(.trailing, 6) }
+                        Text(s.isRequestingConsent ? "Requesting…" : "Request permission")
                     }
                 }
-                .disabled(isRequestingConsent)
+                .disabled(s.isRequestingConsent)
             }
         } header: {
             Text("Couldn't Activate")
@@ -429,38 +422,39 @@ struct PrivilegedAccessView: View {
     /// Clamping matters as much as the picker: a duration chosen before the policy arrived
     /// could exceed it, and the request would be refused with a 400 that names no reason.
     private func loadPolicy(for access: EligibleAccess) async {
-        isLoadingPolicy = true
-        activePolicy = .unknown
+        s.isLoadingPolicy = true
+        s.activePolicy = .unknown
         let read = await policy(access)
         // Another role was tapped while this one loaded. Its policy is the one that counts,
         // and its load clears the flag: a ticket rule or duration from this role must not
         // be applied to that one, or Activate enabled before its rules are known.
-        guard selected?.id == access.id else { return }
-        activePolicy = read
+        guard s.selected?.id == access.id else { return }
+        s.activePolicy = read
         let allowed = read.offeredDurations.map(\.iso)
-        if !allowed.contains(duration) {
-            duration = allowed.first ?? ActivationRequest.defaultDuration
+        if !allowed.contains(s.duration) {
+            s.duration = allowed.first ?? ActivationRequest.defaultDuration
         }
         // A tenant that requires a ticket should not offer an Activate button that fails, so
         // the requirement is reflected in the field's own validation below.
-        isLoadingPolicy = false
+        s.isLoadingPolicy = false
     }
 
     private func load() async {
-        phase = .loading
-        failure = nil
+        s.hasLoaded = true
+        s.phase = .loading
+        s.failure = nil
         switch await loadEligible() {
         case .success(let access):
-            eligible = access
+            s.eligible = access
             // One option means no choice to make. Preselect it: an administrator at a
             // broken machine should not have to tap a list of one.
-            selected = access.count == 1 ? access.first : nil
-            justification = defaultJustification
-            phase = .ready
-            if let only = selected { await loadPolicy(for: only) }
+            s.selected = access.count == 1 ? access.first : nil
+            s.justification = defaultJustification
+            s.phase = .ready
+            if let only = s.selected { await loadPolicy(for: only) }
         case .failure(let error):
-            failure = PrivilegedFailure(error)
-            phase = .ready
+            s.failure = PrivilegedFailure(error)
+            s.phase = .ready
         }
     }
 
@@ -474,27 +468,58 @@ struct PrivilegedAccessView: View {
     }
 
     private func performActivation() async {
-        guard let selected else { return }
-        phase = .activating
-        failure = nil
+        guard let chosen = s.selected else { return }
+        s.phase = .activating
+        s.failure = nil
 
-        let trimmedTicket = ticket.trimmingCharacters(in: .whitespaces)
+        let trimmedTicket = s.ticket.trimmingCharacters(in: .whitespaces)
         let result = await activate(
-            selected,
-            justification.trimmingCharacters(in: .whitespaces),
+            chosen,
+            s.justification.trimmingCharacters(in: .whitespaces),
             trimmedTicket.isEmpty ? nil : trimmedTicket,
-            duration,
-            activePolicy)
+            s.duration,
+            s.activePolicy)
 
         switch result {
         case .success(let value):
-            outcome = value
-            phase = .finished
+            s.outcome = value
+            s.phase = .finished
         case .failure(let error):
-            failure = PrivilegedFailure(error)
-            phase = .ready
+            s.failure = PrivilegedFailure(error)
+            s.phase = .ready
         }
     }
+}
+
+/// What the Activate form has chosen, typed and been told. Outside the view so the module
+/// column keeps it across module and tab switches, held by the shell; a sheet holds its
+/// own for as long as it is up (OPTIMIZATION-PLAN.md, step H, UI-14).
+@MainActor
+@Observable
+final class ActivateFormState {
+    enum Phase: Equatable {
+        case loading
+        case ready
+        case activating
+        case finished
+    }
+
+    var eligible: [EligibleAccess] = []
+    var selected: EligibleAccess?
+    var justification = ""
+    var ticket = ""
+    var phase: Phase = .loading
+    var failure: PrivilegedFailure?
+    var outcome: ActivationOutcome?
+    var isRequestingConsent = false
+    var duration = ActivationRequest.defaultDuration
+    var activePolicy: ActivationPolicy = .unknown
+    var isLoadingPolicy = false
+    var isChecking = false
+    var lastCheckFailed = false
+    /// Set when the eligible access was first read, so a return to the column shows what
+    /// was there rather than reading it again. Pull to refresh reads it again.
+    var hasLoaded = false
 }
 
 /// A failure in the user's terms, with what to do about it.

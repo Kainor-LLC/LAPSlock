@@ -1084,9 +1084,18 @@ struct AppRootView: View {
     @State private var showingSignedOutSettings = false
     @State private var lockPresenter = AppLockPresenter()
 
+    /// The shell's identity: a new value is a new shell, for a switch of organization or
+    /// sample customer, or a sign-in.
+    private var shellKey: String {
+        root.mode == .demo ? root.demoCustomer.rawValue : (root.operatingTenantId ?? root.signedInTenantId ?? "")
+    }
+
     var body: some View {
         let _ = PerfProbe.body("AppRootView")
         content
+            // A switch cross-fades the old organization's shell into the new one instead of
+            // cutting. The order is unchanged: the new shell is built from the new session.
+            .animation(.easeInOut(duration: 0.25), value: shellKey)
             .accessibilityHidden(appLock.isLocked)
             // The lock itself is a window above everything in this scene, sheets and alerts
             // included; see AppLockPresenter. This copy inside the app is the fallback for the
@@ -1133,29 +1142,8 @@ struct AppRootView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openModuleFromAlert)) { _ in
                 Task { await root.handlePendingAlert() }
             }
-            .overlay(alignment: .bottom) {
-                if let notice = root.alertNotice {
-                    NoticeCapsule(text: notice)
-                        .task {
-                            try? await Task.sleep(for: .seconds(4))
-                            root.alertNotice = nil
-                        }
-                }
-            }
-            .alert("Alert Not Opened", isPresented: Binding(
-                get: { root.alertFailure != nil },
-                set: { if !$0 { root.alertFailure = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(root.alertFailure ?? "")
-            }
-            .alert("Search Not Opened", isPresented: Binding(
-                get: { root.searchFailure != nil },
-                set: { if !$0 { root.searchFailure = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(root.searchFailure ?? "")
-            }
+            .overlay(alignment: .bottom) { AlertNoticeOverlay(root: root) }
+            .background { RootAlertsHost(root: root) }
             .onChange(of: root.operatingTenantId) { _, _ in configureWatch() }
             .onChange(of: root.demoCustomer) { _, _ in configureWatch() }
             .onChange(of: settings.privilegedActivationEnabled) { _, _ in configureWatch() }
@@ -1316,6 +1304,7 @@ struct AppRootView: View {
             // Keyed by the sample customer, as the live shell is by tenant: a switch rebuilds
             // every module's model.
             .id(root.demoCustomer.rawValue)
+            .transition(.opacity)
 
         case .live:
             if let session = root.liveSession {
@@ -1456,6 +1445,7 @@ struct AppRootView: View {
                 // Keyed by the tenant being operated in. A switch rebuilds every module's
                 // model, so nothing one customer loaded can stay on screen in another (§7).
                 .id(root.operatingTenantId ?? root.signedInTenantId ?? "")
+                .transition(.opacity)
             } else {
                 // A .live mode with no session shouldn't happen. Recover to signed out
                 // rather than showing a blank screen or substituting a data source.
@@ -1629,5 +1619,49 @@ enum GraphDiagnostics {
                 actionsEnabled: true
             )
         )
+    }
+}
+
+/// The notice after a switch made for an alert. Its own view, so a notice coming and going
+/// redraws only itself, not the root. Keyed by its text, so a second notice within four
+/// seconds stays its own four rather than going with the first.
+private struct AlertNoticeOverlay: View {
+    let root: AppRootModel
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if let notice = root.alertNotice {
+                NoticeCapsule(text: notice)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task(id: notice) {
+                        try? await Task.sleep(for: .seconds(4))
+                        if root.alertNotice == notice { root.alertNotice = nil }
+                    }
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: root.alertNotice)
+    }
+}
+
+/// The two alerts the root can raise, read here rather than in the root's body.
+private struct RootAlertsHost: View {
+    let root: AppRootModel
+
+    var body: some View {
+        Color.clear
+            .alert("Alert Not Opened", isPresented: Binding(
+                get: { root.alertFailure != nil },
+                set: { if !$0 { root.alertFailure = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(root.alertFailure ?? "")
+            }
+            .alert("Search Not Opened", isPresented: Binding(
+                get: { root.searchFailure != nil },
+                set: { if !$0 { root.searchFailure = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(root.searchFailure ?? "")
+            }
     }
 }

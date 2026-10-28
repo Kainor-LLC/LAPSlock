@@ -17,11 +17,31 @@ final class TenantPulseModel {
         case loading
         case loaded(Value)
         case failed(message: String, needsConsent: Bool)
+
+        var isLoaded: Bool {
+            if case .loaded = self { return true }
+            return false
+        }
+    }
+
+    enum CardKind: Hashable { case health, messages, expiring, score }
+
+    /// The expiring items in one bucket, worked out once per load.
+    struct ExpiringGroup: Equatable, Identifiable {
+        let bucket: ExpiringItem.Bucket
+        let items: [ExpiringItem]
+        var id: ExpiringItem.Bucket { bucket }
     }
 
     private(set) var health: Card<ServiceHealthReport> = .idle
     private(set) var messages: Card<[ServiceMessage]> = .idle
-    private(set) var expiring: Card<[ExpiringItem]> = .idle
+    private(set) var expiring: Card<[ExpiringItem]> = .idle {
+        didSet { expiringGroups = Self.groups(expiring) }
+    }
+    /// The expiring card by bucket, rather than filtered again on every redraw.
+    private(set) var expiringGroups: [ExpiringGroup] = []
+    /// Cards whose last refresh failed while what they showed before stays on screen.
+    private(set) var stale: Set<CardKind> = []
     private(set) var score: Card<SecureScoreSummary?> = .idle
     private(set) var isLoading = false
     /// How far back the Secure Score change looks. Seven days or thirty; remembered.
@@ -51,26 +71,60 @@ final class TenantPulseModel {
         return false
     }
 
+    /// A card already on screen stays there while it is read again, and is replaced only
+    /// when its new answer arrives: a refresh no longer blanks the cards, or the item open
+    /// in the iPad detail.
     func load() async {
         isLoading = true
         defer { isLoading = false }
-        health = .loading
-        messages = .loading
-        expiring = .loading
-        score = .loading
+        if !health.isLoaded { health = .loading }
+        if !messages.isLoaded { messages = .loading }
+        if !expiring.isLoaded { expiring = .loading }
+        if !score.isLoaded { score = .loading }
         let started = Date()
         // Each card fills as its own read finishes, so a slow Expiring card no longer
         // holds back Secure Score.
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { @MainActor in self.health = await self.card { try await self.provider.health() } }
-            group.addTask { @MainActor in self.messages = await self.card { try await self.provider.messages() } }
-            group.addTask { @MainActor in self.expiring = await self.card { ExpiryWindow.relevant(try await self.provider.expiringItems()) } }
-            group.addTask { @MainActor in self.score = await self.card { try await self.provider.secureScore() } }
+            group.addTask { @MainActor in
+                let new = await self.card { try await self.provider.health() }
+                self.health = self.refreshed(self.health, new, .health)
+            }
+            group.addTask { @MainActor in
+                let new = await self.card { try await self.provider.messages() }
+                self.messages = self.refreshed(self.messages, new, .messages)
+            }
+            group.addTask { @MainActor in
+                let new = await self.card { ExpiryWindow.relevant(try await self.provider.expiringItems()) }
+                self.expiring = self.refreshed(self.expiring, new, .expiring)
+            }
+            group.addTask { @MainActor in
+                let new = await self.card { try await self.provider.secureScore() }
+                self.score = self.refreshed(self.score, new, .score)
+            }
         }
         await DiagnosticsRecorder.shared.record(
             .graphRead, hasLoadedAnything ? .success : .unknown,
             endpointTemplate: "/v1.0/admin/serviceAnnouncement",
             durationMs: Int(Date().timeIntervalSince(started) * 1000))
+    }
+
+    /// A refresh that failed keeps what was on screen, marked as not refreshed.
+    private func refreshed<T>(_ old: Card<T>, _ new: Card<T>, _ kind: CardKind) -> Card<T> {
+        if case .failed = new, old.isLoaded {
+            stale.insert(kind)
+            return old
+        }
+        stale.remove(kind)
+        return new
+    }
+
+    private static func groups(_ card: Card<[ExpiringItem]>) -> [ExpiringGroup] {
+        guard case .loaded(let items) = card else { return [] }
+        let now = Date()
+        let byBucket = Dictionary(grouping: items) { $0.bucket(now: now) }
+        return ExpiringItem.Bucket.allCases.compactMap { bucket in
+            byBucket[bucket].map { ExpiringGroup(bucket: bucket, items: $0) }
+        }
     }
 
     private func card<T: Equatable>(_ work: @escaping () async throws -> T) async -> Card<T> {
@@ -243,6 +297,7 @@ struct TenantPulseView: View {
                     }
                 }
             }
+            if model.stale.contains(.health) { staleRow }
         }
     }
 
@@ -286,6 +341,7 @@ struct TenantPulseView: View {
                     }
                 }
             }
+            if model.stale.contains(.messages) { staleRow }
         } header: {
             Text("Message Center")
         } footer: {
@@ -309,12 +365,13 @@ struct TenantPulseView: View {
                 if items.isEmpty {
                     Text("Nothing expires in the next 90 days.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(ExpiringItem.Bucket.allCases.filter { bucket in items.contains { $0.bucket() == bucket } }, id: \.self) { bucket in
+                    ForEach(model.expiringGroups) { group in
+                        let bucket = group.bucket
                         Text(bucket.label.uppercased())
                             .font(Brand.fieldLabel)
                             .foregroundStyle(bucket == .expired ? .red : .secondary)
                             .listRowSeparator(.hidden)
-                        ForEach(items.filter { $0.bucket() == bucket }) { item in
+                        ForEach(group.items) { item in
                             NavigationLink(value: TenantPulseSelection.expiring(item.id)) {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(item.owner).font(.subheadline.weight(.medium))
@@ -336,6 +393,7 @@ struct TenantPulseView: View {
                     }
                 }
             }
+            if model.stale.contains(.expiring) { staleRow }
         } header: {
             Text("Expiring")
         }
@@ -382,6 +440,7 @@ struct TenantPulseView: View {
                     Text("No Secure Score yet for this tenant.").foregroundStyle(.secondary)
                 }
             }
+            if model.stale.contains(.score) { staleRow }
         }
     }
 
@@ -408,6 +467,12 @@ struct TenantPulseView: View {
             ProgressView()
             Text(text).font(.footnote).foregroundStyle(.secondary)
         }
+    }
+
+    private var staleRow: some View {
+        Label("Couldn't refresh this. Showing what was read before.", systemImage: "clock.arrow.circlepath")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
     }
 
     private func failedRow(_ message: String) -> some View {

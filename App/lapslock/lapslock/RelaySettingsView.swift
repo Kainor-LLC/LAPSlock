@@ -16,6 +16,17 @@ final class RelayCoordinator {
     private(set) var isOn: Bool
     private(set) var pairing: PairingCode?
     private(set) var pinned: [String] = []
+    @ObservationIgnored private var qrCache: (text: String, image: UIImage?)?
+
+    /// The pairing code as a QR image, made once per code rather than on every redraw of
+    /// Settings, which included each keystroke in the sender code field.
+    var pairingImage: UIImage? {
+        guard let text = pairing?.text else { return nil }
+        if let cached = qrCache, cached.text == text { return cached.image }
+        let image = RelaySettingsSection.qr(text)
+        qrCache = (text, image)
+        return image
+    }
     var problem: String?
     /// APNs gave this phone a different token since Watch was paired. Every envelope is
     /// bound to the token, so until Watch has the new pairing code nothing it sends arrives.
@@ -246,7 +257,7 @@ struct RelaySettingsSection: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("1. Give this to TenantKeep Watch's setup").font(.subheadline.weight(.medium))
-                if let image = Self.qr(pairing.text) {
+                if let image = relay.pairingImage {
                     Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 220)
                         .accessibilityLabel("Pairing code as a QR code")
                 }
@@ -291,7 +302,10 @@ struct RelaySettingsSection: View {
         filter.message = Data(text.utf8)
         filter.correctionLevel = "M"
         guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
-              let cg = CIContext().createCGImage(output, from: output.extent) else { return nil }
+              let cg = context.createCGImage(output, from: output.extent) else { return nil }
         return UIImage(cgImage: cg)
     }
+
+    /// One for the process: a CIContext is costly to make and safe to reuse.
+    private static let context = CIContext()
 }
