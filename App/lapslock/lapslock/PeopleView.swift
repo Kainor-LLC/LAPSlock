@@ -254,8 +254,14 @@ struct PeopleView: View {
                                 Image(systemName: "checkmark").foregroundStyle(Brand.accent)
                             }
                         }
+                        // The whole row: a plain button answers only where it draws, and a
+                        // tap beside the name fell through to the list's selection, which on
+                        // iPhone pushed an empty page for the person's id.
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    // Selection is for the sign-ins and the person's three links.
+                    .selectionDisabled()
                 }
             }
         } header: {
