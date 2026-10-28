@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import AuthKit
 import AuthKitMSAL
 import InventoryKit
@@ -8,37 +7,38 @@ import TenantPulseKit
 
 /// The Mac menu's state. One signed-in session, or the demo, or nothing.
 @MainActor
-final class MacModel: ObservableObject {
+@Observable
+final class MacModel {
     enum Mode: Equatable { case signedOut, demo, live }
 
-    @Published private(set) var mode: Mode = .signedOut
-    @Published private(set) var account: AdminAccount?
-    @Published private(set) var sessionCheckedAt: Date?
-    @Published private(set) var sessionProblem: String?
-    @Published private(set) var busy = false
-    @Published var message: String?
+    private(set) var mode: Mode = .signedOut
+    private(set) var account: AdminAccount?
+    private(set) var sessionCheckedAt: Date?
+    private(set) var sessionProblem: String?
+    private(set) var busy = false
+    var message: String?
 
     // Devices
-    @Published var query = ""
-    @Published private(set) var devices: [ManagedDeviceSummary] = []
-    @Published private(set) var devicesLoading = false
-    @Published private(set) var devicesError: String?
+    var query = ""
+    private(set) var devices: [ManagedDeviceSummary] = []
+    private(set) var devicesLoading = false
+    private(set) var devicesError: String?
 
     // Roles
-    @Published private(set) var eligible: [EligibleAccess] = []
-    @Published private(set) var rolesLoading = false
-    @Published private(set) var rolesError: String?
+    private(set) var eligible: [EligibleAccess] = []
+    private(set) var rolesLoading = false
+    private(set) var rolesError: String?
 
     // Pulse
-    @Published private(set) var degraded: [String] = []
-    @Published private(set) var expiringSoon: Int?
-    @Published private(set) var secureScorePercent: Int?
-    @Published private(set) var pulseError: String?
+    private(set) var degraded: [String] = []
+    private(set) var expiringSoon: Int?
+    private(set) var secureScorePercent: Int?
+    private(set) var pulseError: String?
 
-    private var auth: MSALAuthManager?
-    private var inventory: (any DeviceInventoryProviding)?
-    private var pulse: (any TenantPulseProviding)?
-    private var privileged: PrivilegedAccessService?
+    @ObservationIgnored private var auth: MSALAuthManager?
+    @ObservationIgnored private var inventory: (any DeviceInventoryProviding)?
+    @ObservationIgnored private var pulse: (any TenantPulseProviding)?
+    @ObservationIgnored private var privileged: PrivilegedAccessService?
 
     /// The same app registration as the iPhone and iPad app, with this app's own redirect,
     /// which the registration's iOS / macOS platform must list for this bundle id.

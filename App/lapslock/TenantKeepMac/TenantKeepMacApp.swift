@@ -11,7 +11,8 @@ import InventoryKit
 
 @main
 struct TenantKeepMacApp: App {
-    @StateObject private var model = MacModel()
+    /// Built once: an App is created once, so `@State` holds the model for the app's life.
+    @State private var model = MacModel()
 
     init() {
         #if DEBUG

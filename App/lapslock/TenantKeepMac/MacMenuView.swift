@@ -4,7 +4,7 @@ import InventoryKit
 import PrivilegedAccessKit
 
 struct MacMenuView: View {
-    @ObservedObject var model: MacModel
+    let model: MacModel
     @State private var tab: Tab
 
     init(model: MacModel, initialTab: Tab = .devices) {
@@ -93,7 +93,7 @@ struct MacMenuView: View {
 }
 
 struct MacDevicesView: View {
-    @ObservedObject var model: MacModel
+    @Bindable var model: MacModel
     @State private var expanded: String?
 
     var body: some View {
@@ -145,7 +145,7 @@ struct MacDevicesView: View {
 }
 
 struct MacRolesView: View {
-    @ObservedObject var model: MacModel
+    let model: MacModel
     @State private var selected: EligibleAccess?
     @State private var justification = ""
     @State private var duration = ActivationRequest.defaultDuration
@@ -190,7 +190,7 @@ struct MacRolesView: View {
 }
 
 struct MacPulseView: View {
-    @ObservedObject var model: MacModel
+    let model: MacModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import WatchConnectivity
 import WidgetKit
 import WatchBridgeKit
@@ -7,12 +6,13 @@ import WatchBridgeKit
 /// The watch's state: the latest glance the phone sent, and the requests it sends back.
 /// Nothing is written to the watch's storage; WatchConnectivity keeps the last glance.
 @MainActor
-final class WatchModel: NSObject, ObservableObject {
-    @Published private(set) var glance: WatchGlance? {
+@Observable
+final class WatchModel: NSObject {
+    private(set) var glance: WatchGlance? {
         didSet { updateComplications(glance) }
     }
-    @Published private(set) var sending = false
-    @Published private(set) var lastReply: WatchReply?
+    private(set) var sending = false
+    private(set) var lastReply: WatchReply?
 
     override init() {
         super.init()

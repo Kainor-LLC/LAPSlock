@@ -6,7 +6,8 @@ import SwiftUI
 
 @main
 struct OnCallWatchApp: App {
-    @StateObject private var model = WatchModel()
+    /// Built once: an App is created once, so `@State` holds the model for the app's life.
+    @State private var model = WatchModel()
 
     var body: some Scene {
         WindowGroup {

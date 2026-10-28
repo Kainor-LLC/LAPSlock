@@ -2,7 +2,7 @@ import SwiftUI
 import WatchBridgeKit
 
 struct WatchHomeView: View {
-    @ObservedObject var model: WatchModel
+    let model: WatchModel
 
     var body: some View {
         NavigationStack {
@@ -117,7 +117,7 @@ struct WatchHomeView: View {
 }
 
 struct WatchApprovalView: View {
-    @ObservedObject var model: WatchModel
+    let model: WatchModel
     let approval: WatchGlance.Approval
     @State private var reason = ""
     @State private var result: WatchReply?
@@ -153,7 +153,7 @@ struct WatchApprovalView: View {
 }
 
 struct WatchActivateListView: View {
-    @ObservedObject var model: WatchModel
+    let model: WatchModel
     let eligible: [WatchGlance.Eligible]
 
     var body: some View {
@@ -169,7 +169,7 @@ struct WatchActivateListView: View {
 }
 
 struct WatchActivateView: View {
-    @ObservedObject var model: WatchModel
+    let model: WatchModel
     let item: WatchGlance.Eligible
     @State private var reason = ""
     @State private var hours = 1
