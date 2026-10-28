@@ -13,6 +13,10 @@ public protocol SecurityProviding: Sendable {
     /// matched than were read. A requirement with a default, so a provider that cannot
     /// filter on the server still answers correctly by filtering what it has.
     func incidents(matching filter: SecurityFilter) async throws -> IncidentList
+    /// The same list without alerts or evidence, for a first paint while
+    /// `incidents(matching:)` reads them. Nil when the provider has no such read, or Graph
+    /// refused it this session; the caller then waits for the full list.
+    func incidentSummaries(matching filter: SecurityFilter) async throws -> IncidentList?
     /// The next incidents after a list that said there were more.
     func moreIncidents(after cursor: URL, matching filter: SecurityFilter) async throws -> IncidentList
     /// One incident re-read with its alerts, for the detail's refresh.
@@ -29,6 +33,8 @@ public extension SecurityProviding {
     func moreIncidents(after cursor: URL, matching filter: SecurityFilter) async throws -> IncidentList {
         IncidentList(incidents: [], more: nil)
     }
+
+    func incidentSummaries(matching filter: SecurityFilter) async throws -> IncidentList? { nil }
 }
 
 /// One read of the incident list.

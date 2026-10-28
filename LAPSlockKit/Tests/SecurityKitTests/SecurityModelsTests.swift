@@ -187,4 +187,50 @@ final class SecurityModelsTests: XCTestCase {
         XCTAssertEqual(SecurityError(.throttled(retryAfter: 3)), .throttled(retryAfter: 3))
         XCTAssertEqual(SecurityError(.decodeFailure), .decodeFailure)
     }
+
+    // MARK: worked out once (OPTIMIZATION-PLAN.md, step G)
+
+    private let incidentJSON = ##"{"id":"7","displayName":"Café phish","severity":"high","status":"active","alerts":[{"id":"a1","title":"Suspicious sign-in","evidence":[{"@odata.type":"#microsoft.graph.security.userEvidence","userAccount":{"userPrincipalName":"j@demo.example"}},{"@odata.type":"#microsoft.graph.security.urlEvidence","url":"https://bad.example/x"}]},{"id":"a2","title":"Mail","evidence":[{"@odata.type":"#microsoft.graph.security.urlEvidence","url":"https://bad.example/y"}]}]}"##
+
+    func test_evidenceKeepsTheSameIdsOnEveryRead() throws {
+        let first = try decode(SecurityIncident.self, incidentJSON)
+        let second = try decode(SecurityIncident.self, incidentJSON)
+        XCTAssertEqual(first.evidence.map(\.id), ["a1:0", "a1:1", "a2:0"])
+        XCTAssertEqual(first.evidence.map(\.id), second.evidence.map(\.id))
+        XCTAssertEqual(first, second, "the same incident read twice is equal, so a refresh redraws nothing")
+    }
+
+    func test_evidenceAndItsSummaryAreWorkedOutWhenTheIncidentIsMade() throws {
+        let incident = try decode(SecurityIncident.self, incidentJSON)
+        XCTAssertEqual(incident.evidence.count, 3)
+        XCTAssertTrue(incident.evidenceSummary.contains("1 user") && incident.evidenceSummary.contains("2 URLs"), incident.evidenceSummary)
+        let made = SecurityIncident(id: "8", displayName: nil, severity: .low, status: .active, alerts: incident.alerts)
+        XCTAssertEqual(made.evidenceSummary, incident.evidenceSummary)
+        XCTAssertEqual(made.evidence.map(\.id), incident.evidence.map(\.id))
+    }
+
+    func test_searchCoversTheTitleAlertsAndEvidenceAndIgnoresCaseAndAccents() throws {
+        let incident = try decode(SecurityIncident.self, incidentJSON)
+        for query in ["cafe", "CAFÉ PHISH", "suspicious sign", "j@demo.example", "bad.example/y"] {
+            XCTAssertTrue(incident.matches(folded: SecurityIncident.fold(query)), query)
+        }
+        XCTAssertFalse(incident.matches(folded: SecurityIncident.fold("phishsuspicious")), "no match across two fields")
+        XCTAssertFalse(incident.matches(folded: SecurityIncident.fold("ransomware")))
+    }
+
+    func test_searchFindsAPersonByNameAsWellAsByAddress() throws {
+        let json = ##"{"id":"8","displayName":"Mail","severity":"low","status":"active","alerts":[{"id":"a1","evidence":[{"@odata.type":"#microsoft.graph.security.mailboxEvidence","displayName":"Priya Natarajan","primaryAddress":"p.natarajan@demo.example"},{"@odata.type":"#microsoft.graph.security.userEvidence","userAccount":{"userPrincipalName":"mei.tanaka@demo.example","displayName":"Mei Tanaka"}}]}]}"##
+        let incident = try decode(SecurityIncident.self, json)
+        for query in ["priya", "p.natarajan", "MEI TANAKA", "mei.tanaka@"] {
+            XCTAssertTrue(incident.matches(folded: SecurityIncident.fold(query)), query)
+        }
+    }
+
+    func test_anIncidentReadWithoutAlertsSaysSo() throws {
+        let lean = try decode(SecurityIncident.self, #"{"id":"9","displayName":"Lean","severity":"medium","status":"active"}"#)
+        XCTAssertFalse(lean.alertsIncluded)
+        XCTAssertTrue(lean.evidence.isEmpty)
+        let empty = try decode(SecurityIncident.self, #"{"id":"9","displayName":"Lean","severity":"medium","status":"active","alerts":[]}"#)
+        XCTAssertTrue(empty.alertsIncluded, "an incident with no alerts is not the lean read")
+    }
 }

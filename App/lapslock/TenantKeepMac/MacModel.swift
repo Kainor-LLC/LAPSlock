@@ -282,7 +282,7 @@ final class MacModel {
         }
         let horizon = Date().addingTimeInterval(30 * 86_400)
         expiringSoon = (try? await pulse.expiringItems())?.filter { $0.expiresAt <= horizon }.count
-        if let latest = (try? await pulse.secureScore())?.latest, let current = latest.currentScore, let max = latest.maxScore, max > 0 {
+        if let latest = (try? await pulse.secureScore(snapshots: 1))?.latest, let current = latest.currentScore, let max = latest.maxScore, max > 0 {
             secureScorePercent = Int((current / max * 100).rounded())
         }
     }

@@ -278,3 +278,36 @@ extension SecurityServiceTests {
         XCTAssertTrue(incidents.allSatisfy { $0.severity == .high })
     }
 }
+
+// MARK: - the lean first list (OPTIMIZATION-PLAN.md, step G)
+
+extension SecurityServiceTests {
+
+    func test_theLeanListAsksForTheIncidentFieldsWithTheFilterAndNoAlerts() async throws {
+        StubProtocol.replies = ["security/incidents": [.init(status: 200, body: ##"{"value":[{"id":"200","displayName":"Newer","severity":"high","status":"active","lastUpdateDateTime":"2026-10-20T10:00:00Z"}]}"##)]]
+        let list = try await service.incidentSummaries(matching: SecurityFilter(openOnly: true, severity: .highOnly))
+        XCTAssertEqual(list?.incidents.map(\.id), ["200"])
+        XCTAssertEqual(list?.incidents.first?.alertsIncluded, false)
+        let sent = try XCTUnwrap(StubProtocol.requests.first).url
+        XCTAssertFalse(sent.contains("$expand"), sent)
+        XCTAssertTrue(sent.contains("$select=" + SecurityService.summaryFields), sent)
+        XCTAssertTrue(sent.contains("severity%20eq%20'high'"), sent)
+        XCTAssertEqual(StubProtocol.headers.first?["Prefer"], "include-unknown-enum-members")
+    }
+
+    func test_aRefusedLeanListIsNilAndNotTriedAgain() async throws {
+        StubProtocol.replies = ["security/incidents": [.init(status: 400, body: #"{"error":{"code":"BadRequest"}}"#)]]
+        let filter = SecurityFilter(openOnly: true, severity: .all)
+        let first = try await service.incidentSummaries(matching: filter)
+        let second = try await service.incidentSummaries(matching: filter)
+        XCTAssertNil(first)
+        XCTAssertNil(second)
+        XCTAssertEqual(StubProtocol.requests.count, 1, "the full list is the only read after a refusal")
+    }
+
+    func test_theFullListSaysItsAlertsAreIncluded() async throws {
+        StubProtocol.replies = ["security/incidents": [.init(status: 200, body: incidentsBody)]]
+        let list = try await service.incidents(matching: SecurityFilter(openOnly: false, severity: .all))
+        XCTAssertTrue(list.incidents.allSatisfy(\.alertsIncluded))
+    }
+}

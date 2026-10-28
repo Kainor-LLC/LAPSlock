@@ -289,6 +289,10 @@ public struct SecureScoreSummary: Sendable, Equatable {
         return now - then
     }
 
+    /// The comparisons the screen offers, in days. The service reads these snapshots
+    /// whole, with their control scores.
+    public static let windows = [7, 30]
+
     /// The seven-day comparison, the card's default.
     public var weekAgo: SecureScoreSnapshot? { comparison(daysBack: 7) }
     public var change: Double? { change(overDays: 7) }

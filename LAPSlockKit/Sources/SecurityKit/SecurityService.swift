@@ -14,6 +14,11 @@ import AuthKit
 // open high one. A tenant that refuses the filter gets today's unfiltered read instead,
 // remembered for the session, and the screen filters what arrives either way.
 //
+// The screen paints a lean list first: the same filter with the incident's own fields and
+// no alerts, one small response, while the full list with every alert's evidence follows
+// (OPTIMIZATION-PLAN.md, step G). A tenant that refuses the lean list waits for the full
+// one, as before, for the rest of the session.
+//
 // `Prefer: include-unknown-enum-members` goes on every call. Without it Graph hides an
 // incident whose status is a newer enum value rather than sending it, and a hidden
 // incident is worse than one labelled "Unknown".
@@ -24,6 +29,8 @@ public actor SecurityService: SecurityProviding {
     private let now: @Sendable () -> Date
     /// Set when Graph refused the filter once; the session then reads unfiltered.
     private var serverFilterRefused = false
+    /// Set when Graph refused the lean list once; the session then reads the full list only.
+    private var summariesRefused = false
 
     public init(graph: GraphClient, now: @escaping @Sendable () -> Date = { Date() }) {
         self.graph = graph
@@ -35,6 +42,8 @@ public actor SecurityService: SecurityProviding {
     public static let windowDays = 30
     public static let pageSize = 50
     public static let preferHeader = ["Prefer": "include-unknown-enum-members"]
+    /// What the list row and the detail's summary read, without the alerts.
+    static let summaryFields = "id,displayName,severity,status,assignedTo,classification,determination,createdDateTime,lastUpdateDateTime,incidentWebUrl,summary"
 
     public func incidents() async throws -> [SecurityIncident] {
         let since = now().addingTimeInterval(-TimeInterval(Self.windowDays) * 86_400)
@@ -97,6 +106,31 @@ public actor SecurityService: SecurityProviding {
         }
         do {
             return try await list(listRequest(filter: window), filter: filter)
+        } catch let error as GraphError {
+            throw SecurityError(error)
+        }
+    }
+
+    public func incidentSummaries(matching filter: SecurityFilter) async throws -> IncidentList? {
+        guard !summariesRefused else { return nil }
+        var clause = "lastUpdateDateTime ge " + Self.stamp(now().addingTimeInterval(-TimeInterval(Self.windowDays) * 86_400))
+        if !serverFilterRefused, let server = Self.serverClause(for: filter) { clause += " and " + server }
+        let request = GraphRequest(
+            path: Self.incidentsPath,
+            template: Self.incidentsPath + "?summaries",
+            query: [
+                URLQueryItem(name: "$filter", value: clause),
+                URLQueryItem(name: "$select", value: Self.summaryFields),
+                URLQueryItem(name: "$top", value: String(Self.pageSize))
+            ],
+            headers: Self.preferHeader,
+            scopes: SecurityScopes.module)
+        do {
+            let page = try await graph.collection(SecurityIncident.self, from: request, maxPages: 2)
+            return IncidentList(incidents: filter.apply(page.items).sorted(by: Self.newestFirst), more: page.nextLink)
+        } catch GraphError.badRequest {
+            summariesRefused = true
+            return nil
         } catch let error as GraphError {
             throw SecurityError(error)
         }
@@ -180,9 +214,11 @@ public actor SecurityService: SecurityProviding {
         !id.isEmpty && id.count <= 20 && id.allSatisfy(\.isNumber)
     }
 
-    static func stamp(_ date: Date) -> String {
+    static func stamp(_ date: Date) -> String { stampFormatter.string(from: date) }
+
+    private static let stampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: date)
-    }
+        return formatter
+    }()
 }

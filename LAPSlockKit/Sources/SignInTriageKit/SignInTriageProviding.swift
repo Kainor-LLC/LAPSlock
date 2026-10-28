@@ -25,21 +25,38 @@ public struct SignInQuery: Sendable, Equatable {
 
     /// The OData filter. The sign-in address goes in with its quotes doubled, which is the
     /// only escaping OData string literals have, so an address containing a quote cannot
-    /// change the shape of the query. Graph's `errorCode` supports `eq` only, so "failures
-    /// only" is applied after the fetch rather than here.
+    /// change the shape of the query. "Failures only" is applied after the fetch here; see
+    /// `serverFilter` for the form that asks Graph.
     public func filter(now: Date = Date()) -> String {
         var clauses = ["userPrincipalName eq '" + Self.escape(userPrincipalName) + "'"]
         if last24Hours {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime]
-            clauses.append("createdDateTime ge " + formatter.string(from: now.addingTimeInterval(-86_400)))
+            clauses.append("createdDateTime ge " + Self.stamp.string(from: now.addingTimeInterval(-86_400)))
         }
         return clauses.joined(separator: " and ")
     }
 
-    /// How many to fetch: more than the screen shows when failures are being filtered out
-    /// afterwards, so a person with one failure among fifty successes still sees it.
+    /// "Failures only" as a clause Graph applies. The reference lists only `eq` for
+    /// `errorCode`, though `ne` is widely used, so the service tries this form first and
+    /// goes back to `filter` for the session when Graph refuses it.
+    public static let failureClause = "status/errorCode ne 0"
+
+    /// `filter`, with "failures only" sent to Graph as well, so the fetch is the rows the
+    /// screen shows rather than five times as many.
+    public func serverFilter(now: Date = Date()) -> String {
+        let base = filter(now: now)
+        return failuresOnly ? base + " and " + Self.failureClause : base
+    }
+
+    /// How many to fetch when the phone filters: more than the screen shows when failures
+    /// are being filtered out afterwards, so a person with one failure among fifty
+    /// successes still sees it.
     public var fetchCount: Int { failuresOnly ? max(limit * 5, 100) : limit }
+
+    private static let stamp: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 
     public func apply(_ events: [SignInEvent]) -> [SignInEvent] {
         let kept = failuresOnly ? events.filter(\.isFailure) : events

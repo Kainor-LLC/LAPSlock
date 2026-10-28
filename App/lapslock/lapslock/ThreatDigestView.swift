@@ -88,12 +88,18 @@ final class ThreatDigestModel {
 
     var unavailable: [DigestSourceStatus] { snapshot?.unavailable ?? [] }
 
-    func load() async {
+    /// `refresh` asks every feed again, for pull to refresh; otherwise a digest read in
+    /// the last few minutes, by this tenant or another, is reused. With nothing on screen,
+    /// the last copy kept on the phone paints first.
+    func load(refresh: Bool = false) async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
+        if snapshot == nil, let last = await provider.lastDigest() {
+            snapshot = last
+        }
         do {
-            snapshot = try await provider.digest()
+            snapshot = try await refresh ? provider.refreshedDigest() : provider.digest()
             if snapshot?.statuses.allSatisfy({ !$0.isAvailable }) == true {
                 errorMessage = "None of the feeds answered. Check your connection and try again."
             }
@@ -140,7 +146,7 @@ struct ThreatDigestListView: View {
         .navigationTitle("Security")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
-        .refreshable { await model.load() }
+        .refreshable { await model.load(refresh: true) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -223,7 +229,9 @@ struct ThreatDigestListView: View {
         var parts = ["Ranked on the phone from CISA KEV, CISA advisories and Microsoft MSRC; the words are theirs."]
         parts.append(model.microsoftOnly ? "Microsoft products only; advisories always show." : "Every vendor.")
         if let fetchedAt = model.snapshot?.fetchedAt {
-            parts.append("Fetched " + fetchedAt.formatted(date: .omitted, time: .shortened) + ".")
+            // The copy kept on the phone can be from another day; say which.
+            let day: Date.FormatStyle.DateStyle = Calendar.current.isDateInToday(fetchedAt) ? .omitted : .abbreviated
+            parts.append("Fetched " + fetchedAt.formatted(date: day, time: .shortened) + ".")
         }
         return parts.joined(separator: " ")
     }

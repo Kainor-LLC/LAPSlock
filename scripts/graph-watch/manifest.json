@@ -254,6 +254,17 @@
    "smoke": "/auditLogs/signIns?$top=1"
   },
   {
+   "id": "people.signInFailures",
+   "requires": [
+    "P1"
+   ],
+   "kit": "SignInTriageKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/auditLogs/signIns",
+   "smoke": "/auditLogs/signIns?$filter=status/errorCode ne 0&$top=1"
+  },
+  {
    "id": "pulse.health",
    "kit": "TenantPulseKit",
    "method": "GET",
@@ -276,9 +287,11 @@
     "id",
     "title",
     "service",
+    "feature",
     "status",
     "isResolved",
     "startDateTime",
+    "lastModifiedDateTime",
     "impactDescription",
     "classification"
    ],
@@ -294,12 +307,15 @@
     "id",
     "title",
     "services",
+    "tags",
+    "severity",
     "actionRequiredByDateTime",
+    "startDateTime",
     "lastModifiedDateTime",
     "category",
     "isMajorChange"
    ],
-   "smoke": "/admin/serviceAnnouncement/messages?$top=1"
+   "smoke": "/admin/serviceAnnouncement/messages?$top=1&$select=id,title,category,severity,isMajorChange,actionRequiredByDateTime,startDateTime,lastModifiedDateTime,services,tags&$filter=actionRequiredByDateTime ne null or category eq 'preventOrFixIssue' or category eq 'planForChange' or isMajorChange eq true"
   },
   {
    "id": "pulse.appSecrets",
@@ -359,7 +375,20 @@
     "maxScore",
     "createdDateTime"
    ],
-   "smoke": "/security/secureScores?$top=2"
+   "smoke": "/security/secureScores?$top=2&$select=id,createdDateTime,currentScore,maxScore"
+  },
+  {
+   "id": "pulse.secureScoreControls",
+   "kit": "TenantPulseKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/security/secureScores/{id}",
+   "select": [
+    "id",
+    "createdDateTime",
+    "controlScores"
+   ],
+   "smoke": null
   },
   {
    "id": "ca.policies",
@@ -466,6 +495,30 @@
     "alerts"
    ],
    "smoke": "/security/incidents?$top=1&$expand=alerts"
+  },
+  {
+   "id": "security.incidentSummaries",
+   "requires": [
+    "Defender"
+   ],
+   "kit": "SecurityKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/security/incidents",
+   "select": [
+    "id",
+    "displayName",
+    "severity",
+    "status",
+    "assignedTo",
+    "classification",
+    "determination",
+    "createdDateTime",
+    "lastUpdateDateTime",
+    "incidentWebUrl",
+    "summary"
+   ],
+   "smoke": "/security/incidents?$top=1&$select=id,displayName,severity,status,assignedTo,classification,determination,createdDateTime,lastUpdateDateTime,incidentWebUrl,summary"
   },
   {
    "id": "security.incident",

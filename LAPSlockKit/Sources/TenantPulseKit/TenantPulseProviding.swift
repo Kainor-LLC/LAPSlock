@@ -12,6 +12,15 @@ public protocol TenantPulseProviding: Sendable {
     /// certificate and VPP tokens. The caller applies the window.
     func expiringItems() async throws -> [ExpiringItem]
     func secureScore() async throws -> SecureScoreSummary?
+    /// The latest `snapshots` days only, for a caller that shows the latest score or
+    /// yesterday's change.
+    func secureScore(snapshots: Int) async throws -> SecureScoreSummary?
+}
+
+extension TenantPulseProviding {
+    public func secureScore(snapshots: Int) async throws -> SecureScoreSummary? {
+        try await secureScore()
+    }
 }
 
 public enum TenantPulseError: Error, Sendable, Equatable {

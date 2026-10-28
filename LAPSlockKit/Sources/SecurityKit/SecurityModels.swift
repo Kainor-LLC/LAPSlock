@@ -122,6 +122,16 @@ public struct SecurityIncident: Codable, Sendable, Equatable, Identifiable {
     public let incidentWebUrl: String?
     public let summary: String?
     public let alerts: [SecurityAlert]
+    /// False on the lean first read, which leaves the alerts out, so the row shows no
+    /// alert count and no evidence rather than zero of each.
+    public let alertsIncluded: Bool
+    /// Every piece of evidence across the incident's alerts, in alert order. Worked out
+    /// once, when the incident is made, rather than on every read of a row.
+    public let evidence: [AlertEvidence]
+    /// "2 users, 1 device, 3 URLs", for the list row. Empty when there is no evidence.
+    public let evidenceSummary: String
+    /// The title, the alert titles and the evidence labels, folded, for the list's search.
+    public let searchKey: String
 
     public init(
         id: String,
@@ -136,7 +146,8 @@ public struct SecurityIncident: Codable, Sendable, Equatable, Identifiable {
         priorityScore: Int? = nil,
         incidentWebUrl: String? = nil,
         summary: String? = nil,
-        alerts: [SecurityAlert] = []
+        alerts: [SecurityAlert] = [],
+        alertsIncluded: Bool = true
     ) {
         self.id = id
         self.displayName = displayName
@@ -151,6 +162,11 @@ public struct SecurityIncident: Codable, Sendable, Equatable, Identifiable {
         self.incidentWebUrl = incidentWebUrl
         self.summary = summary
         self.alerts = alerts
+        self.alertsIncluded = alertsIncluded
+        let evidence = alerts.flatMap(\.evidence)
+        self.evidence = evidence
+        evidenceSummary = Self.summary(of: evidence)
+        searchKey = Self.searchKey(title: Self.title(displayName: displayName, id: id), alerts: alerts, evidence: evidence)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -160,8 +176,10 @@ public struct SecurityIncident: Codable, Sendable, Equatable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        let id = try c.decode(String.self, forKey: .id)
+        let displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        self.id = id
+        self.displayName = displayName
         severity = try c.decodeIfPresent(SecuritySeverity.self, forKey: .severity) ?? .unknown
         status = try c.decodeIfPresent(Status.self, forKey: .status) ?? .unknown("")
         assignedTo = try c.decodeIfPresent(String.self, forKey: .assignedTo)
@@ -172,13 +190,37 @@ public struct SecurityIncident: Codable, Sendable, Equatable, Identifiable {
         priorityScore = try c.decodeIfPresent(Int.self, forKey: .priorityScore)
         incidentWebUrl = try c.decodeIfPresent(String.self, forKey: .incidentWebUrl)
         summary = try c.decodeIfPresent(String.self, forKey: .summary)
-        alerts = try c.decodeIfPresent([SecurityAlert].self, forKey: .alerts) ?? []
+        let alerts = try c.decodeIfPresent([SecurityAlert].self, forKey: .alerts) ?? []
+        self.alerts = alerts
+        alertsIncluded = c.contains(.alerts)
+        let evidence = alerts.flatMap(\.evidence)
+        self.evidence = evidence
+        evidenceSummary = Self.summary(of: evidence)
+        searchKey = Self.searchKey(title: Self.title(displayName: displayName, id: id), alerts: alerts, evidence: evidence)
     }
 
     /// The title the list shows. Graph can leave `displayName` null on a redirected incident.
-    public var title: String {
+    public var title: String { Self.title(displayName: displayName, id: id) }
+
+    private static func title(displayName: String?, id: String) -> String {
         if let displayName, !displayName.isEmpty { return displayName }
         return "Incident " + id
+    }
+
+    /// Case, accents and width set aside, the same way for the key and the query.
+    public static func fold(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: nil)
+    }
+
+    /// Fields joined with a separator nobody types, so a query cannot match across two.
+    private static func searchKey(title: String, alerts: [SecurityAlert], evidence: [AlertEvidence]) -> String {
+        ([title] + alerts.map(\.displayTitle) + evidence.map(\.label) + evidence.flatMap(\.personNames))
+            .map(fold).joined(separator: "\u{1F}")
+    }
+
+    /// Whether a query, folded with `fold`, appears in the title, an alert or the evidence.
+    public func matches(folded query: String) -> Bool {
+        searchKey.contains(query)
     }
 
     public var isOpen: Bool { status.isOpen }
@@ -186,11 +228,7 @@ public struct SecurityIncident: Codable, Sendable, Equatable, Identifiable {
     /// The date the list sorts by: the last update, or creation when there has been none.
     public var lastActivity: Date? { lastUpdateDateTime ?? createdDateTime }
 
-    /// Every piece of evidence across the incident's alerts, in alert order.
-    public var evidence: [AlertEvidence] { alerts.flatMap(\.evidence) }
-
-    /// "2 users, 1 device, 3 URLs", for the list row. Empty when there is no evidence.
-    public var evidenceSummary: String {
+    private static func summary(of evidence: [AlertEvidence]) -> String {
         let counts = Dictionary(grouping: evidence, by: \.kindTitle).mapValues(\.count)
         let ordered = AlertEvidence.Kind.displayOrder.compactMap { kind -> String? in
             guard let count = counts[kind.title] else { return nil }
@@ -308,7 +346,8 @@ public struct SecurityAlert: Codable, Sendable, Equatable, Identifiable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
+        let id = try c.decode(String.self, forKey: .id)
+        self.id = id
         title = try c.decodeIfPresent(String.self, forKey: .title)
         description = try c.decodeIfPresent(String.self, forKey: .description)
         severity = try c.decodeIfPresent(SecuritySeverity.self, forKey: .severity) ?? .unknown
@@ -323,7 +362,10 @@ public struct SecurityAlert: Codable, Sendable, Equatable, Identifiable {
         firstActivityDateTime = try c.decodeIfPresent(Date.self, forKey: .firstActivityDateTime)
         lastActivityDateTime = try c.decodeIfPresent(Date.self, forKey: .lastActivityDateTime)
         alertWebUrl = try c.decodeIfPresent(String.self, forKey: .alertWebUrl)
-        evidence = try c.decodeIfPresent([AlertEvidence].self, forKey: .evidence) ?? []
+        // Evidence has no id on the wire. The alert's id and the position are the same on
+        // every read, so a refresh keeps each evidence row's identity.
+        let evidence = try c.decodeIfPresent([AlertEvidence].self, forKey: .evidence) ?? []
+        self.evidence = evidence.enumerated().map { $0.element.identified(id + ":" + String($0.offset)) }
     }
 
     public var displayTitle: String {
@@ -592,9 +634,15 @@ public struct AlertEvidence: Codable, Sendable, Equatable, Identifiable {
 
     public static let typePrefix = "#microsoft.graph.security."
 
+    /// The same evidence under another id. An alert gives each of its own one.
+    func identified(_ id: String) -> AlertEvidence {
+        AlertEvidence(id: id, kind: kind, roles: roles, verdict: verdict, remediationStatus: remediationStatus, createdDateTime: createdDateTime)
+    }
+
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = UUID().uuidString
+        // Where it sat in the response, until the alert that holds it gives it a better one.
+        id = "evidence:" + decoder.codingPath.map { $0.intValue.map(String.init) ?? $0.stringValue }.joined(separator: "/")
         roles = try c.decodeIfPresent([String].self, forKey: .roles) ?? []
         verdict = try c.decodeIfPresent(Verdict.self, forKey: .verdict) ?? .unknown
         remediationStatus = try c.decodeIfPresent(String.self, forKey: .remediationStatus)
@@ -729,6 +777,17 @@ public struct AlertEvidence: Codable, Sendable, Equatable, Identifiable {
         case .cloudApplication(let name, let id):  return name ?? id ?? "Unknown cloud app"
         case .oauthApplication(let name, let id, _): return name ?? id ?? "Unknown OAuth app"
         case .other(let typeName):                 return Self.humanize(typeName)
+        }
+    }
+
+    /// The names of the people it carries, beside the address its label shows, so the
+    /// list's search finds a person by name as well as by address.
+    var personNames: [String] {
+        switch kind {
+        case .user(let account):    return [account.displayName].compactMap { $0 }
+        case .mailbox(let mailbox): return [mailbox.displayName, mailbox.userAccount?.displayName].compactMap { $0 }
+        case .process(let process): return [process.userAccount?.displayName].compactMap { $0 }
+        default:                    return []
         }
     }
 

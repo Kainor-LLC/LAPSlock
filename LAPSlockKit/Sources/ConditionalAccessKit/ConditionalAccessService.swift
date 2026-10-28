@@ -13,14 +13,24 @@ import AuthKit
 //
 // Audit entries come from the directory audit log and need a scope the policy list does
 // not, so they are fetched only when asked for.
+//
+// A reference Graph answered for without a name, such as a deleted group or an app with
+// no service principal here, is remembered until `reset()`, so a refresh does not ask for
+// it again (OPTIMIZATION-PLAN.md, step G). One whose lookup failed is asked again.
 
 public actor ConditionalAccessService: ConditionalAccessProviding {
 
     private let graph: GraphClient
     private var nameCache: [DirectoryReference: String] = [:]
+    /// References Graph answered for without a name, this session.
+    private var unresolved: Set<DirectoryReference> = []
     /// Whether the role templates were fetched once this session.
     private var roleTemplatesLoaded = false
     private var locationsLoaded = false
+    /// Set when Graph refused `$select` on getByIds; the session then asks without it.
+    private var objectSelectRefused = false
+    /// Service principal lookups in flight at once. HTTP/2 carries them on one connection.
+    static let lookupWidth = 4
 
     public init(graph: GraphClient) {
         self.graph = graph
@@ -93,15 +103,16 @@ public actor ConditionalAccessService: ConditionalAccessProviding {
     // MARK: - names
 
     public func names(for references: Set<DirectoryReference>) async throws -> [DirectoryReference: String] {
-        let missing = references.filter { nameCache[$0] == nil }
+        let missing = references.filter { nameCache[$0] == nil && !unresolved.contains($0) }
         if !missing.isEmpty {
             let byKind = Dictionary(grouping: missing, by: \.kind)
             async let objects = resolveObjects(byKind[.user, default: []] + byKind[.group, default: []])
             async let roles = resolveRoles(byKind[.role, default: []])
             async let apps = resolveApplications(byKind[.application, default: []])
             async let locations = resolveLocations(byKind[.location, default: []])
-            for resolved in await [objects, roles, apps, locations] {
-                nameCache.merge(resolved) { _, new in new }
+            for resolution in await [objects, roles, apps, locations] {
+                nameCache.merge(resolution.found) { _, new in new }
+                unresolved.formUnion(resolution.answered.filter { resolution.found[$0] == nil && nameCache[$0] == nil })
             }
         }
         var result: [DirectoryReference: String] = [:]
@@ -113,92 +124,142 @@ public actor ConditionalAccessService: ConditionalAccessProviding {
 
     public func reset() {
         nameCache.removeAll()
+        unresolved.removeAll()
         roleTemplatesLoaded = false
         locationsLoaded = false
+        objectSelectRefused = false
+    }
+
+    /// What one lookup found, and every reference Graph answered for, named or not.
+    private struct Resolution: Sendable {
+        var found: [DirectoryReference: String] = [:]
+        var answered: Set<DirectoryReference> = []
+
+        mutating func merge(_ other: Resolution) {
+            found.merge(other.found) { _, new in new }
+            answered.formUnion(other.answered)
+        }
     }
 
     /// Users and groups, by id, in batches of at most 1000, which is Graph's limit per call.
-    private func resolveObjects(_ refs: [DirectoryReference]) async -> [DirectoryReference: String] {
-        guard !refs.isEmpty else { return [:] }
-        var found: [DirectoryReference: String] = [:]
+    private func resolveObjects(_ refs: [DirectoryReference]) async -> Resolution {
+        guard !refs.isEmpty else { return Resolution() }
+        var resolution = Resolution()
         let byId = Dictionary(refs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         for chunk in Array(byId.keys).chunked(1000) {
-            let body = try? JSONSerialization.data(withJSONObject: ["ids": chunk, "types": ["user", "group"]])
-            let request = GraphRequest(
-                method: .post,
-                path: Self.getByIdsPath,
-                body: body,
-                scopes: ConditionalAccessScopes.module,
-                readOnly: true)
-            guard let page = try? await graph.collection(DirectoryObjectName.self, from: request, maxPages: 1) else { continue }
-            for object in page.items {
-                if let ref = byId[object.id], let name = object.displayName { found[ref] = name }
-            }
+            resolution.merge(await objects(chunk, byId))
         }
-        return found
+        return resolution
+    }
+
+    /// One getByIds call, with the id and name only unless this tenant refused that.
+    private func objects(_ chunk: [String], _ byId: [String: DirectoryReference]) async -> Resolution {
+        let body = try? JSONSerialization.data(withJSONObject: ["ids": chunk, "types": ["user", "group"]])
+        let select = !objectSelectRefused
+        let request = GraphRequest(
+            method: .post,
+            path: Self.getByIdsPath,
+            template: Self.getByIdsPath + (select ? "?select" : ""),
+            query: select ? [URLQueryItem(name: "$select", value: "id,displayName")] : [],
+            body: body,
+            scopes: ConditionalAccessScopes.module,
+            readOnly: true)
+        let page: GraphCollection<DirectoryObjectName>
+        do {
+            page = try await graph.collection(DirectoryObjectName.self, from: request, maxPages: 1)
+        } catch GraphError.badRequest where select {
+            objectSelectRefused = true
+            return await objects(chunk, byId)
+        } catch {
+            return Resolution()
+        }
+        var resolution = Resolution(answered: Set(chunk.compactMap { byId[$0] }))
+        for object in page.items {
+            if let ref = byId[object.id], let name = object.displayName { resolution.found[ref] = name }
+        }
+        return resolution
     }
 
     /// Role templates, fetched once per session: the tenant has about a hundred and a
-    /// policy may name any of them.
-    private func resolveRoles(_ refs: [DirectoryReference]) async -> [DirectoryReference: String] {
-        guard !refs.isEmpty, !roleTemplatesLoaded else { return [:] }
+    /// policy may name any of them. Once they are in, a role not among them is a miss.
+    private func resolveRoles(_ refs: [DirectoryReference]) async -> Resolution {
+        guard !refs.isEmpty else { return Resolution() }
+        guard !roleTemplatesLoaded else { return Resolution(answered: Set(refs)) }
         let request = GraphRequest(
             path: Self.roleTemplatesPath,
             query: [URLQueryItem(name: "$select", value: "id,displayName")],
             scopes: ConditionalAccessScopes.module)
-        guard let page = try? await graph.collection(DirectoryObjectName.self, from: request, maxPages: 3) else { return [:] }
+        guard let page = try? await graph.collection(DirectoryObjectName.self, from: request, maxPages: 3) else { return Resolution() }
         roleTemplatesLoaded = true
-        var found: [DirectoryReference: String] = [:]
+        var resolution = Resolution(answered: Set(refs))
         for template in page.items {
             if let name = template.displayName {
-                found[DirectoryReference(kind: .role, id: template.id)] = name
+                resolution.found[DirectoryReference(kind: .role, id: template.id)] = name
             }
         }
-        return found
+        return resolution
     }
 
     /// Service principals by appId, in small batches so the filter stays inside the URL
-    /// length Graph accepts.
-    private func resolveApplications(_ refs: [DirectoryReference]) async -> [DirectoryReference: String] {
-        guard !refs.isEmpty else { return [:] }
-        var found: [DirectoryReference: String] = [:]
+    /// length Graph accepts, `lookupWidth` of them at a time rather than one after another.
+    private func resolveApplications(_ refs: [DirectoryReference]) async -> Resolution {
+        guard !refs.isEmpty else { return Resolution() }
         let byAppId = Dictionary(refs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        for chunk in Array(byAppId.keys).chunked(15) {
-            let list = chunk.map { "'" + $0 + "'" }.joined(separator: ",")
-            let request = GraphRequest(
-                path: Self.servicePrincipalsPath,
-                template: Self.servicePrincipalsPath + "?appId",
-                query: [
-                    URLQueryItem(name: "$filter", value: "appId in (" + list + ")"),
-                    URLQueryItem(name: "$select", value: "appId,displayName")
-                ],
-                scopes: ConditionalAccessScopes.module)
-            guard let page = try? await graph.collection(ServicePrincipalName.self, from: request, maxPages: 1) else { continue }
-            for principal in page.items {
-                if let appId = principal.appId, let ref = byAppId[appId], let name = principal.displayName {
-                    found[ref] = name
+        var waiting = Array(byAppId.keys).chunked(15)[...]
+        var resolution = Resolution()
+        await withTaskGroup(of: Resolution.self) { group in
+            for _ in 0..<Self.lookupWidth {
+                guard let chunk = waiting.popFirst() else { break }
+                group.addTask { await self.applications(chunk, byAppId) }
+            }
+            for await done in group {
+                resolution.merge(done)
+                if let chunk = waiting.popFirst() {
+                    group.addTask { await self.applications(chunk, byAppId) }
                 }
             }
         }
-        return found
+        return resolution
     }
 
-    /// Named locations, fetched once per session.
-    private func resolveLocations(_ refs: [DirectoryReference]) async -> [DirectoryReference: String] {
-        guard !refs.isEmpty, !locationsLoaded else { return [:] }
+    private func applications(_ chunk: [String], _ byAppId: [String: DirectoryReference]) async -> Resolution {
+        let list = chunk.map { "'" + $0 + "'" }.joined(separator: ",")
+        let request = GraphRequest(
+            path: Self.servicePrincipalsPath,
+            template: Self.servicePrincipalsPath + "?appId",
+            query: [
+                URLQueryItem(name: "$filter", value: "appId in (" + list + ")"),
+                URLQueryItem(name: "$select", value: "appId,displayName")
+            ],
+            scopes: ConditionalAccessScopes.module)
+        guard let page = try? await graph.collection(ServicePrincipalName.self, from: request, maxPages: 1) else { return Resolution() }
+        var resolution = Resolution(answered: Set(chunk.compactMap { byAppId[$0] }))
+        for principal in page.items {
+            if let appId = principal.appId, let ref = byAppId[appId], let name = principal.displayName {
+                resolution.found[ref] = name
+            }
+        }
+        return resolution
+    }
+
+    /// Named locations, fetched once per session. Once they are in, a location not among
+    /// them is a miss.
+    private func resolveLocations(_ refs: [DirectoryReference]) async -> Resolution {
+        guard !refs.isEmpty else { return Resolution() }
+        guard !locationsLoaded else { return Resolution(answered: Set(refs)) }
         let request = GraphRequest(
             path: Self.namedLocationsPath,
             query: [URLQueryItem(name: "$select", value: "id,displayName")],
             scopes: ConditionalAccessScopes.module)
-        guard let page = try? await graph.collection(DirectoryObjectName.self, from: request, maxPages: 3) else { return [:] }
+        guard let page = try? await graph.collection(DirectoryObjectName.self, from: request, maxPages: 3) else { return Resolution() }
         locationsLoaded = true
-        var found: [DirectoryReference: String] = [:]
+        var resolution = Resolution(answered: Set(refs))
         for location in page.items {
             if let name = location.displayName {
-                found[DirectoryReference(kind: .location, id: location.id)] = name
+                resolution.found[DirectoryReference(kind: .location, id: location.id)] = name
             }
         }
-        return found
+        return resolution
     }
 
     private struct DirectoryObjectName: Decodable, Sendable {

@@ -13,8 +13,8 @@ TenantKeep On-Call talks to exactly these hosts. There is no sixth.
 |---|---|---|---|
 | `login.microsoftonline.com` | Microsoft | Sign-in, token refresh | Your Microsoft sign-in, brokered by MSAL. Standard Entra ID delegated auth. |
 | `graph.microsoft.com` | Microsoft | Every module that reads your tenant | Graph requests carrying your delegated token; Graph responses carrying your organization's data, including the credential you asked for. |
-| `www.cisa.gov` | CISA (US government) | Only when you open the Security module's Digest tab | A GET for three public files: the Known Exploited Vulnerabilities catalog and two advisory feeds. No token, no tenant ID, no cookie, no identifier. The files come back. |
-| `api.msrc.microsoft.com` | Microsoft | Only when you open the Digest tab | A GET for the public Security Update Guide, filtered to the last thirty days. Same rule: nothing of yours in the request. |
+| `www.cisa.gov` | CISA (US government) | Only when you open the Security module's Digest tab, at most every fifteen minutes unless you pull to refresh | A GET for three public files: the Known Exploited Vulnerabilities catalog and two advisory feeds. No token, no tenant ID, no cookie, no identifier. On a repeat read the request also carries the `ETag` or `Last-Modified` value this server sent for the same file, so an unchanged file is not downloaded again. The files come back, and the last good copy of each is kept in the app's Caches folder on the phone. |
+| `api.msrc.microsoft.com` | Microsoft | Only when you open the Digest tab, on the same schedule | A GET for the public Security Update Guide, filtered to the last thirty days. Same rule: nothing of yours in the request, only the server's own validator on a repeat read, and the last good copy kept in Caches. |
 | `kainor-lapslock-prod-func.azurewebsites.net` | Kainor LLC | **Only after you activate an organization license**, then about monthly | A version number and your Microsoft tenant ID. Nothing else. A signed license statement comes back. |
 
 **Relayed alerts add no host to this list.** When an organization turns on relayed alerts,
@@ -87,7 +87,8 @@ already covered by the license. That reasoning is spelled out in the contract, s
 3. Read the capture. You will see `login.microsoftonline.com` and `graph.microsoft.com`.
    **You will not see a Kainor host.** If you open the Security module's Digest tab you will
    also see `www.cisa.gov` and `api.msrc.microsoft.com`, each a plain GET with no
-   `Authorization` header and no cookie.
+   `Authorization` header and no cookie. A repeat read adds `If-None-Match` or
+   `If-Modified-Since`, carrying back the value that same server sent for that file.
 4. If you hold an organization license, tap *Activate organization license* in Settings and
    watch the third host appear once. Confirm the body is
    `{"version":1,"tenantId":"<your tenant>"}` and that nothing further is sent to it while

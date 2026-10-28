@@ -10,10 +10,16 @@ import AuthKit
 // The log is returned newest first by default and $orderby is not supported on it, so the
 // order is taken as delivered. Report-only policy results need the unknown-enum header or
 // Graph hides them, and a report-only block is exactly what a triage wants to see.
+//
+// "Failures only" is asked of Graph first (OPTIMIZATION-PLAN.md, step G): each sign-in
+// carries every Conditional Access result, so five times the rows filtered on the phone
+// is megabytes. A tenant where Graph refuses the clause is filtered here for the session.
 
 public actor SignInTriageService: SignInTriageProviding {
 
     private let graph: GraphClient
+    /// Set when Graph refused "failures only" once; the session then filters on the phone.
+    private var failureFilterRefused = false
 
     public init(graph: GraphClient) {
         self.graph = graph
@@ -44,20 +50,35 @@ public actor SignInTriageService: SignInTriageProviding {
     }
 
     public func signIns(_ query: SignInQuery) async throws -> [SignInEvent] {
-        let request = GraphRequest(
-            path: Self.signInsPath,
-            template: Self.signInsPath + "?user",
-            query: [
-                URLQueryItem(name: "$filter", value: query.filter()),
-                URLQueryItem(name: "$top", value: String(query.fetchCount))
-            ],
-            headers: ["Prefer": "include-unknown-enum-members"],
-            scopes: [SignInTriageScopes.signIns, SignInTriageScopes.policies])
         do {
-            let page = try await graph.collection(SignInEvent.self, from: request, maxPages: 1)
+            if query.failuresOnly && !failureFilterRefused {
+                do {
+                    let page = try await graph.collection(
+                        SignInEvent.self,
+                        from: request(filter: query.serverFilter(), top: query.limit, template: "?user&failures"),
+                        maxPages: 1)
+                    return query.apply(page.items)
+                } catch GraphError.badRequest {
+                    failureFilterRefused = true
+                }
+            }
+            let page = try await graph.collection(
+                SignInEvent.self, from: request(filter: query.filter(), top: query.fetchCount, template: "?user"), maxPages: 1)
             return query.apply(page.items)
         } catch let error as GraphError {
             throw SignInTriageError(error)
         }
+    }
+
+    private func request(filter: String, top: Int, template: String) -> GraphRequest {
+        GraphRequest(
+            path: Self.signInsPath,
+            template: Self.signInsPath + template,
+            query: [
+                URLQueryItem(name: "$filter", value: filter),
+                URLQueryItem(name: "$top", value: String(top))
+            ],
+            headers: ["Prefer": "include-unknown-enum-members"],
+            scopes: [SignInTriageScopes.signIns, SignInTriageScopes.policies])
     }
 }

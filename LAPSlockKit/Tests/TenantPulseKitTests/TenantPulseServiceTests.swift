@@ -99,12 +99,17 @@ final class TenantPulseServiceTests: XCTestCase {
             "healthOverviews": [.init(status: 200, body: #"{"value":[]}"#)],
             "serviceAnnouncement/issues": [
                 .init(status: 400, body: #"{"error":{"code":"Request_UnsupportedQuery","message":"x"}}"#),
+                .init(status: 400, body: #"{"error":{"code":"Request_UnsupportedQuery","message":"x"}}"#),
                 .init(status: 200, body: #"{"value":[{"id":"A","isResolved":false,"lastModifiedDateTime":"2026-10-25T12:00:00Z"},{"id":"B","isResolved":true}]}"#),
             ],
         ]
         let report = try await service.health()
         XCTAssertEqual(report.activeIssues.map(\.id), ["A"])
-        XCTAssertEqual(StubProtocol.urls(containing: "issues").count, 2)
+        let urls = StubProtocol.urls(containing: "issues").map { $0.removingPercentEncoding ?? $0 }
+        XCTAssertEqual(urls.count, 3, "the fields and filter, the filter alone, then the plain list")
+        XCTAssertTrue(urls[0].contains("$select=") && urls[0].contains("isResolved eq false"), urls[0])
+        XCTAssertTrue(!urls[1].contains("$select=") && urls[1].contains("isResolved eq false"), urls[1])
+        XCTAssertTrue(!urls[2].contains("isResolved") && urls[2].contains("$top=100"), urls[2])
     }
 
     func test_health403IsNotAuthorized() async {
@@ -189,13 +194,17 @@ final class TenantPulseServiceTests: XCTestCase {
 
     // MARK: Secure Score
 
-    func test_secureScoreReadsTenSnapshotsWithTheSecurityScope() async throws {
-        StubProtocol.replies = ["secureScores": [.init(status: 200, body: #"{"value":[{"id":"s0","createdDateTime":"2026-10-25T00:00:00Z","currentScore":612,"maxScore":1176,"controlScores":[]},{"id":"s7","createdDateTime":"2026-10-18T00:00:00Z","currentScore":598,"maxScore":1176,"controlScores":[]}]}"#)]]
+    func test_secureScoreReadsThirtyOneSnapshotsWithTheSecurityScope() async throws {
+        StubProtocol.replies = [
+            "secureScores?": [.init(status: 200, body: #"{"value":[{"id":"s0","createdDateTime":"2026-10-25T00:00:00Z","currentScore":612,"maxScore":1176},{"id":"s7","createdDateTime":"2026-10-18T00:00:00Z","currentScore":598,"maxScore":1176}]}"#)],
+            "secureScores/s0": [.init(status: 200, body: #"{"id":"s0","createdDateTime":"2026-10-25T00:00:00Z","currentScore":612,"maxScore":1176,"controlScores":[]}"#)],
+            "secureScores/s7": [.init(status: 200, body: #"{"id":"s7","createdDateTime":"2026-10-18T00:00:00Z","currentScore":598,"maxScore":1176,"controlScores":[]}"#)],
+        ]
         let summary = try await service.secureScore()
         XCTAssertEqual(summary?.latest.currentScore, 612)
         XCTAssertEqual(summary?.change, 14)
-        XCTAssertTrue(StubProtocol.urls(containing: "secureScores").first?.contains("top=31") == true)
-        XCTAssertEqual(auth.calls.first, ["SecurityEvents.Read.All"])
+        XCTAssertTrue(StubProtocol.urls(containing: "secureScores?").first?.contains("top=31") == true)
+        XCTAssertTrue(auth.calls.allSatisfy { $0 == ["SecurityEvents.Read.All"] })
     }
 
     func test_errorMappingCoversEveryGraphCase() {
@@ -262,5 +271,109 @@ extension TenantPulseServiceTests {
         XCTAssertEqual(summary?.latest.id, "s2")
         XCTAssertEqual(summary?.change(overDays: 1), -2, "yesterday's drop, from two snapshots")
         XCTAssertTrue(StubProtocol.urls(containing: "secureScores").first?.contains("$top=2") == true)
+    }
+}
+
+// MARK: - the screen's lean reads (OPTIMIZATION-PLAN.md, step G)
+
+extension TenantPulseServiceTests {
+
+    private var refused: StubProtocol.Reply { .init(status: 400, body: #"{"error":{"code":"BadRequest"}}"#) }
+
+    func test_issuesAskForTheFieldsTheModelDecodes() async throws {
+        StubProtocol.replies = [
+            "healthOverviews": [.init(status: 200, body: #"{"value":[]}"#)],
+            "serviceAnnouncement/issues": [.init(status: 200, body: issuesBody)],
+        ]
+        _ = try await service.health()
+        let url = StubProtocol.urls(containing: "issues").first?.removingPercentEncoding ?? ""
+        XCTAssertTrue(url.contains("$select=" + TenantPulseService.issueFields), url)
+        XCTAssertFalse(TenantPulseService.issueFields.contains("posts"))
+    }
+
+    func test_aFormTheTenantRefusedIsNotSentAgain() async throws {
+        StubProtocol.replies = [
+            "healthOverviews": [.init(status: 200, body: #"{"value":[]}"#), .init(status: 200, body: #"{"value":[]}"#)],
+            "serviceAnnouncement/issues": [refused, .init(status: 200, body: issuesBody), .init(status: 200, body: issuesBody)],
+        ]
+        _ = try await service.health()
+        let second = try await service.health()
+        XCTAssertEqual(second.activeIssues.map(\.id), ["EX1"])
+        let urls = StubProtocol.urls(containing: "issues").map { $0.removingPercentEncoding ?? $0 }
+        XCTAssertEqual(urls.count, 3, "one refusal, then the accepted form twice")
+        XCTAssertFalse(urls[2].contains("$select="), "the refused form is not tried on the second load")
+    }
+
+    func test_messagesAskGraphForTheCardsRuleWithTheModelsFields() async throws {
+        StubProtocol.replies = ["serviceAnnouncement/messages": [.init(status: 200, body: #"{"value":[{"id":"due","title":"Act","category":"planForChange","actionRequiredByDateTime":"2026-11-10T00:00:00Z"},{"id":"quiet","title":"Icon","category":"stayInformed","isMajorChange":false}]}"#)]]
+        let messages = try await service.messages()
+        XCTAssertEqual(messages.map(\.id), ["due"], "the phone still applies the rule")
+        let url = StubProtocol.urls(containing: "messages").first?.removingPercentEncoding ?? ""
+        XCTAssertTrue(url.contains("$filter=" + TenantPulseService.worthShowingFilter), url)
+        XCTAssertTrue(url.contains("$select=" + TenantPulseService.messageFields), url)
+    }
+
+    func test_aRefusedMessageFilterKeepsTheFields() async throws {
+        StubProtocol.replies = ["serviceAnnouncement/messages": [refused, .init(status: 200, body: #"{"value":[{"id":"major","category":"stayInformed","isMajorChange":true}]}"#)]]
+        let messages = try await service.messages()
+        XCTAssertEqual(messages.map(\.id), ["major"])
+        let urls = StubProtocol.urls(containing: "messages").map { $0.removingPercentEncoding ?? $0 }
+        XCTAssertEqual(urls.count, 2)
+        XCTAssertTrue(urls[1].contains("$select=") && !urls[1].contains("$filter="), urls[1])
+    }
+
+    /// Thirty-one lean snapshots, and the latest, the week-old and the month-old read whole.
+    private func seedScores(weekOld: StubProtocol.Reply? = nil) {
+        var days: [String] = []
+        for day in 0...30 {
+            let date = ISO8601DateFormatter().string(from: ISO8601DateFormatter().date(from: "2026-10-25T00:00:00Z")!.addingTimeInterval(-Double(day) * 86_400))
+            days.append(#"{"id":"s"# + String(day) + #"","createdDateTime":""# + date + #"","currentScore":"# + String(600 - day) + #","maxScore":1000}"#)
+        }
+        func whole(_ day: Int, identity: Int) -> StubProtocol.Reply {
+            let date = ISO8601DateFormatter().string(from: ISO8601DateFormatter().date(from: "2026-10-25T00:00:00Z")!.addingTimeInterval(-Double(day) * 86_400))
+            return .init(status: 200, body: #"{"id":"s"# + String(day) + #"","createdDateTime":""# + date + #"","currentScore":"# + String(600 - day)
+                         + #","maxScore":1000,"controlScores":[{"controlCategory":"Identity","controlName":"MFA","score":"# + String(identity) + #"}]}"#)
+        }
+        StubProtocol.replies = [
+            "secureScores?": [.init(status: 200, body: #"{"value":["# + days.joined(separator: ",") + "]}")],
+            "secureScores/s0": [whole(0, identity: 50)],
+            "secureScores/s7": [weekOld ?? whole(7, identity: 40)],
+            "secureScores/s30": [whole(30, identity: 20)],
+        ]
+    }
+
+    func test_secureScoreHistoryComesLeanAndTheComparedSnapshotsWhole() async throws {
+        seedScores()
+        let read = try await service.secureScore()
+        let summary = try XCTUnwrap(read)
+        XCTAssertEqual(summary.history.count, 31)
+        XCTAssertEqual(summary.change(overDays: 7), 7)
+        XCTAssertEqual(summary.identityChange(overDays: 7), 10, "the identity score, from the controls read by id")
+        XCTAssertEqual(summary.identityChange(overDays: 30), 30)
+        let list = StubProtocol.urls(containing: "secureScores?").first?.removingPercentEncoding ?? ""
+        XCTAssertTrue(list.contains("$select=" + TenantPulseService.scoreHistoryFields), list)
+        let whole = StubProtocol.urls(containing: "secureScores/")
+        XCTAssertEqual(Set(whole.compactMap { $0.split(separator: "/").last.map(String.init) }), ["s0", "s7", "s30"])
+    }
+
+    func test_aMissingComparedSnapshotFallsBackToTheWholeHistory() async throws {
+        seedScores(weekOld: .init(status: 404, body: "{}"))
+        StubProtocol.replies["secureScores?"]?.append(.init(status: 200, body: #"{"value":[{"id":"s0","createdDateTime":"2026-10-25T00:00:00Z","currentScore":600,"maxScore":1000,"controlScores":[]}]}"#))
+        let summary = try await service.secureScore()
+        XCTAssertEqual(summary?.latest.id, "s0")
+        let lists = StubProtocol.urls(containing: "secureScores?").map { $0.removingPercentEncoding ?? $0 }
+        XCTAssertEqual(lists.count, 2)
+        XCTAssertFalse(lists[1].contains("$select="), "the whole snapshots, as before step G")
+    }
+
+    func test_aRefusedScoreSelectIsNotSentAgain() async throws {
+        let whole = StubProtocol.Reply(status: 200, body: #"{"value":[{"id":"s0","createdDateTime":"2026-10-25T00:00:00Z","currentScore":600,"maxScore":1000,"controlScores":[]}]}"#)
+        StubProtocol.replies = ["secureScores?": [refused, whole, whole]]
+        _ = try await service.secureScore()
+        _ = try await service.secureScore()
+        let lists = StubProtocol.urls(containing: "secureScores?").map { $0.removingPercentEncoding ?? $0 }
+        XCTAssertEqual(lists.count, 3)
+        XCTAssertFalse(lists[2].contains("$select="))
+        XCTAssertTrue(StubProtocol.urls(containing: "secureScores/").isEmpty)
     }
 }

@@ -29,7 +29,7 @@ final class TenantPulseModel {
         didSet { UserDefaults.standard.set(scoreWindowDays, forKey: Self.scoreWindowKey) }
     }
     static let scoreWindowKey = "settings.secureScoreWindowDays"
-    static let scoreWindows = [7, 30]
+    static let scoreWindows = SecureScoreSummary.windows
 
     private let provider: any TenantPulseProviding
 
@@ -59,14 +59,14 @@ final class TenantPulseModel {
         expiring = .loading
         score = .loading
         let started = Date()
-        async let h: Card<ServiceHealthReport> = card { try await self.provider.health() }
-        async let m: Card<[ServiceMessage]> = card { try await self.provider.messages() }
-        async let e: Card<[ExpiringItem]> = card { ExpiryWindow.relevant(try await self.provider.expiringItems()) }
-        async let s: Card<SecureScoreSummary?> = card { try await self.provider.secureScore() }
-        health = await h
-        messages = await m
-        expiring = await e
-        score = await s
+        // Each card fills as its own read finishes, so a slow Expiring card no longer
+        // holds back Secure Score.
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { @MainActor in self.health = await self.card { try await self.provider.health() } }
+            group.addTask { @MainActor in self.messages = await self.card { try await self.provider.messages() } }
+            group.addTask { @MainActor in self.expiring = await self.card { ExpiryWindow.relevant(try await self.provider.expiringItems()) } }
+            group.addTask { @MainActor in self.score = await self.card { try await self.provider.secureScore() } }
+        }
         await DiagnosticsRecorder.shared.record(
             .graphRead, hasLoadedAnything ? .success : .unknown,
             endpointTemplate: "/v1.0/admin/serviceAnnouncement",

@@ -47,6 +47,8 @@ final class SecurityListModel {
     private(set) var more: URL?
     private(set) var isLoadingMore = false
     private(set) var isLoading = false
+    /// The lean list is on screen and the full read with the alerts failed.
+    private(set) var alertsMissing = false
     private(set) var errorMessage: String?
     private(set) var lastFailureWasConsent = false
     /// Set once the module has loaded at least once this session; the sidebar badge
@@ -100,14 +102,13 @@ final class SecurityListModel {
         visible = Self.search(filter.apply(incidents), query: appliedQuery)
     }
 
+    /// Against each incident's search key, worked out once when it was read, rather than
+    /// flattening every alert's evidence again on every keystroke.
     static func search(_ incidents: [SecurityIncident], query: String) -> [SecurityIncident] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return incidents }
-        return incidents.filter { incident in
-            incident.title.localizedCaseInsensitiveContains(trimmed)
-                || incident.evidence.contains { $0.label.localizedCaseInsensitiveContains(trimmed) }
-                || incident.alerts.contains { $0.displayTitle.localizedCaseInsensitiveContains(trimmed) }
-        }
+        let folded = SecurityIncident.fold(trimmed)
+        return incidents.filter { $0.matches(folded: folded) }
     }
 
     func incident(_ id: String) -> SecurityIncident? {
@@ -123,14 +124,22 @@ final class SecurityListModel {
         let started = Date()
         defer { if mine == generation { isLoading = false } }
         do {
+            // With nothing on screen, the lean list paints first and the full list, with
+            // every alert's evidence, replaces it. Its cursor is not kept: more rows read
+            // from it would never get their alerts.
+            if incidents.isEmpty, let lean = try? await provider.incidentSummaries(matching: filter), mine == generation {
+                incidents = lean.incidents
+            }
             let list = try await provider.incidents(matching: filter)
             guard mine == generation else { return }
             incidents = list.incidents
             more = list.more
+            alertsMissing = false
             hasLoaded = true
             await Self.record(.success, since: started)
         } catch {
             guard mine == generation else { return }
+            alertsMissing = incidents.contains { !$0.alertsIncluded }
             lastFailureWasConsent = (error as? SecurityError) == .consentRequired
             errorMessage = Self.describe(error)
             await Self.record(Self.outcome(for: error), since: started)
@@ -298,7 +307,8 @@ struct SecurityListView: View {
     }
 
     private var footer: String {
-        var parts = ["Read-only."]
+        var parts = model.alertsMissing ? ["The alerts and evidence couldn't be read. Pull to refresh."] : []
+        parts.append("Read-only.")
         parts.append(model.openOnly ? "Open incidents only;" : "Open and resolved incidents;")
         parts.append(model.severity == .all ? "every severity." : model.severity.label.lowercased() + ".")
         parts.append("Updated in the last \(SecurityService.windowDays) days, newest first.")
@@ -368,10 +378,12 @@ struct SecurityIncidentRow: View {
                 Text(incident.status.label)
                     .font(.caption)
                     .foregroundStyle(incident.isOpen ? .primary : .secondary)
-                Text("·").foregroundStyle(.secondary)
-                Text(alertCount)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if incident.alertsIncluded {
+                    Text("·").foregroundStyle(.secondary)
+                    Text(alertCount)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 0)
                 Text(relative(incident.lastActivity))
                     .font(.caption)
@@ -474,6 +486,14 @@ struct SecurityDetailView: View {
         List {
             summarySection
             portalSection
+            if !incident.alertsIncluded {
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Reading the alerts and evidence…").foregroundStyle(.secondary)
+                    }
+                }
+            }
             ForEach(incident.alerts) { alert in
                 alertSection(alert)
             }

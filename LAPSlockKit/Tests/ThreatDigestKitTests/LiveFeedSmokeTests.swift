@@ -29,4 +29,20 @@ final class LiveFeedSmokeTests: XCTestCase {
         }
         XCTAssertTrue(snapshot.items.contains { $0.sources.contains(.kev) && $0.sources.contains(.msrc) }, "at least one CVE should merge across KEV and MSRC in any given month")
     }
+
+    /// Which validators each feed sends, and whether a second read with them is a 304.
+    /// Reported rather than asserted: the servers decide, and the digest works either way.
+    func test_whatASecondReadOfEachFeedCosts() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["DIGEST_LIVE"] == "1", "set DIGEST_LIVE=1 to run against the real feeds")
+        let service = ThreatDigestService()
+        let at = Date()
+        for source in [DigestSource.kev, .msrc, .cisaAlert, .cisaAdvisory] {
+            let url = ThreatDigestService.url(for: source, now: at)
+            let first = try await service.exchange(url)
+            print("validators:", source.title, "| ETag", first.etag ?? "none", "| Last-Modified", first.lastModified ?? "none", "|", first.data.count, "bytes")
+            guard first.etag != nil || first.lastModified != nil else { continue }
+            let second = try await service.exchange(url, etag: first.etag, lastModified: first.lastModified)
+            print("second read:", source.title, "|", second.notModified ? "304, nothing downloaded" : "downloaded again, " + String(second.data.count) + " bytes")
+        }
+    }
 }

@@ -2,7 +2,7 @@ import XCTest
 @testable import ThreatDigestKit
 
 private final class StubProtocol: URLProtocol {
-    struct Reply { var status: Int; var body: String; var redirect: String? = nil }
+    struct Reply { var status: Int; var body: String; var redirect: String? = nil; var headers: [String: String]? = nil }
     nonisolated(unsafe) static var replies: [String: Reply] = [:]
     nonisolated(unsafe) static var requests: [URLRequest] = []
     /// URLSession calls startLoading on its own threads, and the services under test send
@@ -23,7 +23,7 @@ private final class StubProtocol: URLProtocol {
             client?.urlProtocolDidFinishLoading(self)
             return
         }
-        let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: nil)!
+        let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: "HTTP/1.1", headerFields: reply.headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(reply.body.utf8))
         client?.urlProtocolDidFinishLoading(self)
@@ -161,5 +161,97 @@ final class ThreatDigestServiceTests: XCTestCase {
         XCTAssertEqual(config.httpCookieAcceptPolicy, .never)
         XCTAssertEqual(config.httpAdditionalHeaders?.count, 1)
         XCTAssertNotNil(config.httpAdditionalHeaders?["Accept"])
+    }
+}
+
+// MARK: - held for the life of the app (OPTIMIZATION-PLAN.md, step G)
+
+extension ThreatDigestServiceTests {
+
+    private func seedAll(status: Int = 200, validators: Bool = true) {
+        let headers = validators ? ["ETag": "\"v1\"", "Last-Modified": "Sat, 24 Oct 2026 10:00:00 GMT"] : nil
+        StubProtocol.replies = [
+            "known_exploited_vulnerabilities.json": .init(status: status, body: status == 304 ? "" : kev, headers: headers),
+            "api.msrc.microsoft.com": .init(status: status, body: status == 304 ? "" : msrc, headers: headers),
+            "alerts.xml": .init(status: status, body: status == 304 ? "" : rss, headers: headers),
+            "cybersecurity-advisories.xml": .init(status: status, body: status == 304 ? "" : rss, headers: headers)
+        ]
+    }
+
+    func test_aDigestReadMomentsAgoIsReusedWithoutTheNetwork() async throws {
+        seedAll()
+        let first = try await service.digest()
+        let second = try await service.digest()
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(StubProtocol.requests.count, 4, "one read of each feed")
+    }
+
+    func test_aRefreshAsksEachFeedWithItsValidatorAndReusesItsCopyOnA304() async throws {
+        seedAll()
+        let first = try await service.digest()
+        seedAll(status: 304)
+        let second = try await service.refreshedDigest()
+        XCTAssertEqual(second.items, first.items)
+        XCTAssertTrue(second.unavailable.isEmpty, "\(second.statuses)")
+        let repeats = StubProtocol.requests.suffix(4)
+        XCTAssertEqual(repeats.count, 4)
+        for request in repeats {
+            XCTAssertEqual(request.value(forHTTPHeaderField: "If-None-Match"), "\"v1\"")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "If-Modified-Since"), "Sat, 24 Oct 2026 10:00:00 GMT")
+            XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
+        }
+    }
+
+    func test_theFirstReadSendsNoValidator() async throws {
+        seedAll()
+        _ = try await service.digest()
+        for request in StubProtocol.requests {
+            XCTAssertNil(request.value(forHTTPHeaderField: "If-None-Match"))
+            XCTAssertNil(request.value(forHTTPHeaderField: "If-Modified-Since"))
+        }
+    }
+
+    func test_aFeedThatFailsLaterShowsItsLastGoodCopyAndSaysSo() async throws {
+        seedAll()
+        _ = try await service.digest()
+        StubProtocol.replies["known_exploited_vulnerabilities.json"] = .init(status: 503, body: "")
+        let snapshot = try await service.refreshedDigest()
+        XCTAssertTrue(snapshot.items.contains { $0.id == "CVE-2026-96951" && $0.sources.contains(.kev) })
+        guard case .unavailable(let reason) = snapshot.statuses[0].state else { return XCTFail("expected KEV unavailable") }
+        XCTAssertTrue(reason.contains("last copy"), reason)
+    }
+
+    func test_theMSRCAddressHoldsForTheWholeDay() {
+        let morning = DigestDates.parse("2026-10-25T01:00:00Z")!
+        let evening = DigestDates.parse("2026-10-25T23:00:00Z")!
+        XCTAssertEqual(ThreatDigestService.url(for: .msrc, now: morning), ThreatDigestService.url(for: .msrc, now: evening))
+    }
+
+    func test_theLastGoodCopiesOnDiskPaintAColdLaunchWithoutTheNetwork() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("digest-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writer = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, cacheDirectory: directory)
+        seedAll()
+        let read = try await writer.digest()
+        StubProtocol.reset()
+
+        let coldLaunch = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, cacheDirectory: directory)
+        let painted = await coldLaunch.lastDigest()
+        XCTAssertEqual(painted?.items, read.items)
+        XCTAssertTrue(StubProtocol.requests.isEmpty, "no network for the first paint")
+
+        seedAll(status: 304)
+        let checked = try await coldLaunch.refreshedDigest()
+        XCTAssertEqual(checked.items, read.items, "a 304 after a cold launch reuses the copy from disk")
+        XCTAssertEqual(StubProtocol.requests.first?.value(forHTTPHeaderField: "If-None-Match"), "\"v1\"")
+    }
+
+    func test_noDirectoryMeansNothingOnDisk() async throws {
+        seedAll()
+        _ = try await service.digest()
+        let fresh = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now })
+        let painted = await fresh.lastDigest()
+        XCTAssertNil(painted)
     }
 }

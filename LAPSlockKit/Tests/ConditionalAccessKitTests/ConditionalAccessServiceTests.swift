@@ -226,6 +226,63 @@ final class ConditionalAccessServiceTests: XCTestCase {
         XCTAssertGreaterThan(StubProtocol.requests.count, before)
     }
 
+    func test_getByIdsAsksForTheIdAndNameOnly() async throws {
+        seedNameReplies()
+        _ = try await service.names(for: [DirectoryReference(kind: .group, id: group)])
+        let getByIds = try XCTUnwrap(StubProtocol.requests.first { $0.url.contains("getByIds") })
+        XCTAssertTrue(getByIds.url.contains("$select=id,displayName"), getByIds.url)
+    }
+
+    func test_aRefusedGetByIdsSelectAsksAgainWithoutItForTheSession() async throws {
+        seedNameReplies()
+        let found = StubProtocol.replies["directoryObjects/getByIds"]![0]
+        StubProtocol.replies["directoryObjects/getByIds"] = [.init(status: 400, body: #"{"error":{"code":"BadRequest"}}"#), found, found]
+        let names = try await service.names(for: [DirectoryReference(kind: .group, id: group)])
+        XCTAssertEqual(names[DirectoryReference(kind: .group, id: group)], "Helpdesk")
+        _ = try await service.names(for: [DirectoryReference(kind: .user, id: "33333333-3333-3333-3333-333333333333")])
+        let sent = StubProtocol.requests.filter { $0.url.contains("getByIds") }
+        XCTAssertEqual(sent.count, 3)
+        XCTAssertFalse(sent[1].url.contains("$select"), sent[1].url)
+        XCTAssertFalse(sent[2].url.contains("$select"), "not tried again this session")
+    }
+
+    func test_aReferenceGraphHasNoNameForIsNotAskedForAgain() async throws {
+        seedNameReplies()
+        let deleted = DirectoryReference(kind: .group, id: "44444444-4444-4444-4444-444444444444")
+        let unknownApp = DirectoryReference(kind: .application, id: "55555555-5555-5555-5555-555555555555")
+        let unknownRole = DirectoryReference(kind: .role, id: "66666666-6666-6666-6666-666666666666")
+        let first = try await service.names(for: [deleted, unknownApp, unknownRole])
+        XCTAssertTrue(first.isEmpty)
+        let before = StubProtocol.requests.count
+        let second = try await service.names(for: [deleted, unknownApp, unknownRole])
+        XCTAssertTrue(second.isEmpty)
+        XCTAssertEqual(StubProtocol.requests.count, before, "misses are remembered for the session")
+        await service.reset()
+        seedNameReplies()
+        _ = try await service.names(for: [deleted])
+        XCTAssertGreaterThan(StubProtocol.requests.count, before, "and forgotten on reset")
+    }
+
+    func test_aFailedLookupIsAskedAgain() async throws {
+        seedNameReplies()
+        StubProtocol.replies["servicePrincipals"] = [.init(status: 403, body: "{}"), .init(status: 200, body: #"{"value":[{"appId":"\#(app)","displayName":"Management API"}]}"#)]
+        let reference = DirectoryReference(kind: .application, id: app)
+        let first = try await service.names(for: [reference])
+        XCTAssertNil(first[reference])
+        let second = try await service.names(for: [reference])
+        XCTAssertEqual(second[reference], "Management API", "a failure is not a miss")
+    }
+
+    func test_manyAppsAreLookedUpInChunksThatAllGoOut() async throws {
+        let ids = (0..<40).map { String(format: "%08d-0000-0000-0000-000000000000", $0) }
+        StubProtocol.replies = ["servicePrincipals": (0..<3).map { _ in .init(status: 200, body: #"{"value":[]}"#) }]
+        _ = try await service.names(for: Set(ids.map { DirectoryReference(kind: .application, id: $0) }))
+        let sent = StubProtocol.requests.filter { $0.url.contains("servicePrincipals") }
+        XCTAssertEqual(sent.count, 3, "forty app ids in chunks of fifteen")
+        let asked = sent.flatMap { request in ids.filter { request.url.contains($0) } }
+        XCTAssertEqual(Set(asked), Set(ids))
+    }
+
     func test_anEmptyReferenceSetMakesNoRequests() async throws {
         let names = try await service.names(for: [])
         XCTAssertTrue(names.isEmpty)

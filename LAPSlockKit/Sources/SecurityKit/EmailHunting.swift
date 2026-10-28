@@ -202,8 +202,11 @@ public enum EmailHunt: String, Sendable, CaseIterable, Identifiable {
             lines = ["EmailEvents", since, "| where DeliveryAction == \"Delivered\"", "| where ThreatTypes has_any (\"Phish\", \"Malware\")",
                      "| project " + Self.messageColumns, "| order by Timestamp desc", "| take 200"]
         case .removedAfterDelivery:
-            lines = ["EmailPostDeliveryEvents", since,
-                     "| join kind=leftouter (EmailEvents " + since + " | project NetworkMessageId, RecipientEmailAddress, Subject, SenderFromAddress) on NetworkMessageId, RecipientEmailAddress",
+            // The newest 200 removals first, then only their messages from EmailEvents,
+            // rather than joining every message in the window before taking 200.
+            lines = ["let removed = EmailPostDeliveryEvents", since, "| top 200 by Timestamp desc;",
+                     "removed",
+                     "| join kind=leftouter (EmailEvents " + since + " | where NetworkMessageId in ((removed | project NetworkMessageId)) | project NetworkMessageId, RecipientEmailAddress, Subject, SenderFromAddress) on NetworkMessageId, RecipientEmailAddress",
                      "| project Timestamp, SenderFromAddress, RecipientEmailAddress, Subject, Action, ActionType, ActionTrigger, ActionResult, DeliveryLocation, ThreatTypes, NetworkMessageId",
                      "| order by Timestamp desc", "| take 200"]
         case .linkClicks:

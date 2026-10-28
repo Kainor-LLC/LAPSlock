@@ -51,7 +51,17 @@ final class EmailHuntingTests: XCTestCase {
         let kql = try EmailHunt.deliveredThreats.query(value: nil, window: .day)
         XCTAssertTrue(kql.hasPrefix("EmailEvents"))
         XCTAssertTrue(kql.contains("has_any (\"Phish\", \"Malware\")"))
-        XCTAssertTrue(try EmailHunt.removedAfterDelivery.query(value: nil, window: .day).hasPrefix("EmailPostDeliveryEvents"))
+        XCTAssertTrue(try EmailHunt.removedAfterDelivery.query(value: nil, window: .day).hasPrefix("let removed = EmailPostDeliveryEvents"))
+    }
+
+    func testRemovalsTakeTheNewest200BeforeTheJoin() throws {
+        let kql = try EmailHunt.removedAfterDelivery.query(value: nil, window: .week)
+        let lines = kql.components(separatedBy: "\n")
+        let top = try XCTUnwrap(lines.firstIndex(of: "| top 200 by Timestamp desc;"))
+        let join = try XCTUnwrap(lines.firstIndex { $0.hasPrefix("| join") })
+        XCTAssertLessThan(top, join, "the 200 are chosen before any join")
+        XCTAssertTrue(lines[join].contains("where NetworkMessageId in ((removed | project NetworkMessageId))"), lines[join])
+        XCTAssertEqual(kql.components(separatedBy: "ago(7d)").count - 1, 2, "both tables are bounded by the window")
     }
 
     func testEveryQueryIsBoundedAndReadOnly() throws {

@@ -18,10 +18,17 @@ import AuthKit
 // on issues and `preferredSingleSignOnMode` on service principals. A 400 on either falls
 // back to the unfiltered form, or to leaving SAML certificates out, with the fallback
 // recorded in the result rather than hidden.
+//
+// The screen's reads ask for the fields the models decode, and Message Center for the
+// card's rule, narrowest form first (OPTIMIZATION-PLAN.md, step G). A form Graph refuses
+// with a 400 is not sent again for the life of this service, and the last form is always
+// the plain read every tenant takes.
 
 public actor TenantPulseService: TenantPulseProviding {
 
     private let graph: GraphClient
+    /// By read, the index of the narrowest form this tenant has not refused.
+    private var acceptedForm: [String: Int] = [:]
 
     public init(graph: GraphClient) {
         self.graph = graph
@@ -35,6 +42,32 @@ public actor TenantPulseService: TenantPulseProviding {
     public static let applePushCertificatePath = "/deviceManagement/applePushNotificationCertificate"
     public static let vppTokensPath = "/deviceAppManagement/vppTokens"
     public static let secureScoresPath = "/security/secureScores"
+
+    /// The ten fields `ServiceIssue` decodes, leaving out the posts each issue carries.
+    static let issueFields = "id,title,service,feature,classification,status,startDateTime,lastModifiedDateTime,isResolved,impactDescription"
+    /// The ten fields `ServiceMessage` decodes, leaving out the HTML body.
+    static let messageFields = "id,title,category,severity,isMajorChange,actionRequiredByDateTime,startDateTime,lastModifiedDateTime,services,tags"
+    /// `ServiceMessage.isWorthShowing` as Graph's filter. The phone applies the rule as
+    /// well, so a tenant where Graph reads the filter more loosely shows nothing extra.
+    static let worthShowingFilter = "actionRequiredByDateTime ne null or category eq 'preventOrFixIssue' or category eq 'planForChange' or isMajorChange eq true"
+    /// A snapshot without its control scores, which are most of its size.
+    static let scoreHistoryFields = "id,createdDateTime,currentScore,maxScore"
+
+    /// The first of `forms` Graph accepts, narrowest first. A 400 moves on to the next and
+    /// is remembered; the last form's 400 is thrown like any other error.
+    private func firstAccepted<T: Decodable & Sendable>(
+        _ type: T.Type, _ key: String, _ forms: [(request: GraphRequest, maxPages: Int)]
+    ) async throws -> [T] {
+        var index = min(acceptedForm[key, default: 0], forms.count - 1)
+        while true {
+            do {
+                return try await graph.collection(T.self, from: forms[index].request, maxPages: forms[index].maxPages).items
+            } catch GraphError.badRequest where index < forms.count - 1 {
+                index += 1
+                acceptedForm[key] = max(acceptedForm[key, default: 0], index)
+            }
+        }
+    }
 
     // MARK: - health
 
@@ -54,24 +87,18 @@ public actor TenantPulseService: TenantPulseProviding {
         }
     }
 
-    /// Unresolved issues, newest change first. Tries the filter first; a tenant where Graph
-    /// refuses it gets the last hundred issues filtered here.
+    /// Unresolved issues, newest change first. Tries the filter with the model's fields,
+    /// then the filter alone; a tenant where Graph refuses both gets the last hundred
+    /// issues filtered here.
     private func activeIssues() async throws -> [ServiceIssue] {
-        let filtered = GraphRequest(
-            path: Self.issuesPath,
-            template: Self.issuesPath + "?unresolved",
-            query: [URLQueryItem(name: "$filter", value: "isResolved eq false")],
-            scopes: [TenantPulseScopes.health])
-        let items: [ServiceIssue]
-        do {
-            items = try await graph.collection(ServiceIssue.self, from: filtered, maxPages: 2).items
-        } catch GraphError.badRequest {
-            let plain = GraphRequest(
-                path: Self.issuesPath,
-                query: [URLQueryItem(name: "$top", value: "100")],
-                scopes: [TenantPulseScopes.health])
-            items = try await graph.collection(ServiceIssue.self, from: plain, maxPages: 1).items
-        }
+        let unresolved = URLQueryItem(name: "$filter", value: "isResolved eq false")
+        let fields = URLQueryItem(name: "$select", value: Self.issueFields)
+        let scopes = [TenantPulseScopes.health]
+        let items = try await firstAccepted(ServiceIssue.self, "issues", [
+            (GraphRequest(path: Self.issuesPath, template: Self.issuesPath + "?unresolved&select", query: [unresolved, fields], scopes: scopes), 2),
+            (GraphRequest(path: Self.issuesPath, template: Self.issuesPath + "?unresolved", query: [unresolved], scopes: scopes), 2),
+            (GraphRequest(path: Self.issuesPath, query: [URLQueryItem(name: "$top", value: "100")], scopes: scopes), 1),
+        ])
         return items
             .filter(\.isActive)
             .sorted { ($0.lastModifiedDateTime ?? .distantPast) > ($1.lastModifiedDateTime ?? .distantPast) }
@@ -79,14 +106,20 @@ public actor TenantPulseService: TenantPulseProviding {
 
     // MARK: - Message Center
 
+    /// The card's messages, filtered by Graph where it can be, so a deadline older than the
+    /// newest two hundred posts still reaches the card.
     public func messages() async throws -> [ServiceMessage] {
-        let request = GraphRequest(
-            path: Self.messagesPath,
-            query: [URLQueryItem(name: "$top", value: "100")],
-            scopes: [TenantPulseScopes.messages])
+        let top = URLQueryItem(name: "$top", value: "100")
+        let fields = URLQueryItem(name: "$select", value: Self.messageFields)
+        let rule = URLQueryItem(name: "$filter", value: Self.worthShowingFilter)
+        let scopes = [TenantPulseScopes.messages]
         do {
-            let page = try await graph.collection(ServiceMessage.self, from: request, maxPages: 2)
-            return MessageOrdering.sort(page.items.filter(\.isWorthShowing))
+            let items = try await firstAccepted(ServiceMessage.self, "messages", [
+                (GraphRequest(path: Self.messagesPath, template: Self.messagesPath + "?worthShowing&select", query: [rule, fields, top], scopes: scopes), 2),
+                (GraphRequest(path: Self.messagesPath, template: Self.messagesPath + "?select", query: [fields, top], scopes: scopes), 2),
+                (GraphRequest(path: Self.messagesPath, query: [top], scopes: scopes), 2),
+            ])
+            return MessageOrdering.sort(items.filter(\.isWorthShowing))
         } catch let error as GraphError {
             throw TenantPulseError(error)
         }
@@ -96,11 +129,12 @@ public actor TenantPulseService: TenantPulseProviding {
 
     public func expiringItems() async throws -> [ExpiringItem] {
         // The app registrations are the card. The rest are extras that fail quietly: a
-        // tenant without Intune has no push certificate, and that is not an error.
-        let registrations = try await applicationCredentials()
+        // tenant without Intune has no push certificate, and that is not an error. All
+        // four start together; the extras used to wait for every page of the walk.
         async let saml = samlCertificates()
         async let push = applePushCertificate()
         async let vpp = vppTokens()
+        let registrations = try await applicationCredentials()
         let extras = await [saml, push, vpp].flatMap { $0 }
         return (registrations + extras).sorted { $0.expiresAt < $1.expiresAt }
     }
@@ -239,13 +273,60 @@ public actor TenantPulseService: TenantPulseProviding {
 
     // MARK: - Secure Score
 
-    /// One snapshot per day; thirty-one covers the screen's thirty-day comparison.
+    /// One snapshot per day; thirty-one covers the screen's thirty-day comparison. The
+    /// history comes without control scores, and the snapshots the screen compares are
+    /// read again whole, because the identity score is built from their controls. A
+    /// tenant that refuses either read gets the thirty-one whole snapshots, as before.
     public func secureScore() async throws -> SecureScoreSummary? {
-        try await secureScore(snapshots: 31)
+        do {
+            return try await leanSecureScore(snapshots: 31, comparing: SecureScoreSummary.windows)
+        } catch let error as GraphError {
+            throw TenantPulseError(error)
+        }
     }
 
-    /// The latest `snapshots` days. The background check asks for two (yesterday's
-    /// change) and the watch for one.
+    private func leanSecureScore(snapshots: Int, comparing windows: [Int]) async throws -> SecureScoreSummary? {
+        guard acceptedForm["scores", default: 0] == 0 else { return try await secureScore(snapshots: snapshots) }
+        let lean = GraphRequest(
+            path: Self.secureScoresPath,
+            template: Self.secureScoresPath + "?select",
+            query: [URLQueryItem(name: "$top", value: String(snapshots)), URLQueryItem(name: "$select", value: Self.scoreHistoryFields)],
+            scopes: [TenantPulseScopes.security])
+        let history: [SecureScoreSnapshot]
+        do {
+            history = try await graph.collection(SecureScoreSnapshot.self, from: lean, maxPages: 1).items
+        } catch GraphError.badRequest {
+            acceptedForm["scores"] = 1
+            return try await secureScore(snapshots: snapshots)
+        }
+        guard let summary = SecureScoreSummary.make(from: history) else { return nil }
+        let compared = Set(([summary.latest] + windows.compactMap { summary.comparison(daysBack: $0) }).map(\.id))
+        let whole: [String: SecureScoreSnapshot]
+        do {
+            whole = try await withThrowingTaskGroup(of: SecureScoreSnapshot.self, returning: [String: SecureScoreSnapshot].self) { group in
+                for id in compared { group.addTask { try await self.snapshot(id) } }
+                var found: [String: SecureScoreSnapshot] = [:]
+                for try await snapshot in group { found[snapshot.id] = snapshot }
+                return found
+            }
+        } catch GraphError.badRequest, GraphError.notFound {
+            acceptedForm["scores"] = 1
+            return try await secureScore(snapshots: snapshots)
+        }
+        return SecureScoreSummary.make(from: history.map { whole[$0.id] ?? $0 })
+    }
+
+    /// One whole snapshot, control scores included.
+    private func snapshot(_ id: String) async throws -> SecureScoreSnapshot {
+        try await graph.decode(SecureScoreSnapshot.self, from: GraphRequest(
+            path: Self.secureScoresPath + "/" + id,
+            template: Self.secureScoresPath + "/{id}",
+            scopes: [TenantPulseScopes.security]))
+    }
+
+    /// The latest `snapshots` days, whole. For the few the background check (two, for
+    /// yesterday's change), the watch and the Mac menu (one) need, a single read is
+    /// cheaper than the lean history and a second read.
     public func secureScore(snapshots: Int) async throws -> SecureScoreSummary? {
         let request = GraphRequest(
             path: Self.secureScoresPath,

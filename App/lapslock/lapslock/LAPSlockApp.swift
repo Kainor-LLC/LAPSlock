@@ -195,7 +195,8 @@ final class AppRootModel {
         let security: SecurityService
         let emailHunting: EmailHuntingService
         /// Public feeds. Built without the auth manager on purpose: the Kit cannot take
-        /// one, and this is where that shows.
+        /// one, and this is where that shows. The one digest for the life of the app, not
+        /// of this session: nothing about a tenant goes with it.
         let threatDigest: ThreatDigestService
         /// The shift log and the one path for a write. The runner's role gate reads the
         /// person's own active roles with the PIM scopes already consented to.
@@ -251,7 +252,7 @@ final class AppRootModel {
             self.signInTriage = SignInTriageService(graph: graph)
             self.security = SecurityService(graph: graph)
             self.emailHunting = EmailHuntingService(graph: graph)
-            self.threatDigest = ThreatDigestService()
+            self.threatDigest = ThreatDigestService.shared
             let shiftLog = FileShiftLog.shared
             self.shiftLog = shiftLog
             let tenant: @Sendable () async -> String = { sessionTenant }

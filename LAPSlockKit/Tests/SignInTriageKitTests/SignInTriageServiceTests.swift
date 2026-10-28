@@ -93,10 +93,35 @@ final class SignInTriageServiceTests: XCTestCase {
         XCTAssertEqual(events.map(\.id), ["s2"])
         let request = try XCTUnwrap(StubProtocol.requests.first)
         let url = try XCTUnwrap(request.url?.absoluteString.removingPercentEncoding)
-        XCTAssertTrue(url.contains("userPrincipalName eq 'jane@contoso.com'"), url)
-        XCTAssertTrue(url.contains("$top=100"), url)
+        XCTAssertTrue(url.contains("userPrincipalName eq 'jane@contoso.com' and status/errorCode ne 0"), url)
+        XCTAssertTrue(url.contains("$top=20"), "Graph filters, so the fetch is what the screen shows: " + url)
         XCTAssertEqual(request.value(forHTTPHeaderField: "Prefer"), "include-unknown-enum-members")
         XCTAssertEqual(auth.calls.first, ["AuditLog.Read.All", "Policy.Read.All"])
+    }
+
+    func test_aRefusedFailureClauseFiltersOnThePhoneForTheSession() async throws {
+        let body = #"{"value":[{"id":"s1","status":{"errorCode":0}},{"id":"s2","status":{"errorCode":53003}}]}"#
+        StubProtocol.replies = ["signIns": [
+            .init(status: 400, body: #"{"error":{"code":"Request_UnsupportedQuery"}}"#),
+            .init(status: 200, body: body),
+            .init(status: 200, body: body)]]
+        let query = SignInQuery(userPrincipalName: "jane@contoso.com", failuresOnly: true, limit: 20)
+        let first = try await service.signIns(query)
+        let second = try await service.signIns(query)
+        XCTAssertEqual(first.map(\.id), ["s2"])
+        XCTAssertEqual(second.map(\.id), ["s2"])
+        let urls = StubProtocol.requests.compactMap { $0.url?.absoluteString.removingPercentEncoding }
+        XCTAssertEqual(urls.count, 3, "one refusal, then the phone's filter both times")
+        XCTAssertTrue(urls[1].contains("$top=100") && !urls[1].contains("errorCode"), urls[1])
+        XCTAssertFalse(urls[2].contains("errorCode"), urls[2])
+    }
+
+    func test_everySignInIsNotFilteredByGraph() async throws {
+        StubProtocol.replies = ["signIns": [.init(status: 200, body: #"{"value":[]}"#)]]
+        _ = try await service.signIns(SignInQuery(userPrincipalName: "jane@contoso.com", limit: 20))
+        let url = try XCTUnwrap(StubProtocol.requests.first?.url?.absoluteString.removingPercentEncoding)
+        XCTAssertFalse(url.contains("errorCode"), url)
+        XCTAssertTrue(url.contains("$top=20"), url)
     }
 
     func test_errorsMap() async {
