@@ -434,6 +434,7 @@ private struct GroupReviewSheet: View {
     let model: PersonGroupsModel
     let pending: PersonGroupsModel.Pending
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.confirmMethod) private var confirm
 
     var body: some View {
         NavigationStack {
@@ -471,7 +472,7 @@ private struct GroupReviewSheet: View {
                     .disabled(model.roleNote(pending) != nil)
                 } footer: {
                     Text(model.tier(pending) == .destructive
-                         ? "Next: the group's name typed back, Face ID, and a moment to undo."
+                         ? "Next: the group's name typed back, \(confirm.name), and a moment to undo."
                          : "Made as you, with your role, and recorded in your tenant's audit log and the shift log.")
                 }
             }
@@ -488,6 +489,7 @@ private struct GroupTypedNameSheet: View {
     @Bindable var model: PersonGroupsModel
     let pending: PersonGroupsModel.Pending
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.confirmMethod) private var confirm
 
     var body: some View {
         NavigationStack {
@@ -503,7 +505,7 @@ private struct GroupTypedNameSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 } footer: {
-                    Text("Then Face ID, and a few seconds to undo.")
+                    Text("Then \(confirm.name), and a few seconds to undo.")
                 }
             }
             .navigationTitle(pending.group.name)

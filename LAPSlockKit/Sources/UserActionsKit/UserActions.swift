@@ -102,7 +102,7 @@ public enum UserActionKind: String, CaseIterable, Sendable, Identifiable {
         case .blockSignIn:        return "Block this person from signing in? Existing sessions keep working until they expire; revoke sessions as well to end them now."
         case .unblockSignIn:      return "Allow this person to sign in again?"
         case .authenticationWipe: return "Remove every sign-in method this person has registered: Authenticator, phone, FIDO2 keys, Windows Hello, email, OATH tokens. Their password stays. At their next sign-in that needs MFA they register again; issue a Temporary Access Pass next so they can."
-        case .issueTemporaryAccessPass: return "Issue a one-time Temporary Access Pass, valid for one hour? It replaces any pass they already have. Face ID before it is shown."
+        case .issueTemporaryAccessPass: return "Issue a one-time Temporary Access Pass, valid for one hour? It replaces any pass they already have. It is shown only after you confirm it's you."
         case .confirmCompromised: return "Mark this person as compromised? Entra ID Protection sets their risk to high, and your risk-based Conditional Access policies apply."
         case .dismissRisk:        return "Dismiss this person's risk? Entra ID Protection sets it to none."
         }

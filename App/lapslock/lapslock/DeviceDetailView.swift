@@ -740,6 +740,7 @@ struct DeviceDetailView: View {
     @StateModel var model: DeviceDetailModel
     @StateObject private var privacy = ScreenPrivacyMonitor()
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.confirmMethod) private var confirm
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// Opens the PIM activation sheet. Nil in demo and wherever PIM does not apply.
@@ -980,7 +981,7 @@ struct DeviceDetailView: View {
             Task { await model.reveal() }
         } label: {
             HStack {
-                Image(systemName: "faceid")
+                Image(systemName: confirm.symbol)
                 Text(model.confirming == .lapsPassword ? "Confirming…" : "Reveal password")
                     .fontWeight(.semibold)
                 Spacer()
@@ -1002,7 +1003,7 @@ struct DeviceDetailView: View {
     private var credentialFooter: some View {
         VStack(alignment: .leading, spacing: 6) {
             if model.capabilities.supportsReveal && model.device.revealBlockedReason == nil {
-                Text("Face ID confirms it's you before the password is retrieved. It hides again after 60 seconds.")
+                Text("\(confirm.title) confirms it's you before the password is retrieved. It hides again after 60 seconds.")
                 // Stated up front, never as a surprise. An admin who discovers the limit
                 // while standing at a broken workstation taps reveal again, and every
                 // extra tap is another audit event in the customer's tenant.
@@ -1110,7 +1111,7 @@ struct DeviceDetailView: View {
                         ProgressView()
                             .accessibilityLabel("Confirming")
                     } else {
-                        Image(systemName: "faceid").foregroundStyle(Brand.accent)
+                        Image(systemName: confirm.symbol).foregroundStyle(Brand.accent)
                     }
                 }
             }
@@ -1124,7 +1125,7 @@ struct DeviceDetailView: View {
     private var bitLockerFooter: some View {
         VStack(alignment: .leading, spacing: 8) {
             if model.device.platform == .windows && model.device.hasEntraDeviceIdentity {
-                Text("Face ID confirms it's you before a key is retrieved. Each retrieval is recorded in your tenant's audit log.")
+                Text("\(confirm.title) confirms it's you before a key is retrieved. Each retrieval is recorded in your tenant's audit log.")
             }
             // Stated plainly and always, not buried. TenantKeep asking for LESS than it
             // could is a feature worth naming, and an admin should learn the tradeoff

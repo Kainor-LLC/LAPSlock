@@ -325,6 +325,7 @@ final class UserActionsModel {
 /// choosing another person or a sign-in replaces it, which cancels anything pending.
 struct PersonActionsView: View {
     @StateModel private var model: UserActionsModel
+    @Environment(\.confirmMethod) private var confirm
     var activate: (() -> Void)?
     /// Device actions for the leaver checklist's devices step; nil when they are off.
     var makeDeviceActions: ((DeviceActionTarget) -> DeviceActionsModel)? = nil
@@ -589,7 +590,7 @@ struct PersonActionsView: View {
                 } header: {
                     Text("Type the Sign-in Address to Continue")
                 } footer: {
-                    Text("Then Face ID, then ten seconds in which you can undo, or send right away.")
+                    Text("Then \(confirm.name), then ten seconds in which you can undo, or send right away.")
                 }
             }
             .navigationTitle(kind.title)

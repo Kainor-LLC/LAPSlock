@@ -141,6 +141,7 @@ struct ApprovalsListView: View {
 struct ApprovalDetailView: View {
     let model: ApprovalsModel
     let approval: PendingApproval
+    @Environment(\.confirmMethod) private var confirm
     @State private var justification = ""
     @State private var confirming: ApprovalDecision?
     @Environment(\.awayTenant) private var awayTenant
@@ -196,7 +197,7 @@ struct ApprovalDetailView: View {
                 } header: {
                     Text("Your Decision")
                 } footer: {
-                    Text("A reason of at least three characters is required, as in the portal. " + (model.strict ? "Your organization also asks for Face ID." : ""))
+                    Text("A reason of at least three characters is required, as in the portal. " + (model.strict ? "Your organization also asks for \(confirm.name)." : ""))
                 }
             }
         }

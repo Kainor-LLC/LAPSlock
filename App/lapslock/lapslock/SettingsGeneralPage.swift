@@ -1,5 +1,6 @@
 import SwiftUI
 import ManagedConfigKit
+import PlatformSecurity
 
 /// Appearance, the app lock and, with a session, names in the device list.
 struct SettingsGeneralPage: View {
@@ -9,6 +10,7 @@ struct SettingsGeneralPage: View {
     /// Requests consent to read users' display names. Nil in demo.
     var requestUserNamesConsent: (() async -> String?)? = nil
 
+    @Environment(\.confirmMethod) private var confirm
     @State private var isRequestingNamesConsent = false
     @State private var namesConsentError: String?
     private let managed = ManagedConfigStore.shared
@@ -46,12 +48,12 @@ struct SettingsGeneralPage: View {
     private var appLockSection: some View {
         Section {
             if managed.config.appLockRequired {
-                LabeledContent("Require Face ID to open TenantKeep", value: "Required")
+                LabeledContent("Require \(confirm.name) to open TenantKeep", value: "Required")
                 Text("Your organization requires the app lock.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                Toggle("Require Face ID to open TenantKeep", isOn: $settings.appLockEnabled)
+                Toggle("Require \(confirm.name) to open TenantKeep", isOn: $settings.appLockEnabled)
             }
         } header: {
             Text("App Lock")

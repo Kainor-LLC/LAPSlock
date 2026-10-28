@@ -18,6 +18,7 @@ import ManagedConfigKit
 import UserActionsKit
 import GroupWritesKit
 import ApprovalsKit
+import PlatformSecurity
 import UserNotifications
 import TenantPulseKit
 import SignInTriageKit
@@ -1138,6 +1139,7 @@ struct AppRootView: View {
             .onChange(of: root.demoCustomer) { _, _ in configureWatch() }
             .onChange(of: settings.privilegedActivationEnabled) { _, _ in configureWatch() }
             .modifier(SceneChanges(appLock: appLock, root: root, settings: settings))
+            .modifier(ConfirmMethodProvider())
     }
 
     /// The Apple Watch follows the phone's mode: demo, the signed-in tenant, or nothing.
@@ -1665,6 +1667,28 @@ private struct AppLockLayer: ViewModifier {
 
 /// What the root does on a scene change, reading the scene phase itself. In the root's
 /// body, every change rebuilt the whole app: twice for each Face ID prompt of a reveal
+/// How this device confirms it's you, for every screen's words and icons. Read at launch
+/// and again on each return from the background, since Face ID or a passcode can be set
+/// up in Settings meanwhile; not after a Face ID prompt, which only passes through
+/// inactive. Its own modifier, reading the scene phase itself, so the root does not redraw.
+private struct ConfirmMethodProvider: ViewModifier {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var method = ConfirmMethod(BiometricGate().availability())
+    @State private var wasInBackground = false
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.confirmMethod, method)
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background { wasInBackground = true }
+                guard phase == .active, wasInBackground else { return }
+                wasInBackground = false
+                let now = ConfirmMethod(BiometricGate().availability())
+                if now != method { method = now }
+            }
+    }
+}
+
 /// (active, inactive, active), and for every notification banner and Control Center.
 /// The same calls in the same order as before.
 private struct SceneChanges: ViewModifier {

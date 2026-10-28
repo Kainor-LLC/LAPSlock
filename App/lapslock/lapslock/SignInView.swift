@@ -1,5 +1,6 @@
 import SwiftUI
 import AuthKit
+import PlatformSecurity
 
 // Build Spec §4, §8, the first screen anyone sees.
 //
@@ -28,6 +29,7 @@ public struct SignInView: View {
     /// Opens Settings without a session. Diagnostics live there, and a failed sign-in is
     /// exactly when somebody needs them, so the gear cannot be behind the sign-in.
     let onOpenSettings: (() -> Void)?
+    @Environment(\.confirmMethod) private var confirm
 
     @State private var showingApprovalSheet = false
 
@@ -161,8 +163,8 @@ public struct SignInView: View {
                 detail: "Reads appear in your own tenant's audit log, exactly as they would from the admin center."
             )
             InfoRow(
-                icon: "faceid",
-                title: "Face ID before every reveal",
+                icon: confirm.symbol,
+                title: confirm.title + " before every reveal",
                 detail: "Passwords stay hidden until you confirm, auto-hide after a minute, and are cleared when the app leaves the foreground."
             )
         }

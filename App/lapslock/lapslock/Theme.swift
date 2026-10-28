@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PlatformSecurity
 
 // Visual identity, carried over from kainor.com so the product reads as one thing.
 //
@@ -256,6 +257,10 @@ extension EnvironmentValues {
     /// home. Set once on the module shell and read by the demo banner and by every write
     /// confirmation, so no confirmation can name a different organization from the banner.
     @Entry var awayTenant: String? = nil
+
+    /// How this device confirms it's you: Face ID, Touch ID or the passcode, for the app's
+    /// own words and icons. Set once on the root by `ConfirmMethodProvider`.
+    @Entry var confirmMethod: ConfirmMethod = .faceID
 }
 
 /// A write confirmation's message, with the organization named when the write lands

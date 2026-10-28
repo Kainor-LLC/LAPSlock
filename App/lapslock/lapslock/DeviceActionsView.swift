@@ -445,6 +445,7 @@ struct DestructiveActionSheet: View {
     @Bindable var model: DeviceActionsModel
     let kind: DeviceActionKind
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.confirmMethod) private var confirm
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -465,7 +466,7 @@ struct DestructiveActionSheet: View {
                 } header: {
                     Text("Type the Device Name to Continue")
                 } footer: {
-                    Text("Then Face ID, then ten seconds in which you can undo, or send right away.")
+                    Text("Then \(confirm.name), then ten seconds in which you can undo, or send right away.")
                 }
             }
             .navigationTitle(kind.title)
