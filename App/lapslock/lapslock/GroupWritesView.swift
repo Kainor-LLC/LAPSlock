@@ -44,6 +44,9 @@ final class PersonGroupsModel {
     private(set) var errorMessage: String?
     private(set) var pendingChallenge: (action: WriteAction, pending: Pending, challenge: ClaimsChallenge)?
     private(set) var lastEntry: ShiftLogEntry?
+    /// The role check made when the review sheet opened, for the change it shows. Nil
+    /// while it runs and when it says go ahead.
+    private(set) var reviewRoleCheck: (id: String, outcome: ActionOutcome)?
 
     let member: GroupMember
     let policy: GroupWritePolicy
@@ -52,6 +55,13 @@ final class PersonGroupsModel {
     @ObservationIgnored private var undoWindow: UndoWindow?
     @ObservationIgnored private var debounceTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
+    /// Facts are read for the rows on screen, `factsWidth` groups at a time, rather than
+    /// for every group at once: a person in 300 groups was 900 reads in one burst
+    /// (OPTIMIZATION-PLAN.md, step G).
+    static let factsWidth = 6
+    @ObservationIgnored private var factsWaiting: [DirectoryGroup] = []
+    @ObservationIgnored private var factsAsked: Set<String> = []
+    @ObservationIgnored private var factsRunning = 0
 
     init(member: GroupMember, provider: any GroupWritesProviding, policy: GroupWritePolicy) {
         self.member = member
@@ -78,24 +88,44 @@ final class PersonGroupsModel {
         defer { loading = false }
         let ctx = await provider.context(administrativeUnit: policy.administrativeUnit)
         context = ctx
+        pumpFacts()
         do {
             groups = try await provider.groups(of: member)
             loadError = nil
         } catch {
             loadError = "Couldn't list this person's groups."
         }
-        await loadFacts(groups)
         lastEntry = await provider.lastLogEntry(userId: member.userId)
     }
 
-    private func loadFacts(_ list: [DirectoryGroup]) async {
+    /// A row came on screen: its group's facts are read when there is room.
+    func wantFacts(_ group: DirectoryGroup) {
+        guard facts[group.id] == nil, !factsAsked.contains(group.id) else { return }
+        factsAsked.insert(group.id)
+        factsWaiting.append(group)
+        pumpFacts()
+    }
+
+    /// A row left the screen before its turn: its reads are not made.
+    func dropFacts(_ group: DirectoryGroup) {
+        guard let index = factsWaiting.firstIndex(where: { $0.id == group.id }) else { return }
+        factsWaiting.remove(at: index)
+        factsAsked.remove(group.id)
+    }
+
+    private func pumpFacts() {
         guard let context else { return }
-        let missing = list.filter { facts[$0.id] == nil }
-        await withTaskGroup(of: (String, GroupFacts).self) { group in
-            for item in missing {
-                group.addTask { [provider] in (item.id, await provider.facts(for: item, in: context)) }
+        while factsRunning < Self.factsWidth, !factsWaiting.isEmpty {
+            let group = factsWaiting.removeFirst()
+            factsRunning += 1
+            PerfProbe.mark("groupFacts", "running " + String(factsRunning) + ", waiting " + String(factsWaiting.count))
+            Task { [weak self, provider] in
+                let found = await provider.facts(for: group, in: context)
+                guard let self else { return }
+                self.facts[group.id] = found
+                self.factsRunning -= 1
+                self.pumpFacts()
             }
-            for await (id, found) in group { facts[id] = found }
         }
     }
 
@@ -116,7 +146,6 @@ final class PersonGroupsModel {
             let current = Set(groups.map(\.id))
             results = found.filter { !current.contains($0.id) }
             searchedText = trimmed
-            await loadFacts(results)
         }
     }
 
@@ -135,7 +164,24 @@ final class PersonGroupsModel {
         let decided = policy.decide(group, found, adding: kind == .add)
         guard decided.isAllowed else { return }
         clearMessages()
-        reviewing = Pending(kind: kind, group: group, decision: decided, facts: found)
+        let pending = Pending(kind: kind, group: group, decision: decided, facts: found)
+        reviewing = pending
+        // The role check runs as the sheet opens, so "activate first" comes before the
+        // typed name and Face ID. The check just before sending stays.
+        reviewRoleCheck = nil
+        let action = kind.action(group: group, member: member, decision: decided, strict: strict)
+        Task { [weak self, provider] in
+            guard let outcome = await provider.checkRoles(action) else { return }
+            guard let self, self.reviewing?.id == pending.id else { return }
+            self.reviewRoleCheck = (pending.id, outcome)
+        }
+    }
+
+    /// What the review sheet says instead of letting the change go on, when its role
+    /// check found the role eligible but not active.
+    func roleNote(_ pending: Pending) -> String? {
+        guard let check = reviewRoleCheck, check.id == pending.id, case .needsActivation = check.outcome else { return nil }
+        return "Your groups role isn't active. Activate it in Privileged Access first, then come back to this change."
     }
 
     func tier(_ pending: Pending) -> ActionTier { pending.decision.tier.effective(strict: strict) }
@@ -300,6 +346,8 @@ struct PersonGroupsView: View {
                                  kind: .remove, working: model.working == group.id, busy: model.working != nil || model.undoing != nil) {
                             model.tapped(.remove, group)
                         }
+                        .onAppear { model.wantFacts(group) }
+                        .onDisappear { model.dropFacts(group) }
                     }
                 }
             } header: {
@@ -323,6 +371,8 @@ struct PersonGroupsView: View {
                              kind: .add, working: model.working == group.id, busy: model.working != nil || model.undoing != nil) {
                         model.tapped(.add, group)
                     }
+                    .onAppear { model.wantFacts(group) }
+                    .onDisappear { model.dropFacts(group) }
                 }
             } header: {
                 Text("Add to a Group")
@@ -436,10 +486,16 @@ private struct GroupReviewSheet: View {
                         }
                     }
                 }
+                if let note = model.roleNote(pending) {
+                    Section {
+                        Label(note, systemImage: "person.badge.key").font(.callout)
+                    }
+                }
                 Section {
                     Button(pending.kind == .add ? "Add to group" : "Remove from group", role: pending.kind == .remove ? .destructive : nil) {
                         model.reviewed(pending)
                     }
+                    .disabled(model.roleNote(pending) != nil)
                 } footer: {
                     Text(model.tier(pending) == .destructive
                          ? "Next: the group's name typed back, Face ID, and a moment to undo."

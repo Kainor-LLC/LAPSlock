@@ -123,8 +123,15 @@ public enum ApprovalsError: Error, Sendable, Equatable {
 
 public protocol ApprovalsProviding: Sendable {
     func pending() async throws -> [PendingApproval]
+    /// The decision sheet opened: finds my stage now, so the tap sends at once. Nil when
+    /// there is something to decide or it could not tell; the error when there is not.
+    func prepare(_ approval: PendingApproval) async -> ApprovalsError?
     func decide(_ approval: PendingApproval, _ decision: ApprovalDecision, justification: String) async -> ActionOutcome
     func lastLogEntry(requestId: String) async -> ShiftLogEntry?
+}
+
+public extension ApprovalsProviding {
+    func prepare(_ approval: PendingApproval) async -> ApprovalsError? { nil }
 }
 
 // MARK: - wire models
@@ -185,12 +192,21 @@ public actor ApprovalsService: ApprovalsProviding {
     private let runner: ActionRunner?
     private let log: any ShiftLogging
     private let tenantId: @Sendable () async -> String
+    private let now: @Sendable () -> Date
+    /// Set when Graph refused the trimmed `$expand` once; the session then expands whole objects.
+    private var trimmedExpandRefused = false
+    /// The stage found when a decision sheet opened, by request id, and when.
+    private var prepared: [String: (path: String, readAt: Date)] = [:]
+    /// How long a stage found at sheet open is used before it is looked up again.
+    static let preparedFor: TimeInterval = 120
 
-    public init(graph: GraphClient, runner: ActionRunner, log: any ShiftLogging, tenantId: @escaping @Sendable () async -> String) {
+    public init(graph: GraphClient, runner: ActionRunner, log: any ShiftLogging, tenantId: @escaping @Sendable () async -> String,
+                now: @escaping @Sendable () -> Date = { Date() }) {
         self.graph = graph
         self.runner = runner
         self.log = log
         self.tenantId = tenantId
+        self.now = now
     }
 
     /// Read only, for the background notification check. `decide` refuses without sending.
@@ -199,6 +215,7 @@ public actor ApprovalsService: ApprovalsProviding {
         self.runner = nil
         self.log = InMemoryShiftLog()
         self.tenantId = { "" }
+        self.now = { Date() }
     }
 
     /// Both lists. One failing does not hide the other: a tenant may use PIM for roles and
@@ -216,17 +233,37 @@ public actor ApprovalsService: ApprovalsProviding {
         }
     }
 
-    private func list(_ kind: PendingApproval.Kind) async -> Result<[PendingApproval], ApprovalsError> {
-        let request = GraphRequest(
-            path: kind == .role ? Self.rolePendingPath : Self.groupPendingPath,
-            template: kind == .role ? "/roleManagement/directory/roleAssignmentScheduleRequests/filterByCurrentUser(approver)"
-                                    : "/identityGovernance/privilegedAccess/group/assignmentScheduleRequests/filterByCurrentUser(approver)",
-            query: [URLQueryItem(name: "$filter", value: "status eq 'PendingApproval'"),
-                    URLQueryItem(name: "$expand", value: kind == .role ? "principal,roleDefinition" : "principal,group")],
+    /// What the list expands. Trimmed, the role or group comes with its name only: a whole
+    /// role definition carries every permission it grants (OPTIMIZATION-PLAN.md, step G).
+    /// The principal stays whole, because it is a directory object and its name is not a
+    /// property Graph can select on that type.
+    static func expand(_ kind: PendingApproval.Kind, trimmed: Bool) -> String {
+        switch (kind, trimmed) {
+        case (.role, true):   return "principal,roleDefinition($select=id,displayName)"
+        case (.group, true):  return "principal,group($select=id,displayName)"
+        case (.role, false):  return "principal,roleDefinition"
+        case (.group, false): return "principal,group"
+        }
+    }
+
+    private static func listRequest(_ kind: PendingApproval.Kind, query: [URLQueryItem], suffix: String = "") -> GraphRequest {
+        GraphRequest(
+            path: kind == .role ? rolePendingPath : groupPendingPath,
+            template: (kind == .role ? "/roleManagement/directory/roleAssignmentScheduleRequests/filterByCurrentUser(approver)"
+                                     : "/identityGovernance/privilegedAccess/group/assignmentScheduleRequests/filterByCurrentUser(approver)") + suffix,
+            query: [URLQueryItem(name: "$filter", value: "status eq 'PendingApproval'")] + query,
             scopes: [kind == .role ? ApprovalScopes.roles : ApprovalScopes.groups])
+    }
+
+    private func list(_ kind: PendingApproval.Kind) async -> Result<[PendingApproval], ApprovalsError> {
+        let trimmed = !trimmedExpandRefused
+        let request = Self.listRequest(kind, query: [URLQueryItem(name: "$expand", value: Self.expand(kind, trimmed: trimmed))])
         do {
             let items = try await graph.collection(RequestRecord.self, from: request, maxPages: 3).items
             return .success(items.compactMap { $0.model(kind) })
+        } catch GraphError.badRequest where trimmed {
+            trimmedExpandRefused = true
+            return await list(kind)
         } catch let error as GraphError {
             switch error {
             case .consentRequired: return .failure(.consentRequired)
@@ -238,37 +275,114 @@ public actor ApprovalsService: ApprovalsProviding {
         }
     }
 
-    /// Finds the stage or step assigned to me that is still in progress, then sends the
-    /// decision through the gate.
-    public func decide(_ approval: PendingApproval, _ decision: ApprovalDecision, justification: String) async -> ActionOutcome {
+    /// The ids of the requests waiting for me, with nothing expanded: for the background
+    /// check, which needs only to tell a new one. The same rules as `pending()`: one list
+    /// failing does not hide the other, and a 400 falls back to that list's full read.
+    public func pendingIds() async throws -> Set<String> {
+        async let roles = ids(.role)
+        async let groups = ids(.group)
+        let (r, g) = await (roles, groups)
+        switch (r, g) {
+        case (.failure(let error), .failure):
+            throw error
+        default:
+            return ((try? r.get()) ?? []).union((try? g.get()) ?? [])
+        }
+    }
+
+    private struct IdRecord: Decodable, Sendable {
+        let id: String
+        let approvalId: String?
+        let status: String?
+    }
+
+    private func ids(_ kind: PendingApproval.Kind) async -> Result<Set<String>, ApprovalsError> {
+        let request = Self.listRequest(kind, query: [URLQueryItem(name: "$select", value: "id,approvalId,status")], suffix: "?ids")
+        do {
+            let items = try await graph.collection(IdRecord.self, from: request, maxPages: 3).items
+            // The same test `RequestRecord.model` applies, so the keys match the full read's.
+            return .success(Set(items.filter { !($0.approvalId ?? "").isEmpty && ($0.status ?? "PendingApproval") == "PendingApproval" }.map(\.id)))
+        } catch GraphError.badRequest {
+            return await list(kind).map { Set($0.map(\.id)) }
+        } catch let error as GraphError {
+            switch error {
+            case .consentRequired: return .failure(.consentRequired)
+            case .notAuthorized:   return .failure(.notAuthorized)
+            default:               return .failure(.unavailable)
+            }
+        } catch {
+            return .failure(.unavailable)
+        }
+    }
+
+    private struct Route {
         let base: String
         let version: GraphAPIVersion
         let collection: String
+        let scope: String
+    }
+
+    private static func route(_ approval: PendingApproval) -> Route {
         switch approval.kind {
         case .group:
-            base = "/identityGovernance/privilegedAccess/group/assignmentApprovals/" + approval.approvalId
-            version = .v1_0
-            collection = "stages"
+            return Route(base: "/identityGovernance/privilegedAccess/group/assignmentApprovals/" + approval.approvalId,
+                         version: .v1_0, collection: "stages", scope: ApprovalScopes.groups)
         case .role:
-            base = "/roleManagement/directory/roleAssignmentApprovals/" + approval.approvalId
-            version = .beta
-            collection = "steps"
+            return Route(base: "/roleManagement/directory/roleAssignmentApprovals/" + approval.approvalId,
+                         version: .beta, collection: "steps", scope: ApprovalScopes.roles)
         }
-        let scope = approval.kind == .role ? ApprovalScopes.roles : ApprovalScopes.groups
-        let lookup = GraphRequest(version: version, path: base + "/" + collection,
+    }
+
+    private enum StageLookup {
+        case mine(path: String)
+        case nothingToDecide
+        case unavailable
+    }
+
+    /// The stage or step assigned to me that is still in progress.
+    private func lookUpStage(_ approval: PendingApproval) async -> StageLookup {
+        let route = Self.route(approval)
+        let lookup = GraphRequest(version: route.version, path: route.base + "/" + route.collection,
                                   template: approval.kind == .role ? "/roleManagement/directory/roleAssignmentApprovals/{id}/steps"
                                                                    : "/identityGovernance/privilegedAccess/group/assignmentApprovals/{id}/stages",
-                                  scopes: [scope])
-        let stages: [StageRecord]
-        do {
-            stages = try await graph.collection(StageRecord.self, from: lookup, maxPages: 1).items
-        } catch {
-            return .failed(.notFound)
-        }
+                                  scopes: [route.scope])
+        guard let stages = try? await graph.collection(StageRecord.self, from: lookup, maxPages: 1).items else { return .unavailable }
         guard let mine = stages.first(where: { ($0.assignedToMe ?? false) && ($0.status ?? "") == "InProgress" }) else {
-            return .failed(.refused(reason: ApprovalsError.nothingToDecide.message))
+            return .nothingToDecide
         }
-        let action = Self.action(approval, decision, justification: justification, stagePath: base + "/" + collection + "/" + mine.id, version: version, scope: scope)
+        return .mine(path: route.base + "/" + route.collection + "/" + mine.id)
+    }
+
+    public func prepare(_ approval: PendingApproval) async -> ApprovalsError? {
+        switch await lookUpStage(approval) {
+        case .mine(let path):
+            prepared[approval.id] = (path, now())
+            return nil
+        case .nothingToDecide:
+            prepared[approval.id] = nil
+            return .nothingToDecide
+        case .unavailable:
+            return nil
+        }
+    }
+
+    /// Sends the decision through the gate, to the stage found when the sheet opened if
+    /// that was in the last `preparedFor` seconds, or to the one found now. A stage that
+    /// changed meanwhile fails the write as it always could; it is never sent twice.
+    public func decide(_ approval: PendingApproval, _ decision: ApprovalDecision, justification: String) async -> ActionOutcome {
+        let stagePath: String
+        if let ready = prepared[approval.id], now().timeIntervalSince(ready.readAt) < Self.preparedFor {
+            stagePath = ready.path
+        } else {
+            switch await lookUpStage(approval) {
+            case .mine(let path):   stagePath = path
+            case .nothingToDecide:  return .failed(.refused(reason: ApprovalsError.nothingToDecide.message))
+            case .unavailable:      return .failed(.notFound)
+            }
+        }
+        prepared[approval.id] = nil
+        let route = Self.route(approval)
+        let action = Self.action(approval, decision, justification: justification, stagePath: stagePath, version: route.version, scope: route.scope)
         guard let runner else { return .failed(.refused(reason: "This copy of the service only reads.")) }
         return await runner.run(action)
     }

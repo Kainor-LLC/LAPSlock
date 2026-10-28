@@ -127,4 +127,41 @@ final class DeviceActionsTests: XCTestCase {
         let none = await demo.lastLogEntry(managedDeviceId: "nothing")
         XCTAssertNil(none)
     }
+
+    func test_theConfirmationsRoleCheckSendsAndLogsNothing() async {
+        let graph = GraphClient(auth: SilentAuth(), session: CountingProtocol.session(), retryPolicy: .none, tracer: GraphResponseTracer(), sleep: { _ in })
+        let log = InMemoryShiftLog()
+        let runner = ActionRunner(graph: graph, gate: NoRoleGate(), log: log, tenantId: { "t" })
+        let service = DeviceActionsService(graph: graph, runner: runner, log: log, tenantId: { "t" })
+        let checked = await service.checkRoles(.restart, on: windows)
+        let unavailable = await service.checkRoles(.locate, on: windows)
+        XCTAssertNil(checked, "a gate that cannot read lets Graph decide, as the send does")
+        XCTAssertNil(unavailable)
+        XCTAssertEqual(CountingProtocol.count, 0)
+        let entries = await log.entries(tenantId: "t")
+        XCTAssertTrue(entries.isEmpty, "only the write itself is logged")
+    }
+}
+
+private final class SilentAuth: AuthManaging, @unchecked Sendable {
+    var currentAccount: AdminAccount? { get async { AdminAccount(id: "a.b", tenantId: "t", username: "admin@example.com", objectId: "a") } }
+    func token(scopes: [String], allowInteractive: Bool) async throws -> String { "token" }
+    func signIn() async throws -> AdminAccount { AdminAccount(id: "a.b", tenantId: "t", username: "admin@example.com", objectId: "a") }
+    func signOut(account: AdminAccount) async throws {}
+}
+
+private final class CountingProtocol: URLProtocol {
+    nonisolated(unsafe) static var count = 0
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.count += 1
+        client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+    }
+    override func stopLoading() {}
+    static func session() -> URLSession {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [CountingProtocol.self]
+        return URLSession(configuration: cfg)
+    }
 }

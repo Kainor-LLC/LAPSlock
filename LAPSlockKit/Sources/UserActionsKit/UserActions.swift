@@ -483,6 +483,10 @@ public actor UserActionsService: UserActionsProviding {
     /// Lists the methods, then removes each one that can be removed, one DELETE each
     /// through the gate. A 403 on the first removal is Microsoft asking for fresh MFA:
     /// handed back as a challenge for the person's tap, never retried here.
+    ///
+    /// The role is checked once, before anything is listed, for the whole change, not again
+    /// before every DELETE (OPTIMIZATION-PLAN.md, step G, DEV-8 b). Each DELETE is still
+    /// sent once and logged, and the first refusal stops the rest.
     public func authenticationWipe(_ target: UserActionTarget, satisfying challenge: ClaimsChallenge?) async -> AuthenticationWipeResult {
         var result = AuthenticationWipeResult()
         if let gate = await runner.checkRoles(UserActionKind.authenticationWipe.marker(for: target)) {
@@ -502,7 +506,7 @@ public actor UserActionsService: UserActionsProviding {
                 continue
             }
             let outcome: ActionOutcome
-            if let challenge { outcome = await runner.resume(action, satisfying: challenge) } else { outcome = await runner.run(action) }
+            if let challenge { outcome = await runner.resume(action, satisfying: challenge) } else { outcome = await runner.run(action, checkingRoles: false) }
             switch outcome {
             case .requested:
                 result.removed.append(method.label)

@@ -102,6 +102,22 @@ final class UserActionsModel {
             typedUPN = ""
             destructive = kind
         }
+        checkRolesAhead(kind)
+    }
+
+    /// The role check, started as the confirmation opens (OPTIMIZATION-PLAN.md, step G).
+    /// A role that is eligible but not active closes the confirmation and offers activation
+    /// before the typed address and Face ID. The checks made when the change is sent stay.
+    private func checkRolesAhead(_ kind: UserActionKind) {
+        Task { [weak self, provider, target] in
+            let outcome = await provider.checkRoles(kind, on: target)
+            guard let outcome, case .needsActivation = outcome,
+                  let self, self.confirming == kind || self.destructive == kind else { return }
+            self.confirming = nil
+            self.destructive = nil
+            self.clearMessages()
+            self.handle(outcome, kind: kind)
+        }
     }
 
     func confirmed(_ kind: UserActionKind) {

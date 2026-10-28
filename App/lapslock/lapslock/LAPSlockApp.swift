@@ -833,6 +833,8 @@ final class AppRootModel {
             // ALL of them, read and activate. Consenting to activation alone left the
             // read scopes unconsented, so the sheet failed the moment it opened.
             _ = try await auth.token(scopes: PrivilegedAccessGraph.allScopes, allowInteractive: true)
+            // The write gate stopped asking for a scope it could not get; it can now.
+            await liveSession?.actionRunner.roleCheckMayWork()
             return nil
         } catch let error as AuthError {
             if ConsentDiagnostics.state(from: error) != nil {

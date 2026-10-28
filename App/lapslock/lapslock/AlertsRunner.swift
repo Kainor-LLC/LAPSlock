@@ -345,7 +345,7 @@ struct AlertSources {
                 let policies = try await ConditionalAccessService(graph: graph).policyStamps()
                 return Set(policies.map { $0.id + "|" + String(Int($0.lastChanged?.timeIntervalSince1970 ?? 0)) })
             case .pimApproval:
-                return Set(try await ApprovalsService(readingWith: graph).pending().map(\.id))
+                return try await ApprovalsService(readingWith: graph).pendingIds()
             case .securityIncident:
                 let incidents = try await SecurityService(graph: graph).incidentStatuses(highOnly: true)
                 return Set(incidents.filter { $0.isOpen && $0.severity == .high }.map(\.id))

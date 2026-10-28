@@ -67,6 +67,27 @@ private struct StubGate: RoleGateChecking {
     func eligibleAccess() async -> [EligibleAccess] { eligible }
 }
 
+/// Counts the role checks, for the ones that should not happen.
+private final class CountingGate: RoleGateChecking, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    let error: Error?
+    let active: Set<String>
+    let eligible: [EligibleAccess]
+    init(active: Set<String> = [], eligible: [EligibleAccess] = [], error: Error? = nil) {
+        self.active = active
+        self.eligible = eligible
+        self.error = error
+    }
+    var calls: Int { lock.withLock { count } }
+    func activeRoleTemplateIds() async throws -> Set<String> {
+        lock.withLock { count += 1 }
+        if let error { throw error }
+        return active
+    }
+    func eligibleAccess() async -> [EligibleAccess] { eligible }
+}
+
 // MARK: - tests
 
 final class ActionRunnerTests: XCTestCase {
@@ -84,7 +105,7 @@ final class ActionRunnerTests: XCTestCase {
         log = InMemoryShiftLog()
     }
 
-    private func runner(gate: StubGate) -> ActionRunner {
+    private func runner(gate: any RoleGateChecking) -> ActionRunner {
         let graph = GraphClient(auth: auth, session: StubProtocol.session(), retryPolicy: .none, tracer: GraphResponseTracer(), sleep: { _ in })
         return ActionRunner(graph: graph, gate: gate, log: log, tenantId: { [tenant] in tenant }, now: { Date(timeIntervalSince1970: 1_800_000_000) })
     }
@@ -243,6 +264,42 @@ final class ActionRunnerTests: XCTestCase {
         let entries = await log.entries(tenantId: tenant)
         XCTAssertEqual(entries.first?.requestId, "r9")
         XCTAssertTrue(StubProtocol.requests.isEmpty, "checking and logging send nothing")
+    }
+
+    // MARK: the role check's cost (OPTIMIZATION-PLAN.md, step G)
+
+    func test_aRoleCheckWithoutConsentIsNotTriedAgainUntilTheOptIn() async {
+        StubProtocol.replies = ["rebootNow": (0..<3).map { _ in .init(status: 204, body: "") }]
+        let gate = CountingGate(error: GraphError.consentRequired)
+        let runner = runner(gate: gate)
+        let first = await runner.run(restart(required: [intuneAdmin]))
+        let second = await runner.run(restart(required: [intuneAdmin]))
+        XCTAssertEqual(first, .requested(requestId: nil))
+        XCTAssertEqual(second, .requested(requestId: nil), "the same outcome as before: Graph decides")
+        XCTAssertEqual(gate.calls, 1, "no silent token attempt for every write")
+        await runner.roleCheckMayWork()
+        _ = await runner.run(restart(required: [intuneAdmin]))
+        XCTAssertEqual(gate.calls, 2, "tried again once the opt-in is granted")
+    }
+
+    func test_aRoleCheckThatFailsForAnotherReasonIsTriedAgain() async {
+        StubProtocol.replies = ["rebootNow": (0..<2).map { _ in .init(status: 204, body: "") }]
+        let gate = CountingGate(error: ActionGateError.gateUnavailable)
+        let runner = runner(gate: gate)
+        _ = await runner.run(restart(required: [intuneAdmin]))
+        _ = await runner.run(restart(required: [intuneAdmin]))
+        XCTAssertEqual(gate.calls, 2)
+    }
+
+    func test_aWriteInASeriesAlreadyCheckedIsSentOnceAndLoggedWithoutAnotherCheck() async {
+        StubProtocol.replies = ["rebootNow": [.init(status: 204, body: "")]]
+        let gate = CountingGate(active: [], eligible: [eligibleIntune])
+        let outcome = await runner(gate: gate).run(restart(required: [intuneAdmin]), checkingRoles: false)
+        XCTAssertEqual(outcome, .requested(requestId: nil))
+        XCTAssertEqual(gate.calls, 0)
+        XCTAssertEqual(StubProtocol.requests.count, 1)
+        let entries = await log.entries(tenantId: tenant)
+        XCTAssertEqual(entries.count, 1)
     }
 
     func test_strictMovesEveryTierUpOne() {

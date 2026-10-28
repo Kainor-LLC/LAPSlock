@@ -331,6 +331,14 @@ public protocol GroupWritesProviding: Sendable {
     func run(_ action: WriteAction) async -> ActionOutcome
     func resume(_ action: WriteAction, satisfying challenge: ClaimsChallenge) async -> ActionOutcome
     func lastLogEntry(userId: String) async -> ShiftLogEntry?
+    /// The role check on its own, for the review sheet as it opens, so "activate first"
+    /// comes before the typed name and Face ID. The check just before sending stays.
+    /// Nil means go ahead, as for `ActionRunner.checkRoles`.
+    func checkRoles(_ action: WriteAction) async -> ActionOutcome?
+}
+
+public extension GroupWritesProviding {
+    func checkRoles(_ action: WriteAction) async -> ActionOutcome? { nil }
 }
 
 public actor GroupWritesService: GroupWritesProviding {
@@ -338,23 +346,29 @@ public actor GroupWritesService: GroupWritesProviding {
     private let runner: ActionRunner
     private let log: any ShiftLogging
     private let tenantId: @Sendable () async -> String
-    private var cachedContext: (String, GroupWriteContext)?
+    private let now: @Sendable () -> Date
+    private var cachedContext: (unit: String, context: GroupWriteContext, readAt: Date)?
+    /// How long the context is used before it is read again. A write clears it at once.
+    static let contextLasts: TimeInterval = 10 * 60
 
-    public init(graph: GraphClient, runner: ActionRunner, log: any ShiftLogging, tenantId: @escaping @Sendable () async -> String) {
+    public init(graph: GraphClient, runner: ActionRunner, log: any ShiftLogging, tenantId: @escaping @Sendable () async -> String,
+                now: @escaping @Sendable () -> Date = { Date() }) {
         self.graph = graph
         self.runner = runner
         self.log = log
         self.tenantId = tenantId
+        self.now = now
     }
 
     private var select: URLQueryItem { URLQueryItem(name: "$select", value: DirectoryGroup.selectFields.joined(separator: ",")) }
 
     /// GET /users/{id}/memberOf/microsoft.graph.group: direct memberships only, which are
-    /// the only ones a membership change can touch.
+    /// the only ones a membership change can touch. 999 a page, Graph's most, so a person
+    /// in a few hundred groups is one request rather than three.
     public func groups(of member: GroupMember) async throws -> [DirectoryGroup] {
         let request = GraphRequest(path: "/users/" + member.userId + "/memberOf/microsoft.graph.group",
                                    template: "/users/{id}/memberOf/microsoft.graph.group",
-                                   query: [select, URLQueryItem(name: "$top", value: "100")],
+                                   query: [select, URLQueryItem(name: "$top", value: "999")],
                                    scopes: GroupWriteScopes.reads)
         return try await graph.collection(DirectoryGroup.self, from: request, maxPages: 3).items
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -385,37 +399,22 @@ public actor GroupWritesService: GroupWritesProviding {
         let conditions: Conditions?
     }
 
+    /// The three reads run together, and their answer is used for `contextLasts`, or until
+    /// a write here changes what they say.
     public func context(administrativeUnit: String) async -> GroupWriteContext {
-        if let (name, cached) = cachedContext, name == administrativeUnit { return cached }
+        if let cached = cachedContext, cached.unit == administrativeUnit, now().timeIntervalSince(cached.readAt) < Self.contextLasts {
+            return cached.context
+        }
+        async let unit = unitGroupIds(administrativeUnit)
+        async let owned = ownedGroupIds()
+        async let policies = policyRecords()
         var context = GroupWriteContext()
-
-        let escaped = administrativeUnit.replacingOccurrences(of: "'", with: "''")
-        let unitRequest = GraphRequest(path: "/directory/administrativeUnits", template: "/directory/administrativeUnits?name",
-                                       query: [URLQueryItem(name: "$filter", value: "displayName eq '" + escaped + "'"),
-                                               URLQueryItem(name: "$select", value: "id")],
-                                       scopes: GroupWriteScopes.reads)
-        if let unit = try? await graph.collection(UnitRecord.self, from: unitRequest, maxPages: 1).items.first {
+        if let ids = await unit {
             context.administrativeUnitFound = true
-            let members = GraphRequest(path: "/directory/administrativeUnits/" + unit.id + "/members/microsoft.graph.group",
-                                       template: "/directory/administrativeUnits/{id}/members/microsoft.graph.group",
-                                       query: [URLQueryItem(name: "$select", value: "id"), URLQueryItem(name: "$top", value: "999")],
-                                       scopes: GroupWriteScopes.reads)
-            if let ids = try? await graph.collection(IdOnly.self, from: members, maxPages: 5).items {
-                context.administrativeUnitGroupIds = Set(ids.map(\.id))
-            }
+            context.administrativeUnitGroupIds = ids
         }
-
-        let owned = GraphRequest(path: "/me/ownedObjects/microsoft.graph.group", template: "/me/ownedObjects/microsoft.graph.group",
-                                 query: [URLQueryItem(name: "$select", value: "id"), URLQueryItem(name: "$top", value: "999")],
-                                 scopes: GroupWriteScopes.reads)
-        if let ids = try? await graph.collection(IdOnly.self, from: owned, maxPages: 5).items {
-            context.ownedGroupIds = Set(ids.map(\.id))
-        }
-
-        let policies = GraphRequest(path: "/identity/conditionalAccess/policies", template: "/identity/conditionalAccess/policies?groups",
-                                    query: [URLQueryItem(name: "$select", value: "displayName,state,conditions")],
-                                    scopes: [GroupWriteScopes.policies])
-        if let list = try? await graph.collection(PolicyRecord.self, from: policies, maxPages: 5).items {
+        context.ownedGroupIds = await owned
+        if let list = await policies {
             for policy in list where policy.state != "disabled" {
                 let name = policy.displayName ?? "an unnamed policy"
                 for id in policy.conditions?.users?.includeGroups ?? [] { context.conditionalAccessIncludes[id, default: []].append(name) }
@@ -424,8 +423,41 @@ public actor GroupWritesService: GroupWritesProviding {
         } else {
             context.conditionalAccessKnown = false
         }
-        cachedContext = (administrativeUnit, context)
+        cachedContext = (administrativeUnit, context, now())
         return context
+    }
+
+    /// The unit's groups, or nil when there is no unit by that name. A unit whose members
+    /// could not be read is found, with no groups, as before.
+    private func unitGroupIds(_ administrativeUnit: String) async -> Set<String>? {
+        let escaped = administrativeUnit.replacingOccurrences(of: "'", with: "''")
+        let unitRequest = GraphRequest(path: "/directory/administrativeUnits", template: "/directory/administrativeUnits?name",
+                                       query: [URLQueryItem(name: "$filter", value: "displayName eq '" + escaped + "'"),
+                                               URLQueryItem(name: "$select", value: "id")],
+                                       scopes: GroupWriteScopes.reads)
+        guard let unit = try? await graph.collection(UnitRecord.self, from: unitRequest, maxPages: 1).items.first else { return nil }
+        let members = GraphRequest(path: "/directory/administrativeUnits/" + unit.id + "/members/microsoft.graph.group",
+                                   template: "/directory/administrativeUnits/{id}/members/microsoft.graph.group",
+                                   query: [URLQueryItem(name: "$select", value: "id"), URLQueryItem(name: "$top", value: "999")],
+                                   scopes: GroupWriteScopes.reads)
+        let ids = (try? await graph.collection(IdOnly.self, from: members, maxPages: 5).items) ?? []
+        return Set(ids.map(\.id))
+    }
+
+    private func ownedGroupIds() async -> Set<String> {
+        let owned = GraphRequest(path: "/me/ownedObjects/microsoft.graph.group", template: "/me/ownedObjects/microsoft.graph.group",
+                                 query: [URLQueryItem(name: "$select", value: "id"), URLQueryItem(name: "$top", value: "999")],
+                                 scopes: GroupWriteScopes.reads)
+        let ids = (try? await graph.collection(IdOnly.self, from: owned, maxPages: 5).items) ?? []
+        return Set(ids.map(\.id))
+    }
+
+    /// Nil when the policies could not be read.
+    private func policyRecords() async -> [PolicyRecord]? {
+        let policies = GraphRequest(path: "/identity/conditionalAccess/policies", template: "/identity/conditionalAccess/policies?groups",
+                                    query: [URLQueryItem(name: "$select", value: "displayName,state,conditions")],
+                                    scopes: [GroupWriteScopes.policies])
+        return try? await graph.collection(PolicyRecord.self, from: policies, maxPages: 5).items
     }
 
     public func facts(for group: DirectoryGroup, in context: GroupWriteContext) async -> GroupFacts {
@@ -478,6 +510,10 @@ public actor GroupWritesService: GroupWritesProviding {
 
     public func resume(_ action: WriteAction, satisfying challenge: ClaimsChallenge) async -> ActionOutcome {
         await runner.resume(action, satisfying: challenge)
+    }
+
+    public func checkRoles(_ action: WriteAction) async -> ActionOutcome? {
+        await runner.checkRoles(action)
     }
 
     public func lastLogEntry(userId: String) async -> ShiftLogEntry? {

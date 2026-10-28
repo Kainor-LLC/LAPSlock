@@ -80,9 +80,28 @@ final class DeviceActionsModel {
             Task { await run(kind) }
         case .confirm:
             confirming = kind
+            checkRolesAhead(kind)
         case .destructive:
             typedName = ""
             destructive = kind
+            checkRolesAhead(kind)
+        }
+    }
+
+    /// The role check, started as the confirmation opens (OPTIMIZATION-PLAN.md, step G).
+    /// A role that is eligible but not active closes the confirmation and offers activation
+    /// before the typed name and Face ID, rather than after the ten seconds. The check
+    /// just before sending stays.
+    private func checkRolesAhead(_ kind: DeviceActionKind) {
+        Task { [weak self, provider, target] in
+            let outcome = await provider.checkRoles(kind, on: target)
+            guard case .needsActivation(let eligible)? = outcome,
+                  let self, self.confirming == kind || self.destructive == kind else { return }
+            self.confirming = nil
+            self.destructive = nil
+            self.note = nil
+            self.eligibleForActivation = eligible
+            self.errorMessage = "Your role for this isn't active. Activate it first, then try again."
         }
     }
 

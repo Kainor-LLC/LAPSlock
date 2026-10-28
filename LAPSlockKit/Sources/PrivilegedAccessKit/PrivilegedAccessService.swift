@@ -36,6 +36,8 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
     private let auth: any AuthManaging
     private let session: URLSession
     private let base: String
+    /// The surfaces whose trimmed `$expand` Graph refused, for the life of this service.
+    private let refusals = ExpandRefusals()
 
     public init(
         auth: any AuthManaging,
@@ -104,11 +106,13 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         }
 
         /// `$expand` so Graph returns display names, not just ids. Without it every entry
-        /// falls back to a generic label.
-        var expand: String {
+        /// falls back to a generic label. Trimmed to the name, which is all the parser
+        /// reads: a whole role definition carries every permission it grants, long for
+        /// Global Administrator (OPTIMIZATION-PLAN.md, step G).
+        func expand(trimmed: Bool) -> String {
             switch self {
-            case .roles:  return "roleDefinition"
-            case .groups: return "group"
+            case .roles:  return trimmed ? "roleDefinition($select=displayName)" : "roleDefinition"
+            case .groups: return trimmed ? "group($select=displayName)" : "group"
             }
         }
 
@@ -127,13 +131,24 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         }
     }
 
+    /// The trimmed read first; a 400 for it is remembered, and the whole objects asked for.
     private func attemptList(_ surface: Surface) async -> Result<[EligibleAccess], PrivilegedAccessError> {
+        let trimmed = !refusals.isRefused(surface.path)
+        let result = await attemptList(surface, trimmed: trimmed)
+        if trimmed, case .failure(.serviceError(status: 400, _)) = result {
+            refusals.refuse(surface.path)
+            return await attemptList(surface, trimmed: false)
+        }
+        return result
+    }
+
+    private func attemptList(_ surface: Surface, trimmed: Bool) async -> Result<[EligibleAccess], PrivilegedAccessError> {
         do {
             // Reading eligibility never needs interaction: it is a plain read, and a consent
             // prompt here would appear before the user has asked to activate anything.
             let token = try await auth.token(scopes: [surface.scope], allowInteractive: false)
             let request = Request.get(
-                url(surface.path, [URLQueryItem(name: "$expand", value: surface.expand)]),
+                url(surface.path, [URLQueryItem(name: "$expand", value: surface.expand(trimmed: trimmed))]),
                 token: token)
             let (data, response) = try await send(request)
             let json = try decode(data, response)
@@ -430,4 +445,14 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return json["error"] as? [String: Any]
     }
+}
+
+/// Which reads' trimmed forms Graph refused. A class, so every copy of the service, which
+/// is a struct, shares what was learned.
+private final class ExpandRefusals: @unchecked Sendable {
+    private let lock = NSLock()
+    private var refused: Set<String> = []
+
+    func isRefused(_ key: String) -> Bool { lock.withLock { refused.contains(key) } }
+    func refuse(_ key: String) { lock.withLock { _ = refused.insert(key) } }
 }

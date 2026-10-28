@@ -19,6 +19,11 @@ public actor ActionRunner {
     private let log: any ShiftLogging
     private let tenantId: @Sendable () async -> String
     private let now: @Sendable () -> Date
+    /// Set when the role check could not get a token for its scope, which is what a tenant
+    /// that never opted in to PIM looks like. Every write then goes to Graph without the
+    /// check, as it already did when the check failed, minus a silent token attempt each
+    /// time. Cleared by `roleCheckMayWork()` once the opt-in is granted.
+    private var roleCheckUnavailable = false
 
     public init(
         graph: GraphClient,
@@ -35,14 +40,24 @@ public actor ActionRunner {
     }
 
     /// Gate, send once, log.
-    public func run(_ action: WriteAction) async -> ActionOutcome {
+    ///
+    /// `checkingRoles: false` is for one change made of several writes, such as removing
+    /// every sign-in method a person has: the caller runs `checkRoles` once for the whole
+    /// change, then sends each write with this, and stops at the first refusal. Each write
+    /// is still sent once and logged.
+    public func run(_ action: WriteAction, checkingRoles: Bool = true) async -> ActionOutcome {
         guard action.request.method.isWrite else {
             return await record(action, .failed(.refused(reason: "A read is not a write action.")), requestId: nil)
         }
-        if let outcome = await preflight(action) {
+        if checkingRoles, let outcome = await preflight(action) {
             return await record(action, outcome, requestId: nil)
         }
         return await send(action, request: action.request)
+    }
+
+    /// The PIM opt-in was granted: the role check is tried again on the next write.
+    public func roleCheckMayWork() {
+        roleCheckUnavailable = false
     }
 
     /// After `.challenged`, and only on the person's tap: one more send with the claims,
@@ -78,9 +93,17 @@ public actor ActionRunner {
     // MARK: - gate
 
     private func preflight(_ action: WriteAction) async -> ActionOutcome? {
-        guard !action.requiredRoleTemplateIds.isEmpty else { return nil }
+        guard !action.requiredRoleTemplateIds.isEmpty, !roleCheckUnavailable else { return nil }
         let required = Set(action.requiredRoleTemplateIds.map { $0.lowercased() })
-        guard let active = try? await gate.activeRoleTemplateIds() else { return nil }
+        let active: Set<String>
+        do {
+            active = try await gate.activeRoleTemplateIds()
+        } catch GraphError.consentRequired {
+            roleCheckUnavailable = true
+            return nil
+        } catch {
+            return nil
+        }
         if !active.isDisjoint(with: required) { return nil }
         let eligible = await gate.eligibleAccess().filter { access in
             if case .directoryRole(let roleDefinitionId, _) = access.kind {

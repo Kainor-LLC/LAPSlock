@@ -375,6 +375,14 @@ public protocol DeviceActionsProviding: Sendable {
     func resume(_ kind: DeviceActionKind, on target: DeviceActionTarget, satisfying challenge: ClaimsChallenge) async -> ActionOutcome
     /// The last shift log line for this device, for the screen.
     func lastLogEntry(managedDeviceId: String) async -> ShiftLogEntry?
+    /// The role check on its own, for the confirmation as it opens, so "activate first"
+    /// comes before the typed name and Face ID (OPTIMIZATION-PLAN.md, step G, DEV-8 a).
+    /// The check just before sending stays. Nil means go ahead.
+    func checkRoles(_ kind: DeviceActionKind, on target: DeviceActionTarget) async -> ActionOutcome?
+}
+
+public extension DeviceActionsProviding {
+    func checkRoles(_ kind: DeviceActionKind, on target: DeviceActionTarget) async -> ActionOutcome? { nil }
 }
 
 /// Live: the record through the shared Graph client, the actions through the runner.
@@ -416,6 +424,11 @@ public actor DeviceActionsService: DeviceActionsProviding {
 
     public func resume(_ kind: DeviceActionKind, on target: DeviceActionTarget, satisfying challenge: ClaimsChallenge) async -> ActionOutcome {
         await runner.resume(kind.action(for: target), satisfying: challenge)
+    }
+
+    public func checkRoles(_ kind: DeviceActionKind, on target: DeviceActionTarget) async -> ActionOutcome? {
+        guard kind.unavailableReason(for: target) == nil else { return nil }
+        return await runner.checkRoles(kind.action(for: target))
     }
 
     public func lastLogEntry(managedDeviceId: String) async -> ShiftLogEntry? {

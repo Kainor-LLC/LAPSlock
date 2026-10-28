@@ -51,6 +51,8 @@ final class StubProtocol: URLProtocol {
     /// Keyed by a substring of the path. Each entry is consumed in order.
     nonisolated(unsafe) static var replies: [String: [Reply]] = [:]
     nonisolated(unsafe) static var requests: [(path: String, method: String, body: Data?)] = []
+    /// The query of each request, in the same order, percent-decoded.
+    nonisolated(unsafe) static var queries: [String] = []
     /// URLSession calls startLoading on its own threads, and the services under test send
     /// requests concurrently; unguarded, the shared state above corrupts the heap now and then.
     static let lock = NSLock()
@@ -61,6 +63,7 @@ final class StubProtocol: URLProtocol {
     override func startLoading() {
         Self.lock.lock()
         let path = request.url?.path ?? ""
+        Self.queries.append(request.url?.query?.removingPercentEncoding ?? "")
         Self.requests.append((path, request.httpMethod ?? "", request.httpBodyStream.flatMap { stream in
             stream.open()
             var data = Data(); var buf = [UInt8](repeating: 0, count: 4096)
@@ -92,7 +95,7 @@ final class StubProtocol: URLProtocol {
 
     override func stopLoading() {}
 
-    static func reset() { replies = [:]; requests = [] }
+    static func reset() { replies = [:]; requests = []; queries = [] }
 
     static func session() -> URLSession {
         let cfg = URLSessionConfiguration.ephemeral
@@ -139,6 +142,31 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         ]
         let access = try await service.eligibleAccess()
         XCTAssertEqual(access.map(\.label), ["Cloud Device Administrator", "LAPS Readers"])
+    }
+
+    func test_eligibilityAsksForTheNamesOnly() async throws {
+        StubProtocol.replies = [
+            "roleEligibilitySchedules": [.init(status: 200, body: roleBody)],
+            "privilegedAccess/group/eligibilitySchedules": [.init(status: 200, body: groupBody)],
+        ]
+        _ = try await service.eligibleAccess()
+        XCTAssertTrue(StubProtocol.queries.contains("$expand=roleDefinition($select=displayName)"), "\(StubProtocol.queries)")
+        XCTAssertTrue(StubProtocol.queries.contains("$expand=group($select=displayName)"), "\(StubProtocol.queries)")
+    }
+
+    func test_aRefusedTrimmedExpandAsksForTheWholeObjectsForTheLifeOfTheService() async throws {
+        let refused = StubProtocol.Reply(status: 400, body: #"{"error":{"code":"BadRequest","message":"Invalid $select"}}"#)
+        StubProtocol.replies = [
+            "roleEligibilitySchedules": [refused, .init(status: 200, body: roleBody), .init(status: 200, body: roleBody)],
+            "privilegedAccess/group/eligibilitySchedules": [.init(status: 200, body: groupBody), .init(status: 200, body: groupBody)],
+        ]
+        let first = try await service.eligibleAccess()
+        XCTAssertEqual(first.map(\.label), ["Cloud Device Administrator", "LAPS Readers"])
+        _ = try await service.eligibleAccess()
+        let roleQueries = zip(StubProtocol.requests, StubProtocol.queries).filter { $0.0.path.contains("roleEligibilitySchedules") }.map(\.1)
+        XCTAssertEqual(roleQueries, ["$expand=roleDefinition($select=displayName)", "$expand=roleDefinition", "$expand=roleDefinition"])
+        let groupQueries = zip(StubProtocol.requests, StubProtocol.queries).filter { $0.0.path.contains("group/eligibilitySchedules") }.map(\.1)
+        XCTAssertEqual(groupQueries, ["$expand=group($select=displayName)", "$expand=group($select=displayName)"], "the other surface keeps its trimmed read")
     }
 
     func test_oneSurfaceFailingDoesNotHideTheOther() async throws {

@@ -48,6 +48,13 @@ final class ApprovalsModel {
 
     var strict: Bool { ManagedConfigStore.shared.config.confirmationLevel == .strict }
 
+    /// The decision sheet opened: my stage is found now, so the tap sends at once, and a
+    /// request that no longer needs me says so before a reason is typed.
+    func prepare(_ approval: PendingApproval) async {
+        guard pending.contains(where: { $0.id == approval.id }) else { return }
+        if let error = await provider.prepare(approval) { failures[approval.id] = error.message }
+    }
+
     /// Sends the decision. Face ID first under strict confirmation. Returns true when sent.
     @discardableResult
     func decide(_ approval: PendingApproval, _ decision: ApprovalDecision, justification: String) async -> Bool {
@@ -195,6 +202,7 @@ struct ApprovalDetailView: View {
         }
         .navigationTitle(approval.requester)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: approval.id) { await model.prepare(approval) }
         .confirmationDialog(confirming.map { $0.title + " " + approval.requester + "?" } ?? "",
                             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
                             titleVisibility: .visible) {
