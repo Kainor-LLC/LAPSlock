@@ -1,5 +1,5 @@
 import XCTest
-import CredentialKit
+import AuthKit
 @testable import InventoryKit
 
 // Build Spec §13, inventory parsing and search tests. No network, no Microsoft deps.
@@ -106,18 +106,25 @@ final class ManagedDeviceSummaryTests: XCTestCase {
         XCTAssertNil(d?.revealBlockedReason)
     }
 
-    // MARK: - credential hand-off carries both identifiers (§2.5)
+    /// Pinned on both sides: CredentialKit's `LapsCredentialScopes.intuneDevices` is the
+    /// same string, and this module no longer imports it.
+    func test_theInventoryReadsWithTheIntuneDeviceReadScope() {
+        XCTAssertEqual(DeviceInventoryService.requiredScopes, ["DeviceManagementManagedDevices.Read.All"])
+    }
 
-    func test_credentialTarget_carriesBothIdentifiers() {
+    // MARK: - what the credential hand-off needs: both identifiers (§2.5)
+
+    // The hand-off itself is the phone app's (CredentialHandoff.swift), since this module
+    // no longer links CredentialKit; it copies these four fields.
+    func test_theSummaryCarriesBothIdentifiersForTheCredentialHandOff() {
         let d = ManagedDeviceSummary(graphEntry: [
             "id": "intune-1", "operatingSystem": "Windows",
             "azureADDeviceId": "entra-1", "deviceName": "WS-1"
         ])!
-        let target = d.credentialTarget
-        XCTAssertEqual(target.managedDeviceId, "intune-1")
-        XCTAssertEqual(target.entraDeviceId, "entra-1")
-        XCTAssertEqual(target.platform, .windows)
-        XCTAssertEqual(target.deviceName, "WS-1")
+        XCTAssertEqual(d.id, "intune-1")
+        XCTAssertEqual(d.entraDeviceId, "entra-1")
+        XCTAssertEqual(d.platform, .windows)
+        XCTAssertEqual(d.deviceName, "WS-1")
     }
 }
 

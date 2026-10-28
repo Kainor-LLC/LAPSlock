@@ -1,5 +1,5 @@
 import XCTest
-import CredentialKit
+import AuthKit
 @testable import InventoryKit
 
 final class UserNameResolverTests: XCTestCase {

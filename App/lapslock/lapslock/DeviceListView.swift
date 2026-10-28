@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthKit
 import CredentialKit
 import InventoryKit
 import DiagnosticsKit

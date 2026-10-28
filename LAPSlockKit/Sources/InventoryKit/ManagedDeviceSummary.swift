@@ -1,5 +1,5 @@
 import Foundation
-import CredentialKit
+import AuthKit
 
 // Build Spec §2.2, §2.5, §5, device inventory models.
 //
@@ -123,16 +123,6 @@ public struct ManagedDeviceSummary: Sendable, Identifiable, Equatable, Hashable 
     /// all, which is normal for shared and kiosk devices.
     public var primaryUserLabel: String? {
         userDisplayName ?? userPrincipalName ?? emailAddress
-    }
-
-    /// Hand-off object for CredentialKit. Carries both identifiers (§2.5).
-    public var credentialTarget: DeviceCredentialTarget {
-        DeviceCredentialTarget(
-            platform: platform,
-            entraDeviceId: entraDeviceId,
-            managedDeviceId: id,
-            deviceName: deviceName
-        )
     }
 
     /// Explanation shown when a device can't support reveal for a structural reason

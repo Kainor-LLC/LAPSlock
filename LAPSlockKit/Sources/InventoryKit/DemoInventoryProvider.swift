@@ -1,5 +1,5 @@
 import Foundation
-import CredentialKit
+import AuthKit
 
 // Demo inventory. Powers SwiftUI previews, UI development without a tenant, and
 // App Store review (Guideline 2.1, reviewers can't sign into a customer tenant).

@@ -22,6 +22,12 @@ final class ProviderCapabilityTests: XCTestCase {
 
     // MARK: - Windows: fully supported
 
+    /// Pinned on both sides: InventoryKit writes the same string out rather than import it,
+    /// so that the inventory, and the Mac menu bar app with it, never links this module.
+    func test_theIntuneDeviceReadScopeIsTheInventorysScope() {
+        XCTAssertEqual(LapsCredentialScopes.intuneDevices, "DeviceManagementManagedDevices.Read.All")
+    }
+
     func test_windows_declaresRevealSupported() {
         let p = WindowsLapsProvider(auth: FakeAuth())
         XCTAssertTrue(p.capabilities.supportsReveal)

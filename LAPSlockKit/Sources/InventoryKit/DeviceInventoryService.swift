@@ -1,6 +1,5 @@
 import Foundation
 import AuthKit
-import CredentialKit
 
 // Build Spec §2.2, §5, §7, §8, device inventory fetching.
 //
@@ -107,7 +106,10 @@ enum InventoryHTTP {
 }
 
 public actor DeviceInventoryService {
-    public static let requiredScopes = [LapsCredentialScopes.intuneDevices]
+    /// The same string as CredentialKit's `LapsCredentialScopes.intuneDevices`, written out
+    /// rather than imported, as AuthKitMSAL does: this module must not link CredentialKit.
+    /// A test on each side pins the string, so the two cannot drift apart.
+    public static let requiredScopes = ["DeviceManagementManagedDevices.Read.All"]
 
     private let auth: AuthManaging
     private let session: URLSession

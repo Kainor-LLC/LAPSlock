@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthKit
 import ActionGateKit
 import DeviceActionsKit
 import PrivilegedAccessKit

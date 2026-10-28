@@ -1,5 +1,5 @@
 import XCTest
-import CredentialKit
+import AuthKit
 @testable import InventoryKit
 
 /// An inventory whose pages are scripted, including which page throttles or fails.

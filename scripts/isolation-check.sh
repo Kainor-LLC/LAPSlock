@@ -23,6 +23,18 @@
 #                  cannot see passwords stops being structural and becomes a matter of
 #                  care. The reverse direction was already covered above; this closes it.
 #
+#   InventoryKit   must import Foundation + AuthKit only, and must not depend on
+#                  CredentialKit in Package.swift. The Mac menu bar app links the
+#                  inventory, so this is what keeps the code that reads a password out of
+#                  the Mac binary (decision 6, OPTIMIZATION-PLAN.md step J).
+#
+# AND WHAT EACH APP TARGET LINKS, read from the Xcode project:
+#
+#   TenantKeepMac               no CredentialKit
+#   OnCallWatch Watch App       WatchBridgeKit only
+#   OnCallComplicationsExtension WatchBridgeKit only
+#   RelayNotificationService    RelayKit only
+#
 # Runs on macOS and Linux with no dependencies. Wire into a CI step and a
 # local pre-commit hook.
 
@@ -30,6 +42,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT_DIR="${SCRIPT_DIR}/../LAPSlockKit/Sources"
+PACKAGE="${SCRIPT_DIR}/../LAPSlockKit/Package.swift"
+PBXPROJ="${SCRIPT_DIR}/../App/lapslock/lapslock.xcodeproj/project.pbxproj"
 
 violations=0
 
@@ -51,8 +65,10 @@ check_module () {
 
   echo "🔍 isolation-check: scanning ${module} imports…"
 
+  # Every form an import takes: plain, with attributes (@preconcurrency, @_exported,
+  # @_implementationOnly, @testable) and with an access level (public, package, internal).
   local import_lines
-  import_lines="$(grep -rEn '^\s*(import|@_implementationOnly import)\s' "$dir" || true)"
+  import_lines="$(grep -rEn '^\s*(@[A-Za-z_]+\s+)*((public|package|internal|fileprivate|private)\s+)?import\s' "$dir" || true)"
 
   local token hits
   for token in "${forbidden[@]}"; do
@@ -64,10 +80,11 @@ check_module () {
     fi
   done
 
-  # Belt-and-suspenders: anything outside the allowlist gets flagged for review.
+  # Belt-and-suspenders: anything outside the allowlist gets flagged for review. The
+  # whole module name must match, so `import XFoundation` is not taken for Foundation.
   local unexpected
   unexpected="$(printf '%s\n' "$import_lines" \
-    | grep -vE "(${allowed})\$" \
+    | grep -vE "import[[:space:]]+(${allowed})[[:space:]]*\$" \
     | grep -vE 'XCTest|@testable' \
     || true)"
   if [[ -n "$unexpected" ]]; then
@@ -276,6 +293,105 @@ check_module "SubscriptionKit" "Foundation|StoreKit|LicensingKit|Observation" \
   "PrivilegedAccessKit" \
   "${COMMON_FORBIDDEN[@]}"
 
+# The inventory: what the device list and the Mac menu bar app are built from. Capped so
+# that neither can contain the code that reads a credential.
+check_module "InventoryKit" "Foundation|AuthKit" \
+  "CredentialKit" \
+  "LicensingKit" \
+  "PrivilegedAccessKit" \
+  "${COMMON_FORBIDDEN[@]}"
+
+# check_package_deps <target> <forbidden dependencies...>
+#
+# An import is not the only way into a link graph: a dependency in Package.swift links the
+# module whether or not a file imports it.
+check_package_deps () {
+  local target="$1"; shift
+  local declaration
+  declaration="$(awk -v t="$target" '
+    index($0, ".target(name: \"" t "\"") { on = 1 }
+    on { print }
+    on && /\)[[:space:]]*,?[[:space:]]*$/ { exit }
+  ' "$PACKAGE")"
+  if [[ -z "$declaration" ]]; then
+    echo "❌ isolation-check: target ${target} not found in Package.swift"
+    exit 2
+  fi
+  echo "🔍 isolation-check: checking ${target}'s Package.swift dependencies…"
+  local dep
+  for dep in "$@"; do
+    if printf '%s\n' "$declaration" | grep -qF "\"${dep}\""; then
+      echo "❌ ${target} depends on ${dep} in Package.swift"
+      violations=$((violations + 1))
+    fi
+  done
+}
+
+check_package_deps "InventoryKit" "CredentialKit" "LicensingKit" "PrivilegedAccessKit"
+
+# target_products <app target>: the package products an app target links, one a line, from
+# its packageProductDependencies in the Xcode project.
+target_products () {
+  awk -v t="$1" '
+    index($0, "/* " t " */ = {") { block = 1; native = 0; next }
+    block && /isa = PBXNativeTarget;/ { native = 1 }
+    block && native && /packageProductDependencies = \(/ { list = 1; next }
+    list && /\);/ { exit }
+    list {
+      s = $0
+      sub(/^[^*]*\/\* /, "", s)
+      sub(/ \*\/.*$/, "", s)
+      print s
+    }
+    block && /^\t\t\};/ { block = 0 }
+  ' "$PBXPROJ"
+}
+
+# check_target_links <app target> <mode> <products...>
+#   mode "only": the target may link these products and nothing else.
+#   mode "never": the target must link none of these.
+check_target_links () {
+  local target="$1"; shift
+  local mode="$1"; shift
+  local linked
+  linked="$(target_products "$target")"
+  if ! grep -q "/\* ${target} \*/ = {" "$PBXPROJ"; then
+    echo "❌ isolation-check: app target ${target} not found in the Xcode project"
+    exit 2
+  fi
+  # Every one of these targets links at least one kit. Reading none means the project's
+  # format moved under this parser, and passing would be a check that checks nothing.
+  if [[ -z "$linked" ]]; then
+    echo "❌ isolation-check: read no package products for ${target}; the project format may have changed"
+    exit 2
+  fi
+  echo "🔍 isolation-check: checking what ${target} links…"
+  local product
+  if [[ "$mode" == "only" ]]; then
+    while IFS= read -r product; do
+      [[ -z "$product" ]] && continue
+      local allowed=0 want
+      for want in "$@"; do [[ "$product" == "$want" ]] && allowed=1; done
+      if [[ "$allowed" -eq 0 ]]; then
+        echo "❌ ${target} links ${product}; it may link only: $*"
+        violations=$((violations + 1))
+      fi
+    done <<< "$linked"
+  else
+    for product in "$@"; do
+      if printf '%s\n' "$linked" | grep -qx "$product"; then
+        echo "❌ ${target} links ${product}, which it must never link"
+        violations=$((violations + 1))
+      fi
+    done
+  fi
+}
+
+check_target_links "TenantKeepMac" never "CredentialKit"
+check_target_links "OnCallWatch Watch App" only "WatchBridgeKit"
+check_target_links "OnCallComplicationsExtension" only "WatchBridgeKit"
+check_target_links "RelayNotificationService" only "RelayKit"
+
 if [[ "$violations" -gt 0 ]]; then
   echo ""
   echo "❌ isolation-check FAILED: $violations issue(s)."
@@ -285,4 +401,6 @@ fi
 
 echo "✅ isolation-check passed: CredentialKit imports only Foundation + AuthKit,"
 echo "   LicensingKit cannot reach CredentialKit, and PrivilegedAccessKit, which requests"
-echo "   privilege escalation, cannot reach a credential."
+echo "   privilege escalation, cannot reach a credential. The inventory and the Mac menu"
+echo "   bar app cannot reach one either, and the watch and the notification extension"
+echo "   link only their own kits."

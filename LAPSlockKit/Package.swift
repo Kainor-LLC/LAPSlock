@@ -72,10 +72,11 @@ let package = Package(
             ]
         ),
 
-        // Depends on CredentialKit for DevicePlatform / DeviceCredentialTarget so the
-        // inventory layer can hand a ready-made target to the credential layer. This does
-        // NOT violate §3.1: the rule is that CredentialKit must not depend on others.
-        .target(name: "InventoryKit", dependencies: ["AuthKit", "CredentialKit"]),
+        // AuthKit only, never CredentialKit: the Mac menu bar app links the inventory and
+        // must not contain the code that reads a password. DevicePlatform lives in AuthKit,
+        // and the hand-off to the credential layer is the phone app's (decision 6,
+        // OPTIMIZATION-PLAN.md step J). isolation-check.sh enforces both.
+        .target(name: "InventoryKit", dependencies: ["AuthKit"]),
 
         // ⚠ ISOLATION BOUNDARY (§3.1). Do NOT add dependencies to this target.
         .target(name: "CredentialKit", dependencies: ["AuthKit"]),
@@ -175,7 +176,7 @@ let package = Package(
 
         // Runs with no MSAL and no network. Works on My Mac or a simulator.
         .testTarget(name: "CredentialKitTests", dependencies: ["CredentialKit", "AuthKit"]),
-        .testTarget(name: "InventoryKitTests", dependencies: ["InventoryKit", "CredentialKit", "AuthKit"]),
+        .testTarget(name: "InventoryKitTests", dependencies: ["InventoryKit", "AuthKit"]),
         .testTarget(name: "PlatformSecurityTests", dependencies: ["PlatformSecurity"]),
         .testTarget(name: "AuthKitTests", dependencies: ["AuthKit"]),
         .testTarget(name: "DiagnosticsKitTests", dependencies: ["DiagnosticsKit"]),

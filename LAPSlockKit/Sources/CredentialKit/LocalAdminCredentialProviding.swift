@@ -51,21 +51,6 @@ public enum LapsCredentialScopes {
     public static let signInBaseline = [intuneDevices, entraDevices, metadataBasic, bitLockerKeysBasic]
 }
 
-public enum DevicePlatform: String, Sendable, CaseIterable {
-    case windows
-    case macOS
-    case other
-
-    /// Maps the Intune `operatingSystem` string onto a platform.
-    public init(intuneOperatingSystem raw: String?) {
-        switch (raw ?? "").lowercased() {
-        case let s where s.contains("windows"): self = .windows
-        case let s where s.contains("macos"), let s where s.contains("mac os"): self = .macOS
-        default: self = .other
-        }
-    }
-}
-
 /// What a provider can actually do today. The UI reads this; it never hardcodes per-OS rules.
 public struct CredentialCapabilities: Sendable, Equatable {
     /// Can show rotation/backup metadata without revealing a password.

@@ -1,5 +1,5 @@
 import Foundation
-import CredentialKit
+import AuthKit
 
 // Build Spec §5 + App Store Review Guideline 2.1.
 //
