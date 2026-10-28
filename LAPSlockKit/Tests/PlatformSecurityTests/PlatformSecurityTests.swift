@@ -215,20 +215,63 @@ final class RevealSessionTests: XCTestCase {
 final class BiometricPolicyTests: XCTestCase {
 
     func test_promptReasonNamesTheDevice() {
-        let reason = BiometricPolicy.promptReason(deviceName: "WS-4821")
-        XCTAssertTrue(reason.contains("WS-4821"),
-                      "Naming the device tells the admin exactly what they're approving.")
+        let reason = BiometricPolicy.promptReason(for: .revealPassword(device: "WS-4821"))
+        XCTAssertEqual(reason, "Confirm it's you to reveal the local administrator password for WS-4821.",
+                       "Naming the device tells the admin exactly what they're approving.")
     }
 
     func test_promptReasonWithoutDeviceStillReads() {
-        let reason = BiometricPolicy.promptReason(deviceName: nil)
-        XCTAssertFalse(reason.isEmpty)
-        XCTAssertTrue(reason.lowercased().contains("administrator password"))
+        let reason = BiometricPolicy.promptReason(for: .revealPassword(device: nil))
+        XCTAssertEqual(reason, "Confirm it's you to reveal the local administrator password.")
     }
 
     func test_promptReasonHandlesEmptyName() {
-        let reason = BiometricPolicy.promptReason(deviceName: "")
-        XCTAssertFalse(reason.contains("for ."), "An empty name must not produce broken copy.")
+        let reasons = [
+            BiometricPolicy.promptReason(for: .revealPassword(device: "")),
+            BiometricPolicy.promptReason(for: .revealRecoveryKey(device: " ")),
+            BiometricPolicy.promptReason(for: .deviceAction(title: "Retire", device: "")),
+            BiometricPolicy.promptReason(for: .userAction(title: "Revoke sessions", person: "")),
+            BiometricPolicy.promptReason(for: .issueTemporaryAccessPass(person: nil)),
+            BiometricPolicy.promptReason(for: .groupChange(adding: false, member: "", group: nil)),
+            BiometricPolicy.promptReason(for: .approval(approve: true, requester: "")),
+        ]
+        for reason in reasons {
+            XCTAssertFalse(reason.contains(" ."), "An empty name must not produce broken copy: \(reason)")
+            XCTAssertFalse(reason.contains("  "), reason)
+            XCTAssertTrue(reason.hasPrefix("Confirm it's you to ") && reason.hasSuffix("."), reason)
+        }
+        XCTAssertEqual(reasons[5], "Confirm it's you to remove this person.")
+    }
+
+    func test_eachPurposeSaysWhatIsBeingConfirmed() {
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .revealRecoveryKey(device: "DESKTOP-FRONT01")),
+                       "Confirm it's you to reveal a BitLocker recovery key for DESKTOP-FRONT01.")
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .openApp), "Confirm it's you to open TenantKeep.")
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .deviceAction(title: "Retire", device: "DESKTOP-FRONT01")),
+                       "Confirm it's you to send Retire to DESKTOP-FRONT01.")
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .userAction(title: "Remove all sign-in methods", person: "Jane Okafor")),
+                       "Confirm it's you to send Remove all sign-in methods for Jane Okafor.")
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .issueTemporaryAccessPass(person: "Jane Okafor")),
+                       "Confirm it's you to issue a Temporary Access Pass for Jane Okafor.")
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .groupChange(adding: false, member: "Jane Okafor", group: "Sales Team")),
+                       "Confirm it's you to remove Jane Okafor from Sales Team.")
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .groupChange(adding: true, member: "Jane Okafor", group: "Sales Team")),
+                       "Confirm it's you to add Jane Okafor to Sales Team.")
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .approval(approve: true, requester: "Sam Reyes")),
+                       "Confirm it's you to approve the request from Sam Reyes.")
+        XCTAssertEqual(BiometricPolicy.promptReason(for: .approval(approve: false, requester: "Sam Reyes")),
+                       "Confirm it's you to deny the request from Sam Reyes.")
+    }
+
+    func test_onlyARevealedPasswordIsCalledAPassword() {
+        let others: [BiometricPurpose] = [
+            .revealRecoveryKey(device: "D"), .openApp, .deviceAction(title: "Wipe", device: "D"),
+            .userAction(title: "Block sign-in", person: "P"), .issueTemporaryAccessPass(person: "P"),
+            .groupChange(adding: true, member: "P", group: "G"), .approval(approve: false, requester: "P"),
+        ]
+        for purpose in others {
+            XCTAssertFalse(BiometricPolicy.promptReason(for: purpose).lowercased().contains("password"), "\(purpose)")
+        }
     }
 
     func test_noAuthConfiguredMessageTellsUserWhatToDo() {

@@ -205,7 +205,7 @@ final class PersonGroupsModel {
     func typedConfirmed(_ pending: Pending) async {
         typing = nil
         guard typedNameMatches(pending) else { return }
-        switch await BiometricGate().authenticate(deviceName: nil) {
+        switch await BiometricGate().authenticate(for: .groupChange(adding: pending.kind == .add, member: member.label, group: pending.group.name)) {
         case .authenticated: break
         case .unavailable(let reason): errorMessage = reason; return
         default: errorMessage = "Not confirmed. Nothing was sent."; return

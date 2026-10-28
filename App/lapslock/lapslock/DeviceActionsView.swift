@@ -118,7 +118,7 @@ final class DeviceActionsModel {
         guard typedNameMatches else { return }
         errorMessage = nil
         note = nil
-        switch await BiometricGate().authenticate(deviceName: target.deviceName) {
+        switch await BiometricGate().authenticate(for: .deviceAction(title: kind.title, device: target.deviceName)) {
         case .authenticated:
             break
         case .unavailable(let reason):

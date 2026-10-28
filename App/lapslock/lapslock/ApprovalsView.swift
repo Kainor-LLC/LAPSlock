@@ -61,7 +61,7 @@ final class ApprovalsModel {
         guard deciding == nil else { return false }
         failures[approval.id] = nil
         if strict {
-            switch await BiometricGate().authenticate(deviceName: nil) {
+            switch await BiometricGate().authenticate(for: .approval(approve: decision == .approve, requester: approval.requester)) {
             case .authenticated: break
             case .unavailable(let reason): failures[approval.id] = reason; return false
             default: failures[approval.id] = "Not confirmed. Nothing was sent."; return false

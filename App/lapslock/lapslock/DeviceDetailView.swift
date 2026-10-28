@@ -44,7 +44,10 @@ final class DeviceDetailModel {
     /// and it would break silently, the button would just stop appearing.
     var lastFailureWasMissingRole = false
     var statusNote: String?
-    var isWorking = false
+    /// The reveal waiting on the gate and the fetch, so only its own control says so.
+    var confirming: RevealedItem = .none
+    /// Every reveal stays disabled while one is in flight.
+    var isWorking: Bool { confirming != .none }
     var isCaptured = false
     /// Account name for the CURRENT reveal only. Cleared on hide, expiry, and
     /// revocation, alongside the password.
@@ -362,11 +365,11 @@ final class DeviceDetailModel {
         }
 
         clearForNewReveal()
-        isWorking = true
+        confirming = .lapsPassword
         let started = Date()
-        defer { isWorking = false }
+        defer { confirming = .none }
 
-        switch await gate.authenticate(deviceName: device.deviceName) {
+        switch await gate.authenticate(for: .revealPassword(device: device.deviceName)) {
         case .authenticated:
             break
         case .cancelledByUser, .fallbackDismissed:
@@ -472,10 +475,10 @@ final class DeviceDetailModel {
         }
 
         clearForNewReveal()
-        isWorking = true
-        defer { isWorking = false }
+        confirming = .bitLockerKey(id: info.id)
+        defer { confirming = .none }
 
-        switch await gate.authenticate(deviceName: device.deviceName) {
+        switch await gate.authenticate(for: .revealRecoveryKey(device: device.deviceName)) {
         case .authenticated: break
         case .cancelledByUser, .fallbackDismissed: return
         case .failed:
@@ -978,7 +981,7 @@ struct DeviceDetailView: View {
         } label: {
             HStack {
                 Image(systemName: "faceid")
-                Text(model.isWorking ? "Confirming…" : "Reveal password")
+                Text(model.confirming == .lapsPassword ? "Confirming…" : "Reveal password")
                     .fontWeight(.semibold)
                 Spacer()
             }
@@ -1103,7 +1106,12 @@ struct DeviceDetailView: View {
                         .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    Image(systemName: "faceid").foregroundStyle(Brand.accent)
+                    if model.confirming == .bitLockerKey(id: key.id) {
+                        ProgressView()
+                            .accessibilityLabel("Confirming")
+                    } else {
+                        Image(systemName: "faceid").foregroundStyle(Brand.accent)
+                    }
                 }
             }
             .buttonStyle(.plain)   // stops the tint bleeding onto the metadata line

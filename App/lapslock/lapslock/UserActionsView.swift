@@ -142,7 +142,7 @@ final class UserActionsModel {
         destructive = nil
         guard typedUPNMatches else { return }
         clearMessages()
-        guard await faceID() else { return }
+        guard await faceID(for: .userAction(title: kind.title, person: target.label)) else { return }
         let countdown = UndoCountdown(key: target.userId, seconds: DeviceActionsModel.undoSeconds)
         self.countdown = countdown
         undoing = kind
@@ -208,7 +208,7 @@ final class UserActionsModel {
             handle(gate, kind: .issueTemporaryAccessPass)
             return
         }
-        guard await faceID() else { return }
+        guard await faceID(for: .issueTemporaryAccessPass(person: target.label)) else { return }
         working = .issueTemporaryAccessPass
         defer { working = nil }
         do {
@@ -273,8 +273,8 @@ final class UserActionsModel {
 
     // MARK: - helpers
 
-    private func faceID() async -> Bool {
-        switch await BiometricGate().authenticate(deviceName: nil) {
+    private func faceID(for purpose: BiometricPurpose) async -> Bool {
+        switch await BiometricGate().authenticate(for: purpose) {
         case .authenticated: return true
         case .unavailable(let reason): errorMessage = reason; return false
         default: errorMessage = "Not confirmed. Nothing was sent."; return false

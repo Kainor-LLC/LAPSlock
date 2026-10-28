@@ -39,6 +39,21 @@ public enum BiometricKind: String, Sendable, Equatable {
     case unknown = "biometric authentication"
 }
 
+/// What a confirmation is for, so the system prompt can say so. Names are optional; a
+/// missing or empty one is left out of the sentence.
+public enum BiometricPurpose: Sendable, Equatable {
+    case revealPassword(device: String?)
+    case revealRecoveryKey(device: String?)
+    case openApp
+    /// A device write, by the title it was confirmed under, such as "Retire".
+    case deviceAction(title: String, device: String?)
+    /// A write to a person's account, by its title, such as "Remove all sign-in methods".
+    case userAction(title: String, person: String?)
+    case issueTemporaryAccessPass(person: String?)
+    case groupChange(adding: Bool, member: String?, group: String?)
+    case approval(approve: Bool, requester: String?)
+}
+
 /// Result of an authentication attempt.
 public enum BiometricGateOutcome: Sendable, Equatable {
     case authenticated
@@ -62,12 +77,39 @@ public enum BiometricPolicy {
         + "administrator password on an unprotected device. Add a passcode in Settings to continue."
 
     /// The reason string shown in the system prompt. Keep it specific: a vague prompt
-    /// ("Authenticate") makes people wonder what they are approving.
-    public static func promptReason(deviceName: String?) -> String {
-        if let deviceName, !deviceName.isEmpty {
-            return "Confirm it's you to reveal the local administrator password for \(deviceName)."
+    /// ("Authenticate") makes people wonder what they are approving, and a wrong one (every
+    /// prompt once spoke of a password, the app lock's included) teaches them not to read it.
+    public static func promptReason(for purpose: BiometricPurpose) -> String {
+        switch purpose {
+        case .revealPassword(let device):
+            return "Confirm it's you to reveal the local administrator password" + named(" for ", device) + "."
+        case .revealRecoveryKey(let device):
+            return "Confirm it's you to reveal a BitLocker recovery key" + named(" for ", device) + "."
+        case .openApp:
+            return "Confirm it's you to open TenantKeep."
+        case .deviceAction(let title, let device):
+            return "Confirm it's you to send " + title + named(" to ", device) + "."
+        case .userAction(let title, let person):
+            return "Confirm it's you to send " + title + named(" for ", person) + "."
+        case .issueTemporaryAccessPass(let person):
+            return "Confirm it's you to issue a Temporary Access Pass" + named(" for ", person) + "."
+        case .groupChange(let adding, let member, let group):
+            let who = nonEmpty(member) ?? "this person"
+            return adding
+                ? "Confirm it's you to add " + who + named(" to ", group) + "."
+                : "Confirm it's you to remove " + who + named(" from ", group) + "."
+        case .approval(let approve, let requester):
+            return "Confirm it's you to " + (approve ? "approve" : "deny") + " the request" + named(" from ", requester) + "."
         }
-        return "Confirm it's you to reveal the local administrator password."
+    }
+
+    private static func nonEmpty(_ name: String?) -> String? {
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+        return name
+    }
+
+    private static func named(_ joiner: String, _ name: String?) -> String {
+        nonEmpty(name).map { joiner + $0 } ?? ""
     }
 
     #if canImport(LocalAuthentication)
@@ -136,7 +178,7 @@ public struct BiometricGate: Sendable {
     /// Runs the gate. MUST be called and must return `.authenticated` before any
     /// credential fetch (§6 step 2). This type performs no network work of its own,
     /// so the ordering is the caller's contract.
-    public func authenticate(deviceName: String?) async -> BiometricGateOutcome {
+    public func authenticate(for purpose: BiometricPurpose) async -> BiometricGateOutcome {
         let context = LAContext()
         // Deliberately NOT setting localizedFallbackTitle to "", an empty string hides
         // the passcode fallback, which would strand a locked-out admin.
@@ -151,7 +193,7 @@ public struct BiometricGate: Sendable {
         do {
             let ok = try await context.evaluatePolicy(
                 .deviceOwnerAuthentication,
-                localizedReason: BiometricPolicy.promptReason(deviceName: deviceName)
+                localizedReason: BiometricPolicy.promptReason(for: purpose)
             )
             return ok ? .authenticated : .failed
         } catch {

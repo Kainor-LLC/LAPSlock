@@ -107,7 +107,7 @@ final class AppLockModel {
         failureMessage = nil
         defer { isAuthenticating = false }
 
-        switch await gate.authenticate(deviceName: nil) {
+        switch await gate.authenticate(for: .openApp) {
         case .authenticated:
             isLocked = false
         case .cancelledByUser, .fallbackDismissed:
