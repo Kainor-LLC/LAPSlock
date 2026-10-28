@@ -19,8 +19,21 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(_ => new EntitlementCheck(EntitlementCheck.Shipping, TimeProvider.System));
 builder.Services.AddSingleton<RelayRateLimiter>();
-builder.Services.AddSingleton(_ => new CryptographyClient(new Uri(options.KeyVaultKeyId), new DefaultAzureCredential()));
-builder.Services.AddSingleton(_ => new HttpClient(new SocketsHttpHandler { EnableMultipleHttp2Connections = true }) { Timeout = TimeSpan.FromSeconds(10) });
+// The function's own system-assigned identity, asked directly: the default chain tried
+// several other credentials first on the cold start that carries the night's first alert.
+builder.Services.AddSingleton<IApnsSigner>(_ => new KeyVaultApnsSigner(
+    new CryptographyClient(new Uri(options.KeyVaultKeyId), new ManagedIdentityCredential(ManagedIdentityId.SystemAssigned))));
+// One HTTP/2 connection to Apple, kept open with a ping every minute while the instance
+// lives, so sparse alerts do not each open a new TLS connection. The ping stays inside
+// Azure's idle timeout for outbound connections, about four minutes.
+builder.Services.AddSingleton(_ => new HttpClient(new SocketsHttpHandler
+{
+    EnableMultipleHttp2Connections = true,
+    KeepAlivePingDelay = TimeSpan.FromSeconds(60),
+    KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
+    KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always,
+    PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
+}) { Timeout = TimeSpan.FromSeconds(10) });
 builder.Services.AddSingleton<IApnsSender, ApnsSender>();
 builder.Services.AddSingleton<RelayHandler>();
 

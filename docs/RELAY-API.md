@@ -102,7 +102,7 @@ it in the same release.
 | `v` | Exactly `1`. |
 | `deviceToken` | The phone's APNs device token, lowercase hex, 64 to 200 characters. |
 | `environment` | `production` or `sandbox`. Sandbox exists for development builds and is rate limited harder. |
-| `urgency` | `normal` or `time-sensitive`. Becomes the notification's interruption level. It is the only fact about the alert the relay can see, and it is there because Apple needs it outside the encryption. Watch sends `time-sensitive` only for a break-glass sign-in. |
+| `urgency` | `normal` or `time-sensitive`. Becomes the notification's interruption level, and its sound: a `time-sensitive` alert plays the default sound and a `normal` one arrives silently, as the app's own alerts do. It is the only fact about the alert the relay can see, and it is there because Apple needs it outside the encryption. Watch sends `time-sensitive` only for a break-glass sign-in. |
 | `entitlement` | The tenant's current entitlement token, a compact JWS, exactly as defined in [ENTITLEMENT-API.md section 5](ENTITLEMENT-API.md#5-the-entitlement-token). |
 | `envelope.suite` | Exactly the string shown. Any other value is refused. |
 | `envelope.mode` | Exactly `auth`. HPKE base mode is refused (section 5.2 says why). |

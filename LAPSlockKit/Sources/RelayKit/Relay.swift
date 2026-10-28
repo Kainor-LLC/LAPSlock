@@ -331,37 +331,81 @@ public struct RelayPhone: Sendable {
 
     /// Opens the envelope from a push payload's `e` field. Tries each pinned sender, since
     /// the tenant is only known after decryption; the AAD binds it to this phone's token.
+    ///
+    /// The phone's key is loaded once per alert, not once per sender tried, and the sender
+    /// that last opened an alert in this process is tried first (OPTIMIZATION-PLAN.md, step
+    /// I). An MSP phone with twenty pins tried them in a different order in every process,
+    /// with an Enclave key load and two key agreements for each wrong one.
     public func open(enc: String, ct: String, seen: RelaySeenStore? = nil, now: Date = Date()) throws -> RelayAlert {
         guard let state = try store.load(), let token = state.deviceToken else { throw RelayError.notPaired }
         guard let encData = Base64URL.decode(enc), encData.count == 65, let ctData = Base64URL.decode(ct) else { throw RelayError.malformed("envelope") }
         guard ctData.count <= RelayContract.plaintextLimit + 100 else { throw RelayError.tooLarge }
+        guard !state.pins.isEmpty else { throw RelayError.noSenderForTenant }
+        // A key that will not load fails as a wrong key always did: the alert is discarded.
+        guard let key = try? RecipientKey(state) else { throw RelayError.verificationFailed }
         let aad = Data(token.lowercased().utf8)
-        for (_, senderText) in state.pins {
+        for senderText in Self.trialOrder(state.pins, lastOpened: LastOpenedSender.shared.value) {
             guard let senderData = Base64URL.decode(senderText),
                   let sender = try? P256.KeyAgreement.PublicKey(x963Representation: senderData) else { continue }
-            guard let plaintext = try? decrypt(state, enc: encData, ct: ctData, aad: aad, sender: sender) else { continue }
+            guard let plaintext = try? key.open(ctData, enc: encData, aad: aad, sender: sender) else { continue }
             guard plaintext.count <= RelayContract.plaintextLimit else { throw RelayError.tooLarge }
             let alert = try JSONDecoder().decode(RelayAlert.self, from: plaintext).validated()
             // The sender must be the one pinned for the tenant the alert names.
             guard state.pins[alert.tenant] == senderText else { throw RelayError.verificationFailed }
+            LastOpenedSender.shared.value = senderText
             if let seen {
                 if seen.contains(alert.id, now: now) { throw RelayError.duplicate }
                 seen.insert(alert.id, now: now)
             }
             return alert
         }
-        throw state.pins.isEmpty ? RelayError.noSenderForTenant : RelayError.verificationFailed
+        throw RelayError.verificationFailed
     }
 
-    private func decrypt(_ state: RelayState, enc: Data, ct: Data, aad: Data, sender: P256.KeyAgreement.PublicKey) throws -> Data {
-        if state.enclave {
-            let key = try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: state.keyReference)
-            var r = try HPKE.Recipient(privateKey: key, ciphersuite: RelayContract.suite, info: RelayContract.info, encapsulatedKey: enc, authenticatedBy: sender)
-            return try r.open(ct, authenticating: aad)
+    /// Every pinned sender once: the one that last opened an alert first, then the rest by
+    /// tenant, so the order is the same in every process.
+    static func trialOrder(_ pins: [String: String], lastOpened: String?) -> [String] {
+        let byTenant = pins.sorted { $0.key < $1.key }.map(\.value)
+        guard let lastOpened, byTenant.contains(lastOpened) else { return byTenant }
+        return [lastOpened] + byTenant.filter { $0 != lastOpened }
+    }
+
+    /// The phone's key, loaded once for all the senders an alert is tried with.
+    private enum RecipientKey {
+        case enclave(SecureEnclave.P256.KeyAgreement.PrivateKey)
+        case software(P256.KeyAgreement.PrivateKey)
+
+        init(_ state: RelayState) throws {
+            if state.enclave {
+                self = .enclave(try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: state.keyReference))
+            } else {
+                self = .software(try P256.KeyAgreement.PrivateKey(rawRepresentation: state.keyReference))
+            }
         }
-        let key = try P256.KeyAgreement.PrivateKey(rawRepresentation: state.keyReference)
-        var r = try HPKE.Recipient(privateKey: key, ciphersuite: RelayContract.suite, info: RelayContract.info, encapsulatedKey: enc, authenticatedBy: sender)
-        return try r.open(ct, authenticating: aad)
+
+        func open(_ ct: Data, enc: Data, aad: Data, sender: P256.KeyAgreement.PublicKey) throws -> Data {
+            switch self {
+            case .enclave(let key):
+                var r = try HPKE.Recipient(privateKey: key, ciphersuite: RelayContract.suite, info: RelayContract.info, encapsulatedKey: enc, authenticatedBy: sender)
+                return try r.open(ct, authenticating: aad)
+            case .software(let key):
+                var r = try HPKE.Recipient(privateKey: key, ciphersuite: RelayContract.suite, info: RelayContract.info, encapsulatedKey: enc, authenticatedBy: sender)
+                return try r.open(ct, authenticating: aad)
+            }
+        }
+    }
+}
+
+/// The pinned sender that last opened an alert in this process, tried first next time. In
+/// memory only: nothing about an alert is written down but its id (contract section 10).
+final class LastOpenedSender: @unchecked Sendable {
+    static let shared = LastOpenedSender()
+    private let lock = NSLock()
+    private var stored: String?
+
+    var value: String? {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
     }
 }
 
@@ -384,17 +428,28 @@ public final class RelaySeenStore: @unchecked Sendable {
 
     func contains(_ id: String, now: Date) -> Bool {
         lock.lock(); defer { lock.unlock() }
+        mergeFromFile()
         if let at = entries[id], now.timeIntervalSince(at) < Self.window { return true }
         return false
     }
 
     func insert(_ id: String, now: Date) {
         lock.lock()
+        mergeFromFile()
         entries = entries.filter { now.timeIntervalSince($0.value) < Self.window }
         entries[id] = now
         let snapshot = entries
         lock.unlock()
         if let url, let data = try? JSONEncoder().encode(snapshot) { try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]) }
+    }
+
+    /// The ids another process wrote since this one read the file. Two alerts opened at the
+    /// same moment each read it before either wrote it, and the second write dropped the
+    /// first alert's id, which a replay of it could then use. Under `lock`.
+    private func mergeFromFile() {
+        guard let url, let data = try? Data(contentsOf: url),
+              let onDisk = try? JSONDecoder().decode([String: Date].self, from: data) else { return }
+        entries.merge(onDisk) { mine, _ in mine }
     }
 }
 

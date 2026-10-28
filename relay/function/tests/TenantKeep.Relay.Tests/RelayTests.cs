@@ -256,11 +256,121 @@ public class HandlerTests
     }
 
     [Fact]
+    public void OnlyATimeSensitiveAlertPlaysASound()
+    {
+        using var loud = JsonDocument.Parse(ApnsSender.Payload(true, "ENC", "CT"));
+        using var quiet = JsonDocument.Parse(ApnsSender.Payload(false, "ENC", "CT"));
+        Assert.Equal("default", loud.RootElement.GetProperty("aps").GetProperty("sound").GetString());
+        Assert.False(quiet.RootElement.GetProperty("aps").TryGetProperty("sound", out _));
+        Assert.Equal("active", quiet.RootElement.GetProperty("aps").GetProperty("interruption-level").GetString());
+    }
+
+    [Fact]
     public void AnAlertIsHeldForAPhoneThatIsOffline()
     {
         var now = new DateTimeOffset(2026, 10, 27, 3, 0, 0, TimeSpan.Zero);
         Assert.Equal(now.AddHours(1).ToUnixTimeSeconds(), ApnsSender.Expiration(now, timeSensitive: true));
         Assert.Equal(now.AddMinutes(30).ToUnixTimeSeconds(), ApnsSender.Expiration(now, timeSensitive: false));
         Assert.True(ApnsSender.Expiration(now, false) > now.ToUnixTimeSeconds());
+    }
+}
+
+/// <summary>Counts signatures, made with a local key in place of Key Vault.</summary>
+sealed class FakeSigner : IApnsSigner
+{
+    readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+    public int Calls;
+    public Task<byte[]> SignAsync(byte[] data, CancellationToken cancel)
+    {
+        Calls++;
+        return Task.FromResult(_key.SignData(data, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation));
+    }
+}
+
+/// <summary>Answers each request with the next scripted status and reason, and keeps the
+/// authorization header each one carried.</summary>
+sealed class ScriptedApple(params (int Status, string? Reason)[] answers) : HttpMessageHandler
+{
+    readonly Queue<(int Status, string? Reason)> _answers = new(answers);
+    public readonly List<string> Tokens = [];
+
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancel)
+    {
+        Tokens.Add(request.Headers.Authorization?.ToString() ?? request.Headers.GetValues("authorization").First());
+        var (status, reason) = _answers.Count > 0 ? _answers.Dequeue() : (200, null);
+        var response = new HttpResponseMessage((System.Net.HttpStatusCode)status);
+        if (reason is not null) response.Content = new StringContent("{\"reason\":\"" + reason + "\"}");
+        response.Headers.TryAddWithoutValidation("apns-id", "apns-" + Tokens.Count);
+        return Task.FromResult(response);
+    }
+}
+
+public class ApnsSenderTests
+{
+    static RelayOptions Options => new("KEYID12345", "TEAMID1234", "https://vault.example/keys/apns/1", "com.kainor.lapslock");
+
+    static (ApnsSender Sender, ScriptedApple Apple, FakeSigner Signer, FixedTime Time) Make(params (int, string?)[] answers)
+    {
+        var apple = new ScriptedApple(answers);
+        var signer = new FakeSigner();
+        var time = new FixedTime(Fixtures.Now);
+        return (new ApnsSender(new HttpClient(apple), signer, Options, time), apple, signer, time);
+    }
+
+    static Task<ApnsResult> Send(ApnsSender sender) => sender.SendAsync(Fixtures.Token, false, true, "ENC", "CT", CancellationToken.None);
+
+    [Theory]
+    [InlineData("ExpiredProviderToken")]
+    [InlineData("InvalidProviderToken")]
+    public async Task ARefusedProviderTokenIsSignedAgainAndThePushSentOnceMore(string reason)
+    {
+        var (sender, apple, signer, _) = Make((403, reason), (200, null));
+        var result = await Send(sender);
+        Assert.Equal(200, result.Status);
+        Assert.Equal(2, apple.Tokens.Count);
+        Assert.Equal(2, signer.Calls);
+        Assert.NotEqual(apple.Tokens[0], apple.Tokens[1]);
+    }
+
+    [Fact]
+    public async Task AnotherRefusalIsNotRetried()
+    {
+        var (sender, apple, signer, _) = Make((403, "BadCertificate"));
+        var result = await Send(sender);
+        Assert.Equal(403, result.Status);
+        Assert.Single(apple.Tokens);
+        Assert.Equal(1, signer.Calls);
+    }
+
+    [Fact]
+    public async Task ATokenIsReplacedEarlyAtMostOnceEveryTwentyMinutes()
+    {
+        var (sender, apple, signer, time) = Make(
+            (403, "ExpiredProviderToken"), (403, "ExpiredProviderToken"),
+            (403, "ExpiredProviderToken"),
+            (403, "ExpiredProviderToken"), (200, null));
+        Assert.Equal(403, (await Send(sender)).Status);
+        Assert.Equal(2, apple.Tokens.Count);
+        time.Now = time.Now.AddMinutes(5);
+        Assert.Equal(403, (await Send(sender)).Status);
+        Assert.Equal(3, apple.Tokens.Count);
+        Assert.Equal(2, signer.Calls);
+        time.Now = time.Now.AddMinutes(16);
+        Assert.Equal(200, (await Send(sender)).Status);
+        Assert.Equal(5, apple.Tokens.Count);
+        Assert.Equal(3, signer.Calls);
+    }
+
+    [Fact]
+    public async Task AGoodTokenIsKeptForFortyMinutes()
+    {
+        var (sender, _, signer, time) = Make();
+        await Send(sender);
+        time.Now = time.Now.AddMinutes(39);
+        await Send(sender);
+        Assert.Equal(1, signer.Calls);
+        time.Now = time.Now.AddMinutes(2);
+        await Send(sender);
+        Assert.Equal(2, signer.Calls);
     }
 }

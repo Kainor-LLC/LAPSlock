@@ -10,6 +10,11 @@
     <AssemblyName>TenantKeep.Relay</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Precompiled for the Linux x64 workers Flex Consumption runs on, so a cold start
+         does not wait for the JIT. On publish only: the tests build for this machine. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <RuntimeIdentifier Condition="'$(_IsPublishing)' == 'true'">linux-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
   </PropertyGroup>
 
   <ItemGroup>

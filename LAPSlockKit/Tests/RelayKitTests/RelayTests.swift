@@ -126,6 +126,63 @@ final class RelayTests: XCTestCase {
         XCTAssertEqual(opened.body, "bg-admin@contoso.com signed in from 203.0.113.7")
         XCTAssertEqual(opened.link, "tenantkeep://people")
     }
+
+    // MARK: - the cost of an alert (OPTIMIZATION-PLAN.md, step I)
+
+    func testSendersAreTriedLastOpenerFirstThenByTenant() {
+        let pins = ["c0ffee00-3333": "C", "c0ffee00-1111": "A", "c0ffee00-2222": "B"]
+        XCTAssertEqual(RelayPhone.trialOrder(pins, lastOpened: nil), ["A", "B", "C"])
+        XCTAssertEqual(RelayPhone.trialOrder(pins, lastOpened: "C"), ["C", "A", "B"])
+        XCTAssertEqual(RelayPhone.trialOrder(pins, lastOpened: "gone"), ["A", "B", "C"], "a sender since unpinned is not tried")
+    }
+
+    func testAnAlertOpensAmongTwentyPinsAndItsSenderIsRememberedInMemoryOnly() throws {
+        LastOpenedSender.shared.value = nil
+        let (phone, code, sender) = try pairedPhone()
+        for i in 0..<19 {
+            let other = String(format: "c0ffee00-%04d-2222-3333-444455556666", i)
+            try phone.pin(SenderPin(tenant: other, senderKey: P256.KeyAgreement.PrivateKey().publicKey.x963Representation))
+        }
+        let sent = alert(tenant)
+        let env = try RelayTestSender.seal(sent, to: Base64URL.decode(code.publicKey)!, deviceToken: code.deviceToken, sender: sender)
+        XCTAssertEqual(try phone.open(enc: env.enc, ct: env.ct), sent)
+        let opener = Base64URL.encode(sender.publicKey.x963Representation)
+        XCTAssertEqual(LastOpenedSender.shared.value, opener)
+        XCTAssertEqual(RelayPhone.trialOrder(try XCTUnwrap(MemoryProbe.pins(phone)), lastOpened: LastOpenedSender.shared.value).first, opener)
+        let next = alert(tenant)
+        let again = try RelayTestSender.seal(next, to: Base64URL.decode(code.publicKey)!, deviceToken: code.deviceToken, sender: sender)
+        XCTAssertEqual(try phone.open(enc: again.enc, ct: again.ct), next)
+    }
+
+    func testAnImpostorDoesNotBecomeTheSenderTriedFirst() throws {
+        LastOpenedSender.shared.value = nil
+        let (phone, code, _) = try pairedPhone()
+        let impostor = P256.KeyAgreement.PrivateKey()
+        let env = try RelayTestSender.seal(alert(tenant), to: Base64URL.decode(code.publicKey)!, deviceToken: code.deviceToken, sender: impostor)
+        XCTAssertThrowsError(try phone.open(enc: env.enc, ct: env.ct))
+        XCTAssertNil(LastOpenedSender.shared.value)
+    }
+
+    func testTwoProcessesOnOneFileKeepEachOthersIds() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("relay-seen-" + UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = RelaySeenStore(url: url)
+        let second = RelaySeenStore(url: url)
+        first.insert("alert-1", now: now)
+        XCTAssertTrue(second.contains("alert-1", now: now), "the second store sees what the first wrote after it was made")
+        second.insert("alert-2", now: now)
+        XCTAssertTrue(first.contains("alert-2", now: now))
+        let later = RelaySeenStore(url: url)
+        XCTAssertTrue(later.contains("alert-1", now: now) && later.contains("alert-2", now: now), "neither write dropped the other's id")
+    }
+}
+
+/// Reads a paired phone's pins, for the trial-order check.
+private enum MemoryProbe {
+    static func pins(_ phone: RelayPhone) throws -> [String: String]? {
+        try phone.store.load()?.pins
+    }
 }
 
 private extension Data {

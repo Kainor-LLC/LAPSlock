@@ -20,9 +20,17 @@
     $setup.SenderCode    # paste into TenantKeep on the phone; store $setup.PrivateKey as an encrypted variable
 #>
 
-Add-Type -Path (Join-Path $PSScriptRoot 'Hpke.cs') -ErrorAction SilentlyContinue
+# Compiled once per session, and loudly: a failure was silenced, and the first sign of it was
+# a missing type when the first alert was sealed. Dot-sourcing the script twice is fine.
+if (-not ('TenantKeep.Relay.Hpke' -as [type])) {
+    Add-Type -Path (Join-Path $PSScriptRoot 'Hpke.cs') -ErrorAction Stop
+}
 
 $script:RelayUri = 'https://kainor-relay-prod-func.azurewebsites.net/relay'
+# One connection for the run's alerts, and no call waits more than 15 seconds: with no
+# timeout, a relay that never answered stalled the whole Watch run.
+$script:RelaySession = [Microsoft.PowerShell.Commands.WebRequestSession]::new()
+$script:TimeoutSec = 15
 $script:EntitlementUri = 'https://kainor-lapslock-prod-func.azurewebsites.net/entitlement'
 $script:Info = [Text.Encoding]::ASCII.GetBytes('TenantKeep relay v1')
 $script:Suite = 'DHKEM-P256-HKDF-SHA256/HKDF-SHA256/AES-256-GCM'
@@ -54,7 +62,19 @@ function Get-TenantKeepEntitlement {
     <# The tenant's entitlement token. Cache it and call this at most once a day. #>
     param([Parameter(Mandatory)] [Guid] $TenantId, [string] $Uri = $script:EntitlementUri)
     $body = @{ version = 1; tenantId = $TenantId.ToString().ToLowerInvariant() } | ConvertTo-Json -Compress
-    (Invoke-RestMethod -Method Post -Uri $Uri -Body $body -ContentType 'application/json; charset=utf-8').token
+    (Invoke-RestMethod -Method Post -Uri $Uri -Body $body -ContentType 'application/json; charset=utf-8' -TimeoutSec $script:TimeoutSec).token
+}
+
+function Get-TenantKeepRelayRetryDelay {
+    <# Seconds to wait before sending the same alert again, or $null to stop. Only a 503
+       (Apple or the relay busy, "try again later" in the contract) or a 429 (the relay's rate
+       limit) is tried again, at most twice; so is no answer at all, a timeout, which is safe
+       to repeat because the phone drops an alert id it has already shown. Every other answer
+       means something a retry cannot change. Retry-After is honoured up to 30 seconds. #>
+    param([int] $Status, [Nullable[double]] $RetryAfter, [int] $Attempt)
+    if ($Attempt -ge 2 -or $Status -notin 0, 429, 503) { return $null }
+    if ($null -ne $RetryAfter -and $RetryAfter -gt 0) { return [Math]::Min([double] $RetryAfter, 30) }
+    @(2, 5)[$Attempt]
 }
 
 function ConvertFrom-TenantKeepPairingCode([string] $PairingCode) {
@@ -98,7 +118,8 @@ function New-TenantKeepRelayRequest {
 
 function Send-TenantKeepRelayAlert {
     <# One alert to one phone. Returns Apple's apns-id, or throws with the relay's error code.
-       A 410 means the phone was reset or the app removed: pair it again. #>
+       A 410 means the phone was reset or the app removed: pair it again. A busy relay or
+       Apple is tried twice more first; see Get-TenantKeepRelayRetryDelay. #>
     param(
         [Parameter(Mandatory)] [string] $PairingCode,
         [Parameter(Mandatory)] [string] $SenderPrivateKey,
@@ -113,10 +134,21 @@ function Send-TenantKeepRelayAlert {
     )
     $request = New-TenantKeepRelayRequest -PairingCode $PairingCode -SenderPrivateKey $SenderPrivateKey -TenantId $TenantId `
         -Entitlement $Entitlement -Kind $Kind -Title $Title -Body $Body -Link $Link -Urgency $Urgency
-    try {
-        (Invoke-RestMethod -Method Post -Uri $Uri -Body $request -ContentType 'application/json; charset=utf-8').apnsId
-    } catch {
-        $detail = $_.ErrorDetails.Message
-        throw ('The relay refused the alert: ' + ($detail ?? $_.Exception.Message))
+    for ($attempt = 0; ; $attempt++) {
+        try {
+            return (Invoke-RestMethod -Method Post -Uri $Uri -Body $request -ContentType 'application/json; charset=utf-8' `
+                -TimeoutSec $script:TimeoutSec -WebSession $script:RelaySession).apnsId
+        } catch {
+            $response = $_.Exception.Response
+            $status = if ($response) { [int] $response.StatusCode } else { 0 }
+            $retryAfter = if ($response -and $response.Headers.RetryAfter.Delta) { $response.Headers.RetryAfter.Delta.TotalSeconds } else { $null }
+            $wait = Get-TenantKeepRelayRetryDelay -Status $status -RetryAfter $retryAfter -Attempt $attempt
+            if ($null -eq $wait) {
+                $detail = $_.ErrorDetails.Message
+                throw ('The relay refused the alert: ' + ($detail ?? $_.Exception.Message))
+            }
+            # Up to a second of jitter, so many runs refused at once do not return at once.
+            Start-Sleep -Milliseconds ([int] ($wait * 1000) + (Get-Random -Minimum 0 -Maximum 1000))
+        }
     }
 }

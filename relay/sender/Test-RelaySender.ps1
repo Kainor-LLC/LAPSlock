@@ -22,4 +22,15 @@ $open = [TenantKeep.Relay.Hpke]::SetupAuthRecipient((ConvertFrom-Base64Url $req.
 $alert = [Text.Encoding]::UTF8.GetString($open.Open([Text.Encoding]::ASCII.GetBytes($token), (ConvertFrom-Base64Url $req.envelope.ct))) | ConvertFrom-Json
 if ($alert.title -ne 'Contoso: break-glass sign-in' -or $alert.tenant -ne $tenant) { throw 'round trip content' }
 if ($req.envelope.enc.Length -ne 87) { throw 'enc length' }
-'Sender round trip passed: fields ' + $keys + '; the phone opened "' + $alert.title + '".'
+# The retry rule: a busy relay, a rate limit or no answer twice more, nothing else ever.
+foreach ($case in @(
+        @(503, $null, 0, 2), @(503, $null, 1, 5), @(503, $null, 2, $null),
+        @(429, 12, 0, 12), @(429, 300, 0, 30), @(0, $null, 0, 2),
+        @(400, $null, 0, $null), @(401, $null, 0, $null), @(402, $null, 0, $null),
+        @(410, $null, 0, $null), @(413, $null, 0, $null), @(502, $null, 0, $null))) {
+    $got = Get-TenantKeepRelayRetryDelay -Status $case[0] -RetryAfter $case[1] -Attempt $case[2]
+    if ($got -ne $case[3]) { throw ('retry rule for ' + $case[0] + ' attempt ' + $case[2] + ': got ' + $got) }
+}
+# Dot-sourced again in the same session: no second compile, and no error.
+. (Join-Path $PSScriptRoot 'TenantKeepRelaySender.ps1')
+'Sender round trip passed: fields ' + $keys + '; the phone opened "' + $alert.title + '"; the retry rule holds.'
