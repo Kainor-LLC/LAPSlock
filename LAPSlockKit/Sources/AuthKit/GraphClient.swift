@@ -281,14 +281,17 @@ public final class GraphClient: Sendable {
 
     /// Ephemeral: no disk cache, no cookie store. Same shape as the sessions the existing
     /// Kits build, written once here.
-    public static func makeSession() -> URLSession {
+    ///
+    /// - timeout: seconds a request may wait for data. The background check passes less,
+    ///   so one slow response cannot hold its run past iOS's thirty seconds.
+    public static func makeSession(timeout: TimeInterval = 30) -> URLSession {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.urlCache = nil
         cfg.httpCookieStorage = nil
         cfg.httpCookieAcceptPolicy = .never
         cfg.httpShouldSetCookies = false
         cfg.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        cfg.timeoutIntervalForRequest = 30
+        cfg.timeoutIntervalForRequest = timeout
         return URLSession(configuration: cfg)
     }
 

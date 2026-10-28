@@ -52,6 +52,10 @@ final class MacModel {
     /// days holds no copy of the tenant's devices.
     @ObservationIgnored private var devicesWanted = false
     @ObservationIgnored private var resultsTask: Task<Void, Never>?
+    /// Reads the session and service health every fifteen minutes, so the icon is not left
+    /// showing the state at launch for days. The system's scheduler, which waits out sleep.
+    @ObservationIgnored private var statusRefresher: NSBackgroundActivityScheduler?
+    @ObservationIgnored private var statusCheckedAt: Date?
 
     /// The same app registration as the iPhone and iPad app, with this app's own redirect,
     /// which the registration's iOS / macOS platform must list for this bundle id.
@@ -108,6 +112,8 @@ final class MacModel {
 
     func signOut() async {
         if let auth, let account { try? await auth.signOut(account: account) }
+        statusRefresher?.invalidate()
+        statusRefresher = nil
         mode = .signedOut
         account = nil
         devices = []
@@ -126,6 +132,7 @@ final class MacModel {
         pulse = DemoTenantPulseProvider()
         privileged = nil
         sessionCheckedAt = Date()
+        startStatusRefresh()
         Task { await refreshAll() }
     }
 
@@ -135,10 +142,42 @@ final class MacModel {
         inventory = DeviceInventoryService(auth: auth, pageSize: 1000)
         pulse = TenantPulseService(graph: GraphClient(auth: auth))
         privileged = PrivilegedAccessService(auth: auth)
+        startStatusRefresh()
         Task { await refreshAll() }
     }
 
+    private func startStatusRefresh() {
+        statusRefresher?.invalidate()
+        let scheduler = NSBackgroundActivityScheduler(identifier: "com.kainor.tenantkeep.menubar.status")
+        scheduler.repeats = true
+        scheduler.interval = 15 * 60
+        scheduler.tolerance = 5 * 60
+        scheduler.qualityOfService = .utility
+        scheduler.schedule { [weak self] completion in
+            Task { @MainActor in
+                await self?.refreshStatus()
+                completion(.finished)
+            }
+        }
+        statusRefresher = scheduler
+    }
+
+    /// The session and service health: what the menu bar icon shows. Never the devices.
+    func refreshStatus() async {
+        statusCheckedAt = Date()
+        await checkSession()
+        await loadPulse()
+    }
+
+    /// The menu opened: a status older than five minutes is read again.
+    func menuOpened() {
+        guard mode != .signedOut else { return }
+        if let statusCheckedAt, Date().timeIntervalSince(statusCheckedAt) < 5 * 60 { return }
+        Task { await refreshStatus() }
+    }
+
     func refreshAll() async {
+        statusCheckedAt = Date()
         await checkSession()
         async let a: Void = devicesWanted ? loadDevices() : ()
         async let b: Void = loadRoles()

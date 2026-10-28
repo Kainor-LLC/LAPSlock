@@ -47,6 +47,40 @@ public actor ConditionalAccessService: ConditionalAccessProviding {
         }
     }
 
+    /// When a policy last changed, and nothing else.
+    public struct PolicyStamp: Decodable, Sendable, Equatable {
+        public let id: String
+        public let createdDateTime: Date?
+        public let modifiedDateTime: Date?
+        public var lastChanged: Date? { modifiedDateTime ?? createdDateTime }
+
+        public init(id: String, createdDateTime: Date?, modifiedDateTime: Date?) {
+            self.id = id
+            self.createdDateTime = createdDateTime
+            self.modifiedDateTime = modifiedDateTime
+        }
+    }
+
+    /// Every policy's id and change times, for the background check, which needs no more
+    /// to tell a change: not every condition and control of every policy. Falls back to
+    /// the full read when Graph refuses the `$select`.
+    public func policyStamps() async throws -> [PolicyStamp] {
+        let request = GraphRequest(
+            path: Self.policiesPath,
+            template: Self.policiesPath + "?select=stamps",
+            query: [URLQueryItem(name: "$select", value: "id,createdDateTime,modifiedDateTime")],
+            scopes: ConditionalAccessScopes.module)
+        do {
+            return try await graph.collection(PolicyStamp.self, from: request, maxPages: 10).items
+        } catch GraphError.badRequest {
+            return try await policies().map {
+                PolicyStamp(id: $0.id, createdDateTime: $0.createdDateTime, modifiedDateTime: $0.modifiedDateTime)
+            }
+        } catch let error as GraphError {
+            throw ConditionalAccessError(error)
+        }
+    }
+
     static func newestChangeFirst(_ a: ConditionalAccessPolicy, _ b: ConditionalAccessPolicy) -> Bool {
         switch (a.lastChanged, b.lastChanged) {
         case let (x?, y?) where x != y: return x > y

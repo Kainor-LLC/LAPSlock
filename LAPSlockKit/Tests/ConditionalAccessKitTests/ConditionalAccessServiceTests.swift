@@ -265,3 +265,31 @@ final class ConditionalAccessServiceTests: XCTestCase {
         }
     }
 }
+
+// MARK: - lean reads (OPTIMIZATION-PLAN.md, step F)
+
+extension ConditionalAccessServiceTests {
+
+    func test_policyStampsAskForTheIdAndTheChangeTimesOnly() async throws {
+        StubProtocol.replies = ["conditionalAccess/policies": [.init(status: 200, body: #"{"value":[{"id":"p1","createdDateTime":"2026-01-01T00:00:00Z","modifiedDateTime":"2026-10-20T08:15:30Z"},{"id":"p2","createdDateTime":"2026-02-01T00:00:00Z"}]}"#)]]
+        let stamps = try await service.policyStamps()
+        XCTAssertEqual(stamps.map(\.id), ["p1", "p2"])
+        XCTAssertEqual(stamps[0].lastChanged, ISO8601DateFormatter().date(from: "2026-10-20T08:15:30Z"))
+        XCTAssertEqual(stamps[1].lastChanged, ISO8601DateFormatter().date(from: "2026-02-01T00:00:00Z"), "created when never modified, as the full policy says")
+        let url = StubProtocol.requests.first?.url.removingPercentEncoding ?? ""
+        XCTAssertTrue(url.contains("$select=id,createdDateTime,modifiedDateTime"), url)
+    }
+
+    func test_aRefusedSelectFallsBackToTheFullPoliciesWithTheSameStamps() async throws {
+        StubProtocol.replies = ["conditionalAccess/policies": [
+            .init(status: 400, body: #"{"error":{"code":"BadRequest"}}"#),
+            .init(status: 200, body: policiesBody),
+        ]]
+        let stamps = try await service.policyStamps()
+        StubProtocol.replies = ["conditionalAccess/policies": [.init(status: 200, body: policiesBody)]]
+        let full = try await service.policies()
+        XCTAssertEqual(Set(stamps.map { $0.id + "|" + String(Int($0.lastChanged?.timeIntervalSince1970 ?? 0)) }),
+                       Set(full.map { $0.id + "|" + String(Int($0.lastChanged?.timeIntervalSince1970 ?? 0)) }),
+                       "the background check's keys are the same either way")
+    }
+}

@@ -215,6 +215,24 @@ public struct ComplicationSnapshot: Codable, Sendable, Equatable {
         approvalsWaiting > 0 || (degradedServices ?? 0) > 0 || (openIncidents ?? 0) > 0
     }
 
+    /// The same counts and the same next role end, whenever each was taken. A watch face
+    /// is only worth waking for a change in what it shows.
+    public func shows(sameAs other: ComplicationSnapshot?) -> Bool {
+        guard let other else { return false }
+        return approvalsWaiting == other.approvalsWaiting && degradedServices == other.degradedServices
+            && openIncidents == other.openIncidents && nextRoleEnds == other.nextRoleEnds && isDemo == other.isDemo
+    }
+
+    /// For the phone to send over WatchConnectivity's complication channel.
+    public var userInfo: [String: Any] {
+        (try? WatchBridge.encode(self)) ?? [:]
+    }
+
+    public init?(userInfo: [String: Any]) {
+        guard let decoded = WatchBridge.decode(ComplicationSnapshot.self, from: userInfo) else { return nil }
+        self = decoded
+    }
+
     public func save(to defaults: UserDefaults?) {
         guard let defaults, let data = try? JSONEncoder().encode(self) else { return }
         defaults.set(data, forKey: Self.storageKey)

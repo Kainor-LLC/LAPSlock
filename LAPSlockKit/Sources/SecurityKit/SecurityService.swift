@@ -56,6 +56,34 @@ public actor SecurityService: SecurityProviding {
         }
     }
 
+    /// The incidents of the last `windowDays` with their status and severity only, no
+    /// alerts and no evidence: what the background check and the watch count. `highOnly`
+    /// asks Graph for high severity alone. Falls back to `incidents()` when Graph refuses
+    /// the narrower request.
+    public func incidentStatuses(highOnly: Bool) async throws -> [SecurityIncident] {
+        let since = now().addingTimeInterval(-TimeInterval(Self.windowDays) * 86_400)
+        var filter = "lastUpdateDateTime ge " + Self.stamp(since)
+        if highOnly { filter += " and severity eq 'high'" }
+        let request = GraphRequest(
+            path: Self.incidentsPath,
+            template: Self.incidentsPath + (highOnly ? "?statuses&high" : "?statuses"),
+            query: [
+                URLQueryItem(name: "$filter", value: filter),
+                URLQueryItem(name: "$select", value: "id,status,severity,lastUpdateDateTime"),
+                URLQueryItem(name: "$top", value: String(Self.pageSize))
+            ],
+            headers: Self.preferHeader,
+            scopes: SecurityScopes.module)
+        do {
+            return try await graph.collection(SecurityIncident.self, from: request, maxPages: 4).items
+        } catch GraphError.badRequest {
+            let all = try await incidents()
+            return highOnly ? all.filter { $0.severity == .high } : all
+        } catch let error as GraphError {
+            throw SecurityError(error)
+        }
+    }
+
     public func incidents(matching filter: SecurityFilter) async throws -> IncidentList {
         let window = "lastUpdateDateTime ge " + Self.stamp(now().addingTimeInterval(-TimeInterval(Self.windowDays) * 86_400))
         if !serverFilterRefused, let clause = Self.serverClause(for: filter) {

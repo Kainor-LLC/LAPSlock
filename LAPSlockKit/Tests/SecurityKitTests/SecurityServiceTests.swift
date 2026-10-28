@@ -245,3 +245,36 @@ final class SecurityServiceTests: XCTestCase {
         XCTAssertFalse(SecurityService.isIncidentId(String(repeating: "9", count: 21)))
     }
 }
+
+// MARK: - lean reads (OPTIMIZATION-PLAN.md, step F)
+
+extension SecurityServiceTests {
+
+    func test_incidentStatusesLeaveOutTheAlertsAndAskForHighOnlyWhenTold() async throws {
+        StubProtocol.replies = ["security/incidents": [.init(status: 200, body: #"{"value":[{"id":"200","severity":"high","status":"inProgress","lastUpdateDateTime":"2026-10-20T10:00:00Z"},{"id":"300","severity":"high","status":"resolved","lastUpdateDateTime":"2026-10-21T10:00:00Z"}]}"#)]]
+        let incidents = try await service.incidentStatuses(highOnly: true)
+        XCTAssertEqual(incidents.filter { $0.isOpen && $0.severity == .high }.map(\.id), ["200"])
+        let url = StubProtocol.requests.first?.url.removingPercentEncoding ?? ""
+        XCTAssertFalse(url.contains("$expand"), "no alerts and no evidence")
+        XCTAssertTrue(url.contains("$select=id,status,severity,lastUpdateDateTime"), url)
+        XCTAssertTrue(url.contains("lastUpdateDateTime ge 2026-12-16T"), url)
+        XCTAssertTrue(url.contains("and severity eq 'high'"), url)
+    }
+
+    func test_incidentStatusesForTheWatchCountEverySeverity() async throws {
+        StubProtocol.replies = ["security/incidents": [.init(status: 200, body: #"{"value":[]}"#)]]
+        _ = try await service.incidentStatuses(highOnly: false)
+        let url = StubProtocol.requests.first?.url.removingPercentEncoding ?? ""
+        XCTAssertFalse(url.contains("severity eq"), url)
+    }
+
+    func test_aRefusedNarrowReadFallsBackToTheFullListWithTheSameOpenHighIncidents() async throws {
+        StubProtocol.replies = ["security/incidents": [
+            .init(status: 400, body: #"{"error":{"code":"BadRequest"}}"#),
+            .init(status: 200, body: incidentsBody),
+        ]]
+        let incidents = try await service.incidentStatuses(highOnly: true)
+        XCTAssertEqual(incidents.filter { $0.isOpen && $0.severity == .high }.map(\.id), ["200"])
+        XCTAssertTrue(incidents.allSatisfy { $0.severity == .high })
+    }
+}

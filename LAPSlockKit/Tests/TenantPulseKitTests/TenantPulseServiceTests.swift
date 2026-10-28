@@ -207,3 +207,60 @@ final class TenantPulseServiceTests: XCTestCase {
         XCTAssertEqual(TenantPulseError(.cancelled), .cancelled)
     }
 }
+
+// MARK: - lean reads (OPTIMIZATION-PLAN.md, step F)
+
+extension TenantPulseServiceTests {
+
+    private var issuesBody: String {
+        #"{"value":[{"id":"EX1","title":"Mail","service":"Exchange Online","classification":"incident","status":"serviceDegradation","isResolved":false,"lastModifiedDateTime":"2026-10-25T12:00:00Z"},{"id":"EX0","title":"Old","service":"Exchange Online","classification":"incident","status":"serviceRestored","isResolved":true,"lastModifiedDateTime":"2026-10-20T12:00:00Z"}]}"#
+    }
+
+    func test_issueStampsAskForTheKeyFieldsOnlyAndFindWhatHealthFinds() async throws {
+        StubProtocol.replies = ["serviceAnnouncement/issues": [.init(status: 200, body: issuesBody)]]
+        let stamps = try await service.activeIssueStamps()
+        XCTAssertEqual(stamps.map(\.id), ["EX1"], "the same active issues health() reports")
+        XCTAssertEqual(stamps.first?.lastModifiedDateTime, ISO8601DateFormatter().date(from: "2026-10-25T12:00:00Z"))
+        let url = StubProtocol.urls(containing: "issues").first?.removingPercentEncoding ?? ""
+        XCTAssertTrue(url.contains("$select=id,classification,isResolved,lastModifiedDateTime"), url)
+        XCTAssertTrue(url.contains("isResolved eq false"), url)
+        XCTAssertTrue(StubProtocol.urls(containing: "healthOverviews").isEmpty, "no service statuses for a key that needs none")
+    }
+
+    func test_aRefusedIssueSelectFallsBackToTheFullRead() async throws {
+        StubProtocol.replies = [
+            "serviceAnnouncement/issues": [.init(status: 400, body: #"{"error":{"code":"BadRequest"}}"#), .init(status: 200, body: issuesBody)],
+            "healthOverviews": [.init(status: 200, body: #"{"value":[]}"#)],
+        ]
+        let stamps = try await service.activeIssueStamps()
+        XCTAssertEqual(stamps.map(\.id), ["EX1"])
+    }
+
+    func test_messageDeadlinesAskForTheWindowWithTheIdAndDateOnly() async throws {
+        StubProtocol.replies = ["serviceAnnouncement/messages": [.init(status: 200, body: #"{"value":[{"id":"due","actionRequiredByDateTime":"2026-11-10T00:00:00Z"}]}"#)]]
+        let now = ISO8601DateFormatter().date(from: "2026-11-01T00:00:00Z")!
+        let found = try await service.messageDeadlines(from: now, through: now.addingTimeInterval(14 * 86_400))
+        XCTAssertEqual(found.map(\.id), ["due"])
+        let url = StubProtocol.urls(containing: "messages").first?.removingPercentEncoding ?? ""
+        XCTAssertTrue(url.contains("actionRequiredByDateTime ge 2026-11-01T00:00:00Z and actionRequiredByDateTime le 2026-11-15T00:00:00Z"), url)
+        XCTAssertTrue(url.contains("$select=id,actionRequiredByDateTime"), url)
+    }
+
+    func test_aRefusedDeadlineFilterFallsBackToTheFullRead() async throws {
+        StubProtocol.replies = ["serviceAnnouncement/messages": [
+            .init(status: 400, body: #"{"error":{"code":"BadRequest"}}"#),
+            .init(status: 200, body: #"{"value":[{"id":"due","title":"Act","category":"planForChange","actionRequiredByDateTime":"2026-11-10T00:00:00Z"}]}"#),
+        ]]
+        let now = ISO8601DateFormatter().date(from: "2026-11-01T00:00:00Z")!
+        let found = try await service.messageDeadlines(from: now, through: now.addingTimeInterval(14 * 86_400))
+        XCTAssertEqual(found.map(\.id), ["due"])
+    }
+
+    func test_secureScoreAsksForAsManySnapshotsAsItNeeds() async throws {
+        StubProtocol.replies = ["secureScores": [.init(status: 200, body: #"{"value":[{"id":"s2","createdDateTime":"2026-10-26T00:00:00Z","currentScore":60,"maxScore":100},{"id":"s1","createdDateTime":"2026-10-25T00:00:00Z","currentScore":62,"maxScore":100}]}"#)]]
+        let summary = try await service.secureScore(snapshots: 2)
+        XCTAssertEqual(summary?.latest.id, "s2")
+        XCTAssertEqual(summary?.change(overDays: 1), -2, "yesterday's drop, from two snapshots")
+        XCTAssertTrue(StubProtocol.urls(containing: "secureScores").first?.contains("$top=2") == true)
+    }
+}

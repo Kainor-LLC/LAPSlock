@@ -1074,6 +1074,8 @@ struct AppRootView: View {
     // defaults, and the work waits for `prepare()` and `armAtLaunch` in the task below.
     @State private var root = AppRootModel()
     @State private var appLock = AppLockModel()
+    /// Set on the way into the background, so the return can be told from a prompt.
+    @State private var wasInBackground = false
     private let settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var showingSignedOutSettings = false
@@ -1155,7 +1157,14 @@ struct AppRootView: View {
             .onChange(of: root.demoCustomer) { _, _ in configureWatch() }
             .onChange(of: settings.privilegedActivationEnabled) { _, _ in configureWatch() }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active { Task { await WatchConnector.shared.push() } }
+                // Back from the background only, not from inactive: a Face ID prompt makes
+                // the app inactive, and each one used to read the tenant for the wrist. The
+                // way back passes through inactive, so the background is remembered.
+                if phase == .background { wasInBackground = true }
+                if phase == .active, wasInBackground {
+                    wasInBackground = false
+                    WatchConnector.shared.requestPush()
+                }
                 if phase == .background { AlertsRunner.scheduleIfNeeded() }
                 // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
                 // grace period, waiting on an Authenticator push, must not return to a lock

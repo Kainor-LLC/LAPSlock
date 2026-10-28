@@ -421,12 +421,23 @@ public actor MSALAuthManager: AuthManaging {
     }
 
     /// Silent acquisition presents nothing, so it does not need the main thread.
+    ///
+    /// Cancellable: a cancelled caller gets `CancellationError` at once instead of waiting
+    /// for MSAL's own network timeout, so the cross-tenant run's budget and the background
+    /// check's deadline hold while a token refresh hangs on a weak connection. MSAL's
+    /// answer, if it comes later, is dropped; the token it fetched stays in MSAL's cache.
     private func acquireSilent(_ params: MSALSilentTokenParameters) async throws -> MSALResult {
-        try await withCheckedThrowingContinuation { cont in
-            application.acquireTokenSilent(with: params) { result, error in
-                if let result { cont.resume(returning: result) }
-                else { cont.resume(throwing: MSALFailure(error: error)) }
+        let once = SilentResume()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { cont in
+                guard once.begin(cont) else { return }
+                application.acquireTokenSilent(with: params) { result, error in
+                    if let result { once.finish(.success(result)) }
+                    else { once.finish(.failure(MSALFailure(error: error))) }
+                }
             }
+        } onCancel: {
+            once.cancel()
         }
     }
 
@@ -608,3 +619,44 @@ private enum MainActorUI {
 }
 
 #endif // os(iOS) || os(macOS)
+
+#if os(iOS) || os(macOS)
+/// Resumes a silent token request exactly once, whichever comes first: MSAL's answer or the
+/// caller's cancellation.
+final class SilentResume: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<MSALResult, Error>?
+    private var cancelled = false
+
+    /// Holds the continuation, unless the caller was cancelled before MSAL was asked: then
+    /// it is resumed with the cancellation here, and false says not to ask MSAL at all.
+    func begin(_ continuation: CheckedContinuation<MSALResult, Error>) -> Bool {
+        lock.lock()
+        if cancelled {
+            lock.unlock()
+            continuation.resume(throwing: CancellationError())
+            return false
+        }
+        self.continuation = continuation
+        lock.unlock()
+        return true
+    }
+
+    func finish(_ result: Result<MSALResult, Error>) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(with: result)
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(throwing: CancellationError())
+    }
+}
+#endif

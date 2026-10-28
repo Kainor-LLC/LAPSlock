@@ -49,9 +49,37 @@ final class WatchModel: NSObject {
                 once.resume(WatchReply(outcome: .failed, message: "Your iPhone didn't answer. Try again."))
             })
         }
-        if let fresh = reply.glance { glance = fresh }
+        if let fresh = reply.glance {
+            glance = fresh
+        } else if case .decide(let id, _, _) = request, reply.outcome == .done {
+            // The phone answers as soon as the decision is sent, and its new glance follows
+            // on its own. Until it does, the request is not shown as still waiting.
+            glance?.approvals.removeAll { $0.id == id }
+        }
         lastReply = reply
         return reply
+    }
+
+    /// The system woke the app for something from the phone, such as the face's counts.
+    /// WatchConnectivity delivers only while the app runs, so it stays up until that is in,
+    /// for a few seconds at most.
+    func finishPendingTransfers() async {
+        guard WCSession.isSupported() else { return }
+        for _ in 0 ..< 25 {
+            let session = WCSession.default
+            guard session.activationState == .activated, session.hasContentPending else { return }
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+    }
+
+    /// The face's counts, sent by the phone when they changed. Reloaded only for a change
+    /// in what it shows: a reload for a newer time with the same counts spends the face's
+    /// budget for nothing.
+    fileprivate func receivedComplication(_ snapshot: ComplicationSnapshot) {
+        let defaults = UserDefaults(suiteName: ComplicationSnapshot.appGroup)
+        let saved = ComplicationSnapshot.load(from: defaults)
+        snapshot.save(to: defaults)
+        if !snapshot.shows(sameAs: saved) { WidgetCenter.shared.reloadAllTimelines() }
     }
 
     fileprivate func received(_ context: [String: Any]) {
@@ -64,11 +92,11 @@ final class WatchModel: NSObject {
     private func updateComplications(_ fresh: WatchGlance?) {
         let defaults = UserDefaults(suiteName: ComplicationSnapshot.appGroup)
         if let fresh, !fresh.tenant.isEmpty {
-            ComplicationSnapshot(fresh).save(to: defaults)
-        } else {
+            receivedComplication(ComplicationSnapshot(fresh))
+        } else if ComplicationSnapshot.load(from: defaults) != nil {
             ComplicationSnapshot.clear(in: defaults)
+            WidgetCenter.shared.reloadAllTimelines()
         }
-        WidgetCenter.shared.reloadAllTimelines()
     }
 }
 
@@ -96,6 +124,11 @@ extension WatchModel: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         let box = ContextBox(applicationContext)
         Task { @MainActor in self.received(box.value) }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard let snapshot = ComplicationSnapshot(userInfo: userInfo) else { return }
+        Task { @MainActor in self.receivedComplication(snapshot) }
     }
 }
 

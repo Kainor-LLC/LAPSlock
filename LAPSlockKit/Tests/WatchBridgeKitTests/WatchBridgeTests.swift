@@ -91,3 +91,28 @@ final class ComplicationSnapshotTests: XCTestCase {
         XCTAssertNil(ComplicationSnapshot.load(from: defaults))
     }
 }
+
+// MARK: - the face's counts (OPTIMIZATION-PLAN.md, step F)
+
+final class ComplicationSnapshotTransferTests: XCTestCase {
+
+    private let earlier = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func snapshot(at date: Date, approvals: Int = 2) -> ComplicationSnapshot {
+        ComplicationSnapshot(updatedAt: date, approvalsWaiting: approvals, degradedServices: 1,
+                             openIncidents: 0, nextRoleEnds: earlier.addingTimeInterval(3_600), isDemo: false)
+    }
+
+    func test_aNewerTimeWithTheSameCountsIsNotAChange() {
+        let first = snapshot(at: earlier)
+        XCTAssertTrue(snapshot(at: earlier.addingTimeInterval(600)).shows(sameAs: first), "only a change in what the face shows wakes it")
+        XCTAssertFalse(snapshot(at: earlier, approvals: 3).shows(sameAs: first))
+        XCTAssertFalse(first.shows(sameAs: nil), "the first one is always news")
+    }
+
+    func test_itTravelsAsUserInfoAndBack() {
+        let sent = snapshot(at: earlier)
+        XCTAssertEqual(ComplicationSnapshot(userInfo: sent.userInfo), sent)
+        XCTAssertNil(ComplicationSnapshot(userInfo: ["something": "else"]))
+    }
+}

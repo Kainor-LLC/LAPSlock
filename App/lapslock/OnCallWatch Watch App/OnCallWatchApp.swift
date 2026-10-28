@@ -13,5 +13,8 @@ struct OnCallWatchApp: App {
         WindowGroup {
             WatchHomeView(model: model)
         }
+        .backgroundTask(.watchConnectivity) {
+            await model.finishPendingTransfers()
+        }
     }
 }

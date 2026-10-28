@@ -178,7 +178,20 @@ struct NotificationsSettingsSection: View {
             }
         } header: {
             Text(tenant.label)
+        } footer: {
+            if prefs.enabled && !prefs.paused {
+                Text(Self.lastChecked(tenant.id))
+            }
         }
+    }
+
+    /// When the background check last read everything due for this organization. iOS
+    /// decides when the check runs, so an MSP can see every customer is being reached.
+    static func lastChecked(_ tenantId: String) -> String {
+        guard let when = AlertsRunner.checkLog.lastFinished(tenantId: tenantId) else {
+            return "Not checked yet. iOS decides when the check runs."
+        }
+        return "Last checked " + RelativeDates.full(when) + "."
     }
 
     @ViewBuilder

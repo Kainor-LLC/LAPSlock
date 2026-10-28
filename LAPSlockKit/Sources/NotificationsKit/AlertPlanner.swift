@@ -65,7 +65,7 @@ public struct AlertPlanner: Sendable {
 /// sign-in id): nothing a reader of the preferences file could act on.
 public final class UserDefaultsLastSeenStore: LastSeenStoring, @unchecked Sendable {
 
-    private let defaults: UserDefaults
+    let defaults: UserDefaults
     private let prefix: String
 
     public init(defaults: UserDefaults = .standard, prefix: String = "notifications.lastSeen.") {
@@ -89,6 +89,7 @@ public final class UserDefaultsLastSeenStore: LastSeenStoring, @unchecked Sendab
         for kind in AlertKind.allCases {
             defaults.removeObject(forKey: key(tenantId, kind))
         }
+        clearChecks(tenantId: tenantId)
     }
 }
 

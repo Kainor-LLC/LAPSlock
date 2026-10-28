@@ -239,11 +239,17 @@ public actor TenantPulseService: TenantPulseProviding {
 
     // MARK: - Secure Score
 
+    /// One snapshot per day; thirty-one covers the screen's thirty-day comparison.
     public func secureScore() async throws -> SecureScoreSummary? {
+        try await secureScore(snapshots: 31)
+    }
+
+    /// The latest `snapshots` days. The background check asks for two (yesterday's
+    /// change) and the watch for one.
+    public func secureScore(snapshots: Int) async throws -> SecureScoreSummary? {
         let request = GraphRequest(
             path: Self.secureScoresPath,
-            // One per day; thirty-one covers the thirty-day comparison.
-            query: [URLQueryItem(name: "$top", value: "31")],
+            query: [URLQueryItem(name: "$top", value: String(max(1, snapshots)))],
             scopes: [TenantPulseScopes.security])
         do {
             let page = try await graph.collection(SecureScoreSnapshot.self, from: request, maxPages: 1)
@@ -252,4 +258,75 @@ public actor TenantPulseService: TenantPulseProviding {
             throw TenantPulseError(error)
         }
     }
+}
+
+// MARK: - lean reads
+
+// For the background check and the watch, which need a few fields where the screens need
+// everything (OPTIMIZATION-PLAN.md, step F). Each asks Graph for less and, where Graph
+// refuses the narrower request with a 400, falls back to the screen's own read, so a tenant
+// is never worse off than before. The screens keep the full reads.
+extension TenantPulseService {
+
+    /// Unresolved issues with the fields a background key needs, without the posts each
+    /// issue carries. The same issues `health()` reports as active.
+    public func activeIssueStamps() async throws -> [ServiceIssue] {
+        let request = GraphRequest(
+            path: Self.issuesPath,
+            template: Self.issuesPath + "?unresolved&select",
+            query: [
+                URLQueryItem(name: "$filter", value: "isResolved eq false"),
+                URLQueryItem(name: "$select", value: "id,classification,isResolved,lastModifiedDateTime"),
+            ],
+            scopes: [TenantPulseScopes.health])
+        do {
+            return try await graph.collection(ServiceIssue.self, from: request, maxPages: 2).items.filter(\.isActive)
+        } catch GraphError.badRequest {
+            return try await health().activeIssues
+        } catch let error as GraphError {
+            throw TenantPulseError(error)
+        }
+    }
+
+    /// Messages whose action is due between now and `horizon`, with only the id and the
+    /// date, rather than two hundred posts with their HTML bodies.
+    public func messageDeadlines(from now: Date, through horizon: Date) async throws -> [ServiceMessage] {
+        let request = GraphRequest(
+            path: Self.messagesPath,
+            template: Self.messagesPath + "?deadlines",
+            query: [
+                URLQueryItem(name: "$filter", value: "actionRequiredByDateTime ge " + Self.stamp(now)
+                             + " and actionRequiredByDateTime le " + Self.stamp(horizon)),
+                URLQueryItem(name: "$select", value: "id,actionRequiredByDateTime"),
+                URLQueryItem(name: "$top", value: "100"),
+            ],
+            scopes: [TenantPulseScopes.messages])
+        do {
+            return try await graph.collection(ServiceMessage.self, from: request, maxPages: 2).items
+        } catch GraphError.badRequest {
+            return try await messages()
+        } catch let error as GraphError {
+            throw TenantPulseError(error)
+        }
+    }
+
+    /// The per-service status only, for the watch's count of degraded services.
+    public func healthOverviews() async throws -> [ServiceHealthOverview] {
+        do {
+            return try await graph.collection(
+                ServiceHealthOverview.self,
+                from: GraphRequest(path: Self.healthOverviewsPath, scopes: [TenantPulseScopes.health]),
+                maxPages: 2).items
+        } catch let error as GraphError {
+            throw TenantPulseError(error)
+        }
+    }
+
+    static func stamp(_ date: Date) -> String { filterStamp.string(from: date) }
+
+    private static let filterStamp: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 }

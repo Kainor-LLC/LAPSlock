@@ -37,10 +37,25 @@ final class WatchConnector: NSObject {
     /// For a request that woke the app in the background before any screen said which
     /// mode it is in. Dropped as soon as the screens configure.
     private var headless: Handlers?
+    /// The connections a headless request's session opened, closed when the screens take over.
+    private var headlessSession: URLSession?
     /// False until the app's screens have said which mode it is in. A background launch for
     /// the notification check builds no screens, and must not tell the watch "signed out".
     private var configured = false
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
+
+    /// The one push running, and whether another was asked for while it ran
+    /// (OPTIMIZATION-PLAN.md, step F). Pushes used to start on every activation, each Face ID
+    /// prompt included, several at once at launch, each reading seven services.
+    private var pushTask: Task<Void, Never>?
+    private var pushAgain = false
+    /// Moves on every configure, so a glance built for the previous tenant is never sent.
+    private var generation = 0
+    private var lastPushed: Date?
+    /// The counts the watch face last had, so it is woken only when they change.
+    private var lastComplication: ComplicationSnapshot?
+    /// Unforced pushes, at most this often. The wrist can ask for Update now at any time.
+    static let minimumInterval: TimeInterval = 10 * 60
 
     func start() {
         guard let session, session.delegate == nil else { return }
@@ -52,23 +67,69 @@ final class WatchConnector: NSObject {
     func configure(_ handlers: Handlers?) {
         self.handlers = handlers
         headless = nil
+        headlessSession?.finishTasksAndInvalidate()
+        headlessSession = nil
         configured = true
-        Task { await push() }
+        generation += 1
+        requestPush(force: true)
+    }
+
+    /// Asks for the glance to be sent. Forced for a tenant or mode change, a newly reachable
+    /// watch and a write from the wrist; otherwise only when the last push is more than
+    /// `minimumInterval` old. One runs at a time; a request while it runs runs it once more.
+    func requestPush(force: Bool = false) {
+        if !force, let lastPushed, Date().timeIntervalSince(lastPushed) < Self.minimumInterval { return }
+        if pushTask != nil {
+            pushAgain = true
+            return
+        }
+        pushTask = Task { [weak self] in await self?.runPushes() }
+    }
+
+    /// For the background check: a push if one is due, finished before the check returns.
+    func pushIfDue() async {
+        requestPush()
+        await pushTask?.value
+    }
+
+    private func runPushes() async {
+        repeat {
+            pushAgain = false
+            await pushOnce()
+        } while pushAgain
+        pushTask = nil
     }
 
     /// Sends the latest glance, if a watch with the app is paired. Signed out sends an empty
     /// glance, so the wrist never shows a previous session's tenant.
-    func push() async {
+    private func pushOnce() async {
         guard configured, let session, session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
+        let built = generation
         let glance: WatchGlance
         if let handlers {
             glance = await handlers.glance().fitted()
         } else {
             glance = WatchGlance(updatedAt: Date(), tenant: "", isDemo: false, problem: "Sign in on your iPhone.")
         }
+        // Built for a tenant the app has since left: the push the switch asked for follows.
+        guard built == generation else { return }
+        send(glance, over: session)
+    }
+
+    /// The glance as application context, and the face's counts over the complication
+    /// channel when they changed: that one wakes the watch, from a budget of about fifty a day.
+    private func send(_ glance: WatchGlance, over session: WCSession) {
+        lastPushed = Date()
+        PerfProbe.mark("watchPush", "approvals=" + String(glance.approvals.count))
         if let context = try? WatchBridge.encode(glance) {
             try? session.updateApplicationContext(context)
         }
+        guard !glance.tenant.isEmpty else { return }
+        let snapshot = ComplicationSnapshot(glance)
+        guard !snapshot.shows(sameAs: lastComplication), session.isComplicationEnabled,
+              session.remainingComplicationUserInfoTransfers > 0 else { return }
+        session.transferCurrentComplicationUserInfo(snapshot.userInfo)
+        lastComplication = snapshot
     }
 
     fileprivate func handle(_ request: WatchRequest) async -> WatchReply {
@@ -81,15 +142,19 @@ final class WatchConnector: NSObject {
         let reply: WatchReply
         switch request {
         case .refresh:
-            return WatchReply(outcome: .done, message: "Updated.", glance: await handlers.glance().fitted())
+            let glance = await handlers.glance().fitted()
+            if configured, let session { send(glance, over: session) }
+            return WatchReply(outcome: .done, message: "Updated.", glance: glance)
         case .decide(let id, let approve, let reason):
             reply = await handlers.decide(id, approve, reason)
         case .activate(let id, let reason, let hours):
             reply = await handlers.activate(id, reason, hours)
         }
-        var withGlance = reply
-        withGlance.glance = await handlers.glance().fitted()
-        return withGlance
+        // Answered as soon as the write returns. The fresh glance follows as application
+        // context, rather than holding the wrist's spinner through a re-read of the tenant,
+        // long enough on a weak link for the watch to give up on an approval that went through.
+        requestPush(force: true)
+        return reply
     }
 
     /// A request from the wrist can launch the app in the background, once iOS has put it
@@ -105,6 +170,7 @@ final class WatchConnector: NSObject {
         if let pin = ManagedConfigStore.read().tenantPin, account.tenantId.lowercased() != pin { return nil }
         let tenant = await manager.operatingTenantId ?? account.tenantId
         let session = AppRootModel.LiveSession(auth: manager, tenantId: tenant)
+        headlessSession = session.urlSession
         let domain = account.username.split(separator: "@").last.map(String.init)
         let built = WatchHandlers.live(
             graph: session.graph, privileged: session.privileged, tenant: domain ?? "Your tenant",
@@ -134,7 +200,7 @@ private final class ReplyBox: @unchecked Sendable {
 
 extension WatchConnector: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
-        Task { @MainActor in await self.push() }
+        Task { @MainActor in self.requestPush(force: true) }
     }
 
     nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
@@ -145,7 +211,7 @@ extension WatchConnector: WCSessionDelegate {
     }
 
     nonisolated func sessionWatchStateDidChange(_ session: WCSession) {
-        Task { @MainActor in await self.push() }
+        Task { @MainActor in self.requestPush(force: true) }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
@@ -191,24 +257,49 @@ enum WatchHandlers {
                     approvals: pending.map(summary))
             },
             decide: { id, approve, reason in
-                await decide(approvals, id: id, approve: approve, reason: reason)
+                await decide(approvals, id: id, approve: approve, reason: reason, known: [])
             },
             activate: { _, _, _ in
                 WatchReply(outcome: .failed, message: "Demo data has no roles to activate. Sign in on your iPhone to use this.")
             })
     }
 
+    /// What the live handlers keep between pushes, for one tenant's session.
+    @MainActor
+    final class Memory {
+        /// Expiring items change by the day, and reading them walks every app registration.
+        static let expiringLife: TimeInterval = 6 * 3_600
+        private var expiring: (items: [ExpiringItem], at: Date)?
+        /// The last approvals and eligible access read, so a decision or an activation from
+        /// the wrist does not read the list again first.
+        var pending: [PendingApproval] = []
+        var eligible: [EligibleAccess] = []
+
+        func expiringItems(_ read: () async throws -> [ExpiringItem]) async -> [ExpiringItem]? {
+            if let expiring, Date().timeIntervalSince(expiring.at) < Self.expiringLife { return expiring.items }
+            guard let items = try? await read() else { return expiring?.items }
+            expiring = (items, Date())
+            return items
+        }
+    }
+
     /// Live: the session's services, every read silent, every write through the gate.
+    ///
+    /// The glance reads what it shows and no more (OPTIMIZATION-PLAN.md, step F): the
+    /// service statuses without the issues and their posts, the latest Secure Score rather
+    /// than a month, incident statuses without their alerts and evidence, and expiring
+    /// items from memory for six hours.
     @MainActor
     static func live(graph: GraphClient, privileged: PrivilegedAccessService, tenant: String, approvals: any ApprovalsProviding,
                      tenantPulse: TenantPulseService, security: SecurityService, activationEnabled: Bool) -> WatchConnector.Handlers {
         let gate = GraphRoleGate(graph: graph, privileged: privileged)
+        let memory = Memory()
         return WatchConnector.Handlers(
             glance: {
-                async let health = try? tenantPulse.health()
-                async let expiring = try? tenantPulse.expiringItems()
-                async let score = try? tenantPulse.secureScore()
-                async let incidents = try? security.incidents()
+                async let overviews = try? tenantPulse.healthOverviews()
+                async let expiring = memory.expiringItems { try await tenantPulse.expiringItems() }
+                async let score = try? tenantPulse.secureScore(snapshots: 1)
+                async let incidents = try? security.incidentStatuses(highOnly: false)
                 async let pending = try? approvals.pending()
                 async let roles = try? gate.activeRoles()
                 async let eligible = activationEnabled ? (try? privileged.eligibleAccess()) : nil
@@ -219,14 +310,17 @@ enum WatchHandlers {
                     return Int((current / max * 100).rounded())
                 }
                 let pendingList = await pending
+                if let pendingList { memory.pending = pendingList }
+                let eligibleList = await eligible
+                if let eligibleList { memory.eligible = eligibleList }
                 return WatchGlance(
                     updatedAt: Date(), tenant: tenant, isDemo: false,
-                    health: .init(degradedServices: await health?.degraded.count,
+                    health: .init(degradedServices: await overviews?.filter { !$0.isOperational }.count,
                                   openIncidents: await incidents?.filter(\.isOpen).count,
                                   expiringSoon: await expiring?.filter { $0.expiresAt <= horizon }.count,
                                   secureScorePercent: percent),
                     activeRoles: (await roles ?? []).map { .init(name: $0.name, endsAt: $0.endsAt) },
-                    eligible: (await eligible ?? []).map { access in
+                    eligible: (eligibleList ?? []).map { access in
                         var isGroup = false
                         if case .group = access.kind { isGroup = true }
                         return .init(id: access.id, name: access.displayName ?? "Eligible access", isGroup: isGroup)
@@ -235,13 +329,17 @@ enum WatchHandlers {
                     problem: pendingList == nil ? "Couldn't read PIM approvals." : nil)
             },
             decide: { id, approve, reason in
-                await decide(approvals, id: id, approve: approve, reason: reason)
+                let reply = await decide(approvals, id: id, approve: approve, reason: reason, known: memory.pending)
+                if reply.outcome == .done { memory.pending.removeAll { $0.id == id } }
+                return reply
             },
             activate: { id, reason, hours in
                 guard activationEnabled else {
                     return WatchReply(outcome: .failed, message: "Turn on role activation in Settings on your iPhone first.")
                 }
-                guard let access = (try? await privileged.eligibleAccess())?.first(where: { $0.id == id }) else {
+                var known = memory.eligible.first(where: { $0.id == id })
+                if known == nil { known = (try? await privileged.eligibleAccess())?.first(where: { $0.id == id }) }
+                guard let access = known else {
                     return WatchReply(outcome: .failed, message: "That access is no longer eligible.")
                 }
                 let name = access.displayName ?? "the role"
@@ -268,8 +366,14 @@ enum WatchHandlers {
                              duration: approval.durationText, reason: approval.justification, askedAt: approval.requested)
     }
 
-    static func decide(_ approvals: any ApprovalsProviding, id: String, approve: Bool, reason: String) async -> WatchReply {
-        guard let approval = (try? await approvals.pending())?.first(where: { $0.id == id }) else {
+    /// The request is looked up among those the last glance read, and read again only when
+    /// it is not there. Graph refuses a request somebody else already decided, so a
+    /// remembered one cannot be decided twice.
+    static func decide(_ approvals: any ApprovalsProviding, id: String, approve: Bool, reason: String,
+                       known: [PendingApproval]) async -> WatchReply {
+        var found = known.first(where: { $0.id == id })
+        if found == nil { found = (try? await approvals.pending())?.first(where: { $0.id == id }) }
+        guard let approval = found else {
             return WatchReply(outcome: .failed, message: ApprovalsError.nothingToDecide.message)
         }
         switch await approvals.decide(approval, approve ? .approve : .deny, justification: reason) {

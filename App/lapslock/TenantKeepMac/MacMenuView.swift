@@ -46,6 +46,7 @@ struct MacMenuView: View {
                 Text(message).font(.caption).foregroundStyle(.orange)
             }
             Divider()
+                .onAppear { model.menuOpened() }
             HStack {
                 if model.mode != .signedOut {
                     Button("Refresh") { Task { await model.refreshAll() } }

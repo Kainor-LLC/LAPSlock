@@ -29,7 +29,10 @@ enum AlertsRunner {
     static let interval: TimeInterval = 15 * 60
 
     static var preferencesStore: any NotificationPreferencesStoring = KeychainNotificationPreferencesStore()
-    static var lastSeen: any LastSeenStoring = UserDefaultsLastSeenStore()
+    private static let defaultsStore = UserDefaultsLastSeenStore()
+    static var lastSeen: any LastSeenStoring = defaultsStore
+    /// When each tenant and kind was last read, and where the last run stopped.
+    static var checkLog: any AlertCheckLogging = defaultsStore
 
     // MARK: - scheduling
 
@@ -48,12 +51,17 @@ enum AlertsRunner {
     // MARK: - the run
 
     /// The whole run. Returns how many notifications it posted, for the DEBUG path.
+    ///
+    /// iOS gives a run about thirty seconds (OPTIMIZATION-PLAN.md, step F). So, in order:
+    /// break-glass sign-ins for every tenant, four tenants at a time, because that is the
+    /// one alert that cannot wait; then the other kinds tenant by tenant, starting after the
+    /// tenant the last run finished with, the kinds due for each read together, and no new
+    /// tenant started after `AlertSchedule.budget`. Kinds that change about once a day are
+    /// read about that often. Nothing waits to retry: a throttled read is next run's.
     @discardableResult
     static func run(auth suppliedAuth: (any AuthManaging)? = nil) async -> Int {
         defer { scheduleIfNeeded() }
-        // The watch's glance and complications are as fresh as this run, when the app's
-        // screens exist to say which mode it is in; a cold background launch skips it.
-        defer { Task { await WatchConnector.shared.push() } }
+        let deadline = Date().addingTimeInterval(AlertSchedule.budget)
         let managed = ManagedConfigStore.read()
         guard !managed.isDisabled("notifications") else { return 0 }
         guard var prefs = try? preferencesStore.load(), prefs.anythingToCheck else { return 0 }
@@ -69,57 +77,164 @@ enum AlertsRunner {
             own.breakGlassUPNs = TenantAlertPreferences.cleanUPNs(own.breakGlassUPNs + managed.breakGlassUPNs)
             prefs.upsert(own)
         }
+        let tenants = prefs.tenants.filter { tenant in
+            !tenant.activeKinds.isEmpty && (managed.tenantPin == nil || tenant.tenantId == managed.tenantPin)
+        }
 
         // One connection pool for the run, shared by every tenant's Graph client: each
-        // still has its own auth for its tenant, and the token goes with each request.
-        let urlSession = GraphClient.makeSession()
+        // still has its own auth for its tenant, and the token goes with each request. A
+        // shorter wait per request than the foreground's, and no retries.
+        let urlSession = GraphClient.makeSession(timeout: 15)
         defer { urlSession.finishTasksAndInvalidate() }
+        func sources(for tenant: TenantAlertPreferences) -> AlertSources {
+            let scoped = TenantScopedAuth(base: auth, tenantId: tenant.tenantId)
+            return AlertSources(graph: GraphClient(auth: scoped, session: urlSession, retryPolicy: .none),
+                                breakGlassUPNs: tenant.breakGlassUPNs)
+        }
 
         var posted = 0
-        for tenant in prefs.tenants where !tenant.activeKinds.isEmpty {
-            if let pin = managed.tenantPin, tenant.tenantId != pin { continue }
-            if Task.isCancelled { break }
-            let scoped = TenantScopedAuth(base: auth, tenantId: tenant.tenantId)
-            // The probe: a scope consented at sign-in. If even this fails silently, the
-            // tenant needs a foreground sign-in, and asking for every kind would fail the
-            // same way.
-            do {
-                _ = try await scoped.token(scopes: ["DeviceManagementManagedDevices.Read.All"], allowInteractive: false)
-            } catch {
-                var paused = tenant
-                paused.paused = true
-                prefs.upsert(paused)
-                try? preferencesStore.save(prefs)
-                await post(AlertCopy.needsSignIn(tenantId: tenant.tenantId, label: tenant.label))
-                posted += 1
-                continue
-            }
+        // Whether each tenant answered its probe this run, so a tenant is probed once.
+        var signedIn: [String: Bool] = [:]
 
-            let graph = GraphClient(auth: scoped, session: urlSession)
-            let sources = AlertSources(graph: graph, breakGlassUPNs: tenant.breakGlassUPNs)
-            var observations: [AlertObservation] = []
-            for kind in tenant.activeKinds {
-                if Task.isCancelled { break }
-                // A kind whose module was never consented in this tenant fails here and is
-                // skipped quietly; the others still run.
-                if let keys = await sources.keys(for: kind) {
-                    observations.append(AlertObservation(kind: kind, keys: keys))
+        // Break-glass first, for every tenant, from the same starting point as the rest so
+        // the same tenants are not always last.
+        let watched = AlertSchedule.rotated(tenants, after: checkLog.lastTenant)
+            .filter { $0.activeKinds.contains(.breakGlassSignIn) }
+        for group in stride(from: 0, to: watched.count, by: 4).map({ Array(watched[$0 ..< min($0 + 4, watched.count)]) }) {
+            if Task.isCancelled || Date() >= deadline { break }
+            let results = await withTaskGroup(of: (String, Probe, Set<String>?).self) { tasks in
+                for tenant in group {
+                    let reader = sources(for: tenant)
+                    tasks.addTask {
+                        let probe = await Self.probe(tenant, auth: auth)
+                        guard probe == .signedIn else { return (tenant.tenantId, probe, nil) }
+                        return (tenant.tenantId, probe, await reader.keys(for: .breakGlassSignIn))
+                    }
+                }
+                var collected: [(String, Probe, Set<String>?)] = []
+                for await result in tasks { collected.append(result) }
+                return collected
+            }
+            for (tenantId, probe, keys) in results {
+                guard let tenant = tenants.first(where: { $0.tenantId == tenantId }) else { continue }
+                switch probe {
+                case .cancelled:
+                    continue
+                case .needsSignIn:
+                    signedIn[tenantId] = false
+                    posted += await pause(tenant, in: &prefs)
+                case .signedIn:
+                    signedIn[tenantId] = true
+                    if let keys {
+                        posted += await plan(tenant, [AlertObservation(kind: .breakGlassSignIn, keys: keys)])
+                    }
                 }
             }
-            let result = AlertPlanner().plan(
-                tenantId: tenant.tenantId,
-                label: tenant.label,
-                observations: observations,
-                lastSeen: { lastSeen.keys(tenantId: tenant.tenantId, kind: $0) })
-            for (kind, keys) in result.remembered {
-                lastSeen.setKeys(keys, tenantId: tenant.tenantId, kind: kind)
+        }
+
+        // Then everything else, tenant by tenant, from where the last run stopped.
+        for tenant in AlertSchedule.rotated(tenants, after: checkLog.lastTenant) {
+            if Task.isCancelled || Date() >= deadline { break }
+            if signedIn[tenant.tenantId] == nil {
+                switch await probe(tenant, auth: auth) {
+                case .cancelled:
+                    return posted
+                case .needsSignIn:
+                    signedIn[tenant.tenantId] = false
+                    posted += await pause(tenant, in: &prefs)
+                    continue
+                case .signedIn:
+                    signedIn[tenant.tenantId] = true
+                }
             }
-            for alert in result.alerts {
-                await post(alert)
-                posted += 1
+            guard signedIn[tenant.tenantId] == true else { continue }
+
+            let started = Date()
+            let due = AlertSchedule.due(
+                tenant.activeKinds.filter { $0 != .breakGlassSignIn },
+                lastChecked: { checkLog.lastChecked(tenantId: tenant.tenantId, kind: $0) },
+                now: started)
+            let observations = await read(due, from: sources(for: tenant))
+            // A kind read is a kind checked, whatever it found; a failed read is retried
+            // next run, whatever its schedule.
+            for observation in observations {
+                checkLog.setChecked(started, tenantId: tenant.tenantId, kind: observation.kind)
             }
+            posted += await plan(tenant, observations)
+            if Task.isCancelled { break }
+            checkLog.setFinished(started, tenantId: tenant.tenantId)
+            checkLog.setLastTenant(tenant.tenantId)
+        }
+
+        // The watch's glance and complications are as fresh as this run, when the app's
+        // screens exist to say which mode it is in; a cold background launch skips it. Within
+        // the run's own time, rather than after iOS has suspended the app.
+        if !Task.isCancelled, Date() < deadline {
+            await WatchConnector.shared.pushIfDue()
         }
         return posted
+    }
+
+    enum Probe: Sendable, Equatable { case signedIn, needsSignIn, cancelled }
+
+    /// A scope consented at sign-in, asked for silently. If even this fails, the tenant
+    /// needs a foreground sign-in, and asking for every kind would fail the same way. A run
+    /// cut short by iOS is not a failed sign-in.
+    private static func probe(_ tenant: TenantAlertPreferences, auth: any AuthManaging) async -> Probe {
+        let scoped = TenantScopedAuth(base: auth, tenantId: tenant.tenantId)
+        do {
+            _ = try await scoped.token(scopes: ["DeviceManagementManagedDevices.Read.All"], allowInteractive: false)
+            return .signedIn
+        } catch {
+            if error is CancellationError || Task.isCancelled { return .cancelled }
+            return .needsSignIn
+        }
+    }
+
+    /// Pauses a tenant until the admin next signs in with the app open, and says so once.
+    private static func pause(_ tenant: TenantAlertPreferences, in prefs: inout NotificationPreferences) async -> Int {
+        var paused = tenant
+        paused.paused = true
+        prefs.upsert(paused)
+        try? preferencesStore.save(prefs)
+        await post(AlertCopy.needsSignIn(tenantId: tenant.tenantId, label: tenant.label))
+        return 1
+    }
+
+    /// The kinds read together, three at a time. A kind whose module was never consented in
+    /// this tenant fails here and is skipped quietly; the others still count.
+    private static func read(_ kinds: [AlertKind], from sources: AlertSources) async -> [AlertObservation] {
+        await withTaskGroup(of: AlertObservation?.self) { group in
+            var waiting = kinds[...]
+            func start() {
+                guard let kind = waiting.popFirst() else { return }
+                group.addTask { await sources.keys(for: kind).map { AlertObservation(kind: kind, keys: $0) } }
+            }
+            for _ in 0 ..< 3 { start() }
+            var observations: [AlertObservation] = []
+            for await observation in group {
+                if let observation { observations.append(observation) }
+                start()
+            }
+            return observations
+        }
+    }
+
+    /// Decides what is new for one tenant, remembers what was seen, and posts.
+    private static func plan(_ tenant: TenantAlertPreferences, _ observations: [AlertObservation]) async -> Int {
+        guard !observations.isEmpty else { return 0 }
+        let result = AlertPlanner().plan(
+            tenantId: tenant.tenantId,
+            label: tenant.label,
+            observations: observations,
+            lastSeen: { lastSeen.keys(tenantId: tenant.tenantId, kind: $0) })
+        for (kind, keys) in result.remembered {
+            lastSeen.setKeys(keys, tenantId: tenant.tenantId, kind: kind)
+        }
+        for alert in result.alerts {
+            await post(alert)
+        }
+        return result.alerts.count
     }
 
     // MARK: - posting
@@ -202,14 +317,17 @@ struct AlertSources {
     func keys(for kind: AlertKind) async -> Set<String>? {
         do {
             switch kind {
+            // The keys below are exactly what they were when each kind read the screen's full
+            // payload, so a tenant's first run after the lean reads arrived alerts on nothing
+            // it had already seen (OPTIMIZATION-PLAN.md, step F).
             case .serviceIncident:
-                let report = try await TenantPulseService(graph: graph).health()
-                return Set(report.activeIssues.filter(\.isIncident).map { issue in
+                let issues = try await TenantPulseService(graph: graph).activeIssueStamps()
+                return Set(issues.filter(\.isIncident).map { issue in
                     issue.id + "|" + String(Int(issue.lastModifiedDateTime?.timeIntervalSince1970 ?? 0))
                 })
             case .messageDeadline:
                 let horizon = now.addingTimeInterval(14 * 86_400)
-                let messages = try await TenantPulseService(graph: graph).messages()
+                let messages = try await TenantPulseService(graph: graph).messageDeadlines(from: now, through: horizon)
                 return Set(messages.compactMap { message in
                     guard let due = message.actionRequiredByDateTime, due > now, due <= horizon else { return nil }
                     return message.id
@@ -219,25 +337,33 @@ struct AlertSources {
                 let items = try await TenantPulseService(graph: graph).expiringItems()
                 return Set(items.filter { $0.expiresAt <= horizon && $0.expiresAt > now.addingTimeInterval(-86_400) }.map(\.id))
             case .secureScoreDrop:
-                guard let summary = try await TenantPulseService(graph: graph).secureScore() else { return [] }
+                // Yesterday's change needs today's snapshot and yesterday's, not a month.
+                guard let summary = try await TenantPulseService(graph: graph).secureScore(snapshots: 2) else { return [] }
                 if let change = summary.change(overDays: 1), change < 0 { return [summary.latest.id] }
                 return []
             case .conditionalAccessChange:
-                let policies = try await ConditionalAccessService(graph: graph).policies()
+                let policies = try await ConditionalAccessService(graph: graph).policyStamps()
                 return Set(policies.map { $0.id + "|" + String(Int($0.lastChanged?.timeIntervalSince1970 ?? 0)) })
             case .pimApproval:
                 return Set(try await ApprovalsService(readingWith: graph).pending().map(\.id))
             case .securityIncident:
-                let incidents = try await SecurityService(graph: graph).incidents()
+                let incidents = try await SecurityService(graph: graph).incidentStatuses(highOnly: true)
                 return Set(incidents.filter { $0.isOpen && $0.severity == .high }.map(\.id))
             case .breakGlassSignIn:
+                // Every account at once rather than one after another; any failure is the
+                // kind failing, as before.
                 let triage = SignInTriageService(graph: graph)
-                var keys = Set<String>()
-                for upn in breakGlassUPNs {
-                    let events = try await triage.signIns(SignInQuery(userPrincipalName: upn, last24Hours: true, limit: 20))
-                    for event in events { keys.insert(OpaqueKey.make(event.id, upn)) }
+                return try await withThrowingTaskGroup(of: [String].self) { group in
+                    for upn in breakGlassUPNs {
+                        group.addTask {
+                            let events = try await triage.signIns(SignInQuery(userPrincipalName: upn, last24Hours: true, limit: 20))
+                            return events.map { OpaqueKey.make($0.id, upn) }
+                        }
+                    }
+                    var keys = Set<String>()
+                    for try await part in group { keys.formUnion(part) }
+                    return keys
                 }
-                return keys
             }
         } catch {
             return nil
