@@ -180,8 +180,12 @@ final class DeviceDetailModel {
         }
     }
 
+    /// `isCountingDown` comes first so a view asking for the secret observes the window
+    /// opening and closing; the session itself is not observable. Without it a BitLocker
+    /// row, which redraws only for what it read, missed the window that opens after Face
+    /// ID and never showed the key. `session.isVisible` stays the authority.
     var revealedSecret: SensitiveValue? {
-        guard session.isVisible, revealedItem == .lapsPassword,
+        guard isCountingDown, session.isVisible, revealedItem == .lapsPassword,
               lapsVersions.indices.contains(visibleLapsVersion)
         else { return nil }
         return lapsVersions[visibleLapsVersion].secret
@@ -214,8 +218,9 @@ final class DeviceDetailModel {
         statusNote = nil
     }
 
+    /// Observes the window first, as `revealedSecret` does.
     var revealedBitLockerSecret: SensitiveValue? {
-        guard session.isVisible, case .bitLockerKey = revealedItem else { return nil }
+        guard isCountingDown, session.isVisible, case .bitLockerKey = revealedItem else { return nil }
         return bitLockerSecret
     }
 
