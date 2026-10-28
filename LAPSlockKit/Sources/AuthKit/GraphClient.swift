@@ -20,7 +20,9 @@ import Foundation
 //   * The API version is pinned per request and is part of the record, because Graph moves
 //     endpoints between beta and v1.0 and changes shapes when it does.
 //   * 429 is retried for GET only, honouring Retry-After up to a cap, a bounded number of
-//     times. A write is never retried by this client; whoever owns the write decides.
+//     times, and so is a POST that only reads and says so (`readOnly`). A 503 or 504 on
+//     either is retried once. A write is never retried by this client; whoever owns the
+//     write decides. One 429 slows every read this client sends until its wait is over.
 //   * Every failing response records its request-id in GraphResponseTracer, because that
 //     id is the first thing Microsoft support asks for.
 //   * The session is ephemeral: no disk cache, no cookies. Nothing the networking layer
@@ -69,6 +71,16 @@ public struct GraphRequest: Sendable, Equatable {
     /// A claims challenge to satisfy when acquiring the token, as the JSON Graph sent.
     /// Set by a write's explicit resume after a challenge and by nothing else.
     public var claims: String?
+    /// A POST that only reads, such as `getByIds` or an advanced hunting query. It gives
+    /// that POST a GET's retries. Set by the Kit that builds such a read and by nothing
+    /// else: `ActionRunner` refuses any request carrying it, so a write cannot borrow it.
+    public var readOnly: Bool
+
+    /// Whether this client may send it again: a GET, or a POST marked `readOnly`. Never a
+    /// PATCH or DELETE, whatever the flag says.
+    public var isRetryable: Bool {
+        method == .get || (method == .post && readOnly)
+    }
 
     public init(
         method: Method = .get,
@@ -80,7 +92,8 @@ public struct GraphRequest: Sendable, Equatable {
         body: Data? = nil,
         scopes: [String],
         allowInteractive: Bool = false,
-        claims: String? = nil
+        claims: String? = nil,
+        readOnly: Bool = false
     ) {
         self.method = method
         self.version = version
@@ -92,6 +105,7 @@ public struct GraphRequest: Sendable, Equatable {
         self.scopes = scopes
         self.allowInteractive = allowInteractive
         self.claims = claims
+        self.readOnly = readOnly
     }
 }
 
@@ -124,7 +138,8 @@ public struct GraphCallRecord: Sendable, Equatable {
     /// Nil when no response arrived.
     public let httpStatus: Int?
     public let durationMs: Int
-    /// How many 429s were waited out before this outcome.
+    /// How many times the request was sent again before this outcome: 429s waited out,
+    /// and a 503 or 504 retried.
     public let retries: Int
 
     public init(template: String, version: GraphAPIVersion, method: GraphRequest.Method,
@@ -169,33 +184,45 @@ public struct GraphCollection<Item: Sendable>: Sendable {
 }
 
 public struct GraphRetryPolicy: Sendable, Equatable {
-    /// 429 retries on a GET. Writes get none regardless.
+    /// 429 retries on a retryable request. Writes get none regardless.
     public var maxRetries: Int
     /// Longest Retry-After honoured. Graph can ask for minutes; an admin on a phone will
     /// not wait that long for a list, so beyond this the module hears about it instead.
     public var maxWait: TimeInterval
     /// Wait when Graph sent no Retry-After, or one that could not be read.
     public var defaultWait: TimeInterval
+    /// Retries for a 503 or 504 on a retryable request: Graph's brief unavailability, which
+    /// a second attempt usually gets past.
+    public var serviceRetries: Int
 
-    public init(maxRetries: Int, maxWait: TimeInterval, defaultWait: TimeInterval) {
+    public init(maxRetries: Int, maxWait: TimeInterval, defaultWait: TimeInterval, serviceRetries: Int = 1) {
         self.maxRetries = maxRetries
         self.maxWait = maxWait
         self.defaultWait = defaultWait
+        self.serviceRetries = serviceRetries
     }
 
     public static let standard = GraphRetryPolicy(maxRetries: 2, maxWait: 10, defaultWait: 2)
-    public static let none = GraphRetryPolicy(maxRetries: 0, maxWait: 0, defaultWait: 0)
+    public static let none = GraphRetryPolicy(maxRetries: 0, maxWait: 0, defaultWait: 0, serviceRetries: 0)
 }
 
 public final class GraphClient: Sendable {
 
     public typealias Sleeper = @Sendable (TimeInterval) async throws -> Void
     public typealias Observer = @Sendable (GraphCallRecord) -> Void
+    /// Extra seconds added to a wait of the given length.
+    public typealias Jitter = @Sendable (TimeInterval) -> TimeInterval
 
     public static let defaultBase = URL(string: "https://graph.microsoft.com")!
 
     public static let systemSleep: Sleeper = { seconds in
         try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+    }
+
+    /// Up to a fifth more, so reads that were throttled together do not all come back in
+    /// the same instant and get throttled again.
+    public static let systemJitter: Jitter = { wait in
+        wait > 0 ? Double.random(in: 0...(wait * 0.2)) : 0
     }
 
     private let auth: any AuthManaging
@@ -205,12 +232,16 @@ public final class GraphClient: Sendable {
     private let observer: Observer?
     private let tracer: GraphResponseTracer
     private let sleep: Sleeper
+    private let jitter: Jitter
+    private let throttle = Throttle()
 
     /// - Parameters:
-    ///   - session: injected by tests. Production gets the ephemeral session below.
+    ///   - session: the app passes the signed-in session's one session, so every service
+    ///     reuses its connections; tests pass their own. Nil builds an ephemeral one.
     ///   - observer: receives one record per call, success or failure. The app wires it to
     ///     the diagnostics recorder; the Kits never see it.
     ///   - sleep: injected by tests so a 429 retry does not actually wait.
+    ///   - jitter: injected by tests so a wait is exact.
     public init(
         auth: any AuthManaging,
         base: URL = GraphClient.defaultBase,
@@ -218,7 +249,8 @@ public final class GraphClient: Sendable {
         retryPolicy: GraphRetryPolicy = .standard,
         observer: Observer? = nil,
         tracer: GraphResponseTracer = .shared,
-        sleep: @escaping Sleeper = GraphClient.systemSleep
+        sleep: @escaping Sleeper = GraphClient.systemSleep,
+        jitter: @escaping Jitter = GraphClient.systemJitter
     ) {
         self.auth = auth
         self.base = base
@@ -227,6 +259,24 @@ public final class GraphClient: Sendable {
         self.observer = observer
         self.tracer = tracer
         self.sleep = sleep
+        self.jitter = jitter
+    }
+
+    /// When this client was last told to slow down. Every retryable request waits it out
+    /// before going, so a burst of reads after a 429 waits once together instead of each
+    /// meeting its own 429. Writes never wait on it: they go when the admin confirmed.
+    private actor Throttle {
+        private var until: Date?
+
+        func hold(for seconds: TimeInterval, from now: Date = Date()) {
+            let end = now.addingTimeInterval(seconds)
+            if until.map({ end > $0 }) ?? true { until = end }
+        }
+
+        func remaining(at now: Date = Date()) -> TimeInterval {
+            guard let until else { return 0 }
+            return max(0, until.timeIntervalSince(now))
+        }
     }
 
     /// Ephemeral: no disk cache, no cookie store. Same shape as the sessions the existing
@@ -288,6 +338,10 @@ public final class GraphClient: Sendable {
     }
 
     /// Continues a walk from a `nextLink`, for a load-more row.
+    ///
+    /// One token for the whole walk, not one per page: MSAL hands out a token with at least
+    /// five minutes left, and asking again for every page queued each one behind the
+    /// Keychain lookups of every other request in flight.
     public func collection<T: Decodable & Sendable>(
         _ type: T.Type,
         at start: URL,
@@ -297,9 +351,12 @@ public final class GraphClient: Sendable {
         var items: [T] = []
         var next: URL? = start
         var pages = 0
+        var token: String?
         while let pageURL = next, pages < max(1, maxPages) {
             guard Self.isPageLink(pageURL, on: base) else { throw GraphError.decodeFailure }
-            let response = try await perform(url: pageURL, request: request)
+            let sent = try await perform(url: pageURL, request: request, token: token)
+            token = sent.token
+            let response = sent.response
             let page: Page<T>
             do {
                 page = try Self.decoder.decode(Page<T>.self, from: response.data)
@@ -330,12 +387,32 @@ public final class GraphClient: Sendable {
     }
 
     private func perform(url: URL, request: GraphRequest, validate: Bool = true) async throws -> GraphResponse {
+        try await perform(url: url, request: request, validate: validate, token: nil).response
+    }
+
+    /// Sends one request, with a token already held for it or a fresh one, and hands back
+    /// the token it used so a paged walk can use it again.
+    private func perform(
+        url: URL, request: GraphRequest, validate: Bool = true, token held: String?
+    ) async throws -> (response: GraphResponse, token: String) {
         let started = Date()
         var retries = 0
+        var throttledRetries = 0
+        var serviceRetries = 0
         var lastStatus: Int?
 
         do {
-            let token = try await token(for: request)
+            let token: String
+            if let held {
+                token = held
+            } else {
+                token = try await self.token(for: request)
+            }
+            // A read waits out a 429 another request already met, once, before going.
+            if request.isRetryable {
+                let pause = await throttle.remaining()
+                if pause > 0 { try await sleep(pause + jitter(pause)) }
+            }
             while true {
                 var urlRequest = URLRequest(url: url)
                 urlRequest.httpMethod = request.method.rawValue
@@ -369,10 +446,24 @@ public final class GraphClient: Sendable {
                     tracer.recordFailure(http)
                 }
 
-                if http.statusCode == 429, request.method == .get, retries < retryPolicy.maxRetries {
+                if http.statusCode == 429 {
+                    // Every read this client sends waits this out, not only this one.
+                    let wait = min(Self.retryAfter(http) ?? retryPolicy.defaultWait, retryPolicy.maxWait)
+                    await throttle.hold(for: wait)
+                    if request.isRetryable, throttledRetries < retryPolicy.maxRetries {
+                        throttledRetries += 1
+                        retries += 1
+                        try await sleep(wait + jitter(wait))
+                        continue
+                    }
+                }
+
+                if http.statusCode == 503 || http.statusCode == 504,
+                   request.isRetryable, serviceRetries < retryPolicy.serviceRetries {
+                    serviceRetries += 1
                     retries += 1
                     let wait = min(Self.retryAfter(http) ?? retryPolicy.defaultWait, retryPolicy.maxWait)
-                    try await sleep(wait)
+                    try await sleep(wait + jitter(wait))
                     continue
                 }
 
@@ -384,11 +475,12 @@ public final class GraphClient: Sendable {
                         if let key = key as? String, let value = value as? String { headers[key] = value }
                     }
                 }
-                return GraphResponse(
+                let graphResponse = GraphResponse(
                     status: http.statusCode,
                     data: data,
                     requestId: http.value(forHTTPHeaderField: "request-id"),
                     headers: headers)
+                return (graphResponse, token)
             }
         } catch let error as GraphError {
             record(request, status: lastStatus, started: started, retries: retries)
@@ -470,7 +562,8 @@ public final class GraphClient: Sendable {
     // MARK: - decoding
 
     /// Graph's dates, which carry up to seven fractional digits where Foundation reads three.
-    public static var decoder: JSONDecoder {
+    /// Built once: decoding does not change it, and a decoder per call and per page added up.
+    public static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
@@ -482,7 +575,7 @@ public final class GraphClient: Sendable {
             return date
         }
         return decoder
-    }
+    }()
 }
 
 public enum GraphDates {
@@ -503,15 +596,17 @@ public enum GraphDates {
         return fractional.date(from: String(value[..<dot]) + "." + threeDigits + String(rest))
     }
 
-    private static var plain: ISO8601DateFormatter {
+    // Built once. They were computed properties, so every date parsed built a formatter:
+    // thousands for one Expiring Credentials load. ISO8601DateFormatter is thread-safe.
+    private static let plain: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         return formatter
-    }
+    }()
 
-    private static var fractional: ISO8601DateFormatter {
+    private static let fractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
-    }
+    }()
 }

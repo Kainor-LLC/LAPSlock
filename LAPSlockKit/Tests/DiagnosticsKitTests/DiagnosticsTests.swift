@@ -152,6 +152,39 @@ final class DiagnosticsReportTests: XCTestCase {
         XCTAssertEqual(events.count, 10, "Ring buffer must not grow without bound.")
     }
 
+    func test_aFailureSurvivesABusyScreensSuccesses() async {
+        // One groups screen is hundreds of successful calls. In a single ring they pushed
+        // out the failure the admin was trying to report.
+        let r = DiagnosticsRecorder(failureCapacity: 10, successCapacity: 10)
+        await r.record(.credentialReveal, .notAuthorized, httpStatus: 403)
+        for _ in 0..<300 {
+            await r.record(.graphRead, .success, httpStatus: 200)
+        }
+        let events = await r.recentEvents()
+        XCTAssertEqual(events.count, 11)
+        XCTAssertEqual(events.first?.outcome, .notAuthorized, "oldest first, and still there")
+        XCTAssertEqual(events.filter { $0.outcome == .success }.count, 10)
+    }
+
+    func test_bothRingsAreMergedInTheOrderTheyHappened() async {
+        let r = DiagnosticsRecorder(failureCapacity: 10, successCapacity: 10)
+        await r.record(.signIn, .success)
+        await r.record(.credentialReveal, .notAuthorized)
+        await r.record(.graphRead, .success)
+        await r.record(.graphRead, .throttled)
+        let events = await r.recentEvents()
+        XCTAssertEqual(events.map(\.outcome), [.success, .notAuthorized, .success, .throttled])
+    }
+
+    func test_clearEmptiesBothRings() async {
+        let r = DiagnosticsRecorder(failureCapacity: 10, successCapacity: 10)
+        await r.record(.signIn, .success)
+        await r.record(.credentialReveal, .notAuthorized)
+        await r.clear()
+        let events = await r.recentEvents()
+        XCTAssertTrue(events.isEmpty)
+    }
+
     func test_clearEmptiesBuffer() async {
         let r = await recorderWithEvents()
         await r.clear()

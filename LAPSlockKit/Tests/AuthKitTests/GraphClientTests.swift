@@ -126,7 +126,8 @@ final class GraphClientTests: XCTestCase {
             retryPolicy: GraphRetryPolicy(maxRetries: 2, maxWait: 10, defaultWait: 2),
             observer: records.observer(),
             tracer: tracer,
-            sleep: sleeps.sleeper())
+            sleep: sleeps.sleeper(),
+            jitter: { _ in 0 })
     }
 
     override func tearDown() {
@@ -227,8 +228,16 @@ final class GraphClientTests: XCTestCase {
     }
 
     func test_5xxIsServiceUnavailable() async {
-        StubProtocol.replies = ["policies": [.init(status: 503, body: "")]]
+        StubProtocol.replies = ["policies": [.init(status: 503, body: ""), .init(status: 503, body: "")]]
         await assertThrows(.serviceUnavailable(status: 503)) { try await client.send(policies()) }
+        XCTAssertEqual(StubProtocol.requests.count, 2, "one retry, then the failure")
+    }
+
+    func test_a500IsNotRetried() async {
+        StubProtocol.replies = ["policies": [.init(status: 500, body: ""), .init(status: 200, body: policyBody)]]
+        await assertThrows(.serviceUnavailable(status: 500)) { try await client.send(policies()) }
+        XCTAssertEqual(StubProtocol.requests.count, 1)
+        XCTAssertEqual(sleeps.recorded, [])
     }
 
     func test_anUnexpectedStatusIsTransport() async {
@@ -294,6 +303,101 @@ final class GraphClientTests: XCTestCase {
         XCTAssertEqual(StubProtocol.requests.first?.value(forHTTPHeaderField: "Content-Type"), "application/json")
     }
 
+    func test_a503OnAGETIsRetriedOnceThenSucceeds() async throws {
+        StubProtocol.replies = ["policies": [
+            .init(status: 503, body: ""),
+            .init(status: 200, body: policyBody),
+        ]]
+        let response = try await client.send(policies())
+        XCTAssertEqual(response.status, 200)
+        XCTAssertEqual(sleeps.recorded, [2], "no Retry-After: the policy default")
+        XCTAssertEqual(records.all.last?.retries, 1)
+    }
+
+    func test_a504HonoursRetryAfter() async throws {
+        StubProtocol.replies = ["policies": [
+            .init(status: 504, body: "", headers: ["Retry-After": "4"]),
+            .init(status: 200, body: policyBody),
+        ]]
+        _ = try await client.send(policies())
+        XCTAssertEqual(sleeps.recorded, [4])
+    }
+
+    func test_a503OnAPOSTIsNeverRetried() async {
+        StubProtocol.replies = ["policies": [.init(status: 503, body: ""), .init(status: 200, body: policyBody)]]
+        let post = GraphRequest(method: .post, path: "/identity/conditionalAccess/policies", body: Data("{}".utf8), scopes: scopes)
+        await assertThrows(.serviceUnavailable(status: 503)) { try await client.send(post) }
+        XCTAssertEqual(StubProtocol.requests.count, 1)
+        XCTAssertEqual(sleeps.recorded, [])
+    }
+
+    func test_aReadOnlyPOSTGetsAGETsRetry() async throws {
+        StubProtocol.replies = ["policies": [
+            .init(status: 429, body: "", headers: ["Retry-After": "1"]),
+            .init(status: 200, body: policyBody),
+        ]]
+        let read = GraphRequest(method: .post, path: "/identity/conditionalAccess/policies", body: Data("{}".utf8),
+                                scopes: scopes, readOnly: true)
+        let response = try await client.send(read)
+        XCTAssertEqual(response.status, 200)
+        XCTAssertEqual(sleeps.recorded, [1])
+        XCTAssertEqual(StubProtocol.requests.count, 2)
+    }
+
+    func test_readOnlyNeverMakesAPatchOrDeleteRetryable() async {
+        for method in [GraphRequest.Method.patch, .delete] {
+            StubProtocol.reset()
+            StubProtocol.replies = ["policies": [
+                .init(status: 429, body: "", headers: ["Retry-After": "1"]),
+                .init(status: 200, body: policyBody),
+            ]]
+            let write = GraphRequest(method: method, path: "/identity/conditionalAccess/policies", body: Data("{}".utf8),
+                                     scopes: scopes, readOnly: true)
+            XCTAssertFalse(write.isRetryable)
+            await assertThrows(.throttled(retryAfter: 1)) { try await client.send(write) }
+            XCTAssertEqual(StubProtocol.requests.count, 1, method.rawValue)
+        }
+    }
+
+    func test_a429SlowsTheNextReadToo() async throws {
+        StubProtocol.replies = ["policies": [
+            .init(status: 429, body: "", headers: ["Retry-After": "3"]),
+            .init(status: 200, body: policyBody),
+            .init(status: 200, body: policyBody),
+        ]]
+        _ = try await client.send(policies())
+        _ = try await client.send(policies())
+        XCTAssertEqual(sleeps.recorded.count, 2, "the second read waits out what is left of the first one's 429")
+        XCTAssertEqual(sleeps.recorded.first, 3)
+        XCTAssertGreaterThan(sleeps.recorded.last ?? 0, 2)
+        XCTAssertLessThanOrEqual(sleeps.recorded.last ?? 0, 3)
+    }
+
+    func test_aWriteNeverWaitsForTheThrottle() async throws {
+        StubProtocol.replies = ["policies": [
+            .init(status: 429, body: "", headers: ["Retry-After": "3"]),
+            .init(status: 200, body: policyBody),
+            .init(status: 204, body: ""),
+        ]]
+        _ = try await client.send(policies())
+        let write = GraphRequest(method: .post, path: "/identity/conditionalAccess/policies", body: Data("{}".utf8), scopes: scopes)
+        _ = try await client.send(write)
+        XCTAssertEqual(sleeps.recorded, [3], "the write went when it was sent")
+    }
+
+    func test_jitterIsAddedToEveryWait() async throws {
+        let jittered = GraphClient(
+            auth: auth, session: StubProtocol.session(),
+            retryPolicy: GraphRetryPolicy(maxRetries: 2, maxWait: 10, defaultWait: 2),
+            tracer: tracer, sleep: sleeps.sleeper(), jitter: { $0 / 2 })
+        StubProtocol.replies = ["policies": [
+            .init(status: 429, body: "", headers: ["Retry-After": "4"]),
+            .init(status: 200, body: policyBody),
+        ]]
+        _ = try await jittered.send(policies())
+        XCTAssertEqual(sleeps.recorded, [6])
+    }
+
     // MARK: diagnostics
 
     func test_aFailureRecordsTheRequestIdInTheTracer() async {
@@ -329,9 +433,9 @@ final class GraphClientTests: XCTestCase {
     }
 
     func test_theObserverSeesAFailureToo() async {
-        StubProtocol.replies = ["policies": [.init(status: 503, body: "")]]
-        await assertThrows(.serviceUnavailable(status: 503)) { try await client.send(policies()) }
-        XCTAssertEqual(records.all.last?.httpStatus, 503)
+        StubProtocol.replies = ["policies": [.init(status: 500, body: "")]]
+        await assertThrows(.serviceUnavailable(status: 500)) { try await client.send(policies()) }
+        XCTAssertEqual(records.all.last?.httpStatus, 500)
     }
 
     // MARK: auth
@@ -360,6 +464,17 @@ final class GraphClientTests: XCTestCase {
         XCTAssertFalse(page.truncated)
         XCTAssertEqual(StubProtocol.requests.count, 2)
         XCTAssertTrue(StubProtocol.requests.last?.url?.absoluteString.contains("skiptoken=abc") == true)
+    }
+
+    func test_aCollectionAsksForOneTokenForTheWholeWalk() async throws {
+        let first = #"{"value":[{"id":"p1","displayName":"A"}],"@odata.nextLink":"https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies?$skiptoken=abc"}"#
+        let second = #"{"value":[{"id":"p2","displayName":"B"}],"@odata.nextLink":"https://graph.microsoft.com/v1.0/identity/conditionalAccess/policies?$skiptoken=def"}"#
+        let third = #"{"value":[{"id":"p3","displayName":"C"}]}"#
+        StubProtocol.replies = ["policies": [.init(status: 200, body: first), .init(status: 200, body: second), .init(status: 200, body: third)]]
+        let page = try await client.collection(Policy.self, from: policies())
+        XCTAssertEqual(page.items.map(\.id), ["p1", "p2", "p3"])
+        XCTAssertEqual(auth.calls.count, 1, "three pages, one token")
+        XCTAssertEqual(Set(StubProtocol.requests.compactMap { $0.value(forHTTPHeaderField: "Authorization") }).count, 1)
     }
 
     func test_aCollectionStopsAtThePageBudgetAndSaysSo() async throws {

@@ -70,6 +70,11 @@ enum AlertsRunner {
             prefs.upsert(own)
         }
 
+        // One connection pool for the run, shared by every tenant's Graph client: each
+        // still has its own auth for its tenant, and the token goes with each request.
+        let urlSession = GraphClient.makeSession()
+        defer { urlSession.finishTasksAndInvalidate() }
+
         var posted = 0
         for tenant in prefs.tenants where !tenant.activeKinds.isEmpty {
             if let pin = managed.tenantPin, tenant.tenantId != pin { continue }
@@ -90,7 +95,7 @@ enum AlertsRunner {
                 continue
             }
 
-            let graph = GraphClient(auth: scoped)
+            let graph = GraphClient(auth: scoped, session: urlSession)
             let sources = AlertSources(graph: graph, breakGlassUPNs: tenant.breakGlassUPNs)
             var observations: [AlertObservation] = []
             for kind in tenant.activeKinds {

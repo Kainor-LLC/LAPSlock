@@ -94,7 +94,8 @@ public actor ConditionalAccessService: ConditionalAccessProviding {
                 method: .post,
                 path: Self.getByIdsPath,
                 body: body,
-                scopes: ConditionalAccessScopes.module)
+                scopes: ConditionalAccessScopes.module,
+                readOnly: true)
             guard let page = try? await graph.collection(DirectoryObjectName.self, from: request, maxPages: 1) else { continue }
             for object in page.items {
                 if let ref = byId[object.id], let name = object.displayName { found[ref] = name }

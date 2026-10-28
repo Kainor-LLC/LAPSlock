@@ -46,7 +46,7 @@ final class ApprovalsModel {
         }
     }
 
-    var strict: Bool { ManagedConfigStore.read().confirmationLevel == .strict }
+    var strict: Bool { ManagedConfigStore.shared.config.confirmationLevel == .strict }
 
     /// Sends the decision. Face ID first under strict confirmation. Returns true when sent.
     @discardableResult

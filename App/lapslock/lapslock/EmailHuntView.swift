@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthKit
 import SecurityKit
 import SavedSearchKit
 
@@ -278,11 +279,10 @@ struct HuntRowDetailView: View {
     let row: HuntRow
     let columns: [String]
 
+    /// Graph's parser, built once and reading the seven-digit fractions hunting returns,
+    /// which a three-digit formatter could not.
     static func when(_ text: String) -> String {
-        let parser = ISO8601DateFormatter()
-        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = parser.date(from: text) ?? ISO8601DateFormatter().date(from: text)
-        return date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? text
+        GraphDates.parse(text).map { $0.formatted(date: .abbreviated, time: .shortened) } ?? text
     }
 
     var body: some View {

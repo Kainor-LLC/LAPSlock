@@ -115,6 +115,10 @@ final class ConditionalAccessPolicyTests: XCTestCase {
         XCTAssertTrue(ConditionalAccessVocabulary.isDirectoryId("62e90394-69f5-4237-9190-012177145e10"))
         XCTAssertFalse(ConditionalAccessVocabulary.isDirectoryId("All"))
         XCTAssertFalse(ConditionalAccessVocabulary.isDirectoryId("62e90394-69f5-4237-9190-012177145e10x"))
+        XCTAssertTrue(ConditionalAccessVocabulary.isDirectoryId("62E90394-69F5-4237-9190-012177145E10"))
+        XCTAssertFalse(ConditionalAccessVocabulary.isDirectoryId("{62e90394-69f5-4237-9190-012177145e10}"))
+        XCTAssertFalse(ConditionalAccessVocabulary.isDirectoryId("62e9039469f542379190012177145e10"))
+        XCTAssertFalse(ConditionalAccessVocabulary.isDirectoryId(""))
         XCTAssertEqual(ConditionalAccessVocabulary.shortId("62e90394-69f5-4237-9190-012177145e10"), "62e90394…")
         XCTAssertEqual(ConditionalAccessVocabulary.shortId("Office365"), "Office365")
     }

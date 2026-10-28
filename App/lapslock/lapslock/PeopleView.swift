@@ -438,9 +438,7 @@ struct SignInRow: View {
 
     /// Minutes and hours, never seconds: a value that ticks on every refresh is noise.
     static func relative(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: Date())
+        RelativeDates.short(date)
     }
 }
 

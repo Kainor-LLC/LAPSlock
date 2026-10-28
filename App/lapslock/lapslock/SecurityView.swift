@@ -403,9 +403,7 @@ struct SecurityIncidentRow: View {
 
     private func relative(_ date: Date?) -> String {
         guard let date else { return "" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return RelativeDates.abbreviated(date)
     }
 }
 

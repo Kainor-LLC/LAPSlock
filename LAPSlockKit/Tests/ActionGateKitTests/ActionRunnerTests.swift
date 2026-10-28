@@ -128,6 +128,22 @@ final class ActionRunnerTests: XCTestCase {
         XCTAssertEqual(entries.first?.outcome, "refused")
     }
 
+    func test_aWriteMarkedAsAReadIsRefusedBeforeSending() async {
+        // `readOnly` would give the POST a read's 429 retry in the Graph client, and a write
+        // sent twice is the one thing the runner exists to prevent.
+        var request = restart().request
+        request.readOnly = true
+        let action = WriteAction(id: "device.restart", title: "Restart", tier: .confirm,
+                                 target: ActionTarget(label: "LT-FIELD-207", id: "dev-1"),
+                                 request: request, successCopy: "Restart requested.")
+        StubProtocol.replies = ["rebootNow": [.init(status: 204, body: "")]]
+        let outcome = await runner(gate: StubGate(active: [])).run(action)
+        XCTAssertEqual(outcome, .failed(.refused(reason: "A write cannot be marked as a read.")))
+        XCTAssertTrue(StubProtocol.requests.isEmpty)
+        let entries = await log.entries(tenantId: tenant)
+        XCTAssertEqual(entries.first?.outcome, "refused")
+    }
+
     func test_theGateOffersActivationWhenTheRoleIsEligibleButNotActive() async {
         let outcome = await runner(gate: StubGate(active: [], eligible: [eligibleIntune])).run(restart(required: [intuneAdmin, globalAdmin]))
         XCTAssertEqual(outcome, .needsActivation(eligible: [eligibleIntune]))

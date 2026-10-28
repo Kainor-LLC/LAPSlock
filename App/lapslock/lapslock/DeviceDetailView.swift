@@ -686,9 +686,7 @@ final class DeviceDetailModel {
     /// supply the localized price. Never hardcode a price string, App Store pricing is
     /// per-storefront and a baked-in number will be wrong somewhere.
     static func meterExhaustedMessage(nextAvailable: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        let when = formatter.localizedString(for: nextAvailable, relativeTo: Date())
+        let when = RelativeDates.full(nextAvailable)
         return "You've used all your free reveals for now. The next one frees up \(when). "
             + "Pro removes the limit."
     }
@@ -1098,7 +1096,7 @@ struct DeviceDetailView: View {
             Label {
                 if model.actionsEnabled {
                     Text("Key rotation is under Actions below. It is queued and applies at the device's next Intune check-in.")
-                } else if ManagedConfigStore.read().isDisabled("deviceActions") {
+                } else if ManagedConfigStore.shared.config.isDisabled("deviceActions") {
                     Text("Reading keys needs no write permission. Your organization has turned off device actions here, so rotate keys from the Intune admin center.")
                 } else {
                     Text("Reading keys needs no write permission. Rotating them does: turn on **Allow device actions** in Settings, or rotate from the Intune admin center.")
@@ -1198,9 +1196,7 @@ struct DeviceDetailView: View {
 
     private func relative(_ date: Date?) -> String? {
         guard let date else { return nil }
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f.localizedString(for: date, relativeTo: Date())
+        return RelativeDates.full(date)
     }
 }
 

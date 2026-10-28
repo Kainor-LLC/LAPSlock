@@ -87,10 +87,18 @@ enum InventoryHTTP {
 
     static func date(_ any: Any?) -> Date? {
         guard let s = any as? String else { return nil }
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return withFraction.date(from: s) ?? ISO8601DateFormatter().date(from: s)
+        return withFraction.date(from: s) ?? plain.date(from: s)
     }
+
+    // Built once: this runs for every device in a fill, and two formatters per device was
+    // up to 40,000 of them for a large tenant. ISO8601DateFormatter is thread-safe.
+    private static let withFraction: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private static let plain = ISO8601DateFormatter()
 }
 
 public actor DeviceInventoryService {

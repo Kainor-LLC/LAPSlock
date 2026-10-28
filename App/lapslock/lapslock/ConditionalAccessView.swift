@@ -363,9 +363,7 @@ struct ConditionalAccessRow: View {
 
     private func relative(_ date: Date?) -> String {
         guard let date else { return "at an unknown time" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return RelativeDates.full(date)
     }
 }
 

@@ -26,16 +26,16 @@ struct CrossTenantSources: Sendable {
     /// The live organization's reads, after a silent token proves the tenant needs no
     /// foreground sign-in. The probe asks for the device scope consented at sign-in, as the
     /// alerts run does; a module consent missing later shows on its own row.
-    static func live(base: any AuthManaging, tenantId: String) async throws -> CrossTenantSources {
+    static func live(base: any AuthManaging, tenantId: String, session: URLSession) async throws -> CrossTenantSources {
         let scoped = TenantScopedAuth(base: base, tenantId: tenantId)
         do {
             _ = try await scoped.token(scopes: DeviceInventoryService.requiredScopes, allowInteractive: false)
         } catch {
             throw CrossTenantFailure.needsSignIn
         }
-        let graph = GraphClient(auth: scoped)
+        let graph = GraphClient(auth: scoped, session: session)
         return CrossTenantSources(
-            inventory: DeviceInventoryService(auth: scoped),
+            inventory: DeviceInventoryService(auth: scoped, session: session),
             signIns: SignInTriageService(graph: graph),
             security: SecurityService(graph: graph),
             hunting: EmailHuntingService(graph: graph))

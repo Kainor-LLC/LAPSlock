@@ -304,6 +304,9 @@ struct SettingsView: View {
                 // Defensive: if a previous visit left the purchase spinner up because
                 // StoreKit never answered, reopening Settings must not inherit it.
                 subscriptions?.stopWaiting()
+                // The plans are asked of the App Store here, where they are shown, rather
+                // than at every launch, where they competed with sign-in for the network.
+                await subscriptions?.loadOffersIfNeeded()
             }
             .navigationTitle("Settings")
             .toolbarBackground(.visible, for: .navigationBar)
@@ -1209,9 +1212,7 @@ struct SettingsView: View {
     }
 
     static func relative(_ date: Date) -> String {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .full
-        return f.localizedString(for: date, relativeTo: Date())
+        RelativeDates.full(date)
     }
 
     // MARK: - debug

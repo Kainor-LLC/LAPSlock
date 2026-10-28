@@ -300,8 +300,11 @@ public actor EmailHuntingService: EmailHuntingProviding {
     public func run(_ hunt: EmailHunt, value: String?, window: HuntWindow, allowInteractive: Bool) async throws -> HuntResult {
         let kql = try hunt.query(value: value, window: window)
         let body = try JSONSerialization.data(withJSONObject: ["query": kql, "timespan": window.timespan])
+        // A POST that only reads, so it gets a read's 429 retry: advanced hunting is the most
+        // throttled API this app calls.
         let request = GraphRequest(method: .post, path: Self.path, body: body,
-                                   scopes: [HuntingScopes.hunting], allowInteractive: allowInteractive)
+                                   scopes: [HuntingScopes.hunting], allowInteractive: allowInteractive,
+                                   readOnly: true)
         do {
             return try HuntResult.parse(try await graph.send(request).data)
         } catch let error as GraphError {

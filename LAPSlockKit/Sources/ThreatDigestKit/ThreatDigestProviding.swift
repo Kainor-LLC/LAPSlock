@@ -25,9 +25,15 @@ public actor ThreatDigestService: ThreatDigestProviding {
     private let now: @Sendable () -> Date
     private let byteLimit: Int
 
+    /// One for the process. The feeds are public and nothing about a tenant goes with them,
+    /// so the app's one digest per signed-in session, rebuilt on every tenant switch, has no
+    /// reason to open new connections each time.
+    public static let sharedSession = makeSession()
+
+    /// - session: injected by tests. Nil uses `sharedSession`.
     /// - byteLimit: injected by tests so the cap can be crossed without megabytes of input.
     public init(session: URLSession? = nil, now: @escaping @Sendable () -> Date = { Date() }, byteLimit: Int = ThreatDigestService.maxBytes) {
-        self.session = session ?? Self.makeSession()
+        self.session = session ?? Self.sharedSession
         self.now = now
         self.byteLimit = byteLimit
     }

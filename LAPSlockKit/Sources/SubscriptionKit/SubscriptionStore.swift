@@ -40,6 +40,9 @@ public final class SubscriptionStore {
     @ObservationIgnored public var onEntitlementChange: ((SubscriptionEntitlement) -> Void)?
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?
+    /// Set once the plans have been asked for, so a transaction reloads them only when
+    /// they are on screen or have been.
+    @ObservationIgnored private var offersRequested = false
 
     public init() {}
 
@@ -58,12 +61,12 @@ public final class SubscriptionStore {
                     await transaction.finish()
                 }
                 await self.refreshEntitlement()
-                // Offers are reloaded too, not just the entitlement. TRIAL ELIGIBILITY IS
-                // PART OF AN OFFER, and it changes the moment a subscription is bought or
-                // refunded, so a list loaded once at launch advertises "free for the first
-                // month" to somebody who has just used theirs, and keeps hiding it from
-                // somebody whose purchase was refunded. Prices can move under us too.
-                await self.loadOffers()
+                // Offers are reloaded too, not just the entitlement, once they have been
+                // shown. TRIAL ELIGIBILITY IS PART OF AN OFFER, and it changes the moment a
+                // subscription is bought or refunded, so a list loaded once advertises "free
+                // for the first month" to somebody who has just used theirs, and keeps hiding
+                // it from somebody whose purchase was refunded. Prices can move under us too.
+                if self.offersRequested { await self.loadOffers() }
             }
         }
         Task {
@@ -74,7 +77,6 @@ public final class SubscriptionStore {
             // leftovers from a previous launch have to be swept explicitly.
             await finishUnfinishedTransactions()
             await refreshEntitlement()
-            await loadOffers()
         }
     }
 
@@ -127,7 +129,17 @@ public final class SubscriptionStore {
 
     // MARK: - what is for sale
 
+    /// Loads the plans unless they are already on hand: the first time the screen showing
+    /// them opens, and again on a later visit if that load failed. Not at launch, where the
+    /// App Store request competed with sign-in on a weak connection for a screen most
+    /// launches never open.
+    public func loadOffersIfNeeded() async {
+        guard offers.isEmpty else { return }
+        await loadOffers()
+    }
+
     public func loadOffers() async {
+        offersRequested = true
         do {
             let products = try await Product.products(for: SubscriptionProduct.allIdentifiers)
             var resolved: [SubscriptionOffer] = []

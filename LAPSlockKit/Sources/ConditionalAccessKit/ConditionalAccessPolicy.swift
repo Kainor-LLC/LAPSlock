@@ -373,8 +373,9 @@ public enum ConditionalAccessVocabulary {
     /// True for a GUID, which is the only shape a directory object id takes. Keywords such
     /// as `All` and well-known application names are not looked up.
     public static func isDirectoryId(_ value: String) -> Bool {
-        value.range(of: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                    options: .regularExpression) != nil
+        // The same 8-4-4-4-12 hex shape the regular expression checked, without compiling
+        // one for every id in every policy.
+        UUID(uuidString: value) != nil
     }
 
     public static func userLabel(_ token: String) -> String {

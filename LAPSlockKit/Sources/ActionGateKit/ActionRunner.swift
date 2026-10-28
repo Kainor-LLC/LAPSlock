@@ -96,6 +96,11 @@ public actor ActionRunner {
     // MARK: - send
 
     private func send(_ action: WriteAction, request: GraphRequest) async -> ActionOutcome {
+        // `readOnly` gives a POST a read's retries in the Graph client. A write carrying it
+        // could be sent twice, so it is never sent at all.
+        guard !request.readOnly else {
+            return await record(action, .failed(.refused(reason: "A write cannot be marked as a read.")), requestId: nil)
+        }
         let response: GraphResponse
         do {
             response = try await graph.sendUnvalidated(request)

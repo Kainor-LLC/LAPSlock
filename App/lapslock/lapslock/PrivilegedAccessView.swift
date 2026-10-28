@@ -25,7 +25,9 @@ struct PrivilegedAccessView: View {
     /// log more useful, not less private.
     let deviceName: String?
     let loadEligible: () async -> Result<[EligibleAccess], PrivilegedAccessError>
-    let activate: (EligibleAccess, String, String?, String) async -> Result<ActivationOutcome, PrivilegedAccessError>
+    /// The access, justification, ticket, duration, and the policy already read for it,
+    /// which the activation uses rather than reading it again.
+    let activate: (EligibleAccess, String, String?, String, ActivationPolicy) async -> Result<ActivationOutcome, PrivilegedAccessError>
     /// Requests consent for the PIM scopes, returning a message on failure.
     ///
     /// Here rather than only in Settings because **consent is per-organization while the
@@ -481,7 +483,8 @@ struct PrivilegedAccessView: View {
             selected,
             justification.trimmingCharacters(in: .whitespaces),
             trimmedTicket.isEmpty ? nil : trimmedTicket,
-            duration)
+            duration,
+            activePolicy)
 
         switch result {
         case .success(let value):

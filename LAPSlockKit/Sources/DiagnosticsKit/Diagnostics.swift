@@ -231,20 +231,40 @@ public struct DiagnosticEnvironment: Sendable, Codable {
 /// mistake. The cost is that a crash loses the log and the user has to reproduce the
 /// problem before exporting, an acceptable trade for a tool that handles administrator
 /// credentials.
+///
+/// Failures and successes are kept in rings of their own. Every Graph call is recorded,
+/// so one busy screen (a person's groups, a Tenant Pulse load beside the watch's glance)
+/// made hundreds of successes, and in a single ring they pushed out the failure somebody
+/// was trying to report.
 public actor DiagnosticsRecorder {
     public static let shared = DiagnosticsRecorder()
 
-    private var events: [DiagnosticEvent] = []
-    private let capacity: Int
+    /// Each event with the order it was recorded in, which merging the two rings goes by.
+    private var failures: [(order: Int, event: DiagnosticEvent)] = []
+    private var successes: [(order: Int, event: DiagnosticEvent)] = []
+    private var recorded = 0
+    private let failureCapacity: Int
+    private let successCapacity: Int
 
-    public init(capacity: Int = 200) {
-        self.capacity = max(10, capacity)
+    public init(failureCapacity: Int = 150, successCapacity: Int = 50) {
+        self.failureCapacity = max(10, failureCapacity)
+        self.successCapacity = max(10, successCapacity)
+    }
+
+    /// The same size for both rings.
+    public init(capacity: Int) {
+        self.init(failureCapacity: capacity, successCapacity: capacity)
     }
 
     public func record(_ event: DiagnosticEvent) {
-        events.append(Self.withGraphRequestId(event))
-        if events.count > capacity {
-            events.removeFirst(events.count - capacity)
+        let event = Self.withGraphRequestId(event)
+        recorded += 1
+        if event.outcome == .success {
+            successes.append((recorded, event))
+            if successes.count > successCapacity { successes.removeFirst(successes.count - successCapacity) }
+        } else {
+            failures.append((recorded, event))
+            if failures.count > failureCapacity { failures.removeFirst(failures.count - failureCapacity) }
         }
     }
 
@@ -288,9 +308,28 @@ public actor DiagnosticsRecorder {
         ))
     }
 
-    public func recentEvents() -> [DiagnosticEvent] { events }
+    /// Both rings, oldest first. Each ring is already in order, so this merges them.
+    public func recentEvents() -> [DiagnosticEvent] {
+        var merged: [DiagnosticEvent] = []
+        merged.reserveCapacity(failures.count + successes.count)
+        var f = 0
+        var s = 0
+        while f < failures.count || s < successes.count {
+            if s == successes.count || (f < failures.count && failures[f].order < successes[s].order) {
+                merged.append(failures[f].event)
+                f += 1
+            } else {
+                merged.append(successes[s].event)
+                s += 1
+            }
+        }
+        return merged
+    }
 
-    public func clear() { events.removeAll() }
+    public func clear() {
+        failures.removeAll()
+        successes.removeAll()
+    }
 
     /// Builds the text a user shares with support. Every line is assembled from typed
     /// fields, so there is no path by which arbitrary text enters the report.
@@ -310,7 +349,8 @@ public actor DiagnosticsRecorder {
         lines.append("")
         lines.append("This report contains no passwords, recovery keys, usernames, device names, or response data. It lists operation outcomes and Microsoft Graph request identifiers only.")
         lines.append("")
-        lines.append("Recent events (newest last, \(events.count) of max \(capacity)):")
+        let events = recentEvents()
+        lines.append("Recent events (newest last; \(failures.count) failures of max \(failureCapacity), \(successes.count) successes of max \(successCapacity)):")
         if events.isEmpty {
             lines.append("  (none recorded this session)")
         } else {

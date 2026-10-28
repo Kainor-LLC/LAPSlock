@@ -241,6 +241,25 @@ final class PrivilegedAccessServiceTests: XCTestCase {
         XCTAssertEqual(body?["principalId"] as? String, auth.account.objectId)
     }
 
+    func test_aPolicyTheSheetAlreadyReadIsNotReadAgain() async throws {
+        StubProtocol.replies = ["roleAssignmentScheduleRequests": [
+            .init(status: 201, body: #"{"id":"r1","status":"Provisioned"}"#)]]
+        let known = ActivationPolicy(maximumDuration: "PT4H", justificationRequired: true)
+
+        _ = try await service.activate(role, justification: "ticket INC-1", ticketNumber: nil, duration: "PT1H", policy: known)
+        XCTAssertFalse(StubProtocol.requests.contains { $0.path.contains("roleManagementPolicies") },
+                       "one round trip less between the tap and the result")
+        XCTAssertEqual(StubProtocol.requests.filter { $0.method == "POST" }.count, 1)
+    }
+
+    func test_aPolicyNobodyCouldReadIsReadAtActivation() async throws {
+        StubProtocol.replies = ["roleAssignmentScheduleRequests": [
+            .init(status: 201, body: #"{"id":"r1","status":"Provisioned"}"#)]]
+
+        _ = try await service.activate(role, justification: "ticket INC-1", ticketNumber: nil, duration: "PT1H", policy: .unknown)
+        XCTAssertTrue(StubProtocol.requests.contains { $0.path.contains("roleManagementPolicies") })
+    }
+
     func test_inACustomerTenantTheActivationNamesThePrincipalThere() async throws {
         let customer = "22222222-2222-4222-8222-222222222222"
         let guest = "99999999-8888-4777-8666-555555555555"

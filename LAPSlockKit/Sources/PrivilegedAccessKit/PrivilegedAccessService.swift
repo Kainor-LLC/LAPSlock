@@ -18,11 +18,14 @@ public protocol PrivilegedAccessProviding: Sendable {
     func eligibleAccess() async throws -> [EligibleAccess]
     /// The tenant's activation rules for one piece of eligible access.
     func policy(for access: EligibleAccess) async -> ActivationPolicy
+    /// `policy` is the one the caller already read for this access, if it has it, so the
+    /// activation does not read it again between the tap and the result.
     func activate(
         _ access: EligibleAccess,
         justification: String,
         ticketNumber: String?,
-        duration: String
+        duration: String,
+        policy: ActivationPolicy?
     ) async throws -> ActivationOutcome
     /// Re-reads a request already created, to see whether it has become active.
     func status(ofRequest requestId: String, for access: EligibleAccess) async throws -> ActivationOutcome
@@ -198,7 +201,8 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         _ access: EligibleAccess,
         justification: String,
         ticketNumber: String? = nil,
-        duration: String = ActivationRequest.defaultDuration
+        duration: String = ActivationRequest.defaultDuration,
+        policy known: ActivationPolicy? = nil
     ) async throws -> ActivationOutcome {
         // The principal in the tenant being operated in: for a guest in a customer tenant
         // that is the guest object there, not the home account's.
@@ -223,9 +227,19 @@ public struct PrivilegedAccessService: PrivilegedAccessProviding {
         // claim on the FIRST attempt rather than waiting to be refused. Graph reports that
         // refusal as a plain 400, so the reactive path costs a round trip and a failure the
         // user sees momentarily; this avoids both when the policy could be read.
-        let upfrontClaims = (try? await policy(for: access))?
-            .authenticationContextClaim
-            .map(Self.claimsRequest(forAcrs:)) ?? nil
+        //
+        // The Activate sheet read the policy when the access was chosen and passes it in, so
+        // that read is not repeated between the tap and the result. One it could not read
+        // (`.unknown`) is read again here, as before. A policy that changed in between is
+        // still caught: Graph refuses with a challenge, and the retry below answers it.
+        let usable = known.flatMap { $0 == .unknown ? nil : $0 }
+        let current: ActivationPolicy
+        if let usable {
+            current = usable
+        } else {
+            current = await policy(for: access)
+        }
+        let upfrontClaims = current.authenticationContextClaim.map(Self.claimsRequest(forAcrs:)) ?? nil
 
         do {
             return try await post(prepared, claims: upfrontClaims)

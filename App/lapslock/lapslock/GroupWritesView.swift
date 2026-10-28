@@ -71,7 +71,7 @@ final class PersonGroupsModel {
     }
 
     private var pendingKey: String { "groups:" + member.userId }
-    private var strict: Bool { ManagedConfigStore.read().confirmationLevel == .strict }
+    private var strict: Bool { ManagedConfigStore.shared.config.confirmationLevel == .strict }
 
     func load() async {
         loading = true

@@ -218,6 +218,19 @@ final class AppRootModel {
         /// One PIM service for the session, shared by the Activate sheet, the role gate and
         /// the watch, rather than a new one, and a new connection, for every call.
         let privileged: PrivilegedAccessService
+        /// The one connection pool for everything here that talks to Graph: the read
+        /// modules, inventory, names and PIM. Ephemeral, with no cache and no cookies, and
+        /// the token goes with each request, so sharing it shares connections and nothing
+        /// else. When the session ends, on a switch or sign-out, it is invalidated, which
+        /// also cancels the old tenant's requests still in flight.
+        let urlSession: URLSession
+        /// The credential providers, one each for the session rather than one per device
+        /// opened, so the second device onward reuses a warm connection. Each keeps the
+        /// session CredentialKit builds for it: credential traffic never shares a pool with
+        /// anything outside CredentialKit.
+        private let windowsLaps: WindowsLapsProvider
+        private let macLaps: MacOSLapsProvider
+        private let bitLockerKeys: BitLockerService
 
         init(auth: MSALAuthManager, tenantId: String) {
             self.auth = auth
@@ -225,9 +238,11 @@ final class AppRootModel {
             self.tenantId = sessionTenant
             let pinned = SessionPinnedAuth(base: auth, tenantId: sessionTenant)
             self.pinnedAuth = pinned
-            self.inventory = DeviceInventoryService(auth: pinned)
-            self.names = UserNameResolver(auth: pinned)
-            let graph = GraphClient(auth: pinned, observer: { record in
+            let urlSession = GraphClient.makeSession()
+            self.urlSession = urlSession
+            self.inventory = DeviceInventoryService(auth: pinned, session: urlSession)
+            self.names = UserNameResolver(auth: pinned, session: urlSession)
+            let graph = GraphClient(auth: pinned, session: urlSession, observer: { record in
                 Task { await DiagnosticsRecorder.shared.record(GraphDiagnostics.event(for: record)) }
             })
             self.graph = graph
@@ -240,7 +255,7 @@ final class AppRootModel {
             let shiftLog = FileShiftLog.shared
             self.shiftLog = shiftLog
             let tenant: @Sendable () async -> String = { sessionTenant }
-            let privileged = PrivilegedAccessService(auth: pinned)
+            let privileged = PrivilegedAccessService(auth: pinned, session: urlSession)
             self.privileged = privileged
             let runner = ActionRunner(
                 graph: graph,
@@ -253,25 +268,28 @@ final class AppRootModel {
             self.groupWrites = GroupWritesService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.approvals = ApprovalsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.temporaryAccessPass = TemporaryAccessPassService(auth: pinned)
+            self.windowsLaps = WindowsLapsProvider(auth: pinned)
+            self.macLaps = MacOSLapsProvider(auth: pinned)
+            self.bitLockerKeys = BitLockerService(auth: pinned)
         }
 
-        /// Live credential provider for one platform, sharing the authenticated session.
+        /// The session's credential provider for one platform.
         func provider(for platform: DevicePlatform) -> any LocalAdminCredentialProviding {
             switch platform {
             case .windows:
-                return WindowsLapsProvider(auth: pinnedAuth)
+                return windowsLaps
             case .macOS:
-                return MacOSLapsProvider(auth: pinnedAuth)
+                return macLaps
             case .other:
                 // MacOSLapsProvider is not used for iOS devices; the platform seam reports
                 // .other as unsupported before any request is made.
-                return MacOSLapsProvider(auth: pinnedAuth)
+                return macLaps
             }
         }
 
-        /// Live BitLocker service, sharing the authenticated session.
+        /// The session's BitLocker service.
         func bitLocker() -> any BitLockerKeyProviding {
-            BitLockerService(auth: pinnedAuth)
+            bitLockerKeys
         }
     }
 
@@ -289,7 +307,15 @@ final class AppRootModel {
 
     /// Live services, created after sign-in so they share the authenticated session.
     /// Nil whenever the app is not signed in.
-    private(set) var liveSession: LiveSession?
+    private(set) var liveSession: LiveSession? {
+        didSet {
+            // The old tenant's connections end with its session: whatever it still had in
+            // flight is cancelled rather than landing after a switch or a sign-out.
+            if let old = oldValue?.urlSession, old !== liveSession?.urlSession {
+                old.invalidateAndCancel()
+            }
+        }
+    }
 
     /// Tenant of the signed-in account, offered as an opt-in field in diagnostics.
     var signedInTenantId: String? {
@@ -743,10 +769,13 @@ final class AppRootModel {
     /// The live run: each organization read through a silent-only auth for that tenant.
     func crossTenantSetup(session: LiveSession) -> CrossTenantSearchSetup {
         let base: any AuthManaging = session.auth
+        // The signed-in session's connections: each organization still gets its own auth
+        // and its own Graph client, and the token goes with each request.
+        let urlSession = session.urlSession
         return CrossTenantSearchSetup(
             targets: { [weak self] in self?.crossTenantTargets ?? [] },
             currentTenantId: { [weak self] in self?.operatingTenantId ?? self?.signedInTenantId },
-            sources: { target in try await CrossTenantSources.live(base: base, tenantId: target.tenantId) },
+            sources: { target in try await CrossTenantSources.live(base: base, tenantId: target.tenantId, session: urlSession) },
             open: { [weak self] search, target in await self?.openSavedSearch(search, in: target) })
     }
 
@@ -909,12 +938,13 @@ final class AppRootModel {
         _ access: EligibleAccess,
         justification: String,
         ticketNumber: String?,
-        duration: String
+        duration: String,
+        policy: ActivationPolicy? = nil
     ) async -> Result<ActivationOutcome, PrivilegedAccessError> {
         guard let session = liveSession else { return .failure(.notAuthorized) }
         do {
             let outcome = try await session.privileged.activate(
-                access, justification: justification, ticketNumber: ticketNumber, duration: duration)
+                access, justification: justification, ticketNumber: ticketNumber, duration: duration, policy: policy)
             return .success(outcome)
         } catch let error as PrivilegedAccessError {
             await recordActivationFailure(error, access: access)
@@ -1428,10 +1458,10 @@ struct AppRootView: View {
         PrivilegedAccessView(
             deviceName: deviceName,
             loadEligible: { await root.loadEligibleAccess() },
-            activate: { access, justification, ticket, duration in
+            activate: { access, justification, ticket, duration, policy in
                 await root.activatePrivilegedAccess(
                     access, justification: justification,
-                    ticketNumber: ticket, duration: duration)
+                    ticketNumber: ticket, duration: duration, policy: policy)
             },
             requestConsent: { await root.requestPrivilegedActivationConsent() },
             policy: { await root.privilegedPolicy(for: $0) },

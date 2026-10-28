@@ -47,7 +47,7 @@ final class DeviceActionsModel {
 
     /// Every action, less retire and wipe when the organization switched those off.
     var kinds: [DeviceActionKind] {
-        let config = ManagedConfigStore.read()
+        let config = ManagedConfigStore.shared.config
         return DeviceActionKind.allCases.filter { !$0.isDestructive || !config.isDisabled("destructiveActions") }
     }
 
@@ -415,9 +415,7 @@ struct DeviceActionsSections: View {
         guard let date else { return "" }
         // "in 0s" is what the formatter says for a moment ago, clock skew included.
         if abs(date.timeIntervalSinceNow) < 60 { return "just now" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return RelativeDates.abbreviated(date)
     }
 }
 
@@ -425,7 +423,7 @@ struct DeviceActionsSections: View {
 struct DeviceActionsDisabledSection: View {
     /// The organization switched device actions off in its app configuration policy, so
     /// there is no Settings switch to point at.
-    var turnedOffByOrganization = ManagedConfigStore.read().isDisabled("deviceActions")
+    var turnedOffByOrganization = ManagedConfigStore.shared.config.isDisabled("deviceActions")
 
     var body: some View {
         Section {
