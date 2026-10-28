@@ -56,7 +56,15 @@ final class AppLockModel {
     @ObservationIgnored private let gate = BiometricGate()
     @ObservationIgnored private var backgroundedAt: Date?
 
-    /// Locks at launch if the setting is on. Called once, before anything is rendered.
+    /// `lockedAtLaunch`: built locked when app lock is on, so the very first frame is the
+    /// lock rather than the app for a moment before the launch task locks it.
+    init(lockedAtLaunch: Bool = false) {
+        isLocked = lockedAtLaunch
+    }
+
+    /// Locks at launch if the setting is on. Called once from the launch task; with the
+    /// model built locked it changes nothing, and it stays as the second statement of the
+    /// same rule.
     func armAtLaunch(enabled: Bool) {
         guard enabled else { return }
         isLocked = true

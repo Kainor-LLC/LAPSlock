@@ -298,7 +298,11 @@ final class AppRootModel {
     var isSigningIn = false
     /// True while the launch restore is running, so the sign-in screen does not flash up for
     /// a moment before the device list replaces it.
-    private(set) var isRestoringSession = false
+    /// True from launch until the silent restore has answered, so the first frame of a
+    /// signed-in admin's launch is "Restoring your session…" and not the sign-in screen.
+    /// Cleared by the restore whatever it finds, including no sign-in system at all, and by
+    /// demo mode.
+    private(set) var isRestoringSession = true
     var consentState: ConsentState?
     var signInError: String?
 
@@ -527,9 +531,9 @@ final class AppRootModel {
     /// revoked or expired refresh token, or a Conditional Access policy demanding
     /// reauthentication, simply produces nil and the sign-in screen.
     func restoreSession() async {
+        defer { isRestoringSession = false }
         guard case .signedOut = mode, let auth else { return }
         isRestoringSession = true
-        defer { isRestoringSession = false }
 
         guard let account = await auth.restoreSession() else { return }
         if let refusal = await refuseIfOutsidePin(account, auth: auth) {
@@ -667,6 +671,7 @@ final class AppRootModel {
     }
 
     func enterDemoMode() {
+        isRestoringSession = false
         demoCustomer = .contoso
         demoSavedSearches = SavedSearchLibrary(store: MemorySavedSearchStore(SavedSearch.demoExamples))
         mode = .demo
@@ -1076,11 +1081,8 @@ struct AppRootView: View {
     // Built on every init of this view and kept on the first: both initializers only set
     // defaults, and the work waits for `prepare()` and `armAtLaunch` in the task below.
     @State private var root = AppRootModel()
-    @State private var appLock = AppLockModel()
-    /// Set on the way into the background, so the return can be told from a prompt.
-    @State private var wasInBackground = false
+    @State private var appLock = AppLockModel(lockedAtLaunch: AppSettings.shared.appLockEffective)
     private let settings = AppSettings.shared
-    @Environment(\.scenePhase) private var scenePhase
     @State private var showingSignedOutSettings = false
     @State private var lockPresenter = AppLockPresenter()
 
@@ -1096,22 +1098,10 @@ struct AppRootView: View {
             // A switch cross-fades the old organization's shell into the new one instead of
             // cutting. The order is unchanged: the new shell is built from the new session.
             .animation(.easeInOut(duration: 0.25), value: shellKey)
-            .accessibilityHidden(appLock.isLocked)
-            // The lock itself is a window above everything in this scene, sheets and alerts
-            // included; see AppLockPresenter. This copy inside the app is the fallback for the
-            // moment before that window exists, and it never prompts on its own.
-            // A full cover rather than a conditional branch, so the app underneath keeps its
-            // state, an admin who unlocks lands back exactly where they were rather than on
-            // a freshly reloaded device list.
-            .overlay {
-                if appLock.isLocked {
-                    AppLockScreen(model: appLock, promptsOnAppear: false)
-                }
-            }
+            .modifier(AppLockLayer(appLock: appLock, presenter: lockPresenter))
             .background(WindowSceneReader(
                 window: { $0.overrideUserInterfaceStyle = settings.appearance.interfaceStyle },
                 found: { scene in lockPresenter.attach(to: scene, model: appLock) }))
-            .onChange(of: appLock.isLocked, initial: true) { _, locked in lockPresenter.setLocked(locked) }
             .task {
                 appLock.armAtLaunch(enabled: settings.appLockEffective)
                 root.prepare()
@@ -1147,24 +1137,7 @@ struct AppRootView: View {
             .onChange(of: root.operatingTenantId) { _, _ in configureWatch() }
             .onChange(of: root.demoCustomer) { _, _ in configureWatch() }
             .onChange(of: settings.privilegedActivationEnabled) { _, _ in configureWatch() }
-            .onChange(of: scenePhase) { _, phase in
-                // Back from the background only, not from inactive: a Face ID prompt makes
-                // the app inactive, and each one used to read the tenant for the wrist. The
-                // way back passes through inactive, so the background is remembered.
-                if phase == .background { wasInBackground = true }
-                if phase == .active, wasInBackground {
-                    wasInBackground = false
-                    WatchConnector.shared.requestPush()
-                }
-                if phase == .background { AlertsRunner.scheduleIfNeeded() }
-                // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
-                // grace period, waiting on an Authenticator push, must not return to a lock
-                // screen sitting on top of MSAL's flow.
-                appLock.sceneChanged(
-                    to: phase,
-                    enabled: settings.appLockEffective,
-                    isSigningIn: root.isSigningIn)
-            }
+            .modifier(SceneChanges(appLock: appLock, root: root, settings: settings))
     }
 
     /// The Apple Watch follows the phone's mode: demo, the signed-in tenant, or nothing.
@@ -1662,6 +1635,65 @@ private struct RootAlertsHost: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(root.searchFailure ?? "")
+            }
+    }
+}
+
+/// The lock's part of the root, observed here rather than by the root's body, so locking
+/// and unlocking redraw this layer and not the whole app (OPTIMIZATION-PLAN.md, step H).
+///
+/// The lock itself is a window above everything in this scene, sheets and alerts
+/// included; see AppLockPresenter. The cover here is the fallback for the moment before
+/// that window exists, and it never prompts on its own. A full cover rather than a
+/// conditional branch, so the app underneath keeps its state: an admin who unlocks lands
+/// back exactly where they were rather than on a freshly reloaded device list.
+private struct AppLockLayer: ViewModifier {
+    let appLock: AppLockModel
+    let presenter: AppLockPresenter
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityHidden(appLock.isLocked)
+            .overlay {
+                if appLock.isLocked {
+                    AppLockScreen(model: appLock, promptsOnAppear: false)
+                }
+            }
+            .onChange(of: appLock.isLocked, initial: true) { _, locked in presenter.setLocked(locked) }
+    }
+}
+
+/// What the root does on a scene change, reading the scene phase itself. In the root's
+/// body, every change rebuilt the whole app: twice for each Face ID prompt of a reveal
+/// (active, inactive, active), and for every notification banner and Control Center.
+/// The same calls in the same order as before.
+private struct SceneChanges: ViewModifier {
+    let appLock: AppLockModel
+    let root: AppRootModel
+    let settings: AppSettings
+    @Environment(\.scenePhase) private var scenePhase
+    /// Set on the way into the background, so the return can be told from a prompt.
+    @State private var wasInBackground = false
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: scenePhase) { _, phase in
+                // Back from the background only, not from inactive: a Face ID prompt makes
+                // the app inactive, and each one used to read the tenant for the wrist. The
+                // way back passes through inactive, so the background is remembered.
+                if phase == .background { wasInBackground = true }
+                if phase == .active, wasInBackground {
+                    wasInBackground = false
+                    WatchConnector.shared.requestPush()
+                }
+                if phase == .background { AlertsRunner.scheduleIfNeeded() }
+                // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
+                // grace period, waiting on an Authenticator push, must not return to a lock
+                // screen sitting on top of MSAL's flow.
+                appLock.sceneChanged(
+                    to: phase,
+                    enabled: settings.appLockEffective,
+                    isSigningIn: root.isSigningIn)
             }
     }
 }

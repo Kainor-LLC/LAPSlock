@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import Combine
 import AuthKit
 import CredentialKit
 import InventoryKit
@@ -535,6 +534,13 @@ final class DeviceDetailModel {
         syncSessionState()
     }
 
+    /// A password or key is on screen and its window is running, which is the only time
+    /// the countdown has anything to do.
+    var isCountingDown: Bool {
+        if case .revealed = revealState { return true }
+        return false
+    }
+
     func hideNow() {
         session.mask()
         syncSessionState()
@@ -734,9 +740,6 @@ struct DeviceDetailView: View {
     var settings: AppSettings = .shared
     @State private var showingPrivilegedSheet = false
 
-    /// Drives the countdown. Half-second cadence so the label never appears to stall.
-    private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-
     var body: some View {
         let _ = PerfProbe.body("DeviceDetailView")
         List {
@@ -773,7 +776,18 @@ struct DeviceDetailView: View {
             Task { await PendingActions.shared.cancel(id) }
         }
         .privacyCover(isProtected: model.revealedSecret != nil || model.revealedBitLockerSecret != nil)
-        .onReceive(ticker) { _ in model.tick() }
+        // Drives the countdown, at a half-second cadence so the label never appears to
+        // stall, and only while something is visible (OPTIMIZATION-PLAN.md, step H). The
+        // window's end is fixed when it opens; this only notices it has passed. A task
+        // keyed by visibility outlives the parent's redraws, which re-created the old
+        // timer each time, and stops with the window.
+        .task(id: model.isCountingDown) {
+            guard model.isCountingDown else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(500))
+                model.tick()
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             // Revoke on anything other than active. The snapshot is taken during the
             // transition, so waiting for .background is too late.
