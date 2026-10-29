@@ -17,13 +17,18 @@ public enum DigestSource: String, Codable, Sendable, CaseIterable, Comparable {
     case msrc
     case cisaAlert
     case cisaAdvisory
+    /// News, read only where DigestNewsPolicy allows it.
+    case sansISC
+    case bleepingComputer
 
     public var title: String {
         switch self {
-        case .kev:          return "CISA KEV"
-        case .msrc:         return "Microsoft MSRC"
-        case .cisaAlert:    return "CISA Alert"
-        case .cisaAdvisory: return "CISA Advisory"
+        case .kev:              return "CISA KEV"
+        case .msrc:             return "Microsoft MSRC"
+        case .cisaAlert:        return "CISA Alert"
+        case .cisaAdvisory:     return "CISA Advisory"
+        case .sansISC:          return "SANS Internet Storm Center"
+        case .bleepingComputer: return "BleepingComputer"
         }
     }
 
@@ -31,8 +36,15 @@ public enum DigestSource: String, Codable, Sendable, CaseIterable, Comparable {
         switch self {
         case .kev, .cisaAlert, .cisaAdvisory: return "www.cisa.gov"
         case .msrc:                           return "api.msrc.microsoft.com"
+        case .sansISC:                        return "isc.sans.edu"
+        case .bleepingComputer:               return "www.bleepingcomputer.com"
         }
     }
+
+    public var isNews: Bool { self == .sansISC || self == .bleepingComputer }
+
+    /// The four sources every build reads.
+    public static let feeds: [DigestSource] = [.kev, .msrc, .cisaAlert, .cisaAdvisory]
 
     /// Catalog first, then Microsoft, then the two CISA feeds: the order a card lists them.
     public static func < (a: DigestSource, b: DigestSource) -> Bool {
@@ -90,6 +102,7 @@ public struct DigestItem: Codable, Sendable, Equatable, Identifiable {
     public enum Kind: String, Codable, Sendable {
         case vulnerability
         case advisory
+        case news
     }
 
     public let id: String
@@ -120,6 +133,12 @@ public struct DigestItem: Codable, Sendable, Equatable, Identifiable {
     public var msrcExploitability: String?
     public var cvssBase: Double?
 
+    // News
+    public var author: String?
+    /// The article in paragraphs, where the publisher allows full text. Never written by
+    /// the app.
+    public var articleText: String?
+
     public init(
         id: String,
         kind: Kind,
@@ -140,7 +159,9 @@ public struct DigestItem: Codable, Sendable, Equatable, Identifiable {
         msrcExploited: Bool = false,
         msrcPubliclyDisclosed: Bool = false,
         msrcExploitability: String? = nil,
-        cvssBase: Double? = nil
+        cvssBase: Double? = nil,
+        author: String? = nil,
+        articleText: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -162,6 +183,8 @@ public struct DigestItem: Codable, Sendable, Equatable, Identifiable {
         self.msrcPubliclyDisclosed = msrcPubliclyDisclosed
         self.msrcExploitability = msrcExploitability
         self.cvssBase = cvssBase
+        self.author = author
+        self.articleText = articleText
     }
 
     /// Whether this is about a Microsoft product, by vendor, by source, or by the
@@ -172,7 +195,30 @@ public struct DigestItem: Codable, Sendable, Equatable, Identifiable {
         if sources.contains(.msrc) { return true }
         if let vendor, vendor.localizedCaseInsensitiveContains("microsoft") { return true }
         let haystack = DigestVocabulary.words([title, product ?? "", vendor ?? ""].joined(separator: " "))
-        return DigestVocabulary.microsoftWords.contains { haystack.contains(" " + $0 + " ") }
+        // A headline is loose prose: "edge devices", "red teams" and "crypto exchange" are not
+        // Microsoft, so news is matched on the stricter list.
+        let words = kind == .news ? DigestVocabulary.microsoftNewsWords : DigestVocabulary.microsoftWords
+        return DigestVocabulary.contains(words, in: haystack)
+    }
+
+    /// The filter categories this item belongs to; one item can be in several. A
+    /// vulnerability in a product no category names is Other Vendors.
+    public var categories: Set<DigestCategory> {
+        var found: Set<DigestCategory> = []
+        if isMicrosoft { found.insert(.microsoft) }
+        let haystack = DigestVocabulary.words([title, product ?? "", vendor ?? ""].joined(separator: " "))
+        if DigestVocabulary.contains(DigestVocabulary.networkWords, in: haystack) { found.insert(.networkAccess) }
+        if DigestVocabulary.contains(DigestVocabulary.webWords, in: haystack) { found.insert(.webServers) }
+        if DigestVocabulary.contains(DigestVocabulary.endpointWords, in: haystack) { found.insert(.endpointsBrowsers) }
+        switch kind {
+        case .vulnerability:
+            if found.isEmpty { found.insert(.otherVendors) }
+        case .advisory:
+            found.insert(.advisories)
+        case .news:
+            found.insert(.news)
+        }
+        return found
     }
 
     /// MSRC republishes third-party CVEs that ship inside Edge (Chromium) and Azure Linux
@@ -187,7 +233,8 @@ public struct DigestItem: Codable, Sendable, Equatable, Identifiable {
         return false
     }
 
-    /// The one line under the title: vendor and product, or the sources for an advisory.
+    /// The one line under the title: vendor and product, the sources for an advisory, or
+    /// the publication and author for news.
     public var subtitle: String {
         switch kind {
         case .vulnerability:
@@ -197,7 +244,53 @@ public struct DigestItem: Codable, Sendable, Equatable, Identifiable {
             return parts.joined(separator: " ")
         case .advisory:
             return sources.sorted().map(\.title).joined(separator: ", ")
+        case .news:
+            let source = sources.sorted().first?.title ?? ""
+            guard let author, !author.isEmpty else { return source }
+            return source + ", " + author
         }
+    }
+}
+
+/// What the Digest's filter and its notifications choose by. Several can be on at once.
+public enum DigestCategory: String, Codable, Sendable, CaseIterable, Identifiable, Comparable {
+    case microsoft
+    case networkAccess
+    case webServers
+    case endpointsBrowsers
+    case advisories
+    case news
+    case otherVendors
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .microsoft:         return "Microsoft"
+        case .networkAccess:     return "Network and Remote Access"
+        case .webServers:        return "Web and Servers"
+        case .endpointsBrowsers: return "Endpoints and Browsers"
+        case .advisories:        return "CISA Advisories"
+        case .news:              return "News"
+        case .otherVendors:      return "Other Vendors"
+        }
+    }
+
+    /// What the category takes in, for the line under it in a menu or a setting.
+    public var detail: String {
+        switch self {
+        case .microsoft:         return "Windows, Microsoft 365, Azure and the rest of Microsoft"
+        case .networkAccess:     return "Firewalls, VPNs, routers and remote support tools"
+        case .webServers:        return "PHP, WordPress, Apache, Atlassian, GitLab and other server software"
+        case .endpointsBrowsers: return "Apple, Android, Chrome, Firefox, Linux, VMware and certificates"
+        case .advisories:        return "CISA alerts and joint advisories"
+        case .news:              return "Security news from the publications the app reads"
+        case .otherVendors:      return "Exploited vulnerabilities in anything else"
+        }
+    }
+
+    public static func < (a: DigestCategory, b: DigestCategory) -> Bool {
+        (allCases.firstIndex(of: a) ?? 0) < (allCases.firstIndex(of: b) ?? 0)
     }
 }
 
@@ -249,6 +342,43 @@ public enum DigestVocabulary {
         "edge", "teams", "onedrive", ".net", "asp.net", "visual studio", "iis", "smb",
         "ntlm", "kerberos", "bitlocker", "power platform", "dynamics"
     ]
+
+    /// For headlines: only words that cannot mean anything but Microsoft.
+    public static let microsoftNewsWords: [String] = [
+        "microsoft", "windows", "outlook", "exchange server", "exchange online", "sharepoint", "entra",
+        "azure", "intune", "active directory", "hyper-v", "onedrive", "bitlocker", "office 365",
+        "microsoft 365", "m365", "msrc", "patch tuesday", "kerberos", "ntlm"
+    ]
+
+    public static let networkWords: [String] = [
+        "fortinet", "fortigate", "fortios", "fortimail", "fortiweb", "fortiproxy", "fortimanager",
+        "citrix", "netscaler", "ivanti", "pulse secure", "connect secure", "palo alto", "pan-os",
+        "globalprotect", "cisco", "sonicwall", "f5", "big-ip", "check point", "juniper", "junos",
+        "zyxel", "mikrotik", "routeros", "arista", "velocloud", "sophos", "watchguard", "barracuda",
+        "beyondtrust", "connectwise", "screenconnect", "n-able", "kaseya", "anydesk", "teamviewer",
+        "splashtop", "openvpn", "vpn", "vpns", "firewall", "firewalls", "router", "routers",
+        "ubiquiti", "d-link", "tp-link", "netgear", "draytek", "sd-wan", "edge devices"
+    ]
+
+    public static let webWords: [String] = [
+        "php", "wordpress", "drupal", "joomla", "apache", "struts", "tomcat", "nginx", "magento",
+        "adobe commerce", "atlassian", "confluence", "jira", "bitbucket", "gitlab", "jfrog",
+        "artifactory", "jenkins", "strapi", "zammad", "collabora", "onlyoffice", "papercut",
+        "liferay", "weblogic", "oracle", "sap", "redis", "mysql", "postgresql", "mongodb",
+        "elasticsearch", "kubernetes", "docker", "web server", "web servers", "cms"
+    ]
+
+    public static let endpointWords: [String] = [
+        "apple", "ios", "ipados", "macos", "safari", "webkit", "chrome", "chromium", "v8",
+        "android", "pixel", "firefox", "mozilla", "thunderbird", "linux", "vmware", "esxi",
+        "vcenter", "broadcom", "samsung", "qualcomm", "openssl", "openssh", "tls", "ssl",
+        "certificate", "certificates", "certificate authority", "root store", "browser", "browsers"
+    ]
+
+    /// Whether any of the words or phrases stands as whole words in a haystack from `words`.
+    public static func contains(_ list: [String], in haystack: String) -> Bool {
+        list.contains { haystack.contains(" " + $0 + " ") }
+    }
 
     /// Lowercased, every run of punctuation other than the ones inside product names
     /// turned into a space, padded with a space at each end, so " office " matches the

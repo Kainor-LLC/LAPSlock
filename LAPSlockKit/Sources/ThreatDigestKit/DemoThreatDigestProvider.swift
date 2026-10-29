@@ -115,13 +115,34 @@ public actor DemoThreatDigestProvider: ThreatDigestProviding {
                        links: [DigestLink(source: .cisaAdvisory, url: URL(string: "https://www.cisa.gov/news-events/cybersecurity-advisories/aa26-281a")!)],
                        published: day(19), cves: [])
         ]
-        let items = DigestMerge.merge(kev: kev, msrc: msrc, alerts: alerts, advisories: advisories)
-        let statuses: [DigestSourceStatus] = [
+        // Invented stories, not any publisher's words, under the same policy as the real
+        // feeds: a build that may not read a publisher does not show its name either.
+        let news: [DigestItem] = [
+            DigestItem(id: "sansISC:demo-1", kind: .news,
+                       title: "Scans for a New FortiOS Flaw Pick Up",
+                       summary: "Sensors saw a jump in requests aimed at the FortiOS flaw CISA added this week. Most come from a small set of addresses.",
+                       sources: [.sansISC],
+                       links: [DigestLink(source: .sansISC, url: URL(string: "https://isc.sans.edu/diary/")!)],
+                       published: day(1), cves: [otherVendorCVE], author: "Demo Handler",
+                       articleText: "Sensors saw a jump in requests aimed at the FortiOS flaw CISA added this week. Most come from a small set of addresses.\n\nWhat to check:\n\u{2022} Firewall logs for the request pattern\n\u{2022} The version on every FortiGate you run\n\nThis is demo text, not a real diary."),
+            DigestItem(id: "bleepingComputer:demo-2", kind: .news,
+                       title: "Windows Update Distrusts a Certificate Authority's Roots",
+                       summary: "An out-of-band update removes a certificate authority from the Windows root store after browsers did the same. This is demo text, not a real article.",
+                       sources: [.bleepingComputer],
+                       links: [DigestLink(source: .bleepingComputer, url: URL(string: "https://www.bleepingcomputer.com/")!)],
+                       published: day(3), author: "Demo Reporter")
+        ].filter { story in story.sources.allSatisfy { DigestNewsPolicy.enabled.contains($0) } }
+
+        let items = DigestMerge.merge(kev: kev, msrc: msrc, alerts: alerts, advisories: advisories, news: news)
+        var statuses: [DigestSourceStatus] = [
             DigestSourceStatus(source: .kev, state: .ok(itemCount: kev.count)),
             DigestSourceStatus(source: .msrc, state: msrcUnavailable ? .unavailable(reason: "The feed did not answer.") : .ok(itemCount: msrc.count)),
             DigestSourceStatus(source: .cisaAlert, state: .ok(itemCount: alerts.count)),
             DigestSourceStatus(source: .cisaAdvisory, state: .ok(itemCount: advisories.count))
         ]
+        for source in DigestNewsPolicy.enabled.sorted() {
+            statuses.append(DigestSourceStatus(source: source, state: .ok(itemCount: news.filter { $0.sources.contains(source) }.count)))
+        }
         return DigestSnapshot(items: items, statuses: statuses, fetchedAt: now)
     }
 }

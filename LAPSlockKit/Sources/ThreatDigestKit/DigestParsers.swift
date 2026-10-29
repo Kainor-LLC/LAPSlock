@@ -73,18 +73,58 @@ public enum DigestText {
                 if budget <= 0 { break }
             }
         }
-        let entities: [(String, String)] = [
-            ("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""),
-            ("&#39;", "'"), ("&apos;", "'"), ("&rsquo;", "\u{2019}"), ("&lsquo;", "\u{2018}"),
-            ("&rdquo;", "\u{201D}"), ("&ldquo;", "\u{201C}"), ("&ndash;", "\u{2013}"), ("&mdash;", "\u{2014}"),
-            ("&hellip;", "\u{2026}"), ("&#160;", " ")
-        ]
         for (entity, replacement) in entities {
             out = out.replacingOccurrences(of: entity, with: replacement)
         }
         let collapsed = out.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         return truncate(collapsed, to: limit)
     }
+
+    /// An article's HTML as paragraphs separated by blank lines, for full text: block tags
+    /// become breaks, list items become bullets, everything else is dropped as in `plain`.
+    public static func paragraphs(_ html: String, limit: Int = 40_000) -> String {
+        var text = html
+        let breaks = ["</p>", "</div>", "</h1>", "</h2>", "</h3>", "</h4>", "</pre>", "</blockquote>", "</ul>", "</ol>"]
+        for tag in breaks {
+            text = text.replacingOccurrences(of: tag, with: "\n\n", options: .caseInsensitive)
+        }
+        for tag in ["<br>", "<br/>", "<br />"] {
+            text = text.replacingOccurrences(of: tag, with: "\n", options: .caseInsensitive)
+        }
+        text = text.replacingOccurrences(of: "<li>", with: "\n\u{2022} ", options: .caseInsensitive)
+        var out = ""
+        var inTag = false
+        for ch in text {
+            if ch == "<" { inTag = true; continue }
+            if ch == ">" { inTag = false; continue }
+            if !inTag { out.append(ch) }
+        }
+        for (entity, replacement) in entities {
+            out = out.replacingOccurrences(of: entity, with: replacement)
+        }
+        let lines = out.components(separatedBy: "\n").map {
+            $0.split(whereSeparator: { $0 == " " || $0 == "\t" }).joined(separator: " ")
+        }
+        var paragraphs: [String] = []
+        var current: [String] = []
+        for line in lines {
+            if line.isEmpty {
+                if !current.isEmpty { paragraphs.append(current.joined(separator: "\n")); current = [] }
+            } else {
+                current.append(line)
+            }
+        }
+        if !current.isEmpty { paragraphs.append(current.joined(separator: "\n")) }
+        return truncate(paragraphs.joined(separator: "\n\n"), to: limit)
+    }
+
+    static let entities: [(String, String)] = [
+        ("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""),
+        ("&#39;", "'"), ("&apos;", "'"), ("&rsquo;", "\u{2019}"), ("&lsquo;", "\u{2018}"),
+        ("&rdquo;", "\u{201D}"), ("&ldquo;", "\u{201C}"), ("&ndash;", "\u{2013}"), ("&mdash;", "\u{2014}"),
+        ("&hellip;", "\u{2026}"), ("&#160;", " "), ("&#8217;", "\u{2019}"), ("&#8216;", "\u{2018}"),
+        ("&#8220;", "\u{201C}"), ("&#8221;", "\u{201D}"), ("&#8211;", "\u{2013}"), ("&#8212;", "\u{2014}")
+    ]
 
     public static func truncate(_ text: String, to limit: Int) -> String {
         guard text.count > limit else { return text }
@@ -257,6 +297,10 @@ public final class RSSReader: NSObject, XMLParserDelegate {
         public var description = ""
         public var pubDate = ""
         public var guid = ""
+        /// `dc:creator` or `author`.
+        public var author = ""
+        /// `content:encoded`, where a feed carries the article apart from its summary.
+        public var content = ""
     }
 
     private var items: [Item] = []
@@ -264,6 +308,7 @@ public final class RSSReader: NSObject, XMLParserDelegate {
     private var element = ""
     private let descriptionCap: Int
     private var descriptionLength = 0
+    private var contentLength = 0
 
     public init(descriptionCap: Int = 4000) {
         self.descriptionCap = descriptionCap
@@ -282,6 +327,7 @@ public final class RSSReader: NSObject, XMLParserDelegate {
         if elementName == "item" {
             current = Item()
             descriptionLength = 0
+            contentLength = 0
         }
         element = elementName
     }
@@ -293,12 +339,19 @@ public final class RSSReader: NSObject, XMLParserDelegate {
         case "link":        current?.link += string
         case "pubDate":     current?.pubDate += string
         case "guid":        current?.guid += string
+        case "dc:creator", "author": current?.author += string
         case "description":
             let remaining = descriptionCap - descriptionLength
             guard remaining > 0 else { return }
             let slice = string.count > remaining ? String(string.prefix(remaining)) : string
             current?.description += slice
             descriptionLength += slice.count
+        case "content:encoded":
+            let remaining = descriptionCap - contentLength
+            guard remaining > 0 else { return }
+            let slice = string.count > remaining ? String(string.prefix(remaining)) : string
+            current?.content += slice
+            contentLength += slice.count
         default: break
         }
     }
@@ -348,8 +401,9 @@ public enum DigestMerge {
 
     /// Vulnerabilities merge by CVE. An alert that only announces KEV additions dissolves
     /// into the vulnerabilities it names, carrying its link; any other advisory stays a
-    /// card of its own.
-    public static func merge(kev: [DigestItem], msrc: [DigestItem], alerts: [DigestItem], advisories: [DigestItem]) -> [DigestItem] {
+    /// card of its own. A news story stays its own item, and a vulnerability it names gets
+    /// a link to it.
+    public static func merge(kev: [DigestItem], msrc: [DigestItem], alerts: [DigestItem], advisories: [DigestItem], news: [DigestItem] = []) -> [DigestItem] {
         var byCVE: [String: DigestItem] = [:]
         for item in kev { byCVE[item.id] = item }
         for item in msrc {
@@ -382,7 +436,12 @@ public enum DigestMerge {
                 standalone.append(alert)
             }
         }
-        return Array(byCVE.values) + standalone + advisories
+        for story in news {
+            for cve in story.cves where byCVE[cve] != nil {
+                byCVE[cve]?.links.append(contentsOf: story.links)
+            }
+        }
+        return Array(byCVE.values) + standalone + advisories + news
     }
 
     static func isKEVAnnouncement(_ title: String) -> Bool {

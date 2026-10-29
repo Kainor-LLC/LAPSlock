@@ -45,7 +45,7 @@ final class ThreatDigestServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         StubProtocol.reset()
-        service = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now })
+        service = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, newsSources: [])
     }
 
     private let kev = ##"{"count":1,"vulnerabilities":[{"cveID":"CVE-2026-96951","vendorProject":"Microsoft","product":"Windows","vulnerabilityName":"Windows Command Injection","dateAdded":"2026-10-13","shortDescription":"x","requiredAction":"y","dueDate":"2026-10-16","knownRansomwareCampaignUse":"Known","notes":"","cwes":[]}]}"##
@@ -142,7 +142,7 @@ final class ThreatDigestServiceTests: XCTestCase {
     }
 
     func test_aFeedPastTheCapIsAbandonedWhileReading() async {
-        let small = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, byteLimit: 10)
+        let small = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, byteLimit: 10, newsSources: [])
         StubProtocol.replies = ["big.json": .init(status: 200, body: String(repeating: "x", count: 11))]
         do {
             _ = try await small.get(URL(string: "https://www.cisa.gov/big.json")!)
@@ -231,12 +231,12 @@ extension ThreatDigestServiceTests {
     func test_theLastGoodCopiesOnDiskPaintAColdLaunchWithoutTheNetwork() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("digest-" + UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let writer = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, cacheDirectory: directory)
+        let writer = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, cacheDirectory: directory, newsSources: [])
         seedAll()
         let read = try await writer.digest()
         StubProtocol.reset()
 
-        let coldLaunch = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, cacheDirectory: directory)
+        let coldLaunch = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, cacheDirectory: directory, newsSources: [])
         let painted = await coldLaunch.lastDigest()
         XCTAssertEqual(painted?.items, read.items)
         XCTAssertTrue(StubProtocol.requests.isEmpty, "no network for the first paint")
@@ -250,7 +250,7 @@ extension ThreatDigestServiceTests {
     func test_noDirectoryMeansNothingOnDisk() async throws {
         seedAll()
         _ = try await service.digest()
-        let fresh = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now })
+        let fresh = ThreatDigestService(session: StubProtocol.session(), now: { [now] in now }, newsSources: [])
         let painted = await fresh.lastDigest()
         XCTAssertNil(painted)
     }

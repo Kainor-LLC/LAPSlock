@@ -33,7 +33,11 @@ public extension ThreatDigestProviding {
 /// cold launch shows the digest at once and offline. Public data only.
 public actor ThreatDigestService: ThreatDigestProviding {
 
-    public static let allowedHosts: Set<String> = ["www.cisa.gov", "api.msrc.microsoft.com"]
+    /// CISA and MSRC always; a news publisher's host only in a build that may read it, so a
+    /// Release build cannot contact one that has not agreed.
+    public static var allowedHosts: Set<String> {
+        Set(DigestSource.feeds.map(\.host)).union(DigestNewsPolicy.enabled.map(\.host))
+    }
     /// Bytes. The KEV catalog is under two megabytes and the advisories feed under two;
     /// anything past this is a feed that changed shape, not something to parse.
     public static let maxBytes = 8_000_000
@@ -46,6 +50,9 @@ public actor ThreatDigestService: ThreatDigestProviding {
     private let now: @Sendable () -> Date
     private let byteLimit: Int
     private let cacheDirectory: URL?
+    /// The news sources read, in a stable order, and those kept as full text.
+    private let newsSources: [DigestSource]
+    private let fullText: Set<DigestSource>
 
     /// What each feed last answered, with the validators to ask it again conditionally.
     private var held: [DigestSource: (meta: Held, data: Data)] = [:]
@@ -75,17 +82,26 @@ public actor ThreatDigestService: ThreatDigestProviding {
     /// - session: injected by tests. Nil uses `sharedSession`.
     /// - byteLimit: injected by tests so the cap can be crossed without megabytes of input.
     /// - cacheDirectory: where the last good copies go. Nil keeps them in memory only.
+    /// - newsSources, fullText: what DigestNewsPolicy allows, unless a test says otherwise.
+    ///   A source outside the policy is dropped whatever is passed.
     public init(
         session: URLSession? = nil,
         now: @escaping @Sendable () -> Date = { Date() },
         byteLimit: Int = ThreatDigestService.maxBytes,
-        cacheDirectory: URL? = nil
+        cacheDirectory: URL? = nil,
+        newsSources: Set<DigestSource> = DigestNewsPolicy.enabled,
+        fullText: Set<DigestSource> = DigestNewsPolicy.fullText
     ) {
         self.session = session ?? Self.sharedSession
         self.now = now
         self.byteLimit = byteLimit
         self.cacheDirectory = cacheDirectory
+        self.newsSources = newsSources.filter { $0.isNews && DigestNewsPolicy.enabled.contains($0) }.sorted()
+        self.fullText = fullText
     }
+
+    /// Every source this service reads: the four feeds, then the news it may read.
+    private var sources: [DigestSource] { DigestSource.feeds + newsSources }
 
     public static func makeSession() -> URLSession {
         let config = URLSessionConfiguration.ephemeral
@@ -106,11 +122,15 @@ public actor ThreatDigestService: ThreatDigestProviding {
     public func refreshedDigest() async throws -> DigestSnapshot {
         readDiskOnce()
         let at = now()
-        async let kev = read(.kev, at: at)
-        async let msrc = read(.msrc, at: at)
-        async let alerts = read(.cisaAlert, at: at)
-        async let advisories = read(.cisaAdvisory, at: at)
-        let snapshot = Self.snapshot(await [kev, msrc, alerts, advisories], at: at)
+        let results = await withTaskGroup(of: (DigestSource, SourceResult).self) { group in
+            for source in sources {
+                group.addTask { (source, await self.read(source, at: at)) }
+            }
+            var collected: [DigestSource: SourceResult] = [:]
+            for await (source, result) in group { collected[source] = result }
+            return collected
+        }
+        let snapshot = Self.snapshot(results, order: sources, at: at)
         lastSnapshot = snapshot
         return snapshot
     }
@@ -118,14 +138,16 @@ public actor ThreatDigestService: ThreatDigestProviding {
     public func lastDigest() async -> DigestSnapshot? {
         if let lastSnapshot { return lastSnapshot }
         readDiskOnce()
-        guard let oldest = held.values.map(\.meta.readAt).min() else { return nil }
-        let results = [DigestSource.kev, .msrc, .cisaAlert, .cisaAdvisory].map { source -> SourceResult in
-            guard let copy = held[source], let items = try? Self.decode(source, copy.data, now: oldest) else {
-                return SourceResult(items: [], status: DigestSourceStatus(source: source, state: .unavailable(reason: "Not read yet.")))
+        guard let oldest = sources.compactMap({ held[$0]?.meta.readAt }).min() else { return nil }
+        var results: [DigestSource: SourceResult] = [:]
+        for source in sources {
+            guard let copy = held[source], let items = try? decode(source, copy.data, now: oldest) else {
+                results[source] = SourceResult(items: [], status: DigestSourceStatus(source: source, state: .unavailable(reason: "Not read yet.")))
+                continue
             }
-            return SourceResult(items: items, status: DigestSourceStatus(source: source, state: .ok(itemCount: items.count)))
+            results[source] = SourceResult(items: items, status: DigestSourceStatus(source: source, state: .ok(itemCount: items.count)))
         }
-        return Self.snapshot(results, at: oldest)
+        return Self.snapshot(results, order: sources, at: oldest)
     }
 
     struct SourceResult {
@@ -133,10 +155,12 @@ public actor ThreatDigestService: ThreatDigestProviding {
         var status: DigestSourceStatus
     }
 
-    private static func snapshot(_ results: [SourceResult], at: Date) -> DigestSnapshot {
+    private static func snapshot(_ results: [DigestSource: SourceResult], order: [DigestSource], at: Date) -> DigestSnapshot {
         let items = DigestMerge.merge(
-            kev: results[0].items, msrc: results[1].items, alerts: results[2].items, advisories: results[3].items)
-        return DigestSnapshot(items: items, statuses: results.map(\.status), fetchedAt: at)
+            kev: results[.kev]?.items ?? [], msrc: results[.msrc]?.items ?? [],
+            alerts: results[.cisaAlert]?.items ?? [], advisories: results[.cisaAdvisory]?.items ?? [],
+            news: order.filter(\.isNews).flatMap { results[$0]?.items ?? [] })
+        return DigestSnapshot(items: items, statuses: order.compactMap { results[$0]?.status }, fetchedAt: at)
     }
 
     static func url(for source: DigestSource, now: Date) -> URL {
@@ -147,14 +171,22 @@ public actor ThreatDigestService: ThreatDigestProviding {
         case .msrc:         return MSRCPage.url(since: startOfDay(now.addingTimeInterval(-TimeInterval(msrcWindowDays) * 86_400)))
         case .cisaAlert:    return CISAFeeds.alerts
         case .cisaAdvisory: return CISAFeeds.advisories
+        case .sansISC:      return NewsFeeds.sansISC
+        case .bleepingComputer: return NewsFeeds.bleepingComputer
         }
     }
 
-    static func decode(_ source: DigestSource, _ data: Data, now: Date) throws -> [DigestItem] {
+    private func decode(_ source: DigestSource, _ data: Data, now: Date) throws -> [DigestItem] {
+        try Self.decode(source, data, now: now, fullText: fullText.contains(source))
+    }
+
+    static func decode(_ source: DigestSource, _ data: Data, now: Date, fullText: Bool = false) throws -> [DigestItem] {
         switch source {
         case .kev:          return try JSONDecoder().decode(KEVCatalog.self, from: data).items(addedWithinDays: kevWindowDays, now: now)
         case .msrc:         return try JSONDecoder().decode(MSRCPage.self, from: data).items
         case .cisaAlert, .cisaAdvisory: return CISAFeeds.items(RSSReader.read(data), source: source)
+        case .sansISC, .bleepingComputer:
+            return NewsFeeds.items(RSSReader.read(data, descriptionCap: NewsFeeds.textCap), source: source, fullText: fullText)
         }
     }
 
@@ -179,14 +211,14 @@ public actor ThreatDigestService: ThreatDigestProviding {
             } else {
                 data = answer.data
             }
-            let items = try Self.decode(source, data, now: at)
+            let items = try decode(source, data, now: at)
             if !answer.notModified {
                 keep(source, Held(url: url, etag: answer.etag, lastModified: answer.lastModified, readAt: at), data)
             }
             return SourceResult(items: items, status: DigestSourceStatus(source: source, state: .ok(itemCount: items.count)))
         } catch {
             let reason = Self.describe(Self.digestError(error))
-            if let copy = held[source], let items = try? Self.decode(source, copy.data, now: at) {
+            if let copy = held[source], let items = try? decode(source, copy.data, now: at) {
                 return SourceResult(items: items, status: DigestSourceStatus(source: source, state: .unavailable(reason: reason + " Showing the last copy read.")))
             }
             return SourceResult(items: [], status: DigestSourceStatus(source: source, state: .unavailable(reason: reason)))

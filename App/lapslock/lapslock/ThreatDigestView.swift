@@ -20,17 +20,35 @@ final class ThreatDigestModel {
     }
     private(set) var isLoading = false
     private(set) var errorMessage: String?
-    var microsoftOnly: Bool {
+    /// What the filter shows. An item shows when it is in any of these.
+    var categories: Set<DigestCategory> {
         didSet {
-            UserDefaults.standard.set(microsoftOnly, forKey: Self.microsoftOnlyKey)
-            if microsoftOnly != oldValue { rank() }
+            UserDefaults.standard.set(categories.map(\.rawValue).sorted(), forKey: Self.categoriesKey)
+            if categories != oldValue { rank() }
         }
     }
     private(set) var cards: [(item: DigestItem, ranking: DigestRanking)] = []
     private(set) var rest: [(item: DigestItem, ranking: DigestRanking)] = []
+    /// The past week's stories, newest first. Not ranked: news is read in order.
+    private(set) var news: [(item: DigestItem, ranking: DigestRanking)] = []
     var showRest = false
 
+    static let categoriesKey = "settings.digestCategories"
+    /// The switch the categories replaced. Read once, to carry an install's choice over.
     static let microsoftOnlyKey = "settings.digestMicrosoftOnly"
+    /// Microsoft, and what everybody should see: the old default, with news added.
+    static let defaultCategories: Set<DigestCategory> = [.microsoft, .advisories, .news]
+    static let microsoftOnlyCategories: Set<DigestCategory> = [.microsoft]
+
+    static var storedCategories: Set<DigestCategory> {
+        if let raw = UserDefaults.standard.array(forKey: categoriesKey) as? [String] {
+            return Set(raw.compactMap(DigestCategory.init(rawValue:)))
+        }
+        if let microsoftOnly = UserDefaults.standard.object(forKey: microsoftOnlyKey) as? Bool, !microsoftOnly {
+            return Set(DigestCategory.allCases)
+        }
+        return defaultCategories
+    }
     /// Before ids were kept: the time of the last look. Read once, for the first visit
     /// after the change, then removed.
     static let lastSeenKey = "settings.digestLastSeen"
@@ -48,33 +66,45 @@ final class ThreatDigestModel {
 
     init(provider: any ThreatDigestProviding) {
         self.provider = provider
-        self.microsoftOnly = UserDefaults.standard.object(forKey: Self.microsoftOnlyKey) as? Bool ?? true
+        self.categories = Self.storedCategories
         self.seenIds = (UserDefaults.standard.array(forKey: Self.seenIdsKey) as? [String]).map(Set.init)
         self.seenBefore = UserDefaults.standard.object(forKey: Self.lastSeenKey) as? Date
     }
 
-    /// Ranks what is loaded under the current filter, into the cards and the rest.
+    /// Ranks what is loaded under the current filter, into the cards, the rest and the news.
     private func rank() {
         guard let snapshot else {
             cards = []
             rest = []
+            news = []
             return
         }
         let ranker = DigestRanker(now: snapshot.fetchedAt)
-        let split = ranker.split(ranker.ranked(Self.filter(snapshot.items, microsoftOnly: microsoftOnly)))
+        let shown = Self.filter(snapshot.items, categories: categories)
+        let split = ranker.split(ranker.ranked(shown.filter { $0.kind != .news }))
         cards = split.cards
         rest = split.rest
+        let weekAgo = snapshot.fetchedAt.addingTimeInterval(-TimeInterval(DigestRanker.newDays) * 86_400)
+        news = shown.filter { $0.kind == .news && ($0.published ?? .distantPast) >= weekAgo }
+            .sorted { ($0.published ?? .distantPast) > ($1.published ?? .distantPast) }
+            .map { ($0, ranker.rank($0)) }
     }
 
-    /// The default filter hides vulnerabilities in other vendors' products. Advisories
-    /// always show: a ransomware campaign is everybody's business.
-    static func filter(_ items: [DigestItem], microsoftOnly: Bool) -> [DigestItem] {
-        guard microsoftOnly else { return items }
-        return items.filter { $0.kind == .advisory || $0.isMicrosoft }
+    /// An item shows when it is in any chosen category.
+    static func filter(_ items: [DigestItem], categories: Set<DigestCategory>) -> [DigestItem] {
+        items.filter { !$0.categories.isDisjoint(with: categories) }
+    }
+
+    var showsEverything: Bool { categories == Set(DigestCategory.allCases) }
+
+    func isOn(_ category: DigestCategory) -> Bool { categories.contains(category) }
+
+    func toggle(_ category: DigestCategory) {
+        if categories.contains(category) { categories.remove(category) } else { categories.insert(category) }
     }
 
     func entry(_ id: String) -> (item: DigestItem, ranking: DigestRanking)? {
-        (cards + rest).first { $0.item.id == id }
+        (cards + news + rest).first { $0.item.id == id }
     }
 
     func isNew(_ item: DigestItem) -> Bool {
@@ -148,9 +178,21 @@ struct ThreatDigestListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Toggle("Microsoft products only", isOn: $model.microsoftOnly)
+                    Section {
+                        Button("Show All") { model.categories = Set(DigestCategory.allCases) }
+                        Button("Microsoft Only") { model.categories = ThreatDigestModel.microsoftOnlyCategories }
+                    }
+                    Section("Show") {
+                        // One line each: with the descriptions the menu outgrew its popover
+                        // on an iPhone, and they are in Settings, Notifications.
+                        ForEach(Self.offeredCategories) { category in
+                            Toggle(category.title, isOn: Binding(get: { model.isOn(category) }, set: { _ in model.toggle(category) }))
+                                // Several at once: the menu stays open while categories are picked.
+                                .menuActionDismissBehavior(.disabled)
+                        }
+                    }
                 } label: {
-                    Image(systemName: model.microsoftOnly
+                    Image(systemName: model.showsEverything
                           ? "line.3.horizontal.decrease.circle"
                           : "line.3.horizontal.decrease.circle.fill")
                 }
@@ -167,10 +209,19 @@ struct ThreatDigestListView: View {
         }
     }
 
+    /// News only where this build reads a news source.
+    static var offeredCategories: [DigestCategory] {
+        DigestCategory.allCases.filter { $0 != .news || !DigestNewsPolicy.enabled.isEmpty }
+    }
+
     private var digestList: some View {
         List(selection: $selection) {
             Section {
-                if model.cards.isEmpty {
+                if model.categories.isEmpty {
+                    Text("No categories are chosen. Pick some in the filter at the top.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else if model.cards.isEmpty {
                     Text("Nothing ranks high enough this week. The rest is below.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -192,22 +243,35 @@ struct ThreatDigestListView: View {
             } header: {
                 Text("This Week")
             }
-            Section {
-                if model.showRest {
-                    ForEach(model.rest, id: \.item.id) { entry in
+            if !model.news.isEmpty {
+                Section {
+                    ForEach(model.news, id: \.item.id) { entry in
                         NavigationLink(value: entry.item.id) {
-                            DigestCardRow(item: entry.item, ranking: entry.ranking, isNew: model.isNew(entry.item), compact: true)
+                            DigestCardRow(item: entry.item, ranking: entry.ranking, isNew: model.isNew(entry.item))
                         }
                     }
-                } else if !model.rest.isEmpty {
-                    Button {
-                        model.showRest = true
-                    } label: {
-                        Text("Show \(model.rest.count) more")
-                    }
+                } header: {
+                    Text("In the News")
                 }
-            } header: {
-                Text("The Rest")
+            }
+            if !model.rest.isEmpty {
+                Section {
+                    if model.showRest {
+                        ForEach(model.rest, id: \.item.id) { entry in
+                            NavigationLink(value: entry.item.id) {
+                                DigestCardRow(item: entry.item, ranking: entry.ranking, isNew: model.isNew(entry.item), compact: true)
+                            }
+                        }
+                    } else if !model.rest.isEmpty {
+                        Button {
+                            model.showRest = true
+                        } label: {
+                            Text("Show \(model.rest.count) more")
+                        }
+                    }
+                } header: {
+                    Text("The Rest")
+                }
             }
             if !model.unavailable.isEmpty {
                 Section {
@@ -231,13 +295,27 @@ struct ThreatDigestListView: View {
 
     private var cardsFooter: String {
         var parts = ["Ranked on this device from CISA KEV, CISA advisories and Microsoft MSRC; the words are theirs."]
-        parts.append(model.microsoftOnly ? "Microsoft products only; advisories always show." : "Every vendor.")
+        let publications = DigestNewsPolicy.enabled.sorted().map(\.title)
+        if !publications.isEmpty {
+            parts.append("News from " + Self.joined(publications) + ".")
+        }
+        if model.showsEverything {
+            parts.append("Every category.")
+        } else if !model.categories.isEmpty {
+            parts.append("Showing " + Self.joined(model.categories.sorted().map(\.title)) + ".")
+        }
         if let fetchedAt = model.snapshot?.fetchedAt {
             // The copy kept on the phone can be from another day; say which.
             let day: Date.FormatStyle.DateStyle = Calendar.current.isDateInToday(fetchedAt) ? .omitted : .abbreviated
             parts.append("Fetched " + fetchedAt.formatted(date: day, time: .shortened) + ".")
         }
         return parts.joined(separator: " ")
+    }
+
+    /// "A, B and C", the way the app's copy writes a list.
+    static func joined(_ names: [String]) -> String {
+        guard names.count > 1 else { return names.first ?? "" }
+        return names.dropLast().joined(separator: ", ") + " and " + names.last!
     }
 
     private var loadingState: some View {
@@ -326,14 +404,18 @@ struct DigestDetailView: View {
 
     var body: some View {
         List {
-            summarySection
-            whySection
-            if item.sources.contains(.kev) { kevSection }
-            if item.sources.contains(.msrc) { msrcSection }
-            if item.kind == .advisory, !item.cves.isEmpty { cveSection }
+            if item.kind == .news {
+                articleSections
+            } else {
+                summarySection
+                whySection
+                if item.sources.contains(.kev) { kevSection }
+                if item.sources.contains(.msrc) { msrcSection }
+                if item.kind == .advisory, !item.cves.isEmpty { cveSection }
+            }
             linksSection
         }
-        .navigationTitle(item.kind == .vulnerability ? item.id : "Advisory")
+        .navigationTitle(item.kind == .vulnerability ? item.id : item.kind == .news ? "News" : "Advisory")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
         .safeAreaInset(edge: .top) {
@@ -359,6 +441,31 @@ struct DigestDetailView: View {
         } footer: {
             Text("The description is the source's own text. Open the source for the full page.")
         }
+    }
+
+    /// A story: the publication's own words, in full where it allowed that, otherwise its
+    /// summary with the link to the rest.
+    @ViewBuilder
+    private var articleSections: some View {
+        Section {
+            Text(item.title)
+                .font(.title3.weight(.semibold))
+                .textSelection(.enabled)
+            LabeledContent("Source", value: item.subtitle)
+            if let published = item.published {
+                LabeledContent("Published", value: published.formatted(date: .abbreviated, time: .shortened))
+            }
+        }
+        Section {
+            Text(item.articleText ?? item.summary)
+                .font(.body)
+                .textSelection(.enabled)
+        } footer: {
+            Text(item.articleText == nil
+                 ? "The publication's own summary. The full article is on its site."
+                 : "The publication's own text. Open it on the site for images, code and comments.")
+        }
+        if !item.cves.isEmpty { cveSection }
     }
 
     private var whySection: some View {
