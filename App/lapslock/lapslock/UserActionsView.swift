@@ -347,98 +347,96 @@ struct PersonActionsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
-                if model.passVisible { passSection }
-                if mode == .leaver {
-                    leaverSections
-                } else {
-                Section {
-                    ForEach(model.kinds) { kind in
-                        Button {
-                            model.tapped(kind)
-                        } label: {
-                            HStack {
-                                Label(kind.title, systemImage: kind.symbol)
-                                Spacer()
-                                if model.working == kind { ProgressView() }
-                            }
-                        }
-                        .disabled(model.working != nil || model.undoing != nil)
-                    }
-                    if let note = model.note {
-                        Label(note, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.secondary)
-                    }
-                    if let error = model.errorMessage {
-                        Text(error).font(.footnote).foregroundStyle(.red)
-                    }
-                    if !model.eligibleForActivation.isEmpty, let activate {
-                        Button { activate() } label: {
-                            Label("Activate your role", systemImage: "person.badge.key").font(.footnote.weight(.medium))
+        List {
+            if model.passVisible { passSection }
+            if mode == .leaver {
+                leaverSections
+            } else {
+            Section {
+                ForEach(model.kinds) { kind in
+                    Button {
+                        model.tapped(kind)
+                    } label: {
+                        HStack {
+                            Label(kind.title, systemImage: kind.symbol)
+                            Spacer()
+                            if model.working == kind { ProgressView() }
                         }
                     }
-                    if model.pendingChallenge != nil {
-                        Button { Task { await model.continueSignIn() } } label: {
-                            Label("Continue sign-in", systemImage: "person.crop.circle.badge.checkmark").font(.footnote.weight(.medium))
-                        }
-                    }
-                    if let entry = model.lastEntry {
-                        Text("Last from this app: " + entry.actionTitle + ", " + entry.outcome)
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                } header: {
-                    Text(model.target.label)
-                } footer: {
-                    Text("Each action is made as you, with your role, and recorded in your tenant's audit log by Microsoft and in the shift log here. A Temporary Access Pass is never written to the shift log or anywhere else.")
+                    .disabled(model.working != nil || model.undoing != nil)
                 }
+                if let note = model.note {
+                    Label(note, systemImage: "checkmark.circle").font(.footnote).foregroundStyle(.secondary)
                 }
-            }
-            .task(id: mode) { if mode == .leaver { await model.loadDevices() } }
-            // The countdown sits above the bottom edge so the list does not jump while it runs.
-            .safeAreaInset(edge: .bottom) {
-                if let pending = model.undoing {
-                    UndoBar(title: pending.title, spokenAction: pending.title, remaining: model.undoRemaining, floating: true,
-                            sendNow: { model.sendNow() }, undo: { model.undo() })
+                if let error = model.errorMessage {
+                    Text(error).font(.footnote).foregroundStyle(.red)
                 }
-            }
-            .navigationTitle("User Actions")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                // In the title bar, so the checklist starts at the top of the sheet.
-                ToolbarItem(placement: .principal) {
-                    Picker("View", selection: $mode) {
-                        ForEach(Mode.allCases) { Text($0.label).tag($0) }
-                    }
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-                }
-                if mode == .leaver {
-                    // Always reachable, however long the checklist runs.
-                    ToolbarItem(placement: .primaryAction) {
-                        Button {
-                            UIPasteboard.general.string = model.summary()
-                            summaryCopied = true
-                        } label: {
-                            Label(summaryCopied ? "Summary copied" : "Copy summary", systemImage: summaryCopied ? "checkmark" : "doc.on.clipboard")
-                                .labelStyle(.titleAndIcon)
-                        }
-                        .accessibilityHint("What was done, skipped and left, with the time, for the ticket. No credentials.")
+                if !model.eligibleForActivation.isEmpty, let activate {
+                    Button { activate() } label: {
+                        Label("Activate your role", systemImage: "person.badge.key").font(.footnote.weight(.medium))
                     }
                 }
-            }
-            .confirmationDialog(model.confirming.map(\.title) ?? "",
-                                isPresented: Binding(get: { model.confirming != nil }, set: { if !$0 { model.confirming = nil } }),
-                                titleVisibility: .visible) {
-                if let kind = model.confirming {
-                    Button(kind.title) { model.confirmed(kind) }
-                    Button("Cancel", role: .cancel) { model.confirming = nil }
+                if model.pendingChallenge != nil {
+                    Button { Task { await model.continueSignIn() } } label: {
+                        Label("Continue sign-in", systemImage: "person.crop.circle.badge.checkmark").font(.footnote.weight(.medium))
+                    }
                 }
-            } message: {
-                if let kind = model.confirming { Text(confirmationMessage(kind.confirmation, awayTenant: awayTenant)) }
+                if let entry = model.lastEntry {
+                    Text("Last from this app: " + entry.actionTitle + ", " + entry.outcome)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text(model.target.label)
+            } footer: {
+                Text("Each action is made as you, with your role, and recorded in your tenant's audit log by Microsoft and in the shift log here. A Temporary Access Pass is never written to the shift log or anywhere else.")
             }
-            .sheet(item: $model.destructive) { kind in
-                typedUPNSheet(kind)
             }
+        }
+        .task(id: mode) { if mode == .leaver { await model.loadDevices() } }
+        // The countdown sits above the bottom edge so the list does not jump while it runs.
+        .safeAreaInset(edge: .bottom) {
+            if let pending = model.undoing {
+                UndoBar(title: pending.title, spokenAction: pending.title, remaining: model.undoRemaining, floating: true,
+                        sendNow: { model.sendNow() }, undo: { model.undo() })
+            }
+        }
+        .navigationTitle("User Actions")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // In the title bar, so the checklist starts at the top of the sheet.
+            ToolbarItem(placement: .principal) {
+                Picker("View", selection: $mode) {
+                    ForEach(Mode.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .fixedSize()
+            }
+            if mode == .leaver {
+                // Always reachable, however long the checklist runs.
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        UIPasteboard.general.string = model.summary()
+                        summaryCopied = true
+                    } label: {
+                        Label(summaryCopied ? "Summary copied" : "Copy summary", systemImage: summaryCopied ? "checkmark" : "doc.on.clipboard")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .accessibilityHint("What was done, skipped and left, with the time, for the ticket. No credentials.")
+                }
+            }
+        }
+        .confirmationDialog(model.confirming.map(\.title) ?? "",
+                            isPresented: Binding(get: { model.confirming != nil }, set: { if !$0 { model.confirming = nil } }),
+                            titleVisibility: .visible) {
+            if let kind = model.confirming {
+                Button(kind.title) { model.confirmed(kind) }
+                Button("Cancel", role: .cancel) { model.confirming = nil }
+            }
+        } message: {
+            if let kind = model.confirming { Text(confirmationMessage(kind.confirmation, awayTenant: awayTenant)) }
+        }
+        .sheet(item: $model.destructive) { kind in
+            typedUPNSheet(kind)
         }
         .privacyCover(isProtected: model.passVisible)
         .task { await model.load() }

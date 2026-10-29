@@ -129,6 +129,8 @@ extension Notification.Name {
 /// What the People module needs from the root, built once per session.
 struct PeopleColumns {
     let makeModel: @MainActor () -> SignInTriageModel
+    /// The directory the module column lists.
+    let makeDirectory: @MainActor () -> PeopleDirectoryModel
     var requestConsent: (() async -> String?)? = nil
     /// User actions for the selected person; nil when they are off.
     var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
@@ -224,6 +226,7 @@ struct ModuleShell: View {
     @StateModel private var policyModel: ConditionalAccessListModel
     @StateModel private var pulseModel: TenantPulseModel
     @StateModel private var triageModel: SignInTriageModel
+    @StateModel private var directoryModel: PeopleDirectoryModel
     @StateModel private var securityModel: SecurityListModel
     @StateModel private var digestModel: ThreatDigestModel
     @State private var selectedModule: AppModule?
@@ -235,7 +238,8 @@ struct ModuleShell: View {
     @State private var openedDevice: ManagedDeviceSummary?
     @State private var selectedPolicyId: String?
     @State private var selectedPulseItem: String?
-    @State private var selectedSignInId: String?
+    /// The person whose page is open, by id.
+    @State private var selectedPersonId: String?
     @State private var selectedIncidentId: String?
     @State private var selectedDigestId: String?
     @State private var selectedHuntId: String?
@@ -309,6 +313,7 @@ struct ModuleShell: View {
         _policyModel = StateModel(wrappedValue: conditionalAccess.makeListModel())
         _pulseModel = StateModel(wrappedValue: tenantPulse.makeModel())
         _triageModel = StateModel(wrappedValue: signInTriage.makeModel())
+        _directoryModel = StateModel(wrappedValue: signInTriage.makeDirectory())
         _securityModel = StateModel(wrappedValue: security.makeModel())
         _digestModel = StateModel(wrappedValue: security.makeDigestModel())
         _approvalsModel = StateModel(wrappedValue: makeApprovals())
@@ -386,7 +391,9 @@ struct ModuleShell: View {
             selectedDeviceId = nil
             selectedPolicyId = nil
             selectedPulseItem = nil
-            selectedSignInId = nil
+            // Not when People is what opens: an alert or an incident opening a person sets
+            // the module and the person together.
+            if module != .people { selectedPersonId = nil }
             selectedIncidentId = nil
             selectedApprovalId = nil
             selectedDigestId = nil
@@ -453,7 +460,7 @@ struct ModuleShell: View {
             let query = typed(listModel.query)
             return query.isEmpty ? nil : (query, [:])
         case .people:
-            let query = typed(triageModel.searchText)
+            let query = typed(directoryModel.query)
             return query.isEmpty ? nil : (query, ["failuresOnly": String(triageModel.failuresOnly),
                                                   "last24Hours": String(triageModel.last24Hours)])
         case .incidents:
@@ -474,9 +481,14 @@ struct ModuleShell: View {
         case .devices:
             listModel.query = search.query
         case .people:
-            triageModel.searchText = search.query
             if let value = search.options["failuresOnly"] { triageModel.failuresOnly = value == "true" }
             if let value = search.options["last24Hours"] { triageModel.last24Hours = value == "true" }
+            // An address opens that person's page; anything else filters the directory.
+            if search.query.contains("@") {
+                openPerson(search.query)
+            } else {
+                directoryModel.query = search.query
+            }
         case .incidents:
             securityTab = .incidents
             securityModel.query = search.query
@@ -523,7 +535,35 @@ struct ModuleShell: View {
         selectedModule = route.module
         if route.module == .privilegedAccess, route.tab == "approvals" { privilegedTab = .approvals }
         if route.module == .security, route.tab == "digest" { securityTab = .digest }
-        if route.module == .people, let upn = route.upn { triageModel.searchText = upn }
+        if route.module == .people, let upn = route.upn { openPerson(upn) }
+    }
+
+    /// Opens a person's page from an address: an alert, an incident, a saved search. Found
+    /// in the directory, or asked of Graph when not loaded yet. When nobody has the address
+    /// the search field gets it instead, so what was asked for is still on screen.
+    private func openPerson(_ address: String) {
+        Task {
+            if let user = await directoryModel.person(withAddress: address) {
+                directoryModel.query = ""
+                triageModel.select(user)
+                selectedPersonId = user.id
+            } else {
+                directoryModel.query = address
+            }
+        }
+    }
+
+    /// The directory's selection. A tap opens the person here, before the detail column is
+    /// built, so their page never shows the person before them.
+    private var personSelection: Binding<String?> {
+        Binding(
+            get: { selectedPersonId },
+            set: { id in
+                if let id, id != triageModel.selectedUser?.id, let entry = directoryModel.entry(id) {
+                    triageModel.select(entry.user)
+                }
+                selectedPersonId = id
+            })
     }
 
     // MARK: - columns
@@ -674,13 +714,10 @@ struct ModuleShell: View {
         case .people?:
             if isPro || isDemo {
                 PeopleView(
-                    model: triageModel,
+                    directory: directoryModel,
                     isDemo: isDemo,
-                    selection: $selectedSignInId,
-                    requestConsent: signInTriage.requestConsent,
-                    makeUserActions: signInTriage.makeUserActions,
-                    snapshot: signInTriage.snapshot,
-                    groupsAvailable: signInTriage.makeGroups != nil
+                    selection: personSelection,
+                    requestConsent: signInTriage.requestConsent
                 )
             } else {
                 ProGateView(
@@ -819,33 +856,15 @@ struct ModuleShell: View {
                 NoDeviceSelectedView()
             }
         case .people?:
-            if let id = selectedSignInId, id == PeopleView.actionsSelection || id == PeopleView.leaverSelection,
-               let makeUserActions = signInTriage.makeUserActions,
-               let user = triageModel.selectedUser, let upn = user.userPrincipalName {
-                let target = UserActionTarget(userId: user.id, userPrincipalName: upn, displayName: user.displayName)
-                // Keyed by the person, so Actions and Leaver Checklist share one model.
-                PersonActionsView(
-                    make: { makeUserActions(target) },
-                    mode: Binding(
-                        get: { selectedSignInId == PeopleView.leaverSelection ? .leaver : .actions },
-                        set: { selectedSignInId = $0 == .leaver ? PeopleView.leaverSelection : PeopleView.actionsSelection }),
-                    makeDeviceActions: signInTriage.makeDeviceActions
-                )
-                .id(user.id)
-            } else if selectedSignInId == PeopleView.groupsSelection, let makeGroups = signInTriage.makeGroups,
-                      let user = triageModel.selectedUser {
-                let member = GroupMember(userId: user.id, label: user.displayName ?? user.userPrincipalName ?? user.id)
-                PersonGroupsView(make: { makeGroups(member) })
-                    .id("groups-" + user.id)
-            } else if let id = selectedSignInId, let event = triageModel.signIn(id) {
-                SignInDetailView(event: event, glossary: triageModel.glossary)
-                    .id(id)
+            if let id = selectedPersonId, let user = triageModel.selectedUser, user.id == id {
+                PersonColumn(user: user, model: triageModel, people: signInTriage)
+                    .id(user.id)
             } else {
                 ContentUnavailableView {
                     Label("People", systemImage: "person.2")
                 } description: {
                     Text(isPro || isDemo
-                         ? "Find a person, then open their actions, their leaver checklist, or a sign-in to see why it went the way it did."
+                         ? "Pick a person for their account, their actions, leaver checklist and groups, and their recent sign-ins."
                          : "Available with Pro.")
                 }
             }
@@ -922,10 +941,9 @@ struct ModuleShell: View {
                     incident: incident,
                     isDemo: isDemo,
                     openUser: { upn in
-                        // Read-only to read-only, so no gate: the search box fills and
-                        // the person's row is one tap away.
-                        triageModel.searchText = upn
+                        // Read-only to read-only, so no gate: the person's page opens.
                         selectedModule = .people
+                        openPerson(upn)
                     },
                     openDevice: { host in
                         listModel.query = host

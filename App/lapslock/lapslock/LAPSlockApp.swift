@@ -1223,6 +1223,7 @@ struct AppRootView: View {
                 ),
                 signInTriage: PeopleColumns(
                     makeModel: { SignInTriageModel(provider: DemoSignInTriageProvider(quiet: quiet)) },
+                    makeDirectory: { PeopleDirectoryModel(provider: DemoSignInTriageProvider(quiet: quiet, large: PerfProbe.largeDemo)) },
                     makeUserActions: AppSettings.shared.userActionsEffective
                         ? { target in UserActionsModel(target: target, provider: demoUserActions, tapIssuer: DemoTemporaryAccessPassService()) }
                         : nil,
@@ -1354,6 +1355,7 @@ struct AppRootView: View {
                     ),
                     signInTriage: PeopleColumns(
                         makeModel: { SignInTriageModel(provider: session.signInTriage) },
+                        makeDirectory: { PeopleDirectoryModel(provider: session.signInTriage) },
                         requestConsent: { await root.requestSignInTriageConsent() },
                         makeUserActions: AppSettings.shared.userActionsEffective
                             ? { target in UserActionsModel(target: target, provider: session.userActions, tapIssuer: session.temporaryAccessPass) }

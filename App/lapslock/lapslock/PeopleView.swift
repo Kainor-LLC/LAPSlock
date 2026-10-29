@@ -2,32 +2,271 @@ import SwiftUI
 import SignInTriageKit
 import DiagnosticsKit
 import UserActionsKit
-import DeviceActionsKit
 
 // People. Sign-in triage (spec 3.4) and user actions (3.5) in one place, merged
-// 2026-10-26: everything starts from finding the person.
+// 2026-10-26; a directory since 2026-10-29 (DIGEST-AND-PEOPLE-PLAN.md, step L).
 //
-// Content column: find the person, then their state at a glance, their actions and leaver
-// checklist, and their recent sign-ins with two filters. Detail column: the actions, the
-// checklist, or one sign-in with the error explained in plain English, the policy that
-// blocked it named, the device, the location and the client, and risk when the tenant has P2.
+// Content column: the whole directory, loaded the way the device list loads the fleet, to
+// scroll through or search. Detail column: the person's page (PersonView.swift), pushed on
+// iPhone: their account at a glance, their actions, leaver checklist and groups, and their
+// recent sign-ins with two filters, each sign-in opening with the error explained in plain
+// English, the policy that blocked it named, the device, the location and the client, and
+// risk when the tenant has P2.
 //
 // Pro, by decision D2: the module people open every morning is the one that converts.
 // Demo mode shows it in full so App Review can evaluate it.
 
+// MARK: - the directory
+
+@MainActor
+@Observable
+final class PeopleDirectoryModel {
+    /// Everyone loaded, in name order. Pages are merged in as they arrive.
+    private(set) var entries: [DirectoryEntry] = []
+    /// What the list shows: everyone, or who matches what was typed.
+    private(set) var visible: [DirectoryEntry] = []
+    /// What is typed. The list filters once typing pauses.
+    var query = "" {
+        didSet { if query != oldValue { scheduleFilter() } }
+    }
+
+    enum FillState: Equatable {
+        case idle
+        /// The first read, with the list growing as each page lands.
+        case loading(loaded: Int)
+        /// A pull to refresh reading everyone again. The list on screen stays until the new
+        /// one is complete, then replaces it.
+        case refreshing(loaded: Int)
+        /// Everyone is here. Search results are the whole directory.
+        case complete
+        /// Stopped at the cap or on an error with people not loaded. Search asks Graph for
+        /// anyone it does not find here.
+        case incomplete(loaded: Int)
+    }
+    private(set) var fill: FillState = .idle
+    /// The first page failed, so there is nothing to show but this.
+    private(set) var errorMessage: String?
+    private(set) var lastFailureWasConsent = false
+    /// True while Graph is being asked for what was typed.
+    private(set) var isLookingUp = false
+
+    private let provider: any SignInTriageProviding
+    @ObservationIgnored private var byId: [String: DirectoryEntry] = [:]
+    /// The directory read again by a pull to refresh, until it replaces `entries`.
+    @ObservationIgnored private var refreshBuffer: [DirectoryEntry] = []
+    /// The query `visible` was filtered with: `query` once typing pauses.
+    @ObservationIgnored private var appliedQuery = ""
+    @ObservationIgnored private var fillTask: Task<Void, Never>?
+    @ObservationIgnored private var debounceTask: Task<Void, Never>?
+    /// A search running off the main thread. A page that lands meanwhile starts it again
+    /// over everyone, rather than being merged into a result about to be replaced.
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
+    @ObservationIgnored private var lookupTask: Task<Void, Never>?
+
+    init(provider: any SignInTriageProviding) {
+        self.provider = provider
+    }
+
+    deinit {
+        fillTask?.cancel()
+        debounceTask?.cancel()
+        searchTask?.cancel()
+        lookupTask?.cancel()
+    }
+
+    /// Whether the list may be missing people.
+    var isPartial: Bool {
+        switch fill {
+        case .loading, .refreshing, .incomplete: return true
+        case .idle, .complete: return false
+        }
+    }
+
+    func entry(_ id: String) -> DirectoryEntry? { byId[id] }
+
+    /// The first read. Once per shell: the shell is built again on sign-out and on a switch
+    /// of organization, so one tenant's directory never shows in another.
+    func loadIfNeeded() {
+        guard fill == .idle, entries.isEmpty, errorMessage == nil else { return }
+        start(refreshing: false)
+    }
+
+    /// After the first read failed: consent granted, or the network back.
+    func retry() {
+        start(refreshing: false)
+    }
+
+    /// Pull to refresh. Returns when the new list has replaced the old one, so the spinner
+    /// stays up until then.
+    func refresh() async {
+        start(refreshing: !entries.isEmpty)
+        await fillTask?.value
+    }
+
+    /// The person with this sign-in address or mail: from the list, or from Graph when they
+    /// are not loaded yet. Nil when Graph has nobody by that address either.
+    func person(withAddress address: String) async -> DirectoryUser? {
+        if let entry = DirectorySearch.person(withAddress: address, in: entries) { return entry.user }
+        guard let found = try? await provider.searchUsers(prefix: address) else { return nil }
+        let fresh = found.map(DirectoryEntry.init)
+        add(fresh)
+        return DirectorySearch.person(withAddress: address, in: fresh)?.user
+    }
+
+    // MARK: - loading
+
+    private func start(refreshing: Bool) {
+        fillTask?.cancel()
+        errorMessage = nil
+        lastFailureWasConsent = false
+        refreshBuffer = []
+        fill = refreshing ? .refreshing(loaded: 0) : .loading(loaded: entries.count)
+        let provider = provider
+        let started = ContinuousClock.now
+        let startedAt = Date()
+        fillTask = Task { [weak self] in
+            let outcome = await DirectoryFill.run(provider) { users, _ in
+                // Folded here, before the page reaches the main actor.
+                let fresh = users.map(DirectoryEntry.init)
+                await self?.receive(fresh, refreshing: refreshing)
+            }
+            guard !Task.isCancelled, let self else { return }
+            PerfProbe.mark("peopleFill", since: started, "people=" + String(refreshing ? refreshBuffer.count : entries.count) + " outcome=" + String(describing: outcome))
+            await finish(outcome, refreshing: refreshing, since: startedAt)
+        }
+    }
+
+    private func receive(_ fresh: [DirectoryEntry], refreshing: Bool) {
+        if refreshing {
+            refreshBuffer = DirectorySearch.merged(refreshBuffer, adding: fresh)
+            fill = .refreshing(loaded: refreshBuffer.count)
+        } else {
+            add(fresh)
+            fill = .loading(loaded: entries.count)
+        }
+    }
+
+    private func finish(_ outcome: DirectoryFill.Outcome, refreshing: Bool, since started: Date) async {
+        defer { refreshBuffer = [] }
+        switch outcome {
+        case .complete, .capped:
+            if refreshing { replace(with: refreshBuffer) }
+            fill = outcome == .complete ? .complete : .incomplete(loaded: entries.count)
+            await Self.record(.success, since: started)
+        case .cancelled:
+            return
+        case .failed(let error):
+            if entries.isEmpty {
+                fill = .idle
+                errorMessage = Self.describe(error)
+                lastFailureWasConsent = error == .consentRequired
+            } else {
+                // What loaded stays, a refresh keeps the list it had, and search asks Graph.
+                fill = .incomplete(loaded: entries.count)
+            }
+            await Self.record(SignInTriageModel.outcome(for: error), since: started)
+        }
+    }
+
+    /// People joining the list: a page, or whoever Graph found for a search.
+    private func add(_ fresh: [DirectoryEntry]) {
+        let new = fresh.filter { byId[$0.id] == nil }
+        guard !new.isEmpty else { return }
+        for entry in new { byId[entry.id] = entry }
+        entries = DirectorySearch.merged(entries, adding: new)
+        if appliedQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            visible = entries
+        } else if searchTask != nil {
+            refilter()
+        } else {
+            visible = DirectorySearch.merged(results: visible, query: appliedQuery, adding: new)
+        }
+    }
+
+    /// A refreshed directory: changed people updated, new ones added, anyone gone dropped.
+    private func replace(with fresh: [DirectoryEntry]) {
+        entries = fresh
+        byId = Dictionary(fresh.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        refilter()
+    }
+
+    // MARK: - search
+
+    private func scheduleFilter() {
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, let self, self.query != self.appliedQuery else { return }
+            self.appliedQuery = self.query
+            self.refilter()
+        }
+    }
+
+    private func refilter() {
+        searchTask?.cancel()
+        searchTask = nil
+        lookupTask?.cancel()
+        isLookingUp = false
+        let query = appliedQuery
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            visible = entries
+            return
+        }
+        let snapshot = entries
+        searchTask = Task { [weak self] in
+            let started = ContinuousClock.now
+            let result = await Task.detached(priority: .userInitiated) {
+                DirectorySearch.filter(snapshot, query: query)
+            }.value
+            guard !Task.isCancelled, let self, self.appliedQuery == query else { return }
+            PerfProbe.mark("peopleFilter", since: started, "people=" + String(snapshot.count) + " queryLength=" + String(query.count))
+            self.searchTask = nil
+            self.visible = result
+            if result.isEmpty { self.lookUp(query) }
+        }
+    }
+
+    /// Asks Graph when nobody loaded matches and the directory is not all here. Whoever it
+    /// finds joins the list like anyone else.
+    private func lookUp(_ query: String) {
+        guard isPartial, query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else { return }
+        isLookingUp = true
+        let provider = provider
+        lookupTask = Task { [weak self] in
+            let found = (try? await provider.searchUsers(prefix: query)) ?? []
+            guard !Task.isCancelled, let self, self.appliedQuery == query else { return }
+            self.isLookingUp = false
+            self.add(found.map(DirectoryEntry.init))
+        }
+    }
+
+    // MARK: - diagnostics and copy
+
+    static func record(_ outcome: DiagnosticOutcome, since started: Date) async {
+        await DiagnosticsRecorder.shared.record(
+            .graphRead, outcome,
+            endpointTemplate: "/v1.0" + SignInTriageService.usersPath + "?directory",
+            durationMs: Int(Date().timeIntervalSince(started) * 1000))
+    }
+
+    static func describe(_ error: SignInTriageError) -> String {
+        switch error {
+        case .consentRequired:
+            return "This organization hasn't granted TenantKeep permission to read its directory yet."
+        case .notAuthorized:
+            return "Your account can't list the people in this organization. A guest account, or an organization that limits reading the directory, needs a directory reader role."
+        default:
+            return SignInTriageModel.describe(error)
+        }
+    }
+}
+
+// MARK: - the person's sign-ins
+
+/// The person whose page is open, and their recent sign-ins with the two filters.
 @MainActor
 @Observable
 final class SignInTriageModel {
-    /// What is typed. The directory is searched once typing pauses.
-    var searchText = "" {
-        didSet { if searchText != oldValue { scheduleSearch() } }
-    }
-    private(set) var users: [DirectoryUser] = []
-    private(set) var isSearching = false
-    private(set) var searchError: String?
-    /// The text the current results answer, so "nobody matches" waits for the search.
-    private(set) var searchedText = ""
-
     private(set) var selectedUser: DirectoryUser?
     private(set) var signIns: [SignInEvent] = []
     private(set) var isLoadingSignIns = false
@@ -43,59 +282,22 @@ final class SignInTriageModel {
 
     let glossary = ErrorGlossary.bundled
     private let provider: any SignInTriageProviding
-    @ObservationIgnored private var debounceTask: Task<Void, Never>?
-    @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var signInsTask: Task<Void, Never>?
 
     init(provider: any SignInTriageProviding) {
         self.provider = provider
     }
 
-    deinit { debounceTask?.cancel() }
-
-    private func scheduleSearch() {
-        debounceTask?.cancel()
-        debounceTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled, let self else { return }
-            self.search(self.searchText)
-        }
-    }
+    deinit { signInsTask?.cancel() }
 
     func signIn(_ id: String) -> SignInEvent? {
         signIns.first { $0.id == id }
     }
 
-    private func search(_ text: String) {
-        searchTask?.cancel()
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 2 else {
-            users = []
-            searchError = nil
-            return
-        }
-        searchTask = Task { [weak self] in
-            guard let self else { return }
-            isSearching = true
-            defer { isSearching = false }
-            do {
-                let found = try await provider.searchUsers(prefix: trimmed)
-                guard !Task.isCancelled else { return }
-                users = found
-                searchError = nil
-                searchedText = trimmed
-            } catch {
-                guard !Task.isCancelled else { return }
-                users = []
-                searchError = Self.describe(error)
-                lastFailureWasConsent = (error as? SignInTriageError) == .consentRequired
-            }
-        }
-    }
-
     func select(_ user: DirectoryUser) {
         selectedUser = user
         signIns = []
+        signInsError = nil
         reloadSignIns()
     }
 
@@ -178,210 +380,173 @@ final class SignInTriageModel {
 // MARK: - content column
 
 struct PeopleView: View {
-    /// Selection values for the person's own rows; every other value is a sign-in id.
-    static let actionsSelection = "person.actions"
-    static let leaverSelection = "person.leaver"
-    static let groupsSelection = "person.groups"
-
-    @Bindable var model: SignInTriageModel
+    @Bindable var directory: PeopleDirectoryModel
     let isDemo: Bool
+    /// The open person, by id. The shell owns it and builds the detail column from it.
     @Binding var selection: String?
     var requestConsent: (() async -> String?)? = nil
-    /// Builds the actions for one person. Nil when user actions are off.
-    var makeUserActions: ((UserActionTarget) -> UserActionsModel)? = nil
-    /// The person's state at a glance. Nil when user actions are off.
-    var snapshot: ((UserActionTarget) async -> PersonSnapshot)? = nil
-    /// Whether group changes are on, for the Groups row.
-    var groupsAvailable = false
 
     @State private var consentMessage: String?
-    @State private var personSnapshot: PersonSnapshot?
-    @State private var snapshotTick = 0
 
     var body: some View {
-        List(selection: $selection) {
-            peopleSection
-            if model.selectedUser != nil {
-                personSection
-                filterSection
-                signInsSection
+        let _ = PerfProbe.body("PeopleView")
+        Group {
+            if let error = directory.errorMessage, directory.entries.isEmpty {
+                errorState(error)
+            } else if directory.entries.isEmpty, directory.fill != .complete {
+                HStack(spacing: 8) { ProgressView(); Text("Reading the directory").font(.footnote).foregroundStyle(.secondary) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                list
             }
         }
         .navigationTitle("People")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.visible, for: .navigationBar)
-        .task(id: snapshotKey) { await loadSnapshot() }
-        .onChange(of: selection) { old, _ in
-            // Back from the actions: what was done shows in the state lines.
-            if old == Self.actionsSelection || old == Self.leaverSelection || old == Self.groupsSelection { snapshotTick += 1 }
-        }
-        .searchable(text: $model.searchText, prompt: "Name or sign-in address")
-        .refreshable { await model.refreshSignIns() }
+        .searchable(text: $directory.query, prompt: "Name or sign-in address")
+        .refreshable { await directory.refresh() }
+        .task { directory.loadIfNeeded() }
         .safeAreaInset(edge: .top) {
             if isDemo { DemoBanner() }
         }
     }
 
+    private var list: some View {
+        ScrollViewReader { proxy in
+            List(selection: $selection) {
+                PeopleNote(directory: directory)
+                ForEach(directory.visible) { entry in
+                    // A value link: the shell owns the selection and builds the person's page
+                    // from it, beside the list on iPad and pushed over it on iPhone.
+                    NavigationLink(value: entry.id) {
+                        PersonRow(entry: entry)
+                    }
+                }
+                if directory.visible.isEmpty, !directory.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    PeopleNoMatch(directory: directory)
+                }
+            }
+            .listStyle(.plain)
+            // A person opened from an incident, an alert or a saved search comes into view.
+            // No anchor scrolls the least it can, so a tapped row, already in view, stays put.
+            .onChange(of: selection) { _, id in
+                if let id { withAnimation { proxy.scrollTo(id) } }
+            }
+        }
+    }
+
     @ViewBuilder
-    private var peopleSection: some View {
-        Section {
-            if model.isSearching || (trimmedSearch.count >= 2 && model.searchedText != trimmedSearch && model.searchError == nil) {
-                HStack(spacing: 8) { ProgressView(); Text("Searching…").font(.footnote).foregroundStyle(.secondary) }
-            } else if let error = model.searchError {
-                consentAware(error)
-            } else if model.users.isEmpty {
-                if model.searchText.trimmingCharacters(in: .whitespaces).count >= 2 {
-                    Text("Nobody matches \"\(model.searchText)\".").foregroundStyle(.secondary)
-                } else if model.selectedUser == nil {
-                    Text("Type at least two characters of a name or sign-in address.").foregroundStyle(.secondary)
+    private func errorState(_ error: String) -> some View {
+        ContentUnavailableView {
+            Label("Can't Read the Directory", systemImage: "person.2.slash")
+        } description: {
+            Text(error)
+        } actions: {
+            if directory.lastFailureWasConsent, let requestConsent {
+                ConsentRequestButton(request: requestConsent) { refusal in
+                    consentMessage = refusal
+                    if refusal == nil { directory.retry() }
+                }
+                if let consentMessage {
+                    Text(consentMessage).font(.footnote).foregroundStyle(.secondary)
                 }
             } else {
-                ForEach(model.users) { user in
-                    Button {
-                        selection = nil
-                        personSnapshot = nil
-                        model.select(user)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(user.displayName ?? user.userPrincipalName ?? user.id)
-                                if let upn = user.userPrincipalName {
-                                    Text(upn).font(Brand.data(12)).foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            if model.selectedUser?.id == user.id {
-                                Image(systemName: "checkmark").foregroundStyle(Brand.accent)
-                            }
-                        }
-                        // The whole row: a plain button answers only where it draws, and a
-                        // tap beside the name fell through to the list's selection, which on
-                        // iPhone pushed an empty page for the person's id.
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    // Selection is for the sign-ins and the person's three links.
-                    .selectionDisabled()
-                }
-            }
-        } header: {
-            Text("People")
-        }
-    }
-
-    private var trimmedSearch: String { model.searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-    private var target: UserActionTarget? {
-        guard let user = model.selectedUser, let upn = user.userPrincipalName else { return nil }
-        return UserActionTarget(userId: user.id, userPrincipalName: upn, displayName: user.displayName)
-    }
-
-    private var snapshotKey: String { (model.selectedUser?.id ?? "") + "#" + String(snapshotTick) }
-
-    private func loadSnapshot() async {
-        guard let snapshot, let target else { personSnapshot = nil; return }
-        let fresh = await snapshot(target)
-        // Picking someone else cancels this load, but its reads still return. Their account
-        // state must not land under the next person's name.
-        guard !Task.isCancelled, model.selectedUser?.id == target.userId else { return }
-        personSnapshot = fresh
-    }
-
-    /// The person's actions, leaver checklist and groups, then their account at a glance.
-    /// The links come first so they are where they will stay: the account lines arrive a
-    /// moment later, and above the links they pushed them down by about 160 points, under
-    /// a tap already on its way. The state lines and actions need user actions on; the
-    /// groups row needs group changes on.
-    @ViewBuilder
-    private var personSection: some View {
-        if makeUserActions != nil || groupsAvailable, let user = model.selectedUser {
-            Section {
-                if makeUserActions != nil {
-                    NavigationLink(value: Self.actionsSelection) {
-                        Label("Actions", systemImage: "person.badge.shield.checkmark")
-                    }
-                    NavigationLink(value: Self.leaverSelection) {
-                        Label("Leaver Checklist", systemImage: "checklist")
-                    }
-                }
-                if groupsAvailable {
-                    NavigationLink(value: Self.groupsSelection) {
-                        Label("Groups", systemImage: "person.2.square.stack")
-                    }
-                }
-                if snapshot == nil {
-                    EmptyView()
-                } else if let snap = personSnapshot {
-                    let lines: [(String, String, Bool)] = [
-                        snap.signInLine.map { ($0, snap.accountEnabled == false ? "nosign" : "checkmark.circle", snap.accountEnabled == false) },
-                        snap.riskLine.map { ($0, "exclamationmark.triangle", snap.isRisky) },
-                        snap.methodsLine.map { ($0, "key", false) },
-                        snap.devicesLine.map { ($0, "laptopcomputer", false) }
-                    ].compactMap { $0 }
-                    ForEach(lines, id: \.0) { line in
-                        Label(line.0, systemImage: line.1)
-                            .font(.footnote)
-                            .foregroundStyle(line.2 ? Color.orange : Color.secondary)
-                    }
-                } else {
-                    HStack(spacing: 8) { ProgressView(); Text("Reading their account").font(.footnote).foregroundStyle(.secondary) }
-                }
-            } header: {
-                Text(user.displayName ?? user.userPrincipalName ?? "")
+                Button("Try again") { directory.retry() }
             }
         }
     }
+}
 
-    private var filterSection: some View {
-        Section {
-            Toggle("Failures only", isOn: $model.failuresOnly)
-            Toggle("Last 24 hours", isOn: $model.last24Hours)
-        } footer: {
-            Text("Interactive sign-ins, newest first. Up to 20.")
+/// The line above the list: how many people, or how far the read has got. Its own view, so
+/// a page landing redraws this line and the rows, not the search field and toolbar.
+private struct PeopleNote: View {
+    let directory: PeopleDirectoryModel
+
+    var body: some View {
+        if let note {
+            HStack(spacing: 8) {
+                if isReading { ProgressView().controlSize(.small) }
+                Text(note).font(.footnote).foregroundStyle(.secondary)
+            }
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+            .selectionDisabled()
         }
     }
 
-    @ViewBuilder
-    private var signInsSection: some View {
-        Section {
-            if model.isLoadingSignIns && model.signIns.isEmpty {
-                HStack(spacing: 8) { ProgressView(); Text("Reading the sign-in log…").font(.footnote).foregroundStyle(.secondary) }
-            } else if let error = model.signInsError {
-                consentAware(error)
-                Button("Try again") { model.reloadSignIns() }
-            } else if model.signIns.isEmpty {
-                Text(model.failuresOnly ? "No failed sign-ins in this window." : "No sign-ins in this window.")
-                    .foregroundStyle(.secondary)
+    private var isReading: Bool {
+        switch directory.fill {
+        case .loading, .refreshing: return true
+        case .idle, .complete, .incomplete: return false
+        }
+    }
+
+    private var note: String? {
+        let searching = !directory.query.trimmingCharacters(in: .whitespaces).isEmpty
+        switch directory.fill {
+        case .loading(let loaded):
+            return searching
+                ? "Still reading the directory, \(loaded) so far. Results update as they arrive."
+                : "Reading the directory, \(loaded) so far."
+        case .refreshing(let loaded):
+            return "Refreshing the directory, \(loaded) read so far."
+        case .incomplete(let loaded):
+            return "The first \(loaded) people. Search asks Microsoft Graph for anyone not here."
+        case .complete:
+            if searching { return nil }
+            return directory.entries.count == 1 ? "1 person" : "\(directory.entries.count) people"
+        case .idle:
+            return nil
+        }
+    }
+}
+
+/// Nobody in the list matches what was typed.
+private struct PeopleNoMatch: View {
+    let directory: PeopleDirectoryModel
+
+    var body: some View {
+        Group {
+            if directory.isLookingUp {
+                HStack(spacing: 8) { ProgressView(); Text("Asking Microsoft Graph").font(.footnote).foregroundStyle(.secondary) }
+            } else if directory.isPartial {
+                Text("Nobody loaded matches \"\(typed)\", and Microsoft Graph has no one whose name or sign-in address starts with it.")
+                    .font(.footnote).foregroundStyle(.secondary)
             } else {
-                ForEach(model.signIns) { event in
-                    NavigationLink(value: event.id) {
-                        SignInRow(event: event, glossary: model.glossary)
-                    }
-                }
-            }
-        } header: {
-            if let user = model.selectedUser {
-                Text("Sign-ins for " + (user.displayName ?? user.userPrincipalName ?? ""))
+                Text("Nobody matches \"\(typed)\".").foregroundStyle(.secondary)
             }
         }
+        .listRowSeparator(.hidden)
+        .selectionDisabled()
     }
 
-    @ViewBuilder
-    private func consentAware(_ message: String) -> some View {
-        Label {
-            Text(message).font(.footnote)
-        } icon: {
-            Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-        }
-        if model.lastFailureWasConsent, let requestConsent {
-            ConsentRequestButton(request: requestConsent) { refusal in
-                consentMessage = refusal
-                if refusal == nil { model.reloadSignIns() }
+    private var typed: String { directory.query.trimmingCharacters(in: .whitespaces) }
+}
+
+struct PersonRow: View {
+    let entry: DirectoryEntry
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.title)
+                if let address = entry.address, address != entry.title {
+                    Text(address)
+                        .font(Brand.data(12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
-            if let consentMessage {
-                Text(consentMessage).font(.footnote).foregroundStyle(.secondary)
+            if entry.isGuest {
+                Spacer(minLength: 8)
+                Text("Guest")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.16), in: Capsule())
             }
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -603,7 +768,7 @@ struct ProGateView: View {
 #Preview("People (demo)") {
     NavigationStack {
         PeopleView(
-            model: SignInTriageModel(provider: DemoSignInTriageProvider(latency: .milliseconds(1))),
+            directory: PeopleDirectoryModel(provider: DemoSignInTriageProvider(latency: .milliseconds(1))),
             isDemo: true,
             selection: .constant(nil))
     }
