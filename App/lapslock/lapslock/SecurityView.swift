@@ -283,8 +283,14 @@ struct SecurityListView: View {
                         SecurityIncidentRow(incident: incident)
                     }
                 }
-            } footer: {
+                // A row, not the section's footer, for the same reason as the Threat Digest's
+                // note: with Load more below it, a pinned footer's scroll edge blur covered the
+                // whole section at the end of a short list.
                 Text(footer)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             }
             if model.more != nil {
                 Section {

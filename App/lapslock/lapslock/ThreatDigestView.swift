@@ -181,10 +181,16 @@ struct ThreatDigestListView: View {
                         }
                     }
                 }
+                // A row, not the section's footer: a plain list pins a footer to the bottom
+                // of the screen, and iOS 26 drew its scroll edge blur over the whole section
+                // when a short list was scrolled to its end.
+                Text(cardsFooter)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
             } header: {
                 Text("This Week")
-            } footer: {
-                Text(cardsFooter)
             }
             Section {
                 if model.showRest {
