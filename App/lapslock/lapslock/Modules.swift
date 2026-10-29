@@ -55,7 +55,7 @@ enum AppModule: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .credentials:       return "LAPS passwords and BitLocker keys"
+        case .credentials:       return "Every device, with LAPS passwords, BitLocker keys and actions"
         case .privilegedAccess:  return "Activate an eligible role or group"
         case .people:            return "Sign-ins, account state, actions and leavers"
         case .tenantPulse:       return "Health, Message Center, expiries, Secure Score"
