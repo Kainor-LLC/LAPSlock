@@ -522,6 +522,7 @@ struct ModuleShell: View {
         guard route.module.isEnabled else { return }
         selectedModule = route.module
         if route.module == .privilegedAccess, route.tab == "approvals" { privilegedTab = .approvals }
+        if route.module == .security, route.tab == "digest" { securityTab = .digest }
         if route.module == .people, let upn = route.upn { triageModel.searchText = upn }
     }
 

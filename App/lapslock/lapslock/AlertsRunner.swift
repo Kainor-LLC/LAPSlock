@@ -39,7 +39,8 @@ enum AlertsRunner {
     /// Called when the app goes to the background and after every run. Asks for nothing
     /// when nothing is switched on.
     static func scheduleIfNeeded() {
-        guard let prefs = try? preferencesStore.load(), prefs.anythingToCheck else {
+        let tenantsWant = (try? preferencesStore.load())?.anythingToCheck ?? false
+        guard tenantsWant || DigestAlerts.isOn else {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: taskIdentifier)
             return
         }
@@ -64,10 +65,11 @@ enum AlertsRunner {
         let deadline = Date().addingTimeInterval(AlertSchedule.budget)
         let managed = ManagedConfigStore.read()
         guard !managed.isDisabled("notifications") else { return 0 }
-        guard var prefs = try? preferencesStore.load(), prefs.anythingToCheck else { return 0 }
+        // The digest needs no organization and no sign-in, so it runs when nothing else does.
+        guard var prefs = try? preferencesStore.load(), prefs.anythingToCheck else { return await DigestAlerts.check() }
         let resolved: (any AuthManaging)?
         if let suppliedAuth { resolved = suppliedAuth } else { resolved = await SessionAuth.shared.restoredAuth() }
-        guard let auth = resolved else { return 0 }
+        guard let auth = resolved else { return await DigestAlerts.check() }
 
         // The organization's break-glass accounts apply to its own tenant: the pinned one,
         // or the signed-in account's home tenant when nothing is pinned.
@@ -130,6 +132,11 @@ enum AlertsRunner {
                     }
                 }
             }
+        }
+
+        // Then the digest: public feeds, once per run, before the slower per-tenant reads.
+        if !Task.isCancelled, Date() < deadline {
+            posted += await DigestAlerts.check()
         }
 
         // Then everything else, tenant by tenant, from where the last run stopped.
@@ -297,7 +304,11 @@ enum AlertsRunner {
 
     /// When Pro lapses, the switches turn off rather than the run silently doing nothing.
     static func disableAll() {
-        guard var prefs = try? preferencesStore.load(), prefs.tenants.contains(where: \.enabled) else { return }
+        DigestAlerts.isOn = false
+        guard var prefs = try? preferencesStore.load(), prefs.tenants.contains(where: \.enabled) else {
+            scheduleIfNeeded()
+            return
+        }
         for var tenant in prefs.tenants where tenant.enabled {
             tenant.enabled = false
             prefs.upsert(tenant)

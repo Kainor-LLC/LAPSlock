@@ -1,7 +1,8 @@
 import SwiftUI
 import NotificationsKit
 
-/// The app's own alerts, and alerts relayed from the organization's automation.
+/// The app's own alerts, the Threat Digest's, and alerts relayed from the organization's
+/// automation.
 struct SettingsNotificationsPage: View {
     /// The organizations offered a switch, and where the choices are kept.
     let notificationTenants: [NotificationTenant]
@@ -17,6 +18,7 @@ struct SettingsNotificationsPage: View {
                     isPro: isPro,
                     isDemo: isDemo)
             }
+            DigestAlertsSection(isPro: isPro, isDemo: isDemo)
             RelaySettingsSection(isPro: isPro, isDemo: isDemo)
         }
         .navigationTitle("Notifications")

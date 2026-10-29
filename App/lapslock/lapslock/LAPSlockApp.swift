@@ -1110,6 +1110,7 @@ struct AppRootView: View {
                 AlertsRunner.registerCategories()
                 #if DEBUG
                 RelayCoordinator.shared.runSelfTestIfAsked()
+                await DigestAlerts.checkNowIfAsked()
                 #endif
                 #if DEBUG
                 // Straight into demo mode for simulator screenshots and UI automation, which
