@@ -87,6 +87,32 @@ final class SignInTriageServiceTests: XCTestCase {
         XCTAssertEqual(auth.calls.last, ["User.ReadBasic.All"])
     }
 
+    func test_theDirectoryIsReadInGraphsLargestPagesWithTheBasicScope() async throws {
+        let next = "https://graph.microsoft.com/v1.0/users?$select=id&$top=999&$skiptoken=X1"
+        StubProtocol.replies = ["v1.0/users": [
+            .init(status: 200, body: #"{"value":[{"id":"u1","displayName":"Al","userPrincipalName":"al@c.com"}],"@odata.nextLink":""# + next + #""}"#),
+            .init(status: 200, body: #"{"value":[{"id":"u2","displayName":"Bo","userPrincipalName":"bo@c.com","mail":"bo@c.com"}]}"#)]]
+        let first = try await service.directoryPage(after: nil)
+        XCTAssertEqual(first.users.map(\.id), ["u1"])
+        XCTAssertEqual(first.next?.absoluteString, next)
+        let url = try XCTUnwrap(StubProtocol.requests.first?.url?.absoluteString.removingPercentEncoding)
+        XCTAssertTrue(url.contains("$select=id,displayName,userPrincipalName,mail"), url)
+        XCTAssertTrue(url.contains("$top=999"), url)
+        XCTAssertEqual(auth.calls.first, ["User.ReadBasic.All"])
+        let second = try await service.directoryPage(after: first.next)
+        XCTAssertEqual(second.users.map(\.mail), ["bo@c.com"])
+        XCTAssertNil(second.next)
+        XCTAssertEqual(StubProtocol.requests.last?.url?.absoluteString, next, "the link is followed as Graph gave it")
+
+        StubProtocol.replies = ["v1.0/users": [.init(status: 403, body: "{}")]]
+        do {
+            _ = try await service.directoryPage(after: nil)
+            XCTFail("expected notAuthorized")
+        } catch {
+            XCTAssertEqual(error as? SignInTriageError, .notAuthorized)
+        }
+    }
+
     func test_signInsCarryTheFilterTheHeaderAndBothScopes() async throws {
         StubProtocol.replies = ["signIns": [.init(status: 200, body: #"{"value":[{"id":"s1","status":{"errorCode":0}},{"id":"s2","status":{"errorCode":53003}},{"id":"s3","status":{"errorCode":0}}]}"#)]]
         let events = try await service.signIns(SignInQuery(userPrincipalName: "jane@contoso.com", failuresOnly: true, limit: 20))

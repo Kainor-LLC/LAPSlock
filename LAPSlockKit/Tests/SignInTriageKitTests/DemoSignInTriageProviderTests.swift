@@ -35,9 +35,9 @@ final class DemoSignInTriageProviderTests: XCTestCase {
         }
     }
 
-    func test_theQuietCustomerHasNobodyToFind() async throws {
+    func test_theQuietCustomerHasNobodyFromTheFirst() async throws {
         let provider = DemoSignInTriageProvider(latency: .milliseconds(1), now: now, quiet: true)
-        let users = try await provider.searchUsers(prefix: "ja")
+        let users = try await provider.searchUsers(prefix: "okafor")
         XCTAssertTrue(users.isEmpty)
         let signIns = try await provider.signIns(SignInQuery(userPrincipalName: "jane.okafor@demo.example"))
         XCTAssertTrue(signIns.isEmpty)

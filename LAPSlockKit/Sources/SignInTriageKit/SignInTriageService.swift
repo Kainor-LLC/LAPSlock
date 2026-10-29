@@ -6,6 +6,7 @@ import AuthKit
 //   GET /auditLogs/signIns?$filter=...&$top=N   AuditLog.Read.All (+ Policy.Read.All for the
 //                                               applied policies to be present)
 //   GET /users?$filter=startswith(...)          User.ReadBasic.All
+//   GET /users?$select=...&$top=999             User.ReadBasic.All, the whole directory
 //
 // The log is returned newest first by default and $orderby is not supported on it, so the
 // order is taken as delivered. Report-only policy results need the unknown-enum header or
@@ -44,6 +45,31 @@ public actor SignInTriageService: SignInTriageProviding {
         do {
             let page = try await graph.collection(DirectoryUser.self, from: request, maxPages: 1)
             return page.items.sorted { ($0.displayName ?? "") .localizedCaseInsensitiveCompare($1.displayName ?? "") == .orderedAscending }
+        } catch let error as GraphError {
+            throw SignInTriageError(error)
+        }
+    }
+
+    /// Graph's largest page for users, so a 5,000-person directory is six requests.
+    public static let directoryPageSize = 999
+
+    public func directoryPage(after next: URL?) async throws -> DirectoryPage {
+        let request = GraphRequest(
+            path: Self.usersPath,
+            template: Self.usersPath + "?directory",
+            query: [
+                URLQueryItem(name: "$select", value: "id,displayName,userPrincipalName,mail"),
+                URLQueryItem(name: "$top", value: String(Self.directoryPageSize))
+            ],
+            scopes: [SignInTriageScopes.users])
+        do {
+            let page: GraphCollection<DirectoryUser>
+            if let next {
+                page = try await graph.collection(DirectoryUser.self, at: next, like: request, maxPages: 1)
+            } else {
+                page = try await graph.collection(DirectoryUser.self, from: request, maxPages: 1)
+            }
+            return DirectoryPage(users: page.items, next: page.nextLink)
         } catch let error as GraphError {
             throw SignInTriageError(error)
         }

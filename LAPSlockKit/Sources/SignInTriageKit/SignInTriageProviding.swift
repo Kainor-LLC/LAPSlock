@@ -6,6 +6,8 @@ public protocol SignInTriageProviding: Sendable {
     func searchUsers(prefix: String) async throws -> [DirectoryUser]
     /// Recent sign-ins for one person, newest first.
     func signIns(_ query: SignInQuery) async throws -> [SignInEvent]
+    /// The directory a page at a time: nil for the first page, then each page's `next`.
+    func directoryPage(after next: URL?) async throws -> DirectoryPage
 }
 
 /// What the screen asks for. Built once, so the filter string is testable on its own.

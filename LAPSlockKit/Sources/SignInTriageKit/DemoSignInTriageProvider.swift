@@ -1,8 +1,10 @@
 import Foundation
 
-// Demo sign-in triage. Four people, enough sign-ins to show every row the screen has:
+// Demo sign-in triage. Four people with enough sign-ins to show every row the screen has:
 // successes, every common failure code in the glossary, a block with the policy named, a
-// legacy client, a non-compliant device, hidden risk and real risk.
+// legacy client, a non-compliant device, hidden risk and real risk. Around them a directory
+// of forty with two guests; the quiet customer has six of its own; the large demo has 5,000
+// people and 50 guests, whose addresses are the ones the large Security demo names.
 
 public actor DemoSignInTriageProvider: SignInTriageProviding {
 
@@ -11,22 +13,38 @@ public actor DemoSignInTriageProvider: SignInTriageProviding {
     /// The second sample customer in demo mode: a calm tenant with nothing open, so switching
     /// customers shows different data and anything left over from the first stands out.
     private let quiet: Bool
+    private let directory: [DirectoryUser]
+    private let pageSize: Int
 
-    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false) {
+    public init(latency: Duration = .milliseconds(400), now: Date = Date(), quiet: Bool = false, large: Bool = false) {
         self.latency = latency
         self.now = now
         self.quiet = quiet
+        self.directory = quiet ? Self.quietDirectory : large ? Self.largeDirectory() : Self.directory
+        // Graph's own page for the large demo; small pages otherwise, so the fill shows.
+        self.pageSize = large ? 999 : 25
     }
 
     public func searchUsers(prefix: String) async throws -> [DirectoryUser] {
         try await Task.sleep(for: latency)
         let needle = prefix.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard needle.count >= 2, !quiet else { return [] }
-        return Self.users.filter {
+        guard needle.count >= 2 else { return [] }
+        let found = directory.filter {
             ($0.displayName ?? "").lowercased().hasPrefix(needle)
                 || ($0.userPrincipalName ?? "").lowercased().hasPrefix(needle)
                 || ($0.displayName ?? "").lowercased().split(separator: " ").contains { $0.hasPrefix(needle) }
         }
+        return Array(found.prefix(10))
+    }
+
+    public func directoryPage(after next: URL?) async throws -> DirectoryPage {
+        try await Task.sleep(for: latency)
+        let start = next.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "$skiptoken" }?.value }
+            .flatMap(Int.init) ?? 0
+        let end = min(start + pageSize, directory.count)
+        let users = start < end ? Array(directory[start..<end]) : []
+        let more = end < directory.count ? URL(string: "https://graph.microsoft.com/v1.0/users?$skiptoken=" + String(end)) : nil
+        return DirectoryPage(users: users, next: more)
     }
 
     public func signIns(_ query: SignInQuery) async throws -> [SignInEvent] {
@@ -43,6 +61,62 @@ public actor DemoSignInTriageProvider: SignInTriageProviding {
         DirectoryUser(id: "u-svc", displayName: "svc-scanner", userPrincipalName: "svc-scanner@demo.example", mail: nil),
         DirectoryUser(id: "u-mei", displayName: "Mei Tanaka", userPrincipalName: "mei.tanaka@demo.example", mail: "mei.tanaka@demo.example"),
     ]
+
+    private static let firstNames = ["Ada", "Ben", "Carmen", "Dev", "Elena", "Farid", "Grace", "Hugo", "Ines", "Jonas",
+                                     "Kemi", "Liam", "Maya", "Nikhil", "Olga", "Pablo", "Quinn", "Rosa", "Sami", "Tomas",
+                                     "Uma", "Victor", "Wren", "Xavier", "Yara", "Zoe", "Aiden", "Bea", "Chen", "Dara",
+                                     "Emil", "Fatima", "Gus", "Hana", "Ivan", "Jade", "Kai", "Lena", "Marco", "Nora",
+                                     "Omar", "Priya", "Rafael", "Sofia", "Theo", "Ursula", "Vera", "Will", "Yusuf", "Zara",
+                                     "Amir", "Bianca", "Cole", "Dina", "Erik", "Freya", "Gabe", "Hiro", "Isla", "Joel"]
+    private static let lastNames = ["Abbott", "Banerjee", "Castro", "Dimitrov", "Eriksen", "Fischer", "Garcia", "Haddad",
+                                    "Ito", "Jensen", "Kowalski", "Lindqvist", "Moreau", "Nakamura", "Osei", "Petrov",
+                                    "Quintero", "Rossi", "Silva", "Tanaka", "Ueda", "Varga", "Weber", "Xu", "Yilmaz",
+                                    "Zhang", "Andersen", "Brennan", "Chowdhury", "Dubois", "Engel", "Ferreira", "Gill",
+                                    "Horvat", "Iqbal", "Jovanovic", "Kim", "Larsen", "Mensah", "Novak", "Oduya", "Park",
+                                    "Reyes", "Schmidt", "Torres", "Ulrich", "Vos", "Walsh", "Young", "Zimmer", "Afolabi",
+                                    "Bauer", "Costa", "Dahl", "Evans", "Fontaine", "Grant", "Holm", "Ivanova", "Kaur",
+                                    "Lopez", "Meyer", "Nguyen", "Olsen", "Pereira", "Ramos", "Santos", "Thomsen", "Vidal",
+                                    "Wright", "Yamada", "Zeller", "Arslan", "Becker", "Cruz", "Diaz", "Ekstrom", "Flores",
+                                    "Gomez", "Hughes", "Ilic", "Jung", "Klein", "Lam", "Molina", "Nilsen", "Ortiz", "Popescu"]
+
+    private static func person(_ i: Int, offset: Int = 0) -> (name: String, handle: String) {
+        let first = firstNames[(i + offset) % firstNames.count]
+        let last = lastNames[((i + offset) / firstNames.count + i) % lastNames.count]
+        return (first + " " + last, (first + "." + last).lowercased())
+    }
+
+    private static func guest(_ index: Int, _ name: String, _ handle: String, at domain: String, in tenant: String) -> DirectoryUser {
+        DirectoryUser(id: "g-" + String(index), displayName: name + " (" + domain + ")",
+                      userPrincipalName: handle + "_" + domain + "#EXT#@" + tenant,
+                      mail: handle + "@" + domain)
+    }
+
+    /// The four with sign-ins, thirty-four colleagues and two guests.
+    public static let directory: [DirectoryUser] = users
+        + (0..<34).map { i in
+            let p = person(i * 7, offset: 3)
+            return DirectoryUser(id: "u-d" + String(i), displayName: p.name, userPrincipalName: p.handle + "@demo.example", mail: p.handle + "@demo.example")
+        }
+        + [guest(0, "Ana Ruiz", "ana.ruiz", at: "northwind.example", in: "demo.example"),
+           guest(1, "Tom Becker", "tom.becker", at: "litware.example", in: "demo.example")]
+
+    /// The second customer's people: none of the first's.
+    public static let quietDirectory: [DirectoryUser] = (0..<6).map { i in
+        let p = person(i * 11, offset: 17)
+        return DirectoryUser(id: "u-f" + String(i), displayName: p.name, userPrincipalName: p.handle + "@fabrikam.example", mail: p.handle + "@fabrikam.example")
+    }
+
+    /// 5,000 people and 50 guests. Addresses `user0000` to `user4999`, the people the large
+    /// Security demo's evidence names.
+    public static func largeDirectory(people: Int = 5_000, guests: Int = 50) -> [DirectoryUser] {
+        (0..<people).map { i in
+            let address = "user" + String(format: "%04d", i) + "@demo.example"
+            return DirectoryUser(id: "lu-" + String(i), displayName: person(i).name, userPrincipalName: address, mail: address)
+        } + (0..<guests).map { i in
+            let p = person(i * 13, offset: 29)
+            return guest(100 + i, p.name, p.handle, at: "partner" + String(i % 5) + ".example", in: "demo.example")
+        }
+    }
 
     static func hours(_ h: Double, from now: Date) -> Date { now.addingTimeInterval(-h * 3600) }
 
