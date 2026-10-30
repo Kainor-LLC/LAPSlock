@@ -87,11 +87,14 @@ final class DigestNewsTests: XCTestCase {
         XCTAssertEqual(card?.links.map(\.source), [.sansISC])
     }
 
-    func test_theReleasePolicyReadsNoNewsUntilAPublisherAgrees() {
+    func test_everyBuildReadsExactlyWhatPublishersAgreedTo() {
         // A publisher's written agreement is what adds a source here (DIGEST-AND-PEOPLE-PLAN.md).
-        XCTAssertTrue(DigestNewsPolicy.agreed.isEmpty)
-        XCTAssertTrue(DigestNewsPolicy.agreedFullText.isEmpty)
+        // SANS and BleepingComputer agreed to full text on 2026-10-29.
+        XCTAssertEqual(DigestNewsPolicy.agreed, [.sansISC, .bleepingComputer])
+        XCTAssertEqual(DigestNewsPolicy.agreedFullText, [.sansISC, .bleepingComputer])
         XCTAssertTrue(DigestNewsPolicy.agreedFullText.isSubset(of: DigestNewsPolicy.agreed))
+        XCTAssertEqual(DigestNewsPolicy.enabled, DigestNewsPolicy.agreed, "Debug reads no more than Release")
+        XCTAssertEqual(DigestNewsPolicy.fullText, DigestNewsPolicy.agreedFullText)
     }
 
     func test_aNewsHostIsAllowedOnlyWhileItsSourceIsOn() {

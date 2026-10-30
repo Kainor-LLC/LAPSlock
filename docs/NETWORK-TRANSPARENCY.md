@@ -7,14 +7,16 @@ minutes, and section 4 tells you how.
 
 ## 1. The hosts
 
-TenantKeep On-Call talks to exactly these hosts. There is no sixth.
+TenantKeep On-Call talks to exactly these hosts. There is no eighth.
 
 | Host | Operator | When | What crosses the wire |
 |---|---|---|---|
 | `login.microsoftonline.com` | Microsoft | Sign-in, token refresh | Your Microsoft sign-in, brokered by MSAL. Standard Entra ID delegated auth. |
 | `graph.microsoft.com` | Microsoft | Every module that reads your tenant | Graph requests carrying your delegated token; Graph responses carrying your organization's data, including the credential you asked for. |
-| `www.cisa.gov` | CISA (US government) | Only when you open the Security module's Digest tab, at most every fifteen minutes unless you pull to refresh | A GET for three public files: the Known Exploited Vulnerabilities catalog and two advisory feeds. No token, no tenant ID, no cookie, no identifier. On a repeat read the request also carries the `ETag` or `Last-Modified` value this server sent for the same file, so an unchanged file is not downloaded again. The files come back, and the last good copy of each is kept in the app's Caches folder on the phone. |
-| `api.msrc.microsoft.com` | Microsoft | Only when you open the Digest tab, on the same schedule | A GET for the public Security Update Guide, filtered to the last thirty days. Same rule: nothing of yours in the request, only the server's own validator on a repeat read, and the last good copy kept in Caches. |
+| `www.cisa.gov` | CISA (US government) | Only when you open the Security module's Digest tab, at most every fifteen minutes unless you pull to refresh, and, if you turn on Threat Digest notifications, when iOS runs the background check | A GET for three public files: the Known Exploited Vulnerabilities catalog and two advisory feeds. No token, no tenant ID, no cookie, no identifier. On a repeat read the request also carries the `ETag` or `Last-Modified` value this server sent for the same file, so an unchanged file is not downloaded again. The files come back, and the last good copy of each is kept in the app's Caches folder on the phone. |
+| `api.msrc.microsoft.com` | Microsoft | Only when the Digest is read, on the same schedule | A GET for the public Security Update Guide, filtered to the last thirty days. Same rule: nothing of yours in the request, only the server's own validator on a repeat read, and the last good copy kept in Caches. |
+| `isc.sans.edu` | SANS Internet Storm Center | Only when the Digest is read, on the same schedule | A GET for the public diary feed. Same rule: nothing of yours, only the server's own validator on a repeat read, the last good copy in Caches. The diaries are shown in full with SANS's written agreement. |
+| `www.bleepingcomputer.com` | BleepingComputer | Only when the Digest is read, on the same schedule | A GET for the public news feed: headlines and short summaries. Same rule. The app never fetches an article page; *Open on the site* hands the link to Safari. Shown with BleepingComputer's written agreement. |
 | `kainor-lapslock-prod-func.azurewebsites.net` | Kainor LLC | **Only after you activate an organization license**, then about monthly | A version number and your Microsoft tenant ID. Nothing else. A signed license statement comes back. |
 
 **Relayed alerts add no host to this list.** When an organization turns on relayed alerts,
@@ -24,11 +26,11 @@ from Apple. The app never makes a request to the relay. What the relay sees and 
 [RELAY-API.md](RELAY-API.md), section 9; its source is under `relay/` in this repository.
 
 **A free-tier installation never contacts Kainor.** It talks to the two Microsoft hosts for
-your data, the two public feed hosts for the Digest, and nothing else, and there is no code
+your data, the four public feed hosts for the Digest, and nothing else, and there is no code
 path that can change that without a tap on *Activate organization license* in Settings. Demo
 mode has no path to Kainor at all.
 
-**The two feed hosts cannot receive anything of yours, structurally.** The code that fetches
+**The feed hosts cannot receive anything of yours, structurally.** The code that fetches
 them is a package target capped at Foundation by the isolation guard in `scripts/isolation-check.sh`:
 it cannot import the authentication layer, so it has no way to hold a token or a tenant ID, and
 the session it uses sends no cookies and one `Accept` header. The host allowlist is checked on
@@ -86,7 +88,8 @@ already covered by the license. That reasoning is spelled out in the contract, s
    password, reveal a BitLocker key.
 3. Read the capture. You will see `login.microsoftonline.com` and `graph.microsoft.com`.
    **You will not see a Kainor host.** If you open the Security module's Digest tab you will
-   also see `www.cisa.gov` and `api.msrc.microsoft.com`, each a plain GET with no
+   also see `www.cisa.gov`, `api.msrc.microsoft.com`, `isc.sans.edu` and
+   `www.bleepingcomputer.com`, each a plain GET with no
    `Authorization` header and no cookie. A repeat read adds `If-None-Match` or
    `If-Modified-Since`, carrying back the value that same server sent for that file.
 4. If you hold an organization license, tap *Activate organization license* in Settings and
@@ -115,9 +118,10 @@ is what tells you that it does.
 Adding a host that receives anything of yours, adding a field to the one Kainor request, or
 sending anything to a Kainor host in response to a user action other than Activate or
 Refresh would each be a breaking change to the entitlement contract, requiring a new version
-of it and a note in the release notes. The two public feed hosts were added with the Threat
-Digest; they receive a request for a public file and nothing else, and the list in section 1
-says so. If you ever observe otherwise, you have found either a bug or a broken promise, and
+of it and a note in the release notes. The public feed hosts were added with the Threat
+Digest, CISA and Microsoft first and the two news publishers with their agreement on
+2026-10-29; they receive a request for a public file and nothing else, and the list in
+section 1 says so. If you ever observe otherwise, you have found either a bug or a broken promise, and
 we would like to hear about both.
 
 ---

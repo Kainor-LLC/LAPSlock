@@ -259,15 +259,18 @@
       <li><code>login.microsoftonline.com</code>: Microsoft sign-in</li>
       <li><code>graph.microsoft.com</code>: Microsoft Graph, where your data lives</li>
     </ul>
-    <p>The Threat Digest, in the Security module, reads public threat feeds from two more hosts.
+    <p>The Threat Digest, in the Security module, reads public threat feeds and security news from four more hosts.
     Those requests carry nothing of yours: no sign-in token, no tenant ID, no cookie, no identifier of
     any kind. They are a request for a public file, the same request a browser makes:</p>
     <ul>
       <li><code>www.cisa.gov</code>: CISA's Known Exploited Vulnerabilities catalog and advisories</li>
       <li><code>api.msrc.microsoft.com</code>: Microsoft's Security Update Guide</li>
+      <li><code>isc.sans.edu</code>: the SANS Internet Storm Center's diaries, shown with SANS's agreement</li>
+      <li><code>www.bleepingcomputer.com</code>: BleepingComputer's headlines and summaries, shown with its agreement</li>
     </ul>
-    <p>They are contacted only when you open the Digest, and the code that contacts them is built so
-    that it cannot reach a token or your tenant at all.</p>
+    <p>They are contacted when you open the Digest and, if you turn on Threat Digest notifications,
+    when iOS runs the background check. The code that contacts them is built so that it cannot reach
+    a token or your tenant at all. Opening an article on its site hands the link to Safari.</p>
     <p>One more host is contacted <strong>only if your organization activates a paid license</strong>
     in Settings, and never before:</p>
     <ul>

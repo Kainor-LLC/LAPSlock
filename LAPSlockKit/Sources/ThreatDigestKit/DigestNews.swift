@@ -7,37 +7,29 @@ import Foundation
 // they appear. SANS publishes under CC BY-NC-SA 4.0, and BleepingComputer's terms require
 // written permission to redistribute. So a source is read only where its publisher has
 // agreed (DIGEST-AND-PEOPLE-PLAN.md, step K), and its full text only where that was agreed
-// too. Debug builds read both, so the feature can be built and checked before an answer.
+// too. Both agreed in writing to full text, with no conditions, on 2026-10-29; the replies
+// are kept with Kainor's records. A source still waiting for an answer can be listed for
+// Debug builds only, so it can be built and checked first.
 
 /// Which news sources this build may read, and which may show their full text.
 public enum DigestNewsPolicy {
 
-    /// Sources a publisher has agreed to in writing, for every build. Empty until an answer.
-    public static let agreed: Set<DigestSource> = []
+    /// Sources a publisher has agreed to in writing, for every build.
+    public static let agreed: Set<DigestSource> = [.sansISC, .bleepingComputer]
     /// Sources whose publisher agreed to full text, not just the headline and summary.
-    public static let agreedFullText: Set<DigestSource> = []
+    public static let agreedFullText: Set<DigestSource> = [.sansISC, .bleepingComputer]
 
-    public static var enabled: Set<DigestSource> {
-        #if DEBUG
-        return [.sansISC, .bleepingComputer]
-        #else
-        return agreed
-        #endif
-    }
+    public static var enabled: Set<DigestSource> { agreed }
 
-    public static var fullText: Set<DigestSource> {
-        #if DEBUG
-        return [.sansISC, .bleepingComputer]
-        #else
-        return agreedFullText
-        #endif
-    }
+    public static var fullText: Set<DigestSource> { agreedFullText }
 }
 
 public enum NewsFeeds {
     /// The full-text diary feed.
     public static let sansISC = URL(string: "https://isc.sans.edu/rssfeed_full.xml")!
-    /// Headlines and a summary; the articles themselves stay on the site.
+    /// Headlines and a short summary; the articles themselves stay on the site. Full text was
+    /// agreed too, but the feed does not carry it, and the summary with a link to the article
+    /// is the choice (Connor, 2026-10-29): no article page is ever fetched.
     public static let bleepingComputer = URL(string: "https://www.bleepingcomputer.com/feed/")!
 
     public static func url(_ source: DigestSource) -> URL? {
