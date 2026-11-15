@@ -28,8 +28,6 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
     {
         var caller = await tokens.ValidateAsync(request.Headers.Authorization, ct);
         if (caller is null) return new UnauthorizedResult();
-        if (!caller.CanRegister)
-            return new ObjectResult(new { error = "role", message = "An active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role is needed." }) { StatusCode = 403 };
 
         RegisterBody? body;
         try { body = await JsonSerializer.DeserializeAsync<RegisterBody>(request.Body, JsonSerializerOptions.Web, ct); }
@@ -47,6 +45,11 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
         {
             return new ObjectResult(new { error = "approval", approvalUrl = TenantSetup.ApprovalUrl(caller.TenantId, options.WatchClientId) }) { StatusCode = 409 };
         }
+
+        // The token's wids claim when present; otherwise the caller's active roles from Graph.
+        if (caller.Roles.Count == 0) caller = caller.WithRoles(await setup.ActiveRolesAsync(caller.TenantId, caller.ObjectId, ct));
+        if (!caller.CanRegister)
+            return new ObjectResult(new { error = "role", message = "An active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role is needed." }) { StatusCode = 403 };
 
         var tenant = await store.TenantAsync(caller.TenantId, ct) ?? new TenantRecord { RowKey = caller.TenantId };
         tenant.Label = label;

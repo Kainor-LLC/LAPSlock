@@ -8,6 +8,9 @@ namespace Kainor.TenantKeep.Watch;
 /// <summary>Who is registering a phone: their organization, their object ID, and their roles.</summary>
 public sealed record PhoneCaller(string TenantId, string ObjectId, IReadOnlySet<string> Roles)
 {
+    /// <summary>The same caller with their roles as read from Graph.</summary>
+    public PhoneCaller WithRoles(IEnumerable<string> roles) => this with { Roles = roles.ToHashSet() };
+
     // Entra role template IDs, as they appear in the token's wids claim. Only active roles
     // appear there: a PIM-eligible role has to be activated first.
     public const string GlobalAdministrator = "62e90394-69f5-4237-9190-012177145e10";
@@ -69,6 +72,9 @@ public sealed class PhoneToken(WatchOptions options)
 
         var scopes = token.TryGetPayloadValue<string>("scp", out var scp) ? scp.Split(' ') : [];
         if (!scopes.Contains(Scope)) return null;
+        // wids appears only when the app registration asks for directory roles in tokens;
+        // the On-Call app does not, so an empty list means "not stated", and the endpoint
+        // reads the caller's active roles from Graph instead (DeviceFunctions).
         var roles = token.TryGetPayloadValue<string[]>("wids", out var wids) ? wids : [];
         return new PhoneCaller(
             token.GetPayloadValue<string>("tid").ToLowerInvariant(),

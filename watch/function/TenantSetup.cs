@@ -25,6 +25,20 @@ public sealed class TenantSetup(GraphReader graph)
         return ids;
     }
 
+    /// <summary>
+    /// The role template IDs of the user's active directory roles, direct or through a
+    /// role-assignable group. A PIM-eligible role that is not activated is not among them.
+    /// </summary>
+    public async Task<List<string>> ActiveRolesAsync(string tenantId, string objectId, CancellationToken ct)
+    {
+        using var page = await graph.GetAsync(tenantId,
+            "/users/" + Uri.EscapeDataString(objectId) + "/transitiveMemberOf/microsoft.graph.directoryRole?$select=roleTemplateId", ct);
+        return page.RootElement.GetProperty("value").EnumerateArray()
+            .Select(r => r.TryGetProperty("roleTemplateId", out var id) ? id.GetString() : null)
+            .OfType<string>()
+            .ToList();
+    }
+
     /// <summary>Where an organization's administrator approves TenantKeep Watch once.</summary>
     public static string ApprovalUrl(string tenantId, string watchClientId) =>
         $"https://login.microsoftonline.com/{tenantId}/adminconsent?client_id={watchClientId}&redirect_uri={Uri.EscapeDataString(ApprovedPage)}";
