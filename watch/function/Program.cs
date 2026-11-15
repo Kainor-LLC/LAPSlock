@@ -16,5 +16,7 @@ builder.Services.AddSingleton(options);
 builder.Services.AddSingleton(new WatchStore(options, identity));
 builder.Services.AddSingleton(new GraphReader(options, identity, http));
 builder.Services.AddSingleton(new AlertSender(options, identity, http));
+builder.Services.AddSingleton(new PhoneToken(options));
+builder.Services.AddSingleton<TenantSetup>();
 
 builder.Build().Run();

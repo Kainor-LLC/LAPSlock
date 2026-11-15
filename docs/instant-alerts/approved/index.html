@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instant Alerts Approved · Kainor LLC</title>
+<meta name="description" content="TenantKeep Watch is approved for your organization. Return to TenantKeep On-Call to finish turning on Instant alerts.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131E2E'/%3E%3Ctext x='32' y='45' font-family='Arial Narrow, Arial, sans-serif' font-size='38' font-weight='700' fill='%23D9480F' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F2F4F7; --card:#FFFFFF; --ink:#131E2E; --ink-soft:#22314A;
+    --steel:#51617A; --mist:#A9B6C6; --signal:#D9480F; --line:#C9D2DD; --line-dark:#2C3C58;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--paper);color:var(--ink);
+    font-family:'Barlow',system-ui,-apple-system,'Segoe UI',sans-serif;
+    font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px}
+  .narrow{max-width:760px}
+  a{color:var(--signal)}
+  a:hover{color:#BF3E0C}
+  a:focus-visible{outline:3px solid var(--signal);outline-offset:3px;border-radius:2px}
+  .display{font-family:'Barlow Condensed',system-ui,sans-serif;font-weight:700;
+    line-height:1.05;letter-spacing:.2px;text-transform:uppercase}
+  .eyebrow{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;
+    letter-spacing:.18em;text-transform:uppercase;color:var(--signal);font-weight:500}
+
+  header.top{background:var(--ink);color:#F4F7FB}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:22px 0;border-bottom:1px solid var(--line-dark)}
+  .brand{display:flex;align-items:baseline;gap:10px;text-decoration:none;color:inherit}
+  .brand .k{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:26px;
+    letter-spacing:.06em;text-transform:uppercase}
+  .brand .llc{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.22em;color:var(--mist)}
+  nav a{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;text-decoration:none;color:var(--mist);margin-left:22px}
+  nav a:hover{color:#fff}
+  nav a[aria-current]{color:#fff}
+  .head-main{padding:56px 0 44px}
+  h1{font-size:clamp(36px,6vw,60px)}
+  .lede{margin-top:18px;max-width:640px;font-size:19px;color:#D5DDE8}
+  .updated{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+    letter-spacing:.1em;color:var(--mist)}
+
+  main{padding:48px 0 24px}
+  h2.sec{font-size:clamp(24px,3.4vw,32px);margin:48px 0 8px}
+  .sec-sub{color:var(--steel);margin-bottom:22px;max-width:640px}
+  h3{font-size:18px;margin:26px 0 8px}
+  p{margin-bottom:14px;color:var(--ink-soft)}
+  ul,ol{margin:0 0 16px 22px;color:var(--ink-soft)}
+  li{margin-bottom:8px}
+  code{font-family:'IBM Plex Mono',monospace;font-size:14px;background:rgba(0,0,0,.05);
+    padding:2px 5px;border-radius:3px;overflow-wrap:anywhere}
+
+  /* Direct-purchase cards */
+  .plans{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:8px 0 12px}
+  @media (max-width:820px){ .plans{grid-template-columns:1fr} }
+  .plan{background:var(--card);border:1px solid var(--line);border-radius:10px;
+    padding:26px 24px 24px;display:flex;flex-direction:column}
+  .plan.featured{border-color:var(--ink);box-shadow:0 8px 28px rgba(19,30,46,.08)}
+  .plan .eyebrow{margin-bottom:10px}
+  .plan h3{margin:0 0 6px;font-size:22px}
+  .plan .who{color:var(--steel);font-size:15.5px;min-height:3.2em;margin-bottom:18px}
+  .price{display:flex;align-items:baseline;gap:8px;margin-bottom:6px;font-variant-numeric:tabular-nums}
+  .price .amt{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:48px;line-height:1;letter-spacing:.2px}
+  .price .per{font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--steel)}
+  .price-note{font-size:14px;color:var(--steel);margin-bottom:20px}
+  .plan ul{list-style:none;margin:0 0 24px 0;font-size:15.5px}
+  .plan li{padding-left:22px;position:relative;margin-bottom:8px}
+  .plan li::before{content:"";position:absolute;left:0;top:.62em;width:10px;height:2px;background:var(--signal)}
+  .plan .spacer{flex:1}
+  .buy{display:block;text-align:center;text-decoration:none;font-weight:600;font-size:16px;
+    padding:13px 18px;border-radius:7px;background:var(--ink);color:#fff;border:2px solid var(--ink)}
+  .buy:hover{background:#0B1320;color:#fff}
+  .plan.featured .buy{background:var(--signal);border-color:var(--signal)}
+  .plan.featured .buy:hover{background:#BF3E0C;border-color:#BF3E0C}
+  .fine{font-size:14px;color:var(--steel);margin-top:10px}
+
+  /* In-app table */
+  .table-scroll{overflow-x:auto;margin:16px 0 8px}
+  table{width:100%;border-collapse:collapse;font-size:15.5px;min-width:560px;background:var(--card);
+    border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  th{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--steel);font-weight:500;background:rgba(0,0,0,.02)}
+  td.num{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600;color:var(--ink)}
+
+  .steps{list-style:none;margin-left:0;counter-reset:step}
+  .steps > li{counter-increment:step;position:relative;padding-left:46px;margin-bottom:18px}
+  .steps > li::before{content:counter(step,decimal-leading-zero);position:absolute;left:0;top:2px;
+    font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--signal);font-weight:500;
+    letter-spacing:.08em}
+  .steps h3{margin:0 0 4px}
+
+  .note{background:rgba(217,72,15,.07);border-radius:8px;padding:16px 18px;margin:22px 0;
+    font-size:15.5px;color:var(--ink-soft)}
+  .faq h3{margin-top:28px}
+
+  footer{background:var(--ink);color:var(--mist);margin-top:64px}
+  .foot-inner{display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;
+    padding:32px 0;font-size:14px}
+  .foot-inner a{color:var(--mist);text-decoration:none}
+  .foot-inner a:hover{color:#fff}
+  .foot-links a{margin-left:22px}
+  @media (max-width:640px){ .foot-links a{margin:0 22px 0 0} }
+</style>
+<meta name="robots" content="noindex">
+</head>
+<body>
+<main class="wrap narrow" style="padding:72px 24px">
+  <p class="eyebrow">TenantKeep On-Call</p>
+  <h1 class="display" style="font-size:44px;margin:12px 0 20px">Instant Alerts Approved</h1>
+  <p id="ok">Your organization has approved TenantKeep Watch. Go back to TenantKeep On-Call on your phone and tap <strong>Check again</strong> under Instant Alerts to finish.</p>
+  <p id="failed" style="display:none">The approval was not completed. Microsoft said: <span id="reason"></span>. Only a Global Administrator or Privileged Role Administrator can approve it; try again from the app.</p>
+  <p style="margin-top:24px">What TenantKeep Watch can read, what it keeps, and how to remove it are in the <a href="/privacy/">privacy policy</a>. To remove it, delete TenantKeep Watch in Microsoft Entra ID, Enterprise applications.</p>
+</main>
+<script>
+  // Microsoft's adminconsent endpoint returns here with admin_consent=True, or with an error.
+  var q = new URLSearchParams(location.search);
+  if (q.get('error')) {
+    document.getElementById('ok').style.display = 'none';
+    document.getElementById('failed').style.display = 'block';
+    document.getElementById('reason').textContent = q.get('error_description') || q.get('error');
+  }
+</script>
+</body>
+</html>

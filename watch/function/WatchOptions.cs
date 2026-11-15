@@ -8,6 +8,8 @@ public sealed class WatchOptions
     public required string SenderKeySecretUri { get; init; }
     public required string RelayUrl { get; init; }
     public required string EntitlementUrl { get; init; }
+    /// <summary>The On-Call app's client ID: phones present tokens issued for its Alerts.Register scope.</summary>
+    public required string AlertsApiAudience { get; init; }
 
     public static WatchOptions FromEnvironment() => new()
     {
@@ -16,6 +18,7 @@ public sealed class WatchOptions
         SenderKeySecretUri = Required("SENDER_KEY_SECRET_URI"),
         RelayUrl = Required("RELAY_URL"),
         EntitlementUrl = Required("ENTITLEMENT_URL"),
+        AlertsApiAudience = Required("ALERTS_API_AUDIENCE"),
     };
 
     static string Required(string name) =>

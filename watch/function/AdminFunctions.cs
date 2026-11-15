@@ -13,7 +13,7 @@ namespace Kainor.TenantKeep.Watch;
 /// reachable by a customer. They store only what WatchStore describes. Routes start manage/,
 /// because Azure Functions keeps admin/ for its own host API.
 /// </summary>
-public sealed partial class AdminFunctions(WatchStore store, GraphReader graph, AlertSender sender)
+public sealed partial class AdminFunctions(WatchStore store, TenantSetup setup, AlertSender sender)
 {
     [GeneratedRegex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")]
     private static partial Regex TenantPattern();
@@ -51,14 +51,10 @@ public sealed partial class AdminFunctions(WatchStore store, GraphReader graph, 
         if (body is null || string.IsNullOrWhiteSpace(body.Label) || body.BreakGlass is not { Length: > 0 })
             return new BadRequestObjectResult(new { error = "label and breakGlass are required" });
 
-        var ids = new List<string>();
+        List<string> ids;
         try
         {
-            foreach (var account in body.BreakGlass)
-            {
-                using var user = await graph.GetAsync(tenantId, "/users/" + Uri.EscapeDataString(account) + "?$select=id", ct);
-                ids.Add(user.RootElement.GetProperty("id").GetString()!);
-            }
+            ids = await setup.ObjectIdsAsync(tenantId, body.BreakGlass, ct);
         }
         catch (GraphException e)
         {

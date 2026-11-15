@@ -110,6 +110,12 @@ public sealed class WatchStore
         await devices.UpsertEntityAsync(device, TableUpdateMode.Replace, ct);
     }
 
+    public async Task DeleteTenantAsync(string tenantId, CancellationToken ct)
+    {
+        await EnsureAsync(ct);
+        await tenants.DeleteEntityAsync("tenant", tenantId, cancellationToken: ct);
+    }
+
     public async Task DeleteDeviceAsync(string tenantId, string deviceKey, CancellationToken ct)
     {
         await EnsureAsync(ct);
