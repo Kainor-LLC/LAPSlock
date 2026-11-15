@@ -345,6 +345,12 @@ final class AppRootModel {
     /// The UPN's domain, not the tenant GUID: an administrator recognises "contoso.com"
     /// instantly and a GUID not at all, and the whole point of showing it is to stop
     /// somebody activating against an organization they did not mean to.
+    /// The signed-in account's sign-in address, for Settings.
+    var signedInUsername: String? {
+        if case .live(let account) = mode { return account.username }
+        return nil
+    }
+
     var signedInDomain: String? {
         if case .live(let account) = mode {
             let domain = account.username.split(separator: "@").last.map(String.init)
@@ -1415,6 +1421,8 @@ struct AppRootView: View {
                             entitlementDidChange: { root.recomputeEntitlement() },
                             lastAuthFailure: { await session.auth.lastAuthFailure },
                             signedInDomain: root.signedInDomain,
+                            signedInAccount: root.signedInUsername,
+                            operatingLabel: root.isOperatingAwayFromHome ? root.operatingTenantLabel : nil,
                             endSession: { await root.signOut() },
                             requestPrivilegedConsent: { await root.requestPrivilegedActivationConsent() },
                             requestUserNamesConsent: { await root.requestUserNamesConsent() },

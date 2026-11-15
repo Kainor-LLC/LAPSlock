@@ -414,7 +414,13 @@ struct ModuleShell: View {
         }
         // A tapped alert. The root has already switched to its organization, so this only
         // opens the module; after a switch this is a new shell, and onAppear catches it.
-        .onAppear { open(openRoute) }
+        .onAppear {
+            // An iPhone starts on the module list, not inside the last module: in a compact
+            // stack the remembered module was a screen deep before anything was chosen. A
+            // tapped alert, opened next, still goes straight to its module.
+            if sizeClass == .compact { selectedModule = nil }
+            open(openRoute)
+        }
         .onChange(of: openRoute) { _, route in open(route) }
         // A row tapped in the run across organizations. After a switch this is a new shell,
         // and onAppear catches it; in the same organization the change does.

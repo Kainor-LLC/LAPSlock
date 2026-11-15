@@ -207,6 +207,10 @@ struct SettingsView: View {
     /// organization they did not mean to. An MSP signed into a customer tenant is the case
     /// this exists for.
     var signedInDomain: String? = nil
+    /// The signed-in account's sign-in address, shown at the top. Nil in demo and signed out.
+    var signedInAccount: String? = nil
+    /// The organization being worked in, when it is not the account's own (an MSP).
+    var operatingLabel: String? = nil
     /// Ends the session. Injected because Settings must not know about MSAL.
     ///
     /// In live mode this signs out of Microsoft and clears tenant-scoped data; in demo mode
@@ -244,6 +248,7 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                accountSection
                 if managed.config.isManaged {
                     managedSection
                 }
@@ -608,6 +613,33 @@ struct SettingsView: View {
     #endif
 
     // MARK: - session
+
+    /// Who is signed in, first, so there is never a question of which account a reveal or
+    /// an action will be made as.
+    @ViewBuilder
+    private var accountSection: some View {
+        if isDemo {
+            Section("Signed In As") {
+                Label("Demo mode, not signed in", systemImage: "theatermasks")
+            }
+        } else if let signedInAccount {
+            Section {
+                Label {
+                    Text(signedInAccount).textSelection(.enabled)
+                } icon: {
+                    Image(systemName: "person.crop.circle")
+                }
+                if let signedInDomain {
+                    LabeledContent("Organization", value: signedInDomain)
+                }
+                if let operatingLabel {
+                    LabeledContent("Working in", value: operatingLabel)
+                }
+            } header: {
+                Text("Signed In As")
+            }
+        }
+    }
 
     /// Sign out, or leave demo.
     ///
