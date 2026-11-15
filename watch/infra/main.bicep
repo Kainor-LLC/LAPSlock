@@ -129,8 +129,8 @@ resource site 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'WATCH_HOME_TENANT_ID', value: subscription().tenantId }
         { name: 'ALERTS_API_AUDIENCE', value: alertsApiAudience }
         { name: 'SENDER_KEY_SECRET_URI', value: '${vault.properties.vaultUri}secrets/watch-sender-key' }
-        { name: 'RELAY_URL', value: 'https://kainor-relay-prod-func.azurewebsites.net/api/v1/relay' }
-        { name: 'ENTITLEMENT_URL', value: 'https://kainor-lapslock-prod-func.azurewebsites.net' }
+        { name: 'RELAY_URL', value: 'https://kainor-relay-prod-func.azurewebsites.net/relay' }
+        { name: 'ENTITLEMENT_URL', value: 'https://kainor-lapslock-prod-func.azurewebsites.net/entitlement' }
       ]
     }
     functionAppConfig: {

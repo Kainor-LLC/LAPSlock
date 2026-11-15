@@ -5,6 +5,8 @@
 // seals. Loaded into PowerShell with Add-Type by TenantKeepRelaySender.ps1.
 //
 // Only sealing is needed by the sender; Open exists so the tests can round-trip.
+// Nullable annotations are off: this file is also compiled by PowerShell's Add-Type.
+#nullable disable
 using System;
 using System.Security.Cryptography;
 using System.Text;
