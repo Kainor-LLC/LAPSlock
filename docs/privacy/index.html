@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy Policy · Kainor LLC</title>
-<meta name="description" content="TenantKeep On-Call privacy policy. Kainor LLC never receives your organization's device data or credentials, and collects no analytics or telemetry.">
+<meta name="description" content="TenantKeep On-Call privacy policy. Kainor LLC never receives your organization's device data or credentials, and collects no analytics or telemetry. Instant alerts, if turned on, are the one exception, described in full.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23131E2E'/%3E%3Ctext x='32' y='45' font-family='Arial Narrow, Arial, sans-serif' font-size='38' font-weight='700' fill='%23D9480F' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -87,7 +87,7 @@
     <div class="head-main">
       <span class="eyebrow">TenantKeep On-Call</span>
       <h1 class="display">Privacy Policy</h1>
-      <p class="updated">Effective 2 September 2026</p>
+      <p class="updated">Effective 15 November 2026</p>
     </div>
   </div>
 </header>
@@ -96,10 +96,12 @@
   <div class="wrap">
     <div class="summary">
       <h2>The short version</h2>
-      <p><strong>Kainor LLC never receives your organization's data.</strong> TenantKeep On-Call is a client
-      application. When you look up a device or reveal a password, that request goes from your iPhone
-      directly to Microsoft. It does not pass through any server we operate, because we don't operate
-      one in that path.</p>
+      <p>TenantKeep On-Call is a client application. When you look up a device or reveal a password, that
+      request goes from your iPhone directly to Microsoft. It does not pass through any server we operate,
+      because we don't operate one in that path. <strong>Kainor LLC never receives your organization's
+      data,</strong> with one exception your organization must choose: <a href="#instant-alerts">Instant
+      alerts</a>, where a service we run reads a small, fixed set of your organization's logs to alert
+      your administrators.</p>
       <p>We collect no analytics, no telemetry, no crash reports, and no usage statistics. There is no
       account to create with us. Diagnostic information is gathered only when you tap a button, stays
       on your device until you choose to send it, and cannot contain a password or a recovery key.</p>
@@ -126,9 +128,11 @@
     we have no technical means to intercept, view, or retain it.</p>
 
     <div class="note">
-      <strong>On the term "data processor":</strong> because we never receive your organization's device
-      data or credentials, Kainor LLC does not act as a processor of that data. Microsoft remains the
-      processor for information held in your tenant, under your existing agreement with them.
+      <strong>On the term "data processor":</strong> Kainor LLC never receives your organization's device
+      data or credentials, and does not act as a processor of them. Microsoft remains the processor for
+      information held in your tenant, under your existing agreement with them. If your organization turns
+      on Instant alerts, Kainor LLC processes the limited data described in that section on your
+      organization's behalf, and a data processing agreement is available.
     </div>
 
     <h2 class="sec">What is stored on your device</h2>
@@ -205,9 +209,15 @@
         <td>iOS Keychain, marked device-only so it is not synced to iCloud or restored to another device</td>
         <td>Until you remove the license in Settings; refreshed about monthly</td>
       </tr>
+      <tr>
+        <td>Instant alerts: this phone's alert key, only once you turn Instant alerts on</td>
+        <td>Secure Enclave, this device only; the key never leaves it</td>
+        <td>Until you turn Instant alerts off on this phone</td>
+      </tr>
     </table>
-    <p>Notifications are made on your phone, by your phone, from what it reads from Microsoft
-    Graph as you. There is no server sending them. A notification names the kind of event and the
+    <p>The app's own notifications are made on your phone, by your phone, from what it reads from
+    Microsoft Graph as you; no server sends them. Instant alerts, if your organization turns them on,
+    come from our service instead, as <a href="#instant-alerts">that section</a> describes. A notification names the kind of event and the
     organization, never a person, an incident title or a policy name, so nothing sensitive sits on
     a lock screen.</p>
     <p>Credentials are never written to disk, never included in an iOS or iCloud backup, and never
@@ -220,7 +230,8 @@
     holds the value we placed there.</p>
 
     <h2 class="sec">What we collect</h2>
-    <p>Nothing automatically. Specifically, TenantKeep On-Call contains no analytics SDK, no telemetry, no crash
+    <p>Nothing automatically. If an administrator turns on Instant alerts, the app sends our service what
+    <a href="#instant-alerts">that section</a> lists, and nothing else. Otherwise, TenantKeep On-Call contains no analytics SDK, no telemetry, no crash
     reporting service, no advertising identifier, and no third-party tracking of any kind. We do not
     know how many devices you looked up, which ones, or whether you used the app today.</p>
     <p>This is enforced in the code, not just promised: the module that handles credentials is compiled
@@ -282,20 +293,65 @@
     reveal. The full request and response format, what our server keeps, and how to check all of it
     with a proxy are published in the
     <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/ENTITLEMENT-API.md">entitlement API contract</a>.</p>
-    <p><strong>Alert relay (Pro, off by default).</strong> If your organization turns on relayed alerts,
-    TenantKeep Watch in your own Azure Automation account encrypts each alert for your phone
-    and sends it through <code>kainor-relay-prod-func.azurewebsites.net</code>, which passes it to Apple
-    for delivery. Kainor cannot read these alerts and keeps nothing: the relay has no
-    database and writes no log line containing your phone's device token, your tenant ID or
-    the alert. While a request is in flight the relay can see your tenant ID (to check your
-    plan), your phone's device token (to address Apple), whether the alert is time-sensitive,
-    and the sending address, which our telemetry masks. Turning the relay off in the app
-    discards the phone's key, after which nothing sent to it can be read. The phone itself never
-    contacts the relay; the format is published in the
-    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/RELAY-API.md">relay contract</a>, and the relay's
-    source is in the same repository.</p>
+    <p><strong>Instant alerts (Pro, off by default).</strong> If an administrator turns them on, the phone
+    contacts <code>kainor-watch-prod-func.azurewebsites.net</code> to register, to check in about once a
+    day, and to stop. Those requests carry the phone's Apple push token, its public encryption key, the
+    break-glass accounts set for your organization, and a sign-in token issued by Microsoft for our alert
+    service alone; that token cannot be used to read anything from Microsoft. Our service then contacts
+    Microsoft Graph as "TenantKeep Watch", with your organization's approval, and sends each alert,
+    encrypted for your phone, through <code>kainor-relay-prod-func.azurewebsites.net</code> to Apple.
+    The relay cannot read an alert and keeps nothing; the formats are published in the
+    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/INSTANT-ALERTS.md">Instant alerts contract</a>
+    and the <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/RELAY-API.md">relay contract</a>,
+    and the source of both services is in the same repository.</p>
     <p>You can verify this yourself with a network proxy in about ten minutes. We think observed
     behavior is better evidence than a privacy policy, which is why we're telling you how to check.</p>
+
+    <h2 class="sec" id="instant-alerts">Instant alerts (Pro, off by default)</h2>
+    <p>Most of TenantKeep On-Call never touches a server we run. Instant alerts are the one exception, and
+    only for an organization that turns them on.</p>
+    <p><strong>What they are.</strong> The phone's own notifications depend on iOS deciding when the app may
+    check, which can take minutes or hours. Instant alerts are for the few events where minutes matter: a
+    break-glass account signing in, a Conditional Access policy changing, and a new or raised security
+    incident. For those, a service Kainor runs watches your organization and notifies the phones your
+    administrators register, usually within a few minutes.</p>
+    <p><strong>Turning them on.</strong> An administrator turns them on in Settings. The app explains what
+    follows, then your organization approves "TenantKeep Watch" in Microsoft Entra ID. Only a Global
+    Administrator or Privileged Role Administrator can approve it, and anyone with those roles can remove
+    it at any time in Entra ID, Enterprise applications. Nothing is read before approval, and nothing is
+    read after removal.</p>
+    <p><strong>What our service reads.</strong> Read-only access, granted by your organization's approval,
+    to exactly this: sign-in log entries for the break-glass accounts your administrator names, and no one
+    else's; directory audit entries about Conditional Access policies; and security incidents in Microsoft
+    Defender XDR. It cannot change anything in your organization. It cannot read local administrator
+    passwords, BitLocker recovery keys, mail, files or messages: those permissions are never requested.
+    The full permission list is in the
+    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/INSTANT-ALERTS.md">Instant alerts contract</a>.</p>
+    <p><strong>What our service keeps.</strong> For your organization: your tenant ID and name, whether the
+    approval is in place, the Microsoft object IDs of the break-glass accounts you named, and, for each
+    kind of alert, the time and opaque identifiers of the last events already seen, so nothing is
+    announced twice. For each registered phone: its Apple push token, its public encryption key, the
+    Microsoft object ID of the administrator who registered it, and when it last checked in. It does not
+    keep the log entries, audit entries or incidents it reads: each is examined in memory to decide
+    whether to alert, and discarded. It keeps no names, email addresses, IP addresses or locations.</p>
+    <p><strong>How long.</strong> A phone that has not checked in for 30 days is deleted. Turning Instant
+    alerts off on a phone deletes that phone at once. When your organization removes TenantKeep Watch
+    from Entra ID, everything held for your organization is deleted within a day.</p>
+    <p><strong>What an alert contains.</strong> The kind of event and your organization's name, for example
+    "Contoso: break-glass sign-in". Each alert is encrypted on our service for one phone, to a key that
+    phone made in its own Secure Enclave, and passed to Apple for delivery. Apple sees only the phone's
+    push token and the encrypted alert. When the administrator taps it, the app reads the details itself,
+    from Microsoft, as that administrator, exactly as it does today.</p>
+    <p><strong>What we can and cannot see.</strong> Our service necessarily knows that an alert of a given
+    kind happened in your organization at a given time, because it creates the alert; it does not keep
+    that fact after the alert is sent. Its logs record counts and durations, never a tenant ID, a push
+    token, an object ID, or anything from your logs.</p>
+    <p><strong>Where, and who else.</strong> The service runs in Microsoft Azure, in the Central US region.
+    Microsoft (Azure hosts it; Microsoft Graph is where it reads) and Apple (Apple Push Notification
+    service delivers the encrypted alert) receive nothing from us beyond what is described here.</p>
+    <p><strong>Agreement.</strong> For an organization that uses Instant alerts, Kainor LLC processes the data
+    above on the organization's behalf, as its processor or service provider. A data processing agreement
+    (Common Paper's standard) is available on request at connor@kainor.com.</p>
 
     <h2 class="sec">Children</h2>
     <p>TenantKeep On-Call is a tool for IT administrators. It is not directed at children, and we do not knowingly
@@ -304,7 +360,9 @@
     <h2 class="sec">Your rights</h2>
     <p>Data protection laws such as the GDPR and the CCPA give you rights to access, correct, and delete
     personal information a company holds about you. Kainor LLC holds no personal information about
-    TenantKeep On-Call users, so there is nothing for us to produce or erase. If you email us and we are holding
+    TenantKeep On-Call users, except, for a phone registered for Instant alerts, the registering
+    administrator's Microsoft object ID and the phone's push token. Turning Instant alerts off on the phone
+    deletes them, and you can email us to have them deleted. If you email us and we are holding
     something we have not described here, we will tell you and delete it.</p>
     <p>For your organization's data in Microsoft Entra ID and Intune, those requests go to your own IT
     department or to Microsoft, since that is where the data lives.</p>

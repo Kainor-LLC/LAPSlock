@@ -7,7 +7,7 @@ minutes, and section 4 tells you how.
 
 ## 1. The hosts
 
-TenantKeep On-Call talks to exactly these hosts. There is no eighth.
+TenantKeep On-Call talks to exactly these hosts. There is no ninth.
 
 | Host | Operator | When | What crosses the wire |
 |---|---|---|---|
@@ -18,16 +18,20 @@ TenantKeep On-Call talks to exactly these hosts. There is no eighth.
 | `isc.sans.edu` | SANS Internet Storm Center | Only when the Digest is read, on the same schedule | A GET for the public diary feed. Same rule: nothing of yours, only the server's own validator on a repeat read, the last good copy in Caches. The diaries are shown in full with SANS's written agreement. |
 | `www.bleepingcomputer.com` | BleepingComputer | Only when the Digest is read, on the same schedule | A GET for the public news feed: headlines and short summaries. Same rule. The app never fetches an article page; *Open on the site* hands the link to Safari. Shown with BleepingComputer's written agreement. |
 | `kainor-lapslock-prod-func.azurewebsites.net` | Kainor LLC | **Only after you activate an organization license**, then about monthly | A version number and your Microsoft tenant ID. Nothing else. A signed license statement comes back. |
+| `kainor-watch-prod-func.azurewebsites.net` | Kainor LLC | **Only after an administrator turns on Instant alerts** (Pro), then about daily and when the phone's push address changes | The phone's push token, its public key, the break-glass accounts set for the organization, and a Microsoft token for the On-Call app's `Alerts.Register` scope, which cannot read anything from Microsoft. The service's public sender key comes back. Everything the service reads and keeps is in [INSTANT-ALERTS.md](INSTANT-ALERTS.md). |
 
-**Relayed alerts add no host to this list.** When an organization turns on relayed alerts,
-its own Azure Automation account sends encrypted alerts to `kainor-relay-prod-func.azurewebsites.net`,
-which passes them to Apple's push service, and the phone receives them as ordinary notifications
-from Apple. The app never makes a request to the relay. What the relay sees and keeps is in
-[RELAY-API.md](RELAY-API.md), section 9; its source is under `relay/` in this repository.
+**Instant alerts arrive through the relay, which the phone never calls.** Kainor's alert
+service sends each alert, encrypted for one phone, to `kainor-relay-prod-func.azurewebsites.net`,
+which passes it to Apple's push service, and the phone receives it as an ordinary notification
+from Apple. What the relay sees and keeps is in [RELAY-API.md](RELAY-API.md), section 9; what the
+alert service reads from your tenant, as the TenantKeep Watch application, is in
+[INSTANT-ALERTS.md](INSTANT-ALERTS.md). The source of both is in this repository, under `relay/`
+and `watch/`.
 
 **A free-tier installation never contacts Kainor.** It talks to the two Microsoft hosts for
 your data, the four public feed hosts for the Digest, and nothing else, and there is no code
-path that can change that without a tap on *Activate organization license* in Settings. Demo
+path that can change that without a tap on *Activate organization license* or, with Pro, turning
+on *Instant alerts* in Settings. Demo
 mode has no path to Kainor at all.
 
 **The feed hosts cannot receive anything of yours, structurally.** The code that fetches

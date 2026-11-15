@@ -52,6 +52,15 @@ of a paying organization is its tenant ID, tier, term and order reference, no na
 email addresses. Our server does not log tenant IDs. Full specification:
 `docs/ENTITLEMENT-API.md`.
 
+For an **organization that turns on Instant alerts** (Pro, off by default): a Kainor service,
+signed in as a separate application, TenantKeep Watch, that the organization approves in Entra ID,
+reads the sign-ins of the break-glass accounts it names, Conditional Access audit entries and
+security incidents, with read-only application permissions and no write permission or access to
+credentials. It keeps identifiers only (tenant, account and administrator object IDs, each phone's
+push token and public key), never what it reads, and encrypts each alert for one phone. Removing
+TenantKeep Watch stops it at once and deletes what it holds within a day. Full specification:
+`docs/INSTANT-ALERTS.md`.
+
 **No analytics, telemetry or crash reporting of any kind**, on any tier. Diagnostics exist,
 but are assembled on the device only when the administrator asks, are shown in full before
 sending, and are structurally incapable of containing a credential, device name or user name.

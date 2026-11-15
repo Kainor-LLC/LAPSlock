@@ -13,11 +13,17 @@ This document is published so an administrator can read exactly what a Kainor se
 when a TenantKeep alert is relayed to a phone, decide whether they believe it, and check it
 with a proxy. Section 12 tells them how.
 
+> **Updated 2026-11-15: who sends.** The envelope, the request and the relay are unchanged.
+> The sender is now Kainor's own alert service for Instant alerts, described in
+> [INSTANT-ALERTS.md](INSTANT-ALERTS.md), instead of TenantKeep Watch in the customer's Azure
+> Automation account, which is retired as a route to the phone. Pairing (section 6) happens
+> automatically when the phone registers. Sections 1, 6, 9.1 and 11 say what that changes.
+
 ---
 
 ## 1. What the relay is, and what it deliberately is not
 
-TenantKeep Watch runs in the customer's own Azure Automation account and already delivers
+*As first written; see the 2026-11-15 update above.* TenantKeep Watch runs in the customer's own Azure Automation account and already delivers
 its alerts to Microsoft Teams and email. TenantKeep On-Call, the phone app, notifies by
 polling Microsoft Graph in the background, which iOS schedules on its own budget: minutes
 to hours, and never in Low Power Mode. The relay is the third route, for an organization
@@ -204,6 +210,11 @@ UTF-8 JSON, at most 2,700 bytes:
 
 ## 6. Pairing, owned by the customer
 
+*Since 2026-11-15, Instant alerts pair automatically: the phone sends its push token and
+public key when it registers, and receives the alert service's sender key, which it pins for
+the organization ([INSTANT-ALERTS.md](INSTANT-ALERTS.md) section 4). The manual pairing below
+is how the retired self-hosted route worked.*
+
 Pairing is two-way and happens between the phone and the customer's own Automation account.
 Kainor is not involved in it and is never told it happened.
 
@@ -293,6 +304,11 @@ payload, which here is ciphertext.
 
 ### 9.1 What the privacy page says, in the same release
 
+*Since 2026-11-15 the privacy page's "Instant alerts" section and network paragraph replace the
+paragraph below. The relay still keeps nothing; the alert service keeps identifiers
+([INSTANT-ALERTS.md](INSTANT-ALERTS.md) section 5), so the app's App Privacy answers change with
+Instant alerts.*
+
 The privacy page and the network transparency document change in the release that ships
 the relay, with this paragraph, word for word:
 
@@ -342,12 +358,12 @@ request in real time. The relay retains nothing beyond the request, so the label
 
 | Threat | Outcome |
 |---|---|
-| Kainor, or anyone controlling the relay, wants to read alerts | Cannot. Holds neither private key. |
-| They want to forge an alert | Cannot make one the phone accepts: no sender key. The most they can do is cause the "could not be verified" notice. |
+| Kainor, or anyone controlling the relay, wants to read alerts | The relay cannot: it holds neither private key. Kainor's alert service creates each alert, so it knows its kind, organization and time while sending it, and keeps none of that. |
+| They want to forge an alert | The relay alone cannot make one the phone accepts. Since 2026-11-15 Kainor's alert service holds the sender key, so Kainor can make an alert the phone accepts; someone who stole that key could too (next rows). |
 | They want to know who gets alerts | Can see, during a request, a tenant ID and a device token. The design keeps neither. This is the trust the relay asks for, and it is why it is off by default and stated on the privacy page. |
 | They drop or delay alerts | Possible. Watch's Teams and email delivery is unaffected; the relay is additive. |
 | Someone steals a phone's pairing data | Cannot read or forge. Can attempt sends, which the phone discards with the generic notice, at the cost of their own Pro entitlement and within the rate limits. |
-| Someone steals the Automation's sender key | Can make one paired phone show alerts. Rotate the sender key in Watch's setup and re-pin on the phone. The Automation variable is encrypted and held in the customer's own subscription. |
+| Someone steals the alert service's sender key | Can make registered phones show alerts naming any organization they are registered for. The key is a Key Vault secret only the service's managed identity can read. Replacing it makes every phone register again to pin the new one. |
 | Replay of a captured request | The phone drops a repeated `id` for 24 hours, and the plaintext carries its time, which the phone shows. |
 | Kainor's APNs signing key is stolen | The thief can push to any device token they know, but only the placeholder: they cannot produce a payload the extension accepts. The key is held in Key Vault, non-exportable, used by the function's managed identity. |
 | A stolen entitlement token | Lets someone use the relay at Kainor's cost until the token expires. It exposes nothing about the tenant. |
@@ -401,3 +417,6 @@ and a privacy page change in the same release.
 - 2026-10-27, draft 1 accepted in substance. Kainor approved authenticated mode and two-way
   pairing.
 - 2026-10-27, frozen. Open items resolved (section 14).
+- 2026-11-15, the sender changes to Kainor's alert service (INSTANT-ALERTS.md); pairing is
+  automatic. Envelope, request and relay unchanged, so no version change. Sections 1, 6, 9.1
+  and 11 annotated.

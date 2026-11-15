@@ -332,9 +332,37 @@
           <td>When you open Tenant pulse</td>
           <td>Secure Score and its seven-day change. Read-only.</td>
         </tr>
+        <tr>
+          <td>TenantKeep On-Call's own <code>Alerts.Register</code></td>
+          <td>When you turn on Instant alerts</td>
+          <td>A token good only for registering this phone with Kainor's alert service. It reads nothing from Microsoft.</td>
+        </tr>
       </tbody>
     </table>
     </div>
+
+    <h3 id="instant-alerts">Instant alerts: the one application with its own access</h3>
+    <p>Everything above is the app acting as you. Instant alerts (Pro, off by default) are the one
+    exception: so they can arrive within minutes, a service Kainor runs watches your organization as a
+    separate application, <strong>TenantKeep Watch</strong>, which your organization approves once and can
+    remove at any time in Entra ID. It holds these Microsoft Graph application permissions, all read-only,
+    and no others:</p>
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th>Permission</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><code>AuditLog.Read.All</code></td><td>Sign-ins of the break-glass accounts you name, and Conditional Access entries in the audit log.</td></tr>
+        <tr><td><code>Directory.Read.All</code></td><td>Needed to read sign-ins as an application; the named accounts' IDs, your organization's name, and the registering administrator's active roles.</td></tr>
+        <tr><td><code>Policy.Read.All</code></td><td>Conditional Access policy changes.</td></tr>
+        <tr><td><code>SecurityIncident.Read.All</code></td><td>New and raised security incidents.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>It has no write permission and no permission to read passwords, recovery keys, mail or files. It
+    keeps identifiers only, never what it reads, and every alert is encrypted for your phone. The details,
+    including what is kept and for how long, are in the
+    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/INSTANT-ALERTS.md">Instant alerts contract</a>
+    and the <a href="/privacy/#instant-alerts">privacy policy</a>.</p>
 
     <div class="note">
       <strong>Every credential read appears in your own audit log.</strong> Because TenantKeep On-Call acts as
