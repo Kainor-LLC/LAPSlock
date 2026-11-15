@@ -1,41 +1,53 @@
 import SwiftUI
-import CoreImage.CIFilterBuiltins
 import UserNotifications
 import RelayKit
 
-// Relayed alerts, phase 4 step D, docs/RELAY-API.md. The phone's half of pairing with the
-// customer's own TenantKeep Watch: turn on (a new Secure Enclave key and a push
-// registration), show the pairing code for the Automation account, pin the sender code it
-// prints, and turn off, which deletes the key so nothing sent to it can be read again.
+// Instant alerts, hosted by Kainor (HOSTED-WATCH-PLAN.md, H4). An administrator turns them
+// on, reads what they share, and the phone registers itself with Kainor's alert service:
+// a new Secure Enclave key, a push registration, then one request carrying the push
+// address, the public key and the break-glass accounts set in Notifications, signed with a
+// Microsoft token for the On-Call app's Alerts.Register scope. The answer is the watcher's
+// sender key, pinned for the organization, so the extension can open what it sends. An
+// organization that has not approved TenantKeep Watch gets the approval link instead.
+// Turning off unregisters and deletes the key, so nothing sent to it can be read.
+//
+// Replaces relayed alerts from the customer's own Automation account (retired 2026-10-29):
+// no codes to copy.
+
+/// What the root gives the coordinator for a signed-in organization. Nil in demo and when
+/// signed out.
+struct InstantAlertsSetup {
+    /// A Microsoft token for Alerts.Register. Interactive only when the person asked for it.
+    let token: @MainActor (_ interactive: Bool) async throws -> String
+    /// The break-glass accounts set for this organization under Notifications.
+    let breakGlass: @MainActor () -> [String]
+}
 
 @MainActor
 @Observable
 final class RelayCoordinator {
     static let shared = RelayCoordinator()
 
-    private(set) var isOn: Bool
-    private(set) var pairing: PairingCode?
-    private(set) var pinned: [String] = []
-    @ObservationIgnored private var qrCache: (text: String, image: UIImage?)?
-
-    /// The pairing code as a QR image, made once per code rather than on every redraw of
-    /// Settings, which included each keystroke in the sender code field.
-    var pairingImage: UIImage? {
-        guard let text = pairing?.text else { return nil }
-        if let cached = qrCache, cached.text == text { return cached.image }
-        let image = RelaySettingsSection.qr(text)
-        qrCache = (text, image)
-        return image
+    enum Status: Equatable {
+        case off
+        case working(String)
+        case on(label: String, accounts: Int, canConfigure: Bool)
+        case needsApproval(URL)
+        case problem(String)
     }
-    var problem: String?
-    /// APNs gave this phone a different token since Watch was paired. Every envelope is
-    /// bound to the token, so until Watch has the new pairing code nothing it sends arrives.
-    /// Kept until the new code is copied, across launches.
-    private(set) var pairingOutOfDate = UserDefaults.standard.bool(forKey: RelayCoordinator.outOfDateKey)
 
-    static let outOfDateKey = "relay.pairingOutOfDate"
+    private(set) var status: Status = .off
+    var problem: String? {
+        if case .problem(let text) = status { return text }
+        return nil
+    }
+    @ObservationIgnored var setup: InstantAlertsSetup?
 
     let phone: RelayPhone
+
+    static let endpoint = URL(string: "https://kainor-watch-prod-func.azurewebsites.net/api/v1/devices")!
+    private static let stateKey = "instantAlerts.state"
+    private static let checkInKey = "instantAlerts.lastCheckIn"
 
     static var environment: String {
         #if DEBUG
@@ -45,18 +57,24 @@ final class RelayCoordinator {
         #endif
     }
 
+    private struct Saved: Codable {
+        var label: String
+        var accounts: Int
+        var canConfigure: Bool
+    }
+
     private init() {
         let prefix = (Bundle.main.object(forInfoDictionaryKey: "TKAppIdentifierPrefix") as? String).flatMap { $0.isEmpty || $0.contains("$(") ? nil : $0 }
         phone = RelayPhone(store: KeychainRelayStateStore(teamPrefix: prefix))
-        isOn = phone.isOn
-        reload()
+        if phone.isOn, !phone.pinnedTenants().isEmpty,
+           let data = UserDefaults.standard.data(forKey: Self.stateKey),
+           let saved = try? JSONDecoder().decode(Saved.self, from: data) {
+            status = .on(label: saved.label, accounts: saved.accounts, canConfigure: saved.canConfigure)
+        }
     }
 
-    func reload() {
-        isOn = phone.isOn
-        pairing = try? phone.pairingCode()
-        pinned = phone.pinnedTenants()
-    }
+    var isOn: Bool { status != .off }
+    var isRegistered: Bool { if case .on = status { return true }; return false }
 
     /// At every launch, as Apple asks: a token can change, and a registration that failed
     /// or whose callback was missed otherwise never happens again.
@@ -65,46 +83,124 @@ final class RelayCoordinator {
         UIApplication.shared.registerForRemoteNotifications()
     }
 
-    func turnOn() {
-        problem = nil
-        setPairingOutOfDate(false)
-        do {
-            try phone.turnOn(environment: Self.environment)
-            UIApplication.shared.registerForRemoteNotifications()
-        } catch {
-            problem = "Couldn't make the relay key on this device."
+    /// The person turned Instant alerts on, after reading what they share.
+    func turnOn() async {
+        guard let setup else {
+            status = .problem("Sign in to your organization to turn on Instant alerts.")
+            return
         }
-        reload()
+        status = .working("Registering this phone")
+        do {
+            if !phone.isOn { try phone.turnOn(environment: Self.environment) }
+        } catch {
+            status = .problem("Couldn't make the alert key on this device.")
+            return
+        }
+        UIApplication.shared.registerForRemoteNotifications()
+        guard let code = await pairingCode() else {
+            status = .problem("Apple didn't give this phone a push address. Check that notifications are allowed for TenantKeep, then try again.")
+            return
+        }
+        await register(code, setup: setup, interactive: true)
     }
 
-    func turnOff() {
-        setPairingOutOfDate(false)
+    /// Update: the break-glass accounts changed, or after the organization approved.
+    func update() async {
+        guard let setup, let code = try? phone.pairingCode() else { return await turnOn() }
+        status = .working("Updating")
+        await register(code, setup: setup, interactive: true)
+    }
+
+    func turnOff() async {
+        if let setup, let code = try? phone.pairingCode(), let token = try? await setup.token(false) {
+            var request = URLRequest(url: Self.endpoint)
+            request.httpMethod = "DELETE"
+            request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONEncoder().encode(["deviceToken": code.deviceToken])
+            _ = try? await URLSession.shared.data(for: request)
+        }
         try? phone.turnOff()
         UIApplication.shared.unregisterForRemoteNotifications()
-        reload()
+        UserDefaults.standard.removeObject(forKey: Self.stateKey)
+        UserDefaults.standard.removeObject(forKey: Self.checkInKey)
+        status = .off
     }
 
-    /// From the app delegate, once APNs gives the phone a token.
+    /// From the app delegate, once APNs gives the phone a token. A new token, or a day since
+    /// the last check-in, registers again quietly, so the service keeps a live address and
+    /// does not delete the phone after 30 days.
     func registered(token: Data) {
         guard phone.isOn else { return }
-        if (try? phone.setDeviceToken(token)) == true { setPairingOutOfDate(true) }
-        reload()
+        let changed = (try? phone.setDeviceToken(token)) == true
+        let last = UserDefaults.standard.object(forKey: Self.checkInKey) as? Date ?? .distantPast
+        guard isRegistered, changed || Date().timeIntervalSince(last) > 86_400,
+              let setup, let code = try? phone.pairingCode() else { return }
+        Task { await register(code, setup: setup, interactive: false, quiet: true) }
     }
 
-    /// The new pairing code was copied to give to Watch.
-    func pairingCodeCopied() {
-        setPairingOutOfDate(false)
+    func registrationFailed() {
+        if phone.isOn, !isRegistered { status = .problem("This device couldn't register for push. Check that notifications are allowed.") }
     }
 
-    private func setPairingOutOfDate(_ value: Bool) {
-        pairingOutOfDate = value
-        UserDefaults.standard.set(value, forKey: Self.outOfDateKey)
+    /// The push address, once APNs has given one: up to twenty seconds after registering.
+    private func pairingCode() async -> PairingCode? {
+        for _ in 0..<40 {
+            if let code = try? phone.pairingCode() { return code }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        return nil
+    }
+
+    private func register(_ code: PairingCode, setup: InstantAlertsSetup, interactive: Bool, quiet: Bool = false) async {
+        let token: String
+        do {
+            token = try await setup.token(interactive)
+        } catch {
+            if !quiet { status = .problem("Couldn't get permission from Microsoft to register this phone. Try again, or sign in again.") }
+            return
+        }
+        var request = URLRequest(url: Self.endpoint)
+        request.httpMethod = "POST"
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let accounts = setup.breakGlass()
+        request.httpBody = try? JSONEncoder().encode(InstantAlertsRegistration(code: code, breakGlass: accounts.isEmpty ? nil : accounts))
+        let answer: InstantAlertsAnswer
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            answer = InstantAlertsAnswer.parse(status: (response as? HTTPURLResponse)?.statusCode ?? 0, body: data)
+        } catch {
+            if !quiet { status = .problem("Couldn't reach Kainor's alert service. Check your connection and try again.") }
+            return
+        }
+        switch answer {
+        case .registered(let tenantId, let label, let senderKey, let count, let canConfigure):
+            do {
+                try phone.pin(SenderPin(tenant: tenantId, senderKey: senderKey))
+            } catch {
+                status = .problem("Couldn't save the alert service's key on this device.")
+                return
+            }
+            let saved = Saved(label: label, accounts: count, canConfigure: canConfigure)
+            UserDefaults.standard.set(try? JSONEncoder().encode(saved), forKey: Self.stateKey)
+            UserDefaults.standard.set(Date(), forKey: Self.checkInKey)
+            status = .on(label: label, accounts: count, canConfigure: canConfigure)
+        case .needsApproval(let url):
+            status = .needsApproval(url)
+        case .notPermitted:
+            status = .problem("Your account needs an active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role. If yours is eligible in PIM, activate it first.")
+        case .accountNotFound:
+            status = .problem("A break-glass account set under Notifications isn't in this organization. Check the addresses and try again.")
+        case .failed(let code):
+            if !quiet { status = .problem("Kainor's alert service answered \(code). Try again shortly.") }
+        }
     }
 
     /// A relayed alert that arrived before the phone was unlocked after a restart, opened on
     /// its tap. Shown again as a local notification with its real content, so it reads like
-    /// any other relayed alert, and returned so the tap can be routed. Same key, same pinned
-    /// senders and the same one-day repeat check as the extension.
+    /// any other alert, and returned so the tap can be routed. Same key, same pinned senders
+    /// and the same one-day repeat check as the extension.
     func openDeferred(enc: String, ct: String) async -> RelayAlert? {
         let seenURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.kainor.lapslock")?
             .appendingPathComponent("relay-seen.json")
@@ -122,25 +218,10 @@ final class RelayCoordinator {
         return alert
     }
 
-    func registrationFailed() {
-        if phone.isOn { problem = "This device couldn't register for push. Check that notifications are allowed." }
-    }
-
-    func pin(_ text: String) -> Bool {
-        guard let pin = SenderPin.parse(text) else {
-            problem = "That isn't a sender code from TenantKeep Watch. It starts tksender1:."
-            return false
-        }
-        do {
-            try phone.pin(pin)
-            problem = nil
-            reload()
-            return true
-        } catch {
-            problem = "Couldn't save the sender code."
-            return false
-        }
-    }
+    #if DEBUG
+    /// The self test pins a throwaway sender; reloads what the section shows.
+    func reload() {}
+    #endif
 }
 
 #if DEBUG
@@ -189,7 +270,7 @@ extension RelayCoordinator {
             }
             try results.joined(separator: "\n").write(to: folder.appendingPathComponent("relay-test-results.txt"), atomically: true, encoding: .utf8)
         } catch {
-            problem = "Self-test failed: " + String(describing: error)
+            status = .problem("Self-test failed: " + String(describing: error))
         }
         reload()
         Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) }
@@ -209,103 +290,87 @@ struct RelaySettingsSection: View {
     let relay = RelayCoordinator.shared
     let isPro: Bool
     let isDemo: Bool
-    @State private var senderText = ""
+    @State private var confirmingOn = false
     @State private var confirmingOff = false
-    @State private var copied = false
 
     var body: some View {
         Section {
             if isDemo {
-                Text("Relayed alerts pair this device with TenantKeep Watch in your own Azure Automation account. Sign in to set them up.")
+                Text("Instant alerts come from Kainor's alert service to a signed-in organization's phones. Sign in to turn them on.")
                     .font(.footnote).foregroundStyle(.secondary)
             } else if !isPro {
-                Text("Relayed alerts are part of Pro.").font(.footnote).foregroundStyle(.secondary)
+                Text("Instant alerts are part of Pro.").font(.footnote).foregroundStyle(.secondary)
             } else {
-                Toggle("Relay alerts from TenantKeep Watch", isOn: Binding(
+                Toggle(isOn: Binding(
                     get: { relay.isOn },
-                    set: { on in if on { relay.turnOn() } else { confirmingOff = true } }))
-                    // On the row that asks, not the Section: a Section's modifiers are copied
-                    // onto each of its rows, and the copies race to present.
-                    .alert("Turn off relayed alerts?", isPresented: $confirmingOff) {
-                        Button("Turn off", role: .destructive) { relay.turnOff() }
-                        Button("Keep on", role: .cancel) {}
-                    } message: {
-                        Text("This device's relay key is deleted. To turn it on again you pair with Watch again.")
-                    }
-                if relay.isOn {
-                    pairingRows
+                    set: { on in if on { confirmingOn = true } else { confirmingOff = true } })) {
+                    Text("Instant alerts")
+                    Text("Break-glass sign-ins, within minutes")
                 }
-                if let problem = relay.problem {
-                    Text(problem).font(.footnote).foregroundStyle(.red)
+                .disabled(isWorking)
+                // On the row that asks, not the Section: a Section's modifiers are copied
+                // onto each of its rows, and the copies race to present.
+                .alert("Turn On Instant Alerts?", isPresented: $confirmingOn) {
+                    Button("Turn on") { Task { await relay.turnOn() } }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Kainor's alert service will read your organization's sign-in log for the break-glass accounts you name, with read-only access your organization approves once, and alert this phone within minutes. It keeps identifiers only, never names, addresses or log content, and encrypts every alert for this phone. The privacy policy has the details.")
                 }
+                .alert("Turn Off Instant Alerts?", isPresented: $confirmingOff) {
+                    Button("Turn off", role: .destructive) { Task { await relay.turnOff() } }
+                    Button("Keep on", role: .cancel) {}
+                } message: {
+                    Text("This phone is removed from Kainor's alert service and its alert key is deleted.")
+                }
+                statusRows
             }
         } header: {
-            Text("Relayed Alerts")
+            Text("Instant Alerts")
         } footer: {
-            Text("Off by default. Watch encrypts each alert for this device in your own Automation account and sends it through Kainor's relay to Apple. Kainor cannot read it and keeps nothing; while it passes through, the relay sees your tenant ID, this device's push token and the time. Turning this off deletes the key, so nothing sent to it can be read.")
+            Text("Off by default. Part of Pro. The break-glass accounts are the ones set for your organization under Notifications above. Your organization can remove TenantKeep Watch in Microsoft Entra ID at any time, which stops all reading.")
         }
+    }
+
+    private var isWorking: Bool {
+        if case .working = relay.status { return true }
+        return false
     }
 
     @ViewBuilder
-    private var pairingRows: some View {
-        if let pairing = relay.pairing {
-            if relay.pairingOutOfDate {
-                Label("This device's push address changed. Give TenantKeep Watch the new pairing code below, or relayed alerts will not arrive.",
-                      systemImage: "exclamationmark.triangle")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text("1. Give this to TenantKeep Watch's setup").font(.subheadline.weight(.medium))
-                if let image = relay.pairingImage {
-                    Image(uiImage: image).interpolation(.none).resizable().scaledToFit().frame(maxWidth: 220)
-                        .accessibilityLabel("Pairing code as a QR code")
-                }
-                Button {
-                    UIPasteboard.general.string = pairing.text
-                    copied = true
-                    relay.pairingCodeCopied()
-                } label: {
-                    Label(copied ? "Copied" : "Copy pairing code", systemImage: copied ? "checkmark" : "doc.on.doc")
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding(.vertical, 4)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("2. Paste the sender code it prints").font(.subheadline.weight(.medium))
-                TextField("tksender1:…", text: $senderText, axis: .vertical)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .font(.footnote.monospaced())
-                Button("Pin sender") {
-                    if relay.pin(senderText) { senderText = "" }
-                }
-                .disabled(senderText.isEmpty)
-            }
-            .padding(.vertical, 4)
-            if !relay.pinned.isEmpty {
-                LabeledContent("Senders pinned", value: String(relay.pinned.count))
-                ForEach(relay.pinned, id: \.self) { tenant in
-                    Text(tenant).font(.caption.monospaced()).foregroundStyle(.secondary)
-                }
-            }
-        } else {
+    private var statusRows: some View {
+        switch relay.status {
+        case .off:
+            EmptyView()
+        case .working(let text):
             HStack(spacing: 8) {
                 ProgressView()
-                Text("Registering this device for push").font(.footnote).foregroundStyle(.secondary)
+                Text(text).font(.footnote).foregroundStyle(.secondary)
             }
+        case .on(let label, let accounts, let canConfigure):
+            Label("On for " + label, systemImage: "checkmark.circle")
+                .font(.footnote)
+            Text(accounts == 0
+                 ? "No break-glass accounts are watched yet. Add them under Notifications for your organization, then tap Update."
+                 : accounts == 1 ? "Watching 1 break-glass account." : "Watching \(accounts) break-glass accounts.")
+                .font(.footnote).foregroundStyle(.secondary)
+            if !canConfigure {
+                Text("Only a Global Administrator or Security Administrator can change which accounts are watched.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            Button("Update") { Task { await relay.update() } }
+        case .needsApproval(let url):
+            Text("Your organization needs to approve TenantKeep Watch once. Only a Global Administrator or Privileged Role Administrator can.")
+                .font(.footnote)
+            Link(destination: url) {
+                Label("Open the approval page", systemImage: "arrow.up.right.square")
+            }
+            ShareLink(item: url) {
+                Label("Send the link to an administrator", systemImage: "square.and.arrow.up")
+            }
+            Button("Check again") { Task { await relay.update() } }
+        case .problem(let text):
+            Text(text).font(.footnote).foregroundStyle(.red)
+            Button("Try again") { Task { await relay.update() } }
         }
     }
-
-    static func qr(_ text: String) -> UIImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(text.utf8)
-        filter.correctionLevel = "M"
-        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
-              let cg = context.createCGImage(output, from: output.extent) else { return nil }
-        return UIImage(cgImage: cg)
-    }
-
-    /// One for the process: a CIContext is costly to make and safe to reuse.
-    private static let context = CIContext()
 }

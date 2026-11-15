@@ -320,6 +320,17 @@ final class AppRootModel {
             if let old = oldValue?.urlSession, old !== liveSession?.urlSession {
                 old.invalidateAndCancel()
             }
+            // Instant alerts register as the session's organization; none without one.
+            RelayCoordinator.shared.setup = liveSession.map { session in
+                let tenantId = session.tenantId.lowercased()
+                return InstantAlertsSetup(
+                    token: { interactive in
+                        try await session.auth.token(scopes: [InstantAlertsScope.register], allowInteractive: interactive)
+                    },
+                    breakGlass: {
+                        (try? AlertsRunner.preferencesStore.load())?.tenant(tenantId)?.breakGlassUPNs ?? []
+                    })
+            }
         }
     }
 
@@ -669,6 +680,11 @@ final class AppRootModel {
         mode = .signedOut
         consentState = nil
         recomputeEntitlement()
+    }
+
+    /// The On-Call app's own scope for registering a phone with Kainor's alert service.
+    enum InstantAlertsScope {
+        static let register = "api://" + AuthConfiguration.vendorDefault.clientId + "/Alerts.Register"
     }
 
     func enterDemoMode() {
