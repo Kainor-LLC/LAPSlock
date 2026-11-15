@@ -67,4 +67,23 @@ public class WatchTests
         var opening = Hpke.SetupAuthRecipient(sealing.Enc, phone, Hpke.PublicBytes(watcher), info, 2);
         Assert.Equal(plaintext, opening.Open(Encoding.ASCII.GetBytes(token), ct));
     }
+
+    [Fact]
+    public void IncidentAlertsNameTheSeverityAndTheCountNeverTheTitle()
+    {
+        Assert.Equal("Kainor: new high severity incident", TenantWatch.IncidentBody("Kainor", ["high"]));
+        Assert.Equal("Kainor: 3 incidents, 1 high severity", TenantWatch.IncidentBody("Kainor", ["high", "medium", "medium"]));
+        Assert.Equal("Kainor: 2 new incidents", TenantWatch.IncidentBody("Kainor", ["medium", "medium"]));
+    }
+
+    [Fact]
+    public void OnlyItemsNotSeenBeforeCountAndTheCursorMovesToTheNewest()
+    {
+        using var page = JsonDocument.Parse("""{"value":[{"id":"a","createdDateTime":"2026-11-15T03:00:00Z"},{"id":"b","createdDateTime":"2026-11-15T03:05:00Z"}]}""");
+        var cursor = DateTimeOffset.Parse("2026-11-15T02:50:00Z");
+        var (fresh, newest, seen) = TenantWatch.Fresh(page, "createdDateTime", cursor, "a");
+        Assert.Equal(1, fresh);
+        Assert.Equal(DateTimeOffset.Parse("2026-11-15T03:05:00Z"), newest);
+        Assert.Equal(["a", "b"], seen.Split(','));
+    }
 }

@@ -26,6 +26,13 @@ public sealed class TenantRecord : ITableEntity
     public DateTimeOffset? SignInCursor { get; set; }
     /// <summary>The ids of the sign-ins already seen in the overlap window, comma separated.</summary>
     public string SeenSignInIds { get; set; } = "";
+    /// <summary>The newest Conditional Access audit time seen. Null until that check's baseline.</summary>
+    public DateTimeOffset? PolicyCursor { get; set; }
+    public string SeenPolicyIds { get; set; } = "";
+    /// <summary>The newest incident update seen. Null until that check's baseline.</summary>
+    public DateTimeOffset? IncidentCursor { get; set; }
+    /// <summary>Incidents already announced, as id:severity, comma separated.</summary>
+    public string SeenIncidents { get; set; } = "";
     /// <summary>ok, noConsent, or error, from the last run.</summary>
     public string State { get; set; } = "new";
     public DateTimeOffset? LastRun { get; set; }

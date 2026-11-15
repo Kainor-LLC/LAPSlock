@@ -305,7 +305,7 @@ struct RelaySettingsSection: View {
                     get: { relay.isOn },
                     set: { on in if on { confirmingOn = true } else { confirmingOff = true } })) {
                     Text("Instant alerts")
-                    Text("Break-glass sign-ins, within minutes")
+                    Text("Break-glass sign-ins, Conditional Access changes and security incidents, within minutes")
                 }
                 .disabled(isWorking)
                 // On the row that asks, not the Section: a Section's modifiers are copied
@@ -314,7 +314,7 @@ struct RelaySettingsSection: View {
                     Button("Turn on") { Task { await relay.turnOn() } }
                     Button("Cancel", role: .cancel) {}
                 } message: {
-                    Text("Kainor's alert service will read your organization's sign-in log for the break-glass accounts you name, with read-only access your organization approves once, and alert this phone within minutes. It keeps identifiers only, never names, addresses or log content, and encrypts every alert for this phone. The privacy policy has the details.")
+                    Text("Kainor's alert service will read your organization's sign-in log for the break-glass accounts you name, its Conditional Access audit log and its security incidents, with read-only access your organization approves once, and alert this phone within minutes. It keeps identifiers only, never names, addresses or log content, and encrypts every alert for this phone. The privacy policy has the details.")
                 }
                 .alert("Turn Off Instant Alerts?", isPresented: $confirmingOff) {
                     Button("Turn off", role: .destructive) { Task { await relay.turnOff() } }

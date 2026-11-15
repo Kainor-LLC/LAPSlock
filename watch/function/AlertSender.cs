@@ -66,7 +66,7 @@ public sealed class AlertSender(WatchOptions options, TokenCredential credential
     }
 
     /// <summary>Sends the alert; returns the relay's HTTP status.</summary>
-    public async Task<int> SendAsync(string tenantId, DeviceRecord device, string kind, string title, string body, bool timeSensitive, CancellationToken ct)
+    public async Task<int> SendAsync(string tenantId, DeviceRecord device, string kind, string title, string body, string? link, bool timeSensitive, CancellationToken ct)
     {
         var alert = new
         {
@@ -77,6 +77,8 @@ public sealed class AlertSender(WatchOptions options, TokenCredential credential
             kind,
             title = title.Length > 80 ? title[..80] : title,
             body = body.Length > 400 ? body[..400] : body,
+            // A tenantkeep:// link opens the module; the phone drops any other scheme.
+            link,
         };
         var plaintext = JsonSerializer.SerializeToUtf8Bytes(alert);
         var context = Hpke.SetupAuthSender(Base64Url.Decode(device.PublicKey), await KeyAsync(ct), Info, 2, null);

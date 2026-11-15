@@ -118,7 +118,7 @@ public sealed partial class AdminFunctions(WatchStore store, TenantSetup setup, 
         if (tenant is null) return new NotFoundObjectResult(new { error = "set up the tenant first" });
         var results = new List<int>();
         foreach (var device in await store.DevicesAsync(tenantId, ct))
-            results.Add(await sender.SendAsync(tenantId, device, "test", "Instant alerts test", $"{tenant.Label}: Instant alerts work on this phone.", timeSensitive: false, ct));
+            results.Add(await sender.SendAsync(tenantId, device, "test", "Instant alerts test", $"{tenant.Label}: Instant alerts work on this phone.", null, timeSensitive: false, ct));
         return new OkObjectResult(new { phones = results.Count, relayStatuses = results });
     }
 
@@ -134,6 +134,6 @@ public sealed partial class AdminFunctions(WatchStore store, TenantSetup setup, 
         var tenant = await store.TenantAsync(tenantId, ct);
         if (tenant is null) return new NotFoundResult();
         var phones = (await store.DevicesAsync(tenantId, ct)).Count;
-        return new OkObjectResult(new { tenantId, tenant.Label, breakGlassAccounts = tenant.BreakGlass.Length, phones, tenant.State, tenant.LastRun, tenant.SignInCursor });
+        return new OkObjectResult(new { tenantId, tenant.Label, breakGlassAccounts = tenant.BreakGlass.Length, phones, tenant.State, tenant.LastRun, tenant.SignInCursor, tenant.PolicyCursor, tenant.IncidentCursor });
     }
 }

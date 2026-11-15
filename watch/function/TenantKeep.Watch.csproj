@@ -29,6 +29,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="TenantKeep.Watch.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The relay's HPKE, the same file the reference sender and its tests use. -->
     <Compile Include="../../relay/sender/Hpke.cs" Link="Hpke.cs" />
     <Compile Remove="tests/**" />
