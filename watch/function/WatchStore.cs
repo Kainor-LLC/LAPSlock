@@ -1,3 +1,4 @@
+using System.Runtime.Serialization;
 using System.Security.Cryptography;
 using System.Text;
 using Azure;
@@ -29,8 +30,9 @@ public sealed class TenantRecord : ITableEntity
     public string State { get; set; } = "new";
     public DateTimeOffset? LastRun { get; set; }
 
-    public string TenantId => RowKey;
-    public string[] BreakGlass => BreakGlassIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+    // Derived, not stored: Table Storage cannot hold an array.
+    [IgnoreDataMember] public string TenantId => RowKey;
+    [IgnoreDataMember] public string[] BreakGlass => BreakGlassIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
 }
 
 public sealed class DeviceRecord : ITableEntity

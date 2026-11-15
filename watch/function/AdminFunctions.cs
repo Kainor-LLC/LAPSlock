@@ -10,7 +10,8 @@ namespace Kainor.TenantKeep.Watch;
 /// <summary>
 /// Kainor's own setup endpoints, for the first end-to-end test before the app registers
 /// phones itself (H4). Each needs the function's key, which only Kainor holds; none is
-/// reachable by a customer. They store only what WatchStore describes.
+/// reachable by a customer. They store only what WatchStore describes. Routes start manage/,
+/// because Azure Functions keeps admin/ for its own host API.
 /// </summary>
 public sealed partial class AdminFunctions(WatchStore store, GraphReader graph, AlertSender sender)
 {
@@ -23,10 +24,26 @@ public sealed partial class AdminFunctions(WatchStore store, GraphReader graph, 
     public sealed record TenantBody(string Label, string[] BreakGlass);
     public sealed record DeviceBody(string PairingCode);
 
+    /// <summary>Kainor-only endpoints say what failed, so a setup problem explains itself.</summary>
+    static async Task<IActionResult> Explain(Func<Task<IActionResult>> work)
+    {
+        try
+        {
+            return await work();
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return new ObjectResult(new { error = e.GetType().Name, message = e.Message }) { StatusCode = 500 };
+        }
+    }
+
     /// <summary>Names the organization and its break-glass accounts (sign-in addresses or object IDs).</summary>
     [Function("AdminPutTenant")]
-    public async Task<IActionResult> PutTenant(
-        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "admin/tenants/{tenantId}")] HttpRequest request, string tenantId, CancellationToken ct)
+    public Task<IActionResult> PutTenant(
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "manage/tenants/{tenantId}")] HttpRequest request, string tenantId, CancellationToken ct) =>
+        Explain(() => PutTenantCore(request, tenantId, ct));
+
+    async Task<IActionResult> PutTenantCore(HttpRequest request, string tenantId, CancellationToken ct)
     {
         tenantId = tenantId.ToLowerInvariant();
         if (!TenantPattern().IsMatch(tenantId)) return new BadRequestObjectResult(new { error = "tenantId must be a GUID" });
@@ -60,8 +77,11 @@ public sealed partial class AdminFunctions(WatchStore store, GraphReader graph, 
 
     /// <summary>Registers a phone from the pairing code TenantKeep shows (tkrelay1), and returns the code the phone pins (tksender1).</summary>
     [Function("AdminAddDevice")]
-    public async Task<IActionResult> AddDevice(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "admin/tenants/{tenantId}/devices")] HttpRequest request, string tenantId, CancellationToken ct)
+    public Task<IActionResult> AddDevice(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "manage/tenants/{tenantId}/devices")] HttpRequest request, string tenantId, CancellationToken ct) =>
+        Explain(() => AddDeviceCore(request, tenantId, ct));
+
+    async Task<IActionResult> AddDeviceCore(HttpRequest request, string tenantId, CancellationToken ct)
     {
         tenantId = tenantId.ToLowerInvariant();
         if (await store.TenantAsync(tenantId, ct) is null) return new NotFoundObjectResult(new { error = "set up the tenant first" });
@@ -91,8 +111,11 @@ public sealed partial class AdminFunctions(WatchStore store, GraphReader graph, 
 
     /// <summary>Sends a test alert to every phone registered for the tenant.</summary>
     [Function("AdminTest")]
-    public async Task<IActionResult> Test(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "admin/tenants/{tenantId}/test")] HttpRequest request, string tenantId, CancellationToken ct)
+    public Task<IActionResult> Test(
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "manage/tenants/{tenantId}/test")] HttpRequest request, string tenantId, CancellationToken ct) =>
+        Explain(() => TestCore(request, tenantId, ct));
+
+    async Task<IActionResult> TestCore(HttpRequest request, string tenantId, CancellationToken ct)
     {
         tenantId = tenantId.ToLowerInvariant();
         var tenant = await store.TenantAsync(tenantId, ct);
@@ -105,8 +128,11 @@ public sealed partial class AdminFunctions(WatchStore store, GraphReader graph, 
 
     /// <summary>The tenant's state: last run, phones, accounts. No identifiers beyond the counts.</summary>
     [Function("AdminGetTenant")]
-    public async Task<IActionResult> GetTenant(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "admin/tenants/{tenantId}")] HttpRequest request, string tenantId, CancellationToken ct)
+    public Task<IActionResult> GetTenant(
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "manage/tenants/{tenantId}")] HttpRequest request, string tenantId, CancellationToken ct) =>
+        Explain(() => GetTenantCore(request, tenantId, ct));
+
+    async Task<IActionResult> GetTenantCore(HttpRequest request, string tenantId, CancellationToken ct)
     {
         tenantId = tenantId.ToLowerInvariant();
         var tenant = await store.TenantAsync(tenantId, ct);
