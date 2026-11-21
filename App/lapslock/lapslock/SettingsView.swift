@@ -42,6 +42,20 @@ final class AppSettings {
         didSet { UserDefaults.standard.set(privilegedActivationEnabled, forKey: Keys.privilegedActivation) }
     }
 
+    /// Whether Mac admin passwords can be revealed. Off by default: the function is a
+    /// Microsoft beta, and its permission is the one remote actions use.
+    var macOSRevealEnabled: Bool {
+        didSet { UserDefaults.standard.set(macOSRevealEnabled, forKey: Self.macOSRevealKey) }
+    }
+
+    nonisolated static let macOSRevealKey = "settings.macOSRevealEnabled"
+
+    /// The switch, readable off the main actor: the Mac provider asks each time a device
+    /// opens, from wherever it runs. UserDefaults is safe to read from any thread.
+    nonisolated static func macOSRevealIsOn() -> Bool {
+        UserDefaults.standard.bool(forKey: macOSRevealKey)
+    }
+
     /// Whether to look up primary users' display names in Entra when Intune leaves the
     /// field empty. The UPN is the default;
     /// names are optional because they cost a permission, `User.ReadBasic.All` on the
@@ -129,6 +143,7 @@ final class AppSettings {
         self.deviceActionsEnabled = defaults.object(forKey: Keys.deviceActions) as? Bool
             ?? defaults.bool(forKey: Keys.rotation)
         self.privilegedActivationEnabled = UserDefaults.standard.bool(forKey: Keys.privilegedActivation)
+        self.macOSRevealEnabled = UserDefaults.standard.bool(forKey: Self.macOSRevealKey)
         self.userNamesEnabled = UserDefaults.standard.bool(forKey: Keys.userNames)
         self.appLockEnabled = UserDefaults.standard.bool(forKey: Keys.appLock)
         let raw = UserDefaults.standard.string(forKey: Keys.appearance) ?? AppearancePreference.system.rawValue
@@ -221,6 +236,8 @@ struct SettingsView: View {
     var requestPrivilegedConsent: (() async -> String?)? = nil
     /// Requests consent to read users' display names. Nil in demo.
     var requestUserNamesConsent: (() async -> String?)? = nil
+    /// Requests consent for the Mac admin password permission. Nil in demo.
+    var requestMacOSRevealConsent: (() async -> String?)? = nil
     /// Opens the activation sheet, injected so Settings need not know about Graph.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
     /// Apple subscriptions. Nil in demo mode and while signed out, there is nothing to buy
@@ -345,7 +362,8 @@ struct SettingsView: View {
                                 requestUserActionsConsent: requestUserActionsConsent,
                                 requestGroupWritesConsent: requestGroupWritesConsent,
                                 requestPrivilegedConsent: requestPrivilegedConsent,
-                                privilegedSheet: privilegedSheet)
+                                privilegedSheet: privilegedSheet,
+                                requestMacOSRevealConsent: requestMacOSRevealConsent)
         case .shiftLog:
             SettingsShiftLogPage(shiftLog: shiftLog, shiftLogTenantId: shiftLogTenantId)
         case .license:

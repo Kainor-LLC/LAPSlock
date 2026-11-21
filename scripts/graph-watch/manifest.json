@@ -91,11 +91,19 @@
    "smoke": null
   },
   {
-   "id": "macLaps.reveal",
+   "id": "macLaps.metadata",
    "kit": "CredentialKit",
    "method": "GET",
    "version": "beta",
    "path": "/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail",
+   "smoke": null
+  },
+  {
+   "id": "macLaps.reveal",
+   "kit": "CredentialKit",
+   "method": "GET",
+   "version": "beta",
+   "path": "/deviceManagement/managedDevices/{id}/retrieveMacOSManagedDeviceLocalAdminAccountDetail",
    "smoke": null
   },
   {

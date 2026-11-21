@@ -17,12 +17,16 @@ struct SettingsActionsPage: View {
     var requestPrivilegedConsent: (() async -> String?)? = nil
     /// Opens the activation sheet, injected so Settings need not know about Graph.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
+    /// Requests consent for the Mac admin password permission. Nil in demo.
+    var requestMacOSRevealConsent: (() async -> String?)? = nil
 
     @State private var isRequestingConsent = false
     @State private var consentError: String?
     @State private var isRequestingPrivilegedConsent = false
     @State private var privilegedConsentError: String?
     @State private var showingPrivilegedSheet = false
+    @State private var isRequestingMacConsent = false
+    @State private var macConsentError: String?
     private let managed = ManagedConfigStore.shared
 
     var body: some View {
@@ -358,25 +362,68 @@ struct SettingsActionsPage: View {
 
     // MARK: - macOS
 
-    /// Shown DISABLED rather than hidden. A hidden toggle is dead code nobody remembers,
-    /// and an admin wondering "why can't I see Mac passwords?" deserves an answer instead
-    /// of an absence. When Microsoft ships an API, this becomes live.
+    /// Mac admin password reveal, off by default: the function is a Microsoft beta, and the
+    /// permission Microsoft requires for it is the remote-actions one. The footer says so
+    /// before the switch is touched, and the prompt comes at the toggle, as for role
+    /// activation.
     private var macOSSection: some View {
         Section {
-            Toggle("macOS local admin passwords", isOn: .constant(false))
-                .disabled(true)
+            Toggle("Allow Mac password reveal", isOn: Binding(
+                get: { settings.macOSRevealEnabled },
+                set: { newValue in
+                    if newValue {
+                        Task { await enableMacOSReveal() }
+                    } else {
+                        settings.macOSRevealEnabled = false
+                        macConsentError = nil
+                    }
+                }
+            ))
+            .disabled(isRequestingMacConsent)
+
+            if isRequestingMacConsent {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Requesting permission…").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+
+            if let macConsentError {
+                Text(macConsentError)
+                    .font(.footnote)
+                    .foregroundStyle(isDemo ? .secondary : Color.red)
+            }
         } header: {
             Text("macOS")
         } footer: {
             Text("""
-                Unavailable. Microsoft doesn't currently offer an API for reading macOS \
-                local administrator passwords. Intune keeps them encrypted on its own \
-                service, and only the admin center can display them. TenantKeep will enable \
-                this automatically if that changes.
+                Off by default. Turning this on lets a Mac's screen reveal the local admin password Intune creates when the Mac enrolls through Automated Device Enrollment.
 
-                Rotation schedules for macOS devices are still shown where Microsoft \
-                returns them.
+                Microsoft puts reading a Mac's admin password under the same permission as remote actions, so turning this on asks for that permission, and your administrator may need to approve it. TenantKeep uses it here only to read the password. Device actions stay off until you allow them above, and each still asks before it is sent.
+
+                This uses a Microsoft beta API, which can change. Your account also needs an Intune role that can view macOS admin passwords. Each reveal is confirmed and hides after 60 seconds, as on Windows.
                 """)
+        }
+    }
+
+    private func enableMacOSReveal() async {
+        macConsentError = nil
+        if isDemo {
+            settings.macOSRevealEnabled = true
+            macConsentError = "Demo mode: no permission was actually requested."
+            return
+        }
+        guard let requestMacOSRevealConsent else {
+            macConsentError = "Sign in first."
+            return
+        }
+        isRequestingMacConsent = true
+        defer { isRequestingMacConsent = false }
+        if let error = await requestMacOSRevealConsent() {
+            settings.macOSRevealEnabled = false
+            macConsentError = error
+        } else {
+            settings.macOSRevealEnabled = true
         }
     }
 }

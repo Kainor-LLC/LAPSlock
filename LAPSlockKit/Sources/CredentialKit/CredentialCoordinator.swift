@@ -10,10 +10,11 @@ import AuthKit
 public actor CredentialCoordinator {
     private let providers: [DevicePlatform: any LocalAdminCredentialProviding]
 
-    public init(auth: AuthManaging) {
+    /// `macOSRevealEnabled` is the Settings switch; off unless the caller passes it.
+    public init(auth: AuthManaging, macOSRevealEnabled: @escaping @Sendable () -> Bool = { false }) {
         self.providers = [
             .windows: WindowsLapsProvider(auth: auth),
-            .macOS: MacOSLapsProvider(auth: auth)
+            .macOS: MacOSLapsProvider(auth: auth, revealEnabled: macOSRevealEnabled)
         ]
     }
 

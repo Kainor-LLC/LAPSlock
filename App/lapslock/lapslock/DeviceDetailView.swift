@@ -419,15 +419,20 @@ final class DeviceDetailModel {
             remainingReveals = meter.recordReveal(deviceIdentifier: device.id, isPro: isPro)
             NotificationCenter.default.post(name: .revealMeterDidChange, object: nil)
             await Self.record(.credentialReveal, .success,
-                              endpoint: DiagnosticEndpoint.deviceLocalCredentials,
+                              endpoint: revealEndpoint,
                               platform: device.platform, since: fetchStarted)
         } catch {
-            errorMessage = Self.describe(error)
+            errorMessage = Self.describe(error, platform: device.platform)
             lastFailureWasMissingRole = (error as? CredentialError).map { if case .notAuthorized = $0 { return true } else { return false } } ?? false
             await Self.record(.credentialReveal, Self.outcome(for: error),
-                              endpoint: DiagnosticEndpoint.deviceLocalCredentials,
+                              endpoint: revealEndpoint,
                               platform: device.platform, since: fetchStarted)
         }
+    }
+
+    /// The reveal's endpoint template, for diagnostics.
+    private var revealEndpoint: String {
+        device.platform == .macOS ? DiagnosticEndpoint.macLocalAdminPassword : DiagnosticEndpoint.deviceLocalCredentials
     }
 
     // MARK: - BitLocker
@@ -665,10 +670,13 @@ final class DeviceDetailModel {
 
     // MARK: - error copy (§8)
 
-    static func describe(_ error: Error) -> String {
+    /// `platform` changes the three answers that differ on a Mac: which role, and where the
+    /// password comes from. BitLocker passes nothing and gets the Windows copy.
+    static func describe(_ error: Error, platform: DevicePlatform = .windows) -> String {
         guard let e = error as? CredentialError else {
             return "Something went wrong retrieving the password. Try again."
         }
+        if platform == .macOS, let mac = describeMac(e) { return mac }
         switch e {
         case .consentRequired:
             return "Your session expired. Sign in again to continue."
@@ -693,6 +701,23 @@ final class DeviceDetailModel {
             return detail
         case .unsupportedOnPlatform(_, let reason):
             return reason
+        }
+    }
+
+    /// A Mac's answers, where they differ from Windows. Nil means the shared copy applies.
+    ///
+    /// The role is the one the admin center requires: a custom Intune role, because no
+    /// built-in role has the permission. (verify) on a real Mac that Graph asks for the same.
+    static func describeMac(_ error: CredentialError) -> String? {
+        switch error {
+        case .notAuthorized:
+            return "You're signed in, but your account can't view Mac admin passwords. In Intune, a custom role with Enrollment programs, View macOS admin password, is needed; no built-in role includes it."
+        case .notLapsEnabled, .emptyCredentialSet:
+            return "Intune has no admin password for this Mac. It creates one only when a Mac enrolls through Automated Device Enrollment with a local admin account in its enrollment profile."
+        case .decodeFailure:
+            return "Microsoft returned the Mac's password in a shape TenantKeep couldn't read. The API is in beta; please report this."
+        default:
+            return nil
         }
     }
 
@@ -900,6 +925,11 @@ struct DeviceDetailView: View {
                 RevealedCredentialCard(
                     secret: secret,
                     accountName: model.revealedAccountName,
+                    // A Mac's account is named in the enrollment profile; Microsoft's
+                    // function returns only the password.
+                    missingAccountNote: model.device.platform == .macOS
+                        ? "The admin account in your enrollment profile"
+                        : "Not provided by Microsoft",
                     secondsRemaining: model.secondsRemaining,
                     progress: model.progress,
                     onCopyPassword: { model.copyPassword() },
@@ -1004,6 +1034,11 @@ struct DeviceDetailView: View {
         VStack(alignment: .leading, spacing: 6) {
             if model.capabilities.supportsReveal && model.device.revealBlockedReason == nil {
                 Text("\(confirm.title) confirms it's you before the password is retrieved. It hides again after 60 seconds.")
+                if model.capabilities.usesBetaAPI {
+                    // Said where the reveal is, not only in Settings: whoever reads this
+                    // screen may not be the one who turned the switch on.
+                    Text("Mac passwords come from a Microsoft beta API, which can change.")
+                }
                 // Stated up front, never as a surprise. An admin who discovers the limit
                 // while standing at a broken workstation taps reveal again, and every
                 // extra tap is another audit event in the customer's tenant.
@@ -1248,6 +1283,8 @@ struct RevealedCredentialCard: View {
     @Environment(\.colorScheme) private var colorScheme
     let secret: SensitiveValue
     let accountName: String?
+    /// Shown in place of a name Microsoft did not return.
+    var missingAccountNote = "Not provided by Microsoft"
     let secondsRemaining: Int
     let progress: Double
     let onCopyPassword: () -> Void
@@ -1298,7 +1335,7 @@ struct RevealedCredentialCard: View {
                     .accessibilityLabel("Copy username")
                 }
             } else {
-                Text("Not provided by Microsoft")
+                Text(missingAccountNote)
                     .font(.footnote)
                     .foregroundStyle(Brand.mist)
             }

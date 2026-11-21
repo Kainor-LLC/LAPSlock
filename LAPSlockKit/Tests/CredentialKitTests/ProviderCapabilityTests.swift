@@ -52,21 +52,35 @@ final class ProviderCapabilityTests: XCTestCase {
         }
     }
 
-    // MARK: - macOS: reveal unavailable (verified 2026-08-14)
+    // MARK: - macOS: reveal behind the Settings switch (reopened 2026-11-08)
 
-    func test_macOS_declaresRevealUnsupported_withReason() {
+    func test_macOS_switchOff_declaresRevealUnsupported_withReason() {
         let p = MacOSLapsProvider(auth: FakeAuth())
-        XCTAssertFalse(p.capabilities.supportsReveal,
-                       "No documented Graph endpoint returns a macOS LAPS password value.")
+        XCTAssertFalse(p.capabilities.supportsReveal, "Off unless the switch is on: the API is beta.")
         XCTAssertNotNil(p.capabilities.unavailabilityReason)
-        XCTAssertTrue(p.capabilities.offersPortalHandoff,
-                      "Admins must still have a route to the password.")
-        XCTAssertTrue(p.revealScopes.isEmpty,
-                      "Don't request a high-privilege scope for a capability we can't perform.")
+        XCTAssertTrue(p.capabilities.offersPortalHandoff, "Admins must still have a route to the password.")
+        XCTAssertTrue(p.capabilities.usesBetaAPI)
     }
 
-    func test_macOS_revealThrowsUnsupported() async {
+    func test_macOS_switchOn_declaresBetaReveal() {
+        let p = MacOSLapsProvider(auth: FakeAuth(), revealEnabled: { true })
+        XCTAssertTrue(p.capabilities.supportsReveal)
+        XCTAssertTrue(p.capabilities.usesBetaAPI, "The UI must say the Mac reveal rides a beta API.")
+        XCTAssertNil(p.capabilities.unavailabilityReason)
+    }
+
+    func test_macOS_revealScopeIsTheOneTheFunctionAccepts() {
         let p = MacOSLapsProvider(auth: FakeAuth())
+        XCTAssertEqual(p.revealScopes, ["DeviceManagementManagedDevices.PrivilegedOperations.All"])
+        // DeviceActionsTests pins DeviceActionsKit's copy to the same literal.
+        XCTAssertEqual(LapsCredentialScopes.macOSReveal, "DeviceManagementManagedDevices.PrivilegedOperations.All")
+        XCTAssertFalse(LapsCredentialScopes.signInBaseline.contains(LapsCredentialScopes.macOSReveal),
+                       "Requested at the switch, never at sign-in.")
+    }
+
+    func test_macOS_switchOff_revealThrowsUnsupported_beforeAnyRequest() async {
+        let auth = CountingAuth()
+        let p = MacOSLapsProvider(auth: auth)
         let target = DeviceCredentialTarget(platform: .macOS, entraDeviceId: "e1", managedDeviceId: "m1")
         do {
             _ = try await p.reveal(for: target)
@@ -77,6 +91,23 @@ final class ProviderCapabilityTests: XCTestCase {
             }
             XCTAssertEqual(platform, .macOS)
             XCTAssertFalse(reason.isEmpty, "The UI shows this text; it must never be empty.")
+        } catch {
+            XCTFail("unexpected error \(error)")
+        }
+        let asked = await auth.count
+        XCTAssertEqual(asked, 0, "No token, so no consent prompt and no request, while the switch is off.")
+    }
+
+    func test_macOS_revealRequiresManagedDeviceId() async {
+        let p = MacOSLapsProvider(auth: FakeAuth(), revealEnabled: { true })
+        let target = DeviceCredentialTarget(platform: .macOS, entraDeviceId: "e1", managedDeviceId: nil)
+        do {
+            _ = try await p.reveal(for: target)
+            XCTFail("expected missingIdentifier")
+        } catch let error as CredentialError {
+            guard case .missingIdentifier = error else {
+                return XCTFail("expected missingIdentifier, got \(error)")
+            }
         } catch {
             XCTFail("unexpected error \(error)")
         }
@@ -94,6 +125,12 @@ final class ProviderCapabilityTests: XCTestCase {
         XCTAssertFalse(mac.supportsReveal)
         XCTAssertFalse(other.supportsReveal)
         XCTAssertNotNil(other.unavailabilityReason)
+    }
+
+    func test_coordinator_passesTheSwitchToTheMacProvider() async {
+        let on = CredentialCoordinator(auth: FakeAuth(), macOSRevealEnabled: { true })
+        let mac = await on.capabilities(for: .macOS)
+        XCTAssertTrue(mac.supportsReveal)
     }
 
     func test_coordinator_blocksRevealOnUnsupportedPlatform() async {
@@ -120,7 +157,20 @@ final class ProviderCapabilityTests: XCTestCase {
     }
 }
 
-// MARK: - test double
+// MARK: - test doubles
+
+/// Counts token requests, to prove a refused reveal never reaches the token cache.
+private actor CountingAuth: AuthManaging {
+    private(set) var count = 0
+    var currentAccount: AdminAccount? {
+        get async { AdminAccount(id: "acct", tenantId: "tenant-1", username: "admin@example.com") }
+    }
+    func token(scopes: [String], allowInteractive: Bool) async throws -> String { count += 1; return "fake-token" }
+    func signIn() async throws -> AdminAccount {
+        AdminAccount(id: "acct", tenantId: "tenant-1", username: "admin@example.com")
+    }
+    func signOut(account: AdminAccount) async throws {}
+}
 
 /// Minimal AuthManaging stand-in. Proves CredentialKit is testable with zero
 /// Microsoft dependencies, the payoff of the AuthKit protocol seam.

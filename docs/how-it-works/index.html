@@ -223,6 +223,13 @@
           for read access.</td>
         </tr>
         <tr>
+          <td><code>DeviceManagementManagedDevices.PrivilegedOperations.All</code></td>
+          <td>Only if you allow Mac password reveal</td>
+          <td>Microsoft requires this permission, the remote-actions one, to read a Mac's admin password,
+          through a beta function. TenantKeep On-Call uses it there only to read the password; device actions
+          stay off until you allow them, and each still asks before it is sent.</td>
+        </tr>
+        <tr>
           <td><code>User.ReadBasic.All</code></td>
           <td>Only if you enable user names</td>
           <td>Shows a person's name where Intune stored only a sign-in address. Off by default.</td>
@@ -417,10 +424,11 @@
       reads Entra-backed LAPS. Entra-joined and hybrid-joined devices are both fine <em>provided the
       policy backs up to Entra ID</em>, but a device whose policy targets Windows Server Active
       Directory instead cannot be read, because Microsoft exposes no API for it.</li>
-      <li><strong>macOS local administrator passwords cannot be revealed.</strong> Microsoft does not
-      currently offer an API that returns them; Intune keeps them encrypted on its own service and
-      only the admin center can display one. The LAPSlock module shows what metadata exists and hands off to the
-      portal. If Microsoft ships an API, the app will use it.</li>
+      <li><strong>Mac admin passwords need Automated Device Enrollment, and a beta API.</strong> Intune
+      creates the password only for a Mac enrolled through Automated Device Enrollment with a local admin
+      account in its enrollment profile, and Microsoft returns it only through a beta function. Reveal is
+      off until you allow it in Settings, and viewing one needs an Intune role with View macOS admin
+      password. Any other Mac gets its rotation status and a link to the admin center.</li>
       <li><strong>It cannot grant you access you do not have.</strong> No permission TenantKeep On-Call requests
       escalates your privileges. If your account cannot read a password, the answer is a role
       assignment in your tenant, not a setting in the app.</li>

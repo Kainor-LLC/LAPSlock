@@ -370,5 +370,6 @@ public enum DiagnosticEndpoint {
     public static let managedDevicesList = "/v1.0/deviceManagement/managedDevices"
     public static let deviceLocalCredentials = "/v1.0/directory/deviceLocalCredentials/{entraDeviceId}"
     public static let macLocalAdminDetail = "/beta/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail"
+    public static let macLocalAdminPassword = "/beta/deviceManagement/managedDevices/{id}/retrieveMacOSManagedDeviceLocalAdminAccountDetail"
     public static let macRotate = "/beta/deviceManagement/managedDevices/{id}/rotateLocalAdminPassword"
 }

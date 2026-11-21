@@ -1,60 +1,73 @@
 import Foundation
 import AuthKit
 
-// Build Spec §2.4, macOS LAPS. Reveal is unavailable; verified against a live tenant.
+// Build Spec §2.4, macOS LAPS. Reveal is behind a Settings switch, off by default.
 //
-// Why it is off:
-//   * The Entra store Windows LAPS uses returns 200 with no credentials array for
-//     ADE-enrolled Macs. macOS passwords are not kept there, which matches Microsoft's
-//     "stored and encrypted by Intune" statement.
-//   * The only documented macOS function returns passwordLastRotationDateTime and nothing
-//     else; there is no password field in the contract:
-//     GET /beta/deviceManagement/managedDevices/{id}/retrieveDeviceLocalAdminAccountDetail
-//   * That function also answers HTTP 500 for every ADE-enrolled, LAPS-managed Mac tested,
-//     while the admin center displays the same passwords. Retrieval is portal-internal, and
-//     this app does not build on undocumented endpoints.
+// History, because the answer changed:
+//   * 2026-08: the only macOS function tried, retrieveDeviceLocalAdminAccountDetail, is
+//     documented to return passwordLastRotationDateTime and nothing else, and it answered
+//     HTTP 500 for every ADE-enrolled Mac tested. The Entra store Windows LAPS uses holds
+//     nothing for Macs. Reveal was declared unavailable.
+//   * 2026-11-08: Microsoft pointed to a different function, which does return the
+//     password (MACOS-REVEAL-PLAN.md in the private repo):
+//     GET /beta/deviceManagement/managedDevices/{id}/retrieveMacOSManagedDeviceLocalAdminAccountDetail
+//     → { "value": { "adminAccountPassword": "…", "passwordLastRotatedDateTime": "…" } }
+//     Delegated DeviceManagementManagedDevices.PrivilegedOperations.All, the only
+//     permission listed. The password is created when the Mac enrolls through Automated
+//     Device Enrollment with the local admin account in its enrollment profile.
 //
-// To enable reveal if Microsoft ships an API, everything is in this file:
-//   1. Re-run tools/Verify-MacOSLapsGraph.ps1 against a live tenant.
-//   2. If a documented endpoint returns a password value: set `supportsReveal: true` in
-//      `capabilities`, clear `unavailabilityReason`, set `usesBetaAPI` to match the
-//      endpoint's status, implement `reveal(for:)` parsing into SensitiveValue as
-//      WindowsLapsProvider does, and put the required scope in `revealScopes`.
-//   3. Run the CredentialKitTests capability tests; they assert the declared shape.
+// It is beta, so reveal is off until the admin turns it on, and the switch is where the
+// permission is asked for. `revealEnabled` is read every time capabilities are, so the
+// switch takes effect on the next device opened without rebuilding the session.
+//
+// (verify) on a real ADE-enrolled Mac, tools/Verify-MacOSLapsGraph.ps1 probe D: the
+// response shape, and whether Graph also requires the custom Intune role (Enrollment
+// programs, View macOS admin password) that the admin center does.
 
 public struct MacOSLapsProvider: LocalAdminCredentialProviding {
     public let platform: DevicePlatform = .macOS
 
     public var capabilities: CredentialCapabilities {
-        CredentialCapabilities(
-            supportsMetadata: true,      // attempted; degrades cleanly if the API 500s
-            supportsReveal: false,       // ← flip to true when Microsoft ships it
-            usesBetaAPI: true,
-            offersPortalHandoff: true,
-            unavailabilityReason: Self.revealUnavailableReason
-        )
+        revealEnabled()
+            ? CredentialCapabilities(
+                supportsMetadata: true,      // attempted; degrades cleanly if the API 500s
+                supportsReveal: true,
+                usesBetaAPI: true,
+                offersPortalHandoff: true,
+                unavailabilityReason: nil)
+            : CredentialCapabilities(
+                supportsMetadata: true,
+                supportsReveal: false,
+                usesBetaAPI: true,
+                offersPortalHandoff: true,
+                unavailabilityReason: Self.revealOffReason)
     }
 
-    /// User-facing copy: explain what happened and the next step, in the app's voice.
-    static let revealUnavailableReason =
-        "Microsoft doesn't currently offer an API for reading macOS local admin passwords. "
-        + "Intune keeps them encrypted on its own service, and only the admin center can display them. "
-        + "You can see the rotation schedule here and open this device in Intune to view the password."
+    /// User-facing copy for the switch being off: what happened and the next step.
+    static let revealOffReason =
+        "Revealing Mac passwords is off. Turn it on in Settings, Actions and Permissions. "
+        + "You can also open this device in Intune to view the password there."
 
     public let metadataScopes = [LapsCredentialScopes.intuneDevices]
-    /// Empty until a documented reveal endpoint exists.
-    public let revealScopes: [String] = []
+    public let revealScopes = [LapsCredentialScopes.macOSReveal]
 
     private let auth: AuthManaging
     private let session: URLSession
+    private let revealEnabled: @Sendable () -> Bool
 
-    public init(auth: AuthManaging) {
+    /// `revealEnabled` is the Settings switch. Defaults to off, so anything built without
+    /// it (the coordinator's default, tests) cannot reveal a Mac password by accident.
+    public init(auth: AuthManaging, revealEnabled: @escaping @Sendable () -> Bool = { false }) {
         self.auth = auth
         self.session = GraphHTTP.makeSession()
+        self.revealEnabled = revealEnabled
     }
 
     // MARK: - metadata (rotation timestamp only; tolerates the current 500)
 
+    /// The old function, on purpose. The new one returns the password, and Intune logs it
+    /// as a view, so it is never called just for a date. (verify) in M0 whether this still
+    /// 500s; if it does, `supportsMetadata` goes false and the date comes from the reveal.
     public func metadata(for target: DeviceCredentialTarget) async throws -> CredentialMetadata {
         guard let managedDeviceId = target.managedDeviceId, !managedDeviceId.isEmpty else {
             throw CredentialError.missingIdentifier("Intune managed device ID is required for macOS.")
@@ -83,15 +96,52 @@ public struct MacOSLapsProvider: LocalAdminCredentialProviding {
         )
     }
 
-    // MARK: - reveal (NOT AVAILABLE, see the header block to enable)
+    // MARK: - reveal (§6 step 3; caller MUST have passed the biometric gate first)
 
     public func reveal(for target: DeviceCredentialTarget) async throws -> RevealedCredential {
-        // Fails loudly and specifically rather than returning an empty value, so the UI
-        // renders the portal handoff instead of a broken password field (§8).
-        throw CredentialError.unsupportedOnPlatform(
-            platform: .macOS,
-            reason: Self.revealUnavailableReason
-        )
+        // Checked here as well as in the coordinator and the view model: the app holds this
+        // provider directly, and the switch is the only thing standing in front of a beta API.
+        guard revealEnabled() else {
+            throw CredentialError.unsupportedOnPlatform(platform: .macOS, reason: Self.revealOffReason)
+        }
+        guard let managedDeviceId = target.managedDeviceId, !managedDeviceId.isEmpty else {
+            throw CredentialError.missingIdentifier("Intune managed device ID is required for macOS.")
+        }
+        // allowInteractive: true so a first reveal can still prompt consent if the switch's
+        // own prompt was skipped (another organization, a revoked grant).
+        let token = try await auth.token(scopes: revealScopes, allowInteractive: true)
+        var req = URLRequest(url: GraphHTTP.url(
+            version: "beta",
+            path: "/deviceManagement/managedDevices/\(managedDeviceId)/retrieveMacOSManagedDeviceLocalAdminAccountDetail"))
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: req)
+        try GraphHTTP.validate(response)
+
+        // JSONSerialization on purpose: no Codable model ever holds the password.
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CredentialError.decodeFailure
+        }
+        return try Self.credential(from: obj)
+    }
+
+    /// Parses the function's answer. Static and pure so every branch is tested without a
+    /// tenant.
+    ///
+    /// One value, no history: Intune keeps only the current password for a Mac. No account
+    /// name either; it is set in the enrollment profile, not returned here.
+    static func credential(from root: [String: Any]) throws -> RevealedCredential {
+        // Documented shape is { "value": { ... } }; tolerate a bare object too, as metadata does.
+        let obj = (root["value"] as? [String: Any]) ?? root
+        guard let password = obj["adminAccountPassword"] as? String else {
+            throw CredentialError.emptyCredentialSet
+        }
+        guard !password.isEmpty else { throw CredentialError.emptyCredentialSet }
+        return RevealedCredential(
+            accountName: nil,
+            backupDateTime: GraphHTTP.date(obj["passwordLastRotatedDateTime"]),
+            secret: SensitiveValue(bytes: Array(password.utf8), encoding: .utf8))
     }
 
     public func portalURL(for target: DeviceCredentialTarget) -> URL? {

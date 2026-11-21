@@ -20,7 +20,7 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
     public let platform: DevicePlatform
 
     /// Matches the real providers' declared capabilities so the demo exercises the same
-    /// UI branches, including macOS reveal being unavailable.
+    /// UI branches, including macOS reveal being off until the Settings switch is on.
     public var capabilities: CredentialCapabilities {
         switch platform {
         case .windows:
@@ -30,9 +30,9 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
             )
         case .macOS:
             return CredentialCapabilities(
-                supportsMetadata: true, supportsReveal: false,
+                supportsMetadata: true, supportsReveal: macOSRevealEnabled,
                 usesBetaAPI: true, offersPortalHandoff: true,
-                unavailabilityReason: MacOSLapsProvider.revealUnavailableReason
+                unavailabilityReason: macOSRevealEnabled ? nil : MacOSLapsProvider.revealOffReason
             )
         case .other:
             return CredentialCapabilities(
@@ -51,10 +51,13 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
 
     /// Simulated latency so loading and gate states are visible during development.
     private let latency: Duration
+    /// The Settings switch, read when the device opens, as the live provider's is.
+    private let macOSRevealEnabled: Bool
 
-    public init(platform: DevicePlatform, latency: Duration = .milliseconds(600)) {
+    public init(platform: DevicePlatform, latency: Duration = .milliseconds(600), macOSRevealEnabled: Bool = false) {
         self.platform = platform
         self.latency = latency
+        self.macOSRevealEnabled = macOSRevealEnabled
     }
 
     public func metadata(for target: DeviceCredentialTarget) async throws -> CredentialMetadata {
@@ -93,6 +96,7 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
                 reason: capabilities.unavailabilityReason ?? "Reveal isn't available for this device."
             )
         }
+        if platform == .macOS { return try await revealMac(for: target) }
         guard target.entraDeviceId != nil else {
             throw CredentialError.missingIdentifier(
                 "This device isn't joined to Microsoft Entra ID, so Windows LAPS can't store a password for it."
@@ -131,6 +135,18 @@ public struct DemoLapsProvider: LocalAdminCredentialProviding {
             secret: secret,
             previousVersions: history
         )
+    }
+
+    /// A Mac, as the live function answers: one value, no history, no account name (it is
+    /// set in the enrollment profile, not returned).
+    private func revealMac(for target: DeviceCredentialTarget) async throws -> RevealedCredential {
+        try await Task.sleep(for: latency)
+        let suffix = Int(demoStableHash(target.managedDeviceId ?? "") % 10_000)
+        let fake = "DEMO-Mac-Password-" + String(format: "%04d", suffix)
+        return RevealedCredential(
+            accountName: nil,
+            backupDateTime: Date().addingTimeInterval(-11 * 86_400),
+            secret: SensitiveValue(bytes: Array(fake.utf8), encoding: .utf8))
     }
 
     public func portalURL(for target: DeviceCredentialTarget) -> URL? {

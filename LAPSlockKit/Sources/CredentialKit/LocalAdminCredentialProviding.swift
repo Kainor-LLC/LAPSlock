@@ -13,12 +13,11 @@ import AuthKit
 // Verified against a live licensed tenant:
 //   Windows : GET /v1.0/directory/deviceLocalCredentials/{entraDeviceId}?$select=credentials
 //             returns passwordBase64. GA, documented. FULLY SUPPORTED.
-//   macOS   : No documented Graph endpoint returns the password value. The documented
-//             beta function retrieveDeviceLocalAdminAccountDetail is specified to return
-//             only passwordLastRotationDateTime (no password field), AND it currently
-//             returns HTTP 500 from Intune's DeviceFE backend on every ADE-enrolled,
-//             LAPS-managed device tested. Reveal is therefore UNAVAILABLE, and the
-//             product degrades to a portal handoff.
+//   macOS   : GET /beta/deviceManagement/managedDevices/{id}/retrieveMacOSManagedDeviceLocalAdminAccountDetail
+//             returns adminAccountPassword (pointed to by Microsoft 2026-11-08; the older
+//             retrieveDeviceLocalAdminAccountDetail returns rotation metadata only and 500s).
+//             Beta, so reveal is behind a Settings switch, off by default. To verify on a
+//             real ADE-enrolled Mac before release (MacOSLapsProvider.swift).
 
 /// Graph delegated scope names, in one place so they can't drift between the providers,
 /// the app registration, and the sign-in code. These MUST match the delegated
@@ -32,6 +31,11 @@ public enum LapsCredentialScopes {
     public static let metadataBasic = "DeviceLocalCredential.ReadBasic.All"
     /// LAPS password reveal. Requested incrementally at first reveal, never at sign-in (§4).
     public static let reveal = "DeviceLocalCredential.Read.All"
+    /// macOS admin password reveal. Microsoft files reading a Mac's password under the same
+    /// permission as remote actions; it is the only one the function accepts. Requested at
+    /// the Settings switch, never at sign-in. DeviceActionsKit writes the same string out
+    /// rather than import it, and a test pins the two together.
+    public static let macOSReveal = "DeviceManagementManagedDevices.PrivilegedOperations.All"
     /// BitLocker recovery key metadata (no key values).
     public static let bitLockerKeysBasic = "BitLockerKey.ReadBasic.All"
     /// Permission to MODIFY devices. Required to rotate a BitLocker recovery key.
@@ -181,8 +185,8 @@ public enum CredentialError: Error, Sendable, Equatable {
     case unsupportedOnPlatform(platform: DevicePlatform, reason: String)
 }
 
-/// The contract each platform implements. Adding macOS reveal later means flipping
-/// `supportsReveal` to true in MacOSLapsProvider and implementing one method there.
+/// The contract each platform implements. A platform gaining a capability is a change in
+/// its own provider: the UI renders from the declared capabilities.
 public protocol LocalAdminCredentialProviding: Sendable {
     var platform: DevicePlatform { get }
     var capabilities: CredentialCapabilities { get }

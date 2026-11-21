@@ -59,13 +59,17 @@ to report it.
 |---|---|---|
 | Windows LAPS | Yes, Graph v1.0 | Yes, Graph v1.0 |
 | BitLocker | Yes | Yes |
-| macOS LAPS | Rotation date only, Graph beta | No |
+| macOS LAPS | Rotation date, Graph beta | Yes, Graph beta, off until turned on in Settings |
 
-macOS passwords cannot be revealed because no Microsoft Graph endpoint returns them. The only
-macOS function returns a rotation timestamp and, at the time of writing, fails with HTTP 500
-for ADE-enrolled Macs. The evidence and the steps to enable reveal if Microsoft ships an API
-are in the header of `LAPSlockKit/Sources/CredentialKit/MacOSLapsProvider.swift`. LAPS
-backed up to on-premises Active Directory is out of scope; Entra-backed LAPS only.
+A Mac's admin password comes from the beta function
+`retrieveMacOSManagedDeviceLocalAdminAccountDetail`, for Macs enrolled through Automated Device
+Enrollment with a local admin account in the enrollment profile. Microsoft accepts only
+`DeviceManagementManagedDevices.PrivilegedOperations.All` for it, the remote-actions permission,
+so the switch asks for it and says why. An earlier version of this README said Mac reveal was
+impossible: the function tested then, `retrieveDeviceLocalAdminAccountDetail`, returns a rotation
+timestamp only. The history is in the header of
+`LAPSlockKit/Sources/CredentialKit/MacOSLapsProvider.swift`. LAPS backed up to on-premises
+Active Directory is out of scope; Entra-backed LAPS only.
 
 ## Architecture
 
@@ -104,8 +108,8 @@ xcodebuild -project App/lapslock/lapslock.xcodeproj -scheme lapslock \
   -destination 'generic/platform=iOS' -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
-Two PowerShell scripts in `tools/` reproduce the macOS LAPS findings against a live tenant
-using the Microsoft Graph PowerShell SDK. They read only and never print a password.
+Two PowerShell scripts in `tools/` check the macOS LAPS calls against a live tenant using the
+Microsoft Graph PowerShell SDK. They read only and never print a password.
 
 ## Documents
 

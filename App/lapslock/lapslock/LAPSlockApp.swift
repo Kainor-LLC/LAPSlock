@@ -271,7 +271,7 @@ final class AppRootModel {
             self.approvals = ApprovalsService(graph: graph, runner: runner, log: shiftLog, tenantId: tenant)
             self.temporaryAccessPass = TemporaryAccessPassService(auth: pinned)
             self.windowsLaps = WindowsLapsProvider(auth: pinned)
-            self.macLaps = MacOSLapsProvider(auth: pinned)
+            self.macLaps = MacOSLapsProvider(auth: pinned, revealEnabled: { AppSettings.macOSRevealIsOn() })
             self.bitLockerKeys = BitLockerService(auth: pinned)
         }
 
@@ -929,6 +929,14 @@ final class AppRootModel {
         }
     }
 
+    /// The Mac admin password permission, when the switch is turned on. Microsoft accepts
+    /// only the remote-actions permission for this function, so the switch explains that
+    /// before this runs.
+    func requestMacOSRevealConsent() async -> String? {
+        await requestConsent(scopes: [LapsCredentialScopes.macOSReveal],
+                             deniedMessage: "Your organization hasn't approved the permission Microsoft requires for reading Mac admin passwords. An Entra administrator needs to grant it.")
+    }
+
     /// Requests consent to read users' display names. Same opt-in shape as the other two.
     func requestUserNamesConsent() async -> String? {
         guard let auth else { return "Sign in first." }
@@ -1225,7 +1233,8 @@ struct AppRootView: View {
                         DeviceDetailView(
                             model: DeviceDetailModel(
                                 device: device,
-                                provider: DemoLapsProvider(platform: device.platform),
+                                provider: DemoLapsProvider(platform: device.platform,
+                                                           macOSRevealEnabled: AppSettings.shared.macOSRevealEnabled),
                                 bitLocker: DemoBitLockerService(),
                                 isDemo: true,
                                 actionsEnabled: AppSettings.shared.deviceActionsEffective,
@@ -1426,6 +1435,7 @@ struct AppRootView: View {
                             endSession: { await root.signOut() },
                             requestPrivilegedConsent: { await root.requestPrivilegedActivationConsent() },
                             requestUserNamesConsent: { await root.requestUserNamesConsent() },
+                            requestMacOSRevealConsent: { await root.requestMacOSRevealConsent() },
                             privilegedSheet: {
                                 privilegedAccessView(deviceName: nil, embedded: false)
                             },
