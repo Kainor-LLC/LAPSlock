@@ -319,7 +319,7 @@ final class DeviceDetailModel {
         } catch {
             // Metadata failing is not worth an alarming error: the reveal path can still
             // work. Note it quietly.
-            statusNote = Self.metadataNote(for: error)
+            statusNote = Self.metadataNote(for: error, platform: device.platform)
         }
     }
 
@@ -746,11 +746,15 @@ final class DeviceDetailModel {
             : "\(remainingReveals) free reveals left this month."
     }
 
-    static func metadataNote(for error: Error) -> String? {
+    /// A Mac's 404 is not "yet": Intune holds a Mac password only when the Mac enrolled
+    /// through ADE with a local admin account, so the note says that instead.
+    static func metadataNote(for error: Error, platform: DevicePlatform = .windows) -> String? {
         guard let e = error as? CredentialError else { return nil }
         switch e {
         case .serviceUnavailable:
             return "Microsoft isn't returning rotation details for this device right now."
+        case .notLapsEnabled where platform == .macOS:
+            return "Intune has no admin password for this Mac. It creates one only for Macs enrolled through Automated Device Enrollment."
         case .notLapsEnabled:
             return "No LAPS record for this device yet."
         default:

@@ -184,7 +184,11 @@ if ($b.Ok) {
     Write-Info "It answers now: the app keeps calling it for the rotation date."
 } else {
     Write-Fail "HTTP $($b.Status). $($b.Message)"
-    Write-Info "500 again: the app should stop calling it (supportsMetadata false) and take the date from the reveal."
+    if ("$($b.Status)" -eq "404") {
+        Write-Info "404 = Intune holds no admin account for this Mac (not ADE-enrolled). The app's Mac note says so."
+    } else {
+        Write-Info "On an ADE-enrolled Mac, a 500 again means the app should stop calling it (supportsMetadata false) and take the date from the reveal."
+    }
 }
 
 # ---------------------------------------------------------------------------
