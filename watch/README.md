@@ -113,6 +113,13 @@ address Apple answers 410 for, and a phone still in use registers again at its n
 check-in. `RegisterDevice refused reason=Expired` is a phone whose Microsoft
 sign-in the service would not accept, which the phone shows as "answered 401". The reason
 is the kind of refusal only (Expired, InvalidAudience, InvalidIssuer, noScope, noToken).
+The log keeps no place. Azure Application Insights works out a city and country from the
+address each request arrives from and stores them on the log row; nothing in a function
+app's settings turns that off. `watch/infra/Set-LogLocationBlanking.ps1` puts a rule on the
+log workspace that empties those columns as rows arrive, and `-Check` shows whether any
+row of the last hour still carries one. Run it again after anything that redeploys the
+workspace, `main.bicep` included, because a redeploy may drop the link to the rule.
+
 To test the whole path, sign in with a break-glass account the organization has named and
 expect the alert within about five minutes. The phone has to allow notifications from
 TenantKeep: iOS gives an app no push address until it may show them, so turning Instant
