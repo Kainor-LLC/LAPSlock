@@ -323,8 +323,9 @@ the relay, with this paragraph, word for word:
 > discards the phone's key, after which nothing sent to it can be read.
 
 App Privacy label: Apple counts data as collected when it is retained beyond servicing the
-request in real time. The relay retains nothing beyond the request, so the label stays
-"Data Not Collected". (verify) against Apple's definitions again at submission.
+request in real time. The relay retains nothing beyond the request, so the relay itself adds
+nothing to the label. Instant alerts, the hosted service that sends through it, keeps a
+registration for each phone; the privacy policy says what it holds, and the label follows it.
 
 ---
 
