@@ -19,8 +19,8 @@ import Foundation
 //
 // This file is the one place the list lives. `docs/app-registrations.json` publishes the
 // same list for the approval page and for TenantKeep Posture, and a test holds the two
-// together. `tools/setup/New-OnCallWriteApps.ps1` creates the write registrations from
-// the same definitions.
+// together. `tools/setup/New-OnCallApps.ps1` creates the registrations from the same
+// definitions.
 //
 // No MSAL here: AuthKitMSAL turns a registration into a client. This is plain data and
 // one pure function, so every rule below is tested without a tenant.
