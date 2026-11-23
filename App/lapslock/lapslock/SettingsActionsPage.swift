@@ -399,14 +399,14 @@ struct SettingsActionsPage: View {
                     .foregroundStyle(isDemo ? .secondary : Color.red)
             }
         } header: {
-            Text("macOS")
+            Text("macOS, Experimental")
         } footer: {
             Text("""
                 Off by default. Turning this on lets a Mac's screen reveal the local admin password Intune creates when the Mac enrolls through Automated Device Enrollment.
 
                 Microsoft puts reading a Mac's admin password under the same permission as remote actions, so turning this on asks for that permission, and your administrator may need to approve it. TenantKeep uses it here only to read the password. Device actions stay off until you allow them above, and each still asks before it is sent.
 
-                This uses a Microsoft beta API, which can change. Your account also needs an Intune role that can view macOS admin passwords. Each reveal is confirmed and hides after 60 seconds, as on Windows.
+                Experimental. This is built from Microsoft's documentation and has not yet been confirmed on a Mac enrolled through Automated Device Enrollment, so it may not work for you. It uses a Microsoft beta API, which can change. Your account also needs an Intune role that can view macOS admin passwords. Each reveal is confirmed and hides after 60 seconds, as on Windows.
                 """)
         }
     }

@@ -163,7 +163,13 @@ struct WatchActivateListView: View {
             NavigationLink {
                 WatchActivateView(model: model, item: item)
             } label: {
-                Label(item.name, systemImage: item.isGroup ? "person.3" : "person.badge.key")
+                // One width for both symbols: the group symbol is wider and ran into its name.
+                Label {
+                    Text(item.name)
+                } icon: {
+                    Image(systemName: item.isGroup ? "person.2" : "person.badge.key")
+                        .frame(width: 26)
+                }
             }
         }
         .navigationTitle("Activate")

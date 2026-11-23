@@ -30,13 +30,17 @@ xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --
 xcrun simctl spawn "$UDID" notifyutil -s com.apple.BiometricKit.enrollmentChanged 1 >/dev/null 2>&1
 xcrun simctl spawn "$UDID" notifyutil -p com.apple.BiometricKit.enrollmentChanged >/dev/null 2>&1
 
+# The default list width for this launch only, whatever an earlier test left saved on the
+# simulator: on an open Duo that puts the list on the left half, at the hinge.
+LAYOUT=(-settings.listWidthPreset balanced)
+
 # name, screen, seconds to wait before the picture
 shot() {
   local name="$1" screen="$2" wait="${3:-6}"
   if [[ -n "$screen" ]]; then
-    xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE" -LAPSlockDemo -LAPSlockShot "$screen" >/dev/null
+    xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE" -LAPSlockDemo -LAPSlockShot "$screen" "${LAYOUT[@]}" >/dev/null
   else
-    xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE" -LAPSlockDemo >/dev/null
+    xcrun simctl launch --terminate-running-process "$UDID" "$BUNDLE" -LAPSlockDemo "${LAYOUT[@]}" >/dev/null
   fi
   sleep "$wait"
   if [[ "$screen" == "reveal" ]]; then

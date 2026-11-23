@@ -16,6 +16,14 @@ final class WatchModel: NSObject {
 
     override init() {
         super.init()
+        #if DEBUG
+        // For App Store screenshots: a Debug build launched with -LAPSlockDemo shows a
+        // made-up glance and never talks to a phone. Compiled out of Release builds.
+        if CommandLine.arguments.contains("-LAPSlockDemo") {
+            glance = Self.screenshotGlance
+            return
+        }
+        #endif
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
         WCSession.default.activate()
@@ -136,3 +144,28 @@ nonisolated private final class ContextBox: @unchecked Sendable {
     let value: [String: Any]
     init(_ value: [String: Any]) { self.value = value }
 }
+
+#if DEBUG
+extension WatchModel {
+    /// Demo data for the scripted screenshot, marked as demo like everything the phone's
+    /// demo mode sends.
+    static var screenshotGlance: WatchGlance {
+        let now = Date()
+        return WatchGlance(
+            updatedAt: now,
+            tenant: "Contoso",
+            isDemo: true,
+            health: .init(degradedServices: 2, openIncidents: 3, expiringSoon: 4, secureScorePercent: 71),
+            activeRoles: [.init(name: "Intune Administrator", endsAt: now.addingTimeInterval(2 * 3600))],
+            eligible: [
+                .init(id: "demo-role-1", name: "Global Administrator", isGroup: false),
+                .init(id: "demo-role-2", name: "Security Administrator", isGroup: false),
+                .init(id: "demo-group-1", name: "Ops On-Call", isGroup: true)
+            ],
+            approvals: [
+                .init(id: "demo-approval-1", requester: "Sam Reyes", target: "Exchange Administrator",
+                      duration: "4 hours", reason: "Mailbox migration, ticket 4127", askedAt: now.addingTimeInterval(-360))
+            ])
+    }
+}
+#endif

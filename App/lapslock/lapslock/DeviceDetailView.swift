@@ -1046,7 +1046,7 @@ struct DeviceDetailView: View {
                 if model.capabilities.usesBetaAPI {
                     // Said where the reveal is, not only in Settings: whoever reads this
                     // screen may not be the one who turned the switch on.
-                    Text("Mac passwords come from a Microsoft beta API, which can change.")
+                    Text("Experimental: Mac passwords come from a Microsoft beta API, and this has not been confirmed on an enrolled Mac yet.")
                 }
                 // Stated up front, never as a surprise. An admin who discovers the limit
                 // while standing at a broken workstation taps reveal again, and every
