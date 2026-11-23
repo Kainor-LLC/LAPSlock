@@ -23,6 +23,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
     {
         var slow = DateTime.UtcNow.Minute % 5 == 0;
         int organizations = 0, alerts = 0, failures = 0;
+        var notSent = new Dictionary<int, int>();
         foreach (var tenant in await store.TenantsAsync(ct))
         {
             // One organization's failure, whatever it is, must not end the run for the
@@ -30,7 +31,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
             // registered key that cannot be used once stopped everyone later in the list.
             try
             {
-                var (watched, sent, failed) = await WatchOneAsync(tenant, slow, ct);
+                var (watched, sent, failed) = await WatchOneAsync(tenant, slow, notSent, ct);
                 if (watched) organizations++;
                 alerts += sent;
                 failures += failed;
@@ -40,11 +41,21 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
                 failures++;
             }
         }
-        // Counts only: no tenant, account, policy or device.
-        log.LogInformation("TenantWatch organizations={Organizations} alerts={Alerts} failures={Failures}", organizations, alerts, failures);
+        // Counts only: no tenant, account, policy or device. The relay's answers to alerts
+        // that did not go are counted by status, because the relay keeps no request log and
+        // nothing else says why a phone was not reached.
+        log.LogInformation("TenantWatch organizations={Organizations} alerts={Alerts} failures={Failures} notSent={NotSent}",
+            organizations, alerts, failures, NotSent(notSent));
     }
 
-    async Task<(bool Watched, int Alerts, int Failures)> WatchOneAsync(TenantRecord tenant, bool slow, CancellationToken ct)
+    /// <summary>
+    /// The alerts that did not go, as the relay's status and how many: "403x1,429x2", or
+    /// "none". Status 0 is a request that got no answer at all.
+    /// </summary>
+    internal static string NotSent(Dictionary<int, int> byStatus) =>
+        byStatus.Count == 0 ? "none" : string.Join(',', byStatus.OrderBy(s => s.Key).Select(s => $"{s.Key}x{s.Value}"));
+
+    async Task<(bool Watched, int Alerts, int Failures)> WatchOneAsync(TenantRecord tenant, bool slow, Dictionary<int, int> notSent, CancellationToken ct)
     {
         var devices = await store.DevicesAsync(tenant.TenantId, ct);
         if (devices.Count == 0) return (false, 0, 0);
@@ -112,11 +123,16 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
                     // Anything else is an alert that did not go. Counted, so a relay that
                     // refuses every one shows in the run's line instead of passing as quiet:
                     // a 402 for every subscriber once went unnoticed for exactly that reason.
-                    else failures++;
+                    else
+                    {
+                        failures++;
+                        notSent[status] = notSent.GetValueOrDefault(status) + 1;
+                    }
                 }
                 catch (Exception) when (!ct.IsCancellationRequested)
                 {
                     failures++;
+                    notSent[0] = notSent.GetValueOrDefault(0) + 1;
                 }
             }
         return (true, alerts, failures);

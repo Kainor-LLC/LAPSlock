@@ -48,13 +48,6 @@ public sealed class AlertSender(WatchOptions options, TokenCredential credential
     /// <summary>The sender's public key, X9.63, base64url: what a phone pins for the tenant it registered for.</summary>
     public async Task<string> SenderKeyAsync(CancellationToken ct) => Base64Url.Encode(Hpke.PublicBytes(await KeyAsync(ct)));
 
-    /// <summary>What a phone pins to trust this watcher's alerts for one tenant: tksender1.</summary>
-    public async Task<string> SenderCodeAsync(string tenantId, CancellationToken ct)
-    {
-        var pin = new { v = 1, tenant = tenantId.ToLowerInvariant(), senderKey = Base64Url.Encode(Hpke.PublicBytes(await KeyAsync(ct))) };
-        return "tksender1:" + Base64Url.Encode(JsonSerializer.SerializeToUtf8Bytes(pin));
-    }
-
     async Task<string> EntitlementAsync(string tenantId, CancellationToken ct)
     {
         if (entitlements.TryGetValue(tenantId, out var held) && DateTimeOffset.UtcNow - held.Fetched < TimeSpan.FromHours(12))

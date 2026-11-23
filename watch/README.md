@@ -6,7 +6,10 @@ its administrators register, through the relay (`relay/`). The plan, the permiss
 what it keeps are in the private repo's `HOSTED-WATCH-PLAN.md`; the privacy terms are in the
 privacy policy once it ships.
 
-Status: step H1, the Azure side. The service's code (H2, H3) is not written yet.
+Status: in service for Kainor's own tenant since 2026-11-15. Its only endpoints are the two a
+phone calls, with its administrator's Microsoft token, to register and to unregister
+(`/api/v1/devices`). Nothing is reachable with a function key: the four setup endpoints the
+first test used were removed on 2026-11-23.
 
 ## What It Runs On
 
@@ -78,8 +81,28 @@ pwsh ./watch/infra/New-RelayServiceTrust.ps1 -Apply
 
 Any later deployment of `main.bicep` must pass `watchClientId`, `alertsApiAudience` and `relayServiceAudience=<relayAudience>` together: the template writes every setting, and one left out is written empty.
 
-Nothing runs until the function code is published (step H3), so these resources cost
-almost nothing before then.
+## Publishing the Code
+
+From `watch/function`, signed in as above. Publishing replaces every function in the app,
+so a function removed from the code is removed from the service.
+
+```
+func azure functionapp publish kainor-watch-prod-func --dotnet-isolated
+```
+
+## Checking It
+
+The service has no endpoint that reports its state. Its log has one line a minute holding
+counts only, and this prints how many runs there were, when the last one was, and each run
+that sent an alert or had a failure:
+
+```
+pwsh ./watch/infra/Get-WatchRuns.ps1
+```
+
+`notSent=403x1` on a line means one alert was answered 403 by the relay; `0` is a request
+that got no answer. To test the whole path, sign in with a break-glass account the
+organization has named and expect the alert within about five minutes.
 
 ## Before Customers See It
 

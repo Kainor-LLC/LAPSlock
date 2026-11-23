@@ -203,4 +203,28 @@ public class WatchTests
         Assert.Equal("https://relay.example/relay/service", options.RelayServiceUrl);
         Assert.Null(options.RelayServiceAudience);
     }
+
+    [Fact]
+    public void TheOnlyEndpointsAreTheTwoAPhoneCallsWithItsAdministratorsToken()
+    {
+        // The service once had four more, behind a function key, for setting an organization
+        // up by hand. Whoever held that key could attach a phone to any organization that had
+        // approved the service and receive its alerts. Nothing may be reachable by a key.
+        var triggers = typeof(DeviceFunctions).Assembly.GetTypes()
+            .SelectMany(t => t.GetMethods())
+            .SelectMany(m => m.GetParameters())
+            .Select(p => p.GetCustomAttributes(typeof(Microsoft.Azure.Functions.Worker.HttpTriggerAttribute), false).FirstOrDefault())
+            .OfType<Microsoft.Azure.Functions.Worker.HttpTriggerAttribute>()
+            .ToList();
+
+        Assert.Equal(["delete v1/devices", "post v1/devices"], triggers.Select(t => $"{string.Join('+', t.Methods!)} {t.Route}").Order());
+        Assert.All(triggers, t => Assert.Equal(Microsoft.Azure.Functions.Worker.AuthorizationLevel.Anonymous, t.AuthLevel));
+    }
+
+    [Fact]
+    public void ARunSaysWhichAnswersItsUnsentAlertsGot()
+    {
+        Assert.Equal("none", TenantWatch.NotSent([]));
+        Assert.Equal("0x1,403x2,429x1", TenantWatch.NotSent(new() { [429] = 1, [403] = 2, [0] = 1 }));
+    }
 }
