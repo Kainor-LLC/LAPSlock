@@ -108,10 +108,23 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
         return new NoContentResult();
     }
 
-    static bool IsPublicKey(string? text)
+    /// <summary>
+    /// A point on P-256, not only 65 bytes that begin 0x04. A key of the right shape that is
+    /// not on the curve used to be stored, and then threw in the middle of every run that
+    /// had an alert for its organization.
+    /// </summary>
+    internal static bool IsPublicKey(string? text)
     {
         if (string.IsNullOrEmpty(text)) return false;
-        try { var key = Base64Url.Decode(text); return key.Length == 65 && key[0] == 0x04; }
+        try
+        {
+            var key = Base64Url.Decode(text);
+            if (key.Length != 65 || key[0] != 0x04) return false;
+            using var imported = global::TenantKeep.Relay.Hpke.Key(key);
+            return true;
+        }
         catch (FormatException) { return false; }
+        catch (System.Security.Cryptography.CryptographicException) { return false; }
+        catch (ArgumentException) { return false; }
     }
 }

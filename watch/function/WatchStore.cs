@@ -35,6 +35,11 @@ public sealed class TenantRecord : ITableEntity
     public string SeenIncidents { get; set; } = "";
     /// <summary>ok, noConsent, or error, from the last run.</summary>
     public string State { get; set; } = "new";
+    /// <summary>
+    /// When the state first became noConsent and has stayed so. The nightly cleanup deletes
+    /// an organization only after a day of it, never on one run's answer.
+    /// </summary>
+    public DateTimeOffset? NoConsentSince { get; set; }
     public DateTimeOffset? LastRun { get; set; }
 
     // Derived, not stored: Table Storage cannot hold an array.

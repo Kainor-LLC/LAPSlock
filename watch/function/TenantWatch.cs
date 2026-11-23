@@ -25,51 +25,117 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
         int organizations = 0, alerts = 0, failures = 0;
         foreach (var tenant in await store.TenantsAsync(ct))
         {
-            var devices = await store.DevicesAsync(tenant.TenantId, ct);
-            if (devices.Count == 0) continue;
-            organizations++;
-            var pending = new List<(string Kind, string Title, string Body, string Link, bool Urgent)>();
+            // One organization's failure, whatever it is, must not end the run for the
+            // organizations after it: a timeout, a storage error, a relay outage or a
+            // registered key that cannot be used once stopped everyone later in the list.
             try
             {
-                if (tenant.BreakGlass.Length > 0 && await NewBreakGlassAsync(tenant, ct) is > 0 and var n)
-                    pending.Add(("breakGlassSignIn", "Break-glass sign-in",
-                        n == 1 ? $"{tenant.Label}: break-glass sign-in" : $"{tenant.Label}: {n} break-glass sign-ins",
-                        "tenantkeep://people", true));
-                if (slow)
-                {
-                    if (await NewPolicyChangesAsync(tenant, ct) is > 0 and var p)
-                        pending.Add(("conditionalAccessChange", "Conditional Access change",
-                            p == 1 ? $"{tenant.Label}: a Conditional Access policy changed" : $"{tenant.Label}: {p} Conditional Access changes",
-                            "tenantkeep://conditionalAccess", false));
-                    if (await NewIncidentsAsync(tenant, ct) is { Count: > 0 } incidents)
-                        pending.Add(("securityIncident", "Security incident",
-                            IncidentBody(tenant.Label, incidents), "tenantkeep://security", incidents.Contains("high")));
-                }
-                tenant.State = "ok";
+                var (watched, sent, failed) = await WatchOneAsync(tenant, slow, ct);
+                if (watched) organizations++;
+                alerts += sent;
+                failures += failed;
+            }
+            catch (Exception) when (!ct.IsCancellationRequested)
+            {
+                failures++;
+            }
+        }
+        // Counts only: no tenant, account, policy or device.
+        log.LogInformation("TenantWatch organizations={Organizations} alerts={Alerts} failures={Failures}", organizations, alerts, failures);
+    }
+
+    async Task<(bool Watched, int Alerts, int Failures)> WatchOneAsync(TenantRecord tenant, bool slow, CancellationToken ct)
+    {
+        var devices = await store.DevicesAsync(tenant.TenantId, ct);
+        if (devices.Count == 0) return (false, 0, 0);
+        var pending = new List<(string Kind, string Title, string Body, string Link, bool Urgent)>();
+        bool failed = false, notInTenant = false;
+
+        // Each check on its own: a tenant without Entra ID P1 is refused the sign-in log,
+        // and that must not stop its Conditional Access and incident checks from running.
+        async Task Check(Func<Task> check)
+        {
+            try
+            {
+                await check();
             }
             catch (GraphException e)
             {
-                tenant.State = e.IsConsent ? "noConsent" : "error";
-                failures++;
+                failed = true;
+                notInTenant |= e.IsNotInTenant;
             }
-            catch (HttpRequestException)
+            catch (Exception e) when (e is HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException
+                                      || (e is OperationCanceledException && !ct.IsCancellationRequested))
             {
-                tenant.State = "error";
-                failures++;
+                // A network error, a timeout, or a body that is not the shape expected.
+                failed = true;
             }
-            tenant.LastRun = DateTimeOffset.UtcNow;
-            await store.SaveAsync(tenant, ct);
+        }
 
-            foreach (var alert in pending)
-                foreach (var device in devices)
+        if (tenant.BreakGlass.Length > 0)
+            await Check(async () =>
+            {
+                if (await NewBreakGlassAsync(tenant, ct) is > 0 and var n)
+                    pending.Add(("breakGlassSignIn", "Break-glass sign-in",
+                        n == 1 ? $"{tenant.Label}: break-glass sign-in" : $"{tenant.Label}: {n} break-glass sign-ins",
+                        "tenantkeep://people", true));
+            });
+        if (slow && !notInTenant)
+        {
+            await Check(async () =>
+            {
+                if (await NewPolicyChangesAsync(tenant, ct) is > 0 and var p)
+                    pending.Add(("conditionalAccessChange", "Conditional Access change",
+                        p == 1 ? $"{tenant.Label}: a Conditional Access policy changed" : $"{tenant.Label}: {p} Conditional Access changes",
+                        "tenantkeep://conditionalAccess", false));
+            });
+            await Check(async () =>
+            {
+                if (await NewIncidentsAsync(tenant, ct) is { Count: > 0 } incidents)
+                    pending.Add(("securityIncident", "Security incident",
+                        IncidentBody(tenant.Label, incidents), "tenantkeep://security", incidents.Contains("high")));
+            });
+        }
+        Settle(tenant, notInTenant, failed, DateTimeOffset.UtcNow);
+        await store.SaveAsync(tenant, ct);
+
+        int alerts = 0, failures = failed ? 1 : 0;
+        foreach (var alert in pending)
+            foreach (var device in devices)
+            {
+                // Each phone on its own too: one that cannot be sent to does not cost the others their alert.
+                try
                 {
                     var status = await sender.SendAsync(tenant.TenantId, device, alert.Kind, alert.Title, alert.Body, alert.Link, alert.Urgent, ct);
                     if (status == 202) alerts++;
                     if (status == 410) await store.DeleteDeviceAsync(tenant.TenantId, device.RowKey, ct);
                 }
+                catch (Exception) when (!ct.IsCancellationRequested)
+                {
+                    failures++;
+                }
+            }
+        return (true, alerts, failures);
+    }
+
+    /// <summary>
+    /// The state a run leaves. "noConsent" only on Entra's definite answer, with the time it
+    /// was first given kept until a run succeeds or fails some other way: the nightly
+    /// cleanup deletes after a day of it, never on one run.
+    /// </summary>
+    internal static void Settle(TenantRecord tenant, bool notInTenant, bool failed, DateTimeOffset now)
+    {
+        if (notInTenant)
+        {
+            tenant.State = "noConsent";
+            tenant.NoConsentSince ??= now;
         }
-        // Counts only: no tenant, account, policy or device.
-        log.LogInformation("TenantWatch organizations={Organizations} alerts={Alerts} failures={Failures}", organizations, alerts, failures);
+        else
+        {
+            tenant.State = failed ? "error" : "ok";
+            tenant.NoConsentSince = null;
+        }
+        tenant.LastRun = now;
     }
 
     internal static string IncidentBody(string label, List<string> severities)

@@ -86,4 +86,87 @@ public class WatchTests
         Assert.Equal(DateTimeOffset.Parse("2026-11-15T03:05:00Z"), newest);
         Assert.Equal(["a", "b"], seen.Split(','));
     }
+
+    // The review of 2026-11-23: what counts as an organization having removed Watch.
+
+    [Fact]
+    public void OnlyEntrasDefiniteAnswerMeansTheAppIsNotInTheTenant()
+    {
+        Assert.True(GraphReader.IsNotInTenant(new Azure.Identity.AuthenticationFailedException("AADSTS700016: Application with identifier 'x' was not found in the directory 'y'.")));
+        Assert.True(GraphReader.IsNotInTenant(new Azure.Identity.AuthenticationFailedException("AADSTS7000229: The client application is missing service principal in the tenant.")));
+        Assert.True(GraphReader.IsNotInTenant(new Azure.Identity.AuthenticationFailedException("AADSTS90002: Tenant 'z' not found.")));
+        // A token endpoint or a managed identity that is briefly unavailable is not that.
+        Assert.False(GraphReader.IsNotInTenant(new Azure.Identity.AuthenticationFailedException("ManagedIdentityCredential authentication failed: Service request failed. Status: 503")));
+        Assert.False(GraphReader.IsNotInTenant(new Azure.Identity.AuthenticationFailedException("AADSTS50196: The server terminated an operation because it encountered a client request loop.")));
+        Assert.False(GraphReader.IsNotInTenant(new Azure.Identity.CredentialUnavailableException("AADSTS700016 named in a credential that could not be used at all")));
+    }
+
+    [Fact]
+    public void ARefusedReadIsNotARemovedOrganization()
+    {
+        // 403: no Entra ID P1 for the sign-in log, or no Defender. Still an approval question
+        // for a registration, never a reason to delete.
+        var refused = new GraphException(System.Net.HttpStatusCode.Forbidden);
+        Assert.True(refused.IsConsent);
+        Assert.False(refused.IsNotInTenant);
+        Assert.False(new GraphException(System.Net.HttpStatusCode.ServiceUnavailable).IsNotInTenant);
+        Assert.True(new GraphException(System.Net.HttpStatusCode.Unauthorized).IsNotInTenant);
+    }
+
+    [Fact]
+    public void AnOrganizationIsDeletedOnlyAfterADayOfEntraSayingItIsGone()
+    {
+        var start = new DateTimeOffset(2026, 11, 23, 3, 14, 0, TimeSpan.Zero);
+        var tenant = new TenantRecord { RowKey = "t", State = "ok" };
+
+        // 03:14, a run fails for a passing reason; 03:15, the cleanup runs. Nothing is deleted.
+        TenantWatch.Settle(tenant, notInTenant: false, failed: true, start);
+        Assert.Equal("error", tenant.State);
+        Assert.False(Housekeeping.IsGone(tenant, start.AddMinutes(1)));
+
+        // Entra says the app is not there. Still nothing for a day.
+        TenantWatch.Settle(tenant, notInTenant: true, failed: true, start);
+        Assert.Equal("noConsent", tenant.State);
+        Assert.False(Housekeeping.IsGone(tenant, start.AddMinutes(1)));
+        Assert.False(Housekeeping.IsGone(tenant, start.AddHours(23)));
+
+        // The time it was first said is kept across runs, so the day is counted from then.
+        TenantWatch.Settle(tenant, notInTenant: true, failed: true, start.AddHours(12));
+        Assert.Equal(start, tenant.NoConsentSince);
+        Assert.True(Housekeeping.IsGone(tenant, start.AddHours(24)));
+
+        // One good run in between starts the day again.
+        TenantWatch.Settle(tenant, notInTenant: false, failed: false, start.AddHours(25));
+        Assert.Null(tenant.NoConsentSince);
+        Assert.False(Housekeeping.IsGone(tenant, start.AddHours(26)));
+    }
+
+    [Fact]
+    public void AStateOfNoConsentWithNoTimeRecordedIsNotDeleted()
+    {
+        // A row written before this change has the state and no time. It waits for the next run to start its day.
+        var old = new TenantRecord { RowKey = "t", State = "noConsent" };
+        Assert.False(Housekeeping.IsGone(old, DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
+    public void APhonesKeyMustBeOnTheCurveNotOnlyTheRightLength()
+    {
+        using var real = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
+        var point = real.ExportParameters(false).Q;
+        var good = new byte[65];
+        good[0] = 0x04;
+        point.X!.CopyTo(good, 1);
+        point.Y!.CopyTo(good, 33);
+        Assert.True(DeviceFunctions.IsPublicKey(Base64Url.Encode(good)));
+
+        // Right length, right first byte, not a point on P-256: once stored, and then every
+        // run with an alert for that organization stopped at it.
+        var bad = (byte[])good.Clone();
+        bad[64] ^= 0x01;
+        Assert.False(DeviceFunctions.IsPublicKey(Base64Url.Encode(bad)));
+        Assert.False(DeviceFunctions.IsPublicKey(Base64Url.Encode(good[..64])));
+        Assert.False(DeviceFunctions.IsPublicKey("not base64url!"));
+        Assert.False(DeviceFunctions.IsPublicKey(null));
+    }
 }
