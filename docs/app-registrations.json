@@ -1,0 +1,96 @@
+{
+  "about": "The Microsoft Entra app registrations TenantKeep On-Call signs in through, and the delegated Microsoft Graph permissions it asks each one for. Published for the approval page and for TenantKeep Posture, which shares the read registration. A test in LAPSlockKit holds this file and the app's code together. For the read registration, the list is On-Call's share: TenantKeep Posture may hold further read permissions on it.",
+  "resource": "https://graph.microsoft.com",
+  "registrations": [
+    {
+      "key": "read",
+      "name": "TenantKeep",
+      "clientId": "e5b148e7-9689-40b2-9b09-9d0bef133049",
+      "readOnly": true,
+      "summary": "Reads devices, sign-ins, policies, service health and security incidents, and reveals Windows LAPS passwords and BitLocker recovery keys. It cannot change anything.",
+      "scopes": [
+        "DeviceManagementManagedDevices.Read.All",
+        "Device.Read.All",
+        "DeviceLocalCredential.ReadBasic.All",
+        "DeviceLocalCredential.Read.All",
+        "BitLockerKey.ReadBasic.All",
+        "BitLockerKey.Read.All",
+        "User.ReadBasic.All",
+        "User.Read.All",
+        "IdentityRiskyUser.Read.All",
+        "AuditLog.Read.All",
+        "Policy.Read.All",
+        "Directory.Read.All",
+        "ServiceHealth.Read.All",
+        "ServiceMessage.Read.All",
+        "Application.Read.All",
+        "DeviceManagementServiceConfig.Read.All",
+        "SecurityEvents.Read.All",
+        "SecurityIncident.Read.All",
+        "ThreatHunting.Read.All",
+        "RoleAssignmentSchedule.Read.Directory",
+        "RoleEligibilitySchedule.Read.Directory",
+        "RoleManagementPolicy.Read.Directory",
+        "PrivilegedAssignmentSchedule.Read.AzureADGroup",
+        "PrivilegedEligibilitySchedule.Read.AzureADGroup",
+        "RoleManagementPolicy.Read.AzureADGroup"
+      ]
+    },
+    {
+      "key": "roleActivation",
+      "name": "TenantKeep Role Activation",
+      "clientId": "50c9aa83-4f5c-4203-a3c0-adab54a2ba3a",
+      "readOnly": false,
+      "summary": "Activates the roles and group memberships you are eligible for, and approves or denies requests.",
+      "scopes": [
+        "RoleAssignmentSchedule.ReadWrite.Directory",
+        "PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup"
+      ]
+    },
+    {
+      "key": "deviceActions",
+      "name": "TenantKeep Device Actions",
+      "clientId": "308de19e-a4d9-41b1-98c4-e9e136f74718",
+      "readOnly": false,
+      "summary": "Syncs, restarts, locks, locates, retires and wipes devices, rotates keys and passwords, and reads a Mac's admin password.",
+      "scopes": [
+        "DeviceManagementManagedDevices.PrivilegedOperations.All",
+        "DeviceManagementManagedDevices.ReadWrite.All"
+      ]
+    },
+    {
+      "key": "userActions",
+      "name": "TenantKeep User Actions",
+      "clientId": "8b0d25f4-ce24-42e8-b179-ff3f8f824b6c",
+      "readOnly": false,
+      "summary": "Revokes sessions, blocks or unblocks sign-in, and confirms or dismisses a user's risk.",
+      "scopes": [
+        "User.RevokeSessions.All",
+        "User.EnableDisableAccount.All",
+        "User.Read.All",
+        "IdentityRiskyUser.ReadWrite.All"
+      ]
+    },
+    {
+      "key": "accountRecovery",
+      "name": "TenantKeep Account Recovery",
+      "clientId": "0bd2d07f-98fd-45c3-8b88-62752bc1dd6b",
+      "readOnly": false,
+      "summary": "Removes a person's sign-in methods and issues a Temporary Access Pass.",
+      "scopes": [
+        "UserAuthenticationMethod.ReadWrite.All",
+        "UserAuthMethod-TAP.ReadWrite.All"
+      ]
+    },
+    {
+      "key": "groupMembership",
+      "name": "TenantKeep Group Membership",
+      "clientId": "8642d2ad-9722-42c5-959c-3058a3cc1f60",
+      "readOnly": false,
+      "summary": "Adds and removes group members.",
+      "scopes": [
+        "GroupMember.ReadWrite.All"
+      ]
+    }
+  ]
+}
