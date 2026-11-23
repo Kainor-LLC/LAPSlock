@@ -194,6 +194,30 @@ final class AppWiringTests: XCTestCase {
                       "a changed address or service is registered again at once")
     }
 
+    /// The Mac menu bar app activates a role through the app the organization approved for
+    /// it. It used to sign in to the separate Role Activation app whatever was chosen, so
+    /// an organization that had approved only TenantKeep Actions was asked for a second
+    /// approval (AUTH-5). The decision itself is `ApprovalProbe.choose`, tested in AuthKit.
+    func testTheMacAppReadsTheOrganizationsChoiceBeforeItActivates() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let mac = try String(contentsOf: root.appendingPathComponent("App/lapslock/TenantKeepMac/MacModel.swift"), encoding: .utf8)
+
+        let activate = body(of: "func activate(_ access: EligibleAccess, justification: String, duration: String) async -> String {", in: mac)
+        let settled = try XCTUnwrap(activate.range(of: "await settleActivationRoute()"))
+        let asked = try XCTUnwrap(activate.range(of: "auth?.token(scopes: [access.activateScope], allowInteractive: true)"))
+        XCTAssertLessThan(settled.lowerBound, asked.lowerBound, "the route is read before the sign-in is asked for")
+
+        let settle = body(of: "private func settleActivationRoute() async {", in: mac)
+        XCTAssertTrue(settle.contains("approvedScopes(for: [.roleActivation, .actions])"))
+        XCTAssertTrue(settle.contains("ApprovalProbe.choose(for: .roleActivation, approved: approved)"))
+        XCTAssertTrue(settle.contains("guard mode == .live, account?.tenantId == tenant else { return }"),
+                      "an answer read for one person is not applied to the next")
+        XCTAssertTrue(settle.contains("case .none:           return"), "an unreadable record is read again, not remembered")
+        // A new session reads it again.
+        XCTAssertEqual(mac.components(separatedBy: "activationRouteSettled = false").count - 1, 3)
+    }
+
     // MARK: - a provider's customers move one at a time
 
     /// Approval is per organization, so the move to the read-only app is too. Finishing

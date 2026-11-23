@@ -56,6 +56,8 @@ final class MacModel {
     /// showing the state at launch for days. The system's scheduler, which waits out sleep.
     @ObservationIgnored private var statusRefresher: NSBackgroundActivityScheduler?
     @ObservationIgnored private var statusCheckedAt: Date?
+    /// Whether this session has read which app the organization approved for role activation.
+    @ObservationIgnored private var activationRouteSettled = false
 
     /// The same app registrations as the iPhone and iPad app, with this app's own
     /// redirect, which the read and role activation registrations list for this bundle id.
@@ -115,6 +117,7 @@ final class MacModel {
         statusRefresher = nil
         mode = .signedOut
         account = nil
+        activationRouteSettled = false
         devices = []
         eligible = []
         degraded = []
@@ -138,6 +141,7 @@ final class MacModel {
     private func goLive(_ auth: MSALAuthManager, _ signed: AdminAccount) {
         mode = .live
         account = signed
+        activationRouteSettled = false
         inventory = DeviceInventoryService(auth: auth, pageSize: 1000)
         pulse = TenantPulseService(graph: GraphClient(auth: auth))
         privileged = PrivilegedAccessService(auth: auth)
@@ -246,16 +250,39 @@ final class MacModel {
         }
     }
 
+    /// Which app serves role activation in this organization. An organization approves
+    /// actions one of two ways: an app for each kind, or one app, TenantKeep Actions, for all
+    /// of them. This app used to sign in to TenantKeep Role Activation whatever was chosen,
+    /// so an organization that had approved only the one app was asked to approve a second.
+    /// Now the organization's own record of what it approved is read, as the iPhone app
+    /// does on Automatic: the separate app when that is approved, because its token is the
+    /// narrower, and the combined one only when that alone is. A record that cannot be
+    /// read changes nothing and is read again at the next activation.
+    private func settleActivationRoute() async {
+        guard !activationRouteSettled, mode == .live, let auth, let tenant = account?.tenantId else { return }
+        let approved = await ApprovalProbe(graph: GraphClient(auth: auth)).approvedScopes(for: [.roleActivation, .actions])
+        // The answer is for the person and the organization it was read for.
+        guard mode == .live, account?.tenantId == tenant else { return }
+        switch ApprovalProbe.choose(for: .roleActivation, approved: approved) {
+        case .some(.actions): await auth.setCombinedWrites([.roleActivation], inTenant: tenant)
+        case .some:           await auth.setCombinedWrites([], inTenant: tenant)
+        case .none:           return
+        }
+        activationRouteSettled = true
+    }
+
     func activate(_ access: EligibleAccess, justification: String, duration: String) async -> String {
         guard let privileged else { return "Sign in to activate." }
         busy = true
         defer { busy = false }
-        // Activation has an app registration of its own. Its first use on this Mac is one
+        // Activation goes through an app registration other than the one this app reads
+        // with: the organization's choice of the two. Its first use on this Mac is one
         // sign-in; after that this is silent.
+        await settleActivationRoute()
         do {
             _ = try await auth?.token(scopes: [access.activateScope], allowInteractive: true)
         } catch {
-            return "Role activation needs a sign-in to TenantKeep Role Activation, and it didn't complete. An Entra administrator can approve it at tenantkeep.app/consent."
+            return "Role activation needs one more sign-in, to the app your organization approved for it, and it didn't complete. An Entra administrator can approve one at tenantkeep.app/consent."
         }
         do {
             switch try await privileged.activate(access, justification: justification, ticketNumber: nil, duration: duration) {
