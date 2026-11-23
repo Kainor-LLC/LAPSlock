@@ -81,6 +81,8 @@ final class DeviceListModel {
     /// True while Graph is being asked directly for what was typed.
     private(set) var isLookingUp = false
     @ObservationIgnored private var lookupTask: Task<Void, Never>?
+    /// The search Graph was last asked about, so a page arriving does not ask it again.
+    @ObservationIgnored private var lookedUpQuery: String?
 
     /// How long to wait after the last keystroke before filtering. Short enough to feel
     /// immediate, long enough that a burst of typing collapses into one pass.
@@ -220,17 +222,20 @@ final class DeviceListModel {
             PerfProbe.mark("deviceFilter", since: started, "kind=full devices=" + String(snapshot.count) + " queryLength=" + String(query.count))
             self.searchTask = nil
             self.visibleDevices = result
-            if result.isEmpty { self.lookUp(query) }
+            self.lookUp(query)
         }
     }
 
-    /// Asks Graph directly when nothing loaded matches and the tenant is not all here yet.
-    /// What it finds joins the list like any other device.
+    /// Asks Graph directly as well while the tenant is not all here, once for each search
+    /// of three characters or more, and what it finds joins the list like any other
+    /// device. Not only when nothing loaded matches: part of the answer is not the answer.
     private func lookUp(_ query: String) {
         switch fill {
         case .filling, .refreshing, .incomplete: break
         case .idle, .complete: return
         }
+        guard query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 3, lookedUpQuery != query else { return }
+        lookedUpQuery = query
         isLookingUp = true
         lookupTask = Task { [weak self] in
             guard let inventory = self?.inventory else { return }
@@ -665,7 +670,7 @@ struct DeviceListView: View {
         case .refreshing(let loaded):
             return "Refreshing the device list, \(loaded) read so far. These results are from before the refresh."
         case .incomplete(let loaded):
-            return "Not every device is loaded (\(loaded) so far). Clear the search and load more to widen it."
+            return "Not every device is loaded (\(loaded) so far). Search also asks Microsoft for an exact device name, serial number or sign-in address, or a device name that starts with what you type."
         case .idle, .complete:
             return nil
         }

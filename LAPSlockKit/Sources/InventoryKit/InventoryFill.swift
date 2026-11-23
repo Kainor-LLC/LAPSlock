@@ -1,4 +1,5 @@
 import Foundation
+import AuthKit
 
 // Filling the inventory to completion, so search covers the whole tenant.
 //
@@ -26,13 +27,6 @@ public enum InventoryFill {
     /// Beyond this the search UI says "not all loaded", and the list asks Graph directly.
     public static let defaultMaxDevices = 50_000
 
-    /// Longest `Retry-After` honoured before stopping instead. Anything longer means Graph
-    /// is genuinely unhappy with this tenant and a background job should get out of the way.
-    static let maxRetryWait: TimeInterval = 30
-
-    /// What to wait when Graph throttles without saying for how long.
-    static let defaultRetryWait: TimeInterval = 5
-
     public enum Outcome: Sendable, Equatable {
         /// Every page loaded. Search results are complete.
         case complete
@@ -41,7 +35,7 @@ public enum InventoryFill {
         case capped
         /// The caller cancelled, refresh, sign-out or tenant switch.
         case cancelled
-        /// A page failed after any retry. Everything loaded so far is kept and usable.
+        /// A page failed after its retries. Everything loaded so far is kept and usable.
         case failed(InventoryError)
     }
 
@@ -52,36 +46,40 @@ public enum InventoryFill {
     /// Expects `loadFirstPage` to have been called already: the first page is what the user
     /// is looking at, and it is fetched on the foreground path with its own error handling.
     ///
-    /// Throttling is honoured once. A second 429 stops the fill: whatever is loaded stays,
-    /// the manual "load more" remains, and search says it is incomplete. Retrying further
-    /// would be a background job competing with the user's own taps for the same budget.
+    /// A page that fails for a passing reason (a dropped connection, a 5xx, a 429) is asked
+    /// for again, as `FillRetry` says: up to three more times, waiting as long as Graph
+    /// asked, and stopping instead when Graph asks for longer than a minute. A page that
+    /// fails four times, or for a lasting reason, stops the fill: whatever is loaded stays,
+    /// the manual "load more" remains, and search says it is incomplete.
     public static func run(
         _ inventory: any DeviceInventoryProviding,
         maxDevices: Int = defaultMaxDevices,
+        sleep: @Sendable (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
         onPage: @Sendable (_ added: [ManagedDeviceSummary], _ total: Int) async -> Void
     ) async -> Outcome {
         var total = (try? await inventory.cachedDevices().count) ?? 0
-        var throttledOnce = false
+        var failures = 0
 
         while total < maxDevices {
             if Task.isCancelled { return .cancelled }
             do {
                 guard try await inventory.hasMore() else { return .complete }
                 guard let page = try await inventory.loadNextPage() else { return .complete }
+                failures = 0
                 total += page.devices.count
                 await onPage(page.devices, total)
-            } catch InventoryError.throttled(let retryAfter) where !throttledOnce {
-                throttledOnce = true
-                let wait = min(retryAfter ?? defaultRetryWait, maxRetryWait)
-                do {
-                    try await Task.sleep(for: .seconds(wait))
-                } catch {
-                    return .cancelled
-                }
             } catch is CancellationError {
                 return .cancelled
             } catch let error as InventoryError {
-                return error == .cancelled ? .cancelled : .failed(error)
+                if error == .cancelled { return .cancelled }
+                failures += 1
+                guard let problem = error.fillRetryProblem,
+                      let wait = FillRetry.wait(after: problem, failures: failures) else { return .failed(error) }
+                do {
+                    try await sleep(wait)
+                } catch {
+                    return .cancelled
+                }
             } catch {
                 return .failed(.transport(status: -1))
             }
@@ -91,5 +89,19 @@ public enum InventoryFill {
         // maxDevices devices is complete, not cut off.
         let more = (try? await inventory.hasMore()) ?? true
         return more ? .capped : .complete
+    }
+}
+
+
+extension InventoryError {
+    /// Whether a fill should ask for the page again: throttling, a dropped connection or a
+    /// 5xx. A refusal (consent, a role, a malformed request) is not going to change.
+    var fillRetryProblem: FillRetry.Problem? {
+        switch self {
+        case .throttled(let retryAfter):              return .throttled(retryAfter: retryAfter)
+        case .serviceUnavailable:                     return .transient
+        case .transport(let status) where status < 0 || status >= 500: return .transient
+        default:                                      return nil
+        }
     }
 }

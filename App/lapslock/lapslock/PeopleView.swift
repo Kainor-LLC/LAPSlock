@@ -62,6 +62,8 @@ final class PeopleDirectoryModel {
     /// over everyone, rather than being merged into a result about to be replaced.
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var lookupTask: Task<Void, Never>?
+    /// The search Graph was last asked about, so a page arriving does not ask it again.
+    @ObservationIgnored private var lookedUpQuery: String?
 
     init(provider: any SignInTriageProviding) {
         self.provider = provider
@@ -222,14 +224,17 @@ final class PeopleDirectoryModel {
             PerfProbe.mark("peopleFilter", since: started, "people=" + String(snapshot.count) + " queryLength=" + String(query.count))
             self.searchTask = nil
             self.visible = result
-            if result.isEmpty { self.lookUp(query) }
+            self.lookUp(query)
         }
     }
 
-    /// Asks Graph when nobody loaded matches and the directory is not all here. Whoever it
-    /// finds joins the list like anyone else.
+    /// Asks Graph as well while the directory is not all here, once for each search, and
+    /// whoever it finds joins the list like anyone else. Not only when nobody loaded
+    /// matches: with 300 Smiths and 255 of them loaded, the 255 are not the answer.
     private func lookUp(_ query: String) {
-        guard isPartial, query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 else { return }
+        guard isPartial, query.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2,
+              lookedUpQuery != query else { return }
+        lookedUpQuery = query
         isLookingUp = true
         let provider = provider
         lookupTask = Task { [weak self] in
@@ -491,7 +496,7 @@ private struct PeopleNote: View {
         case .refreshing(let loaded):
             return "Refreshing the directory, \(loaded) read so far."
         case .incomplete(let loaded):
-            return "The first \(loaded) people. Search asks Microsoft Graph for anyone not here."
+            return "Not everyone is loaded (\(loaded) so far). Search also asks Microsoft for names and addresses that start with what you type."
         case .complete:
             if searching { return nil }
             return directory.entries.count == 1 ? "1 person" : "\(directory.entries.count) people"

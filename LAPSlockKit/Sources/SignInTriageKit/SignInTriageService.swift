@@ -33,13 +33,30 @@ public actor SignInTriageService: SignInTriageProviding {
         let trimmed = prefix.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else { return [] }
         let escaped = SignInQuery.escape(trimmed)
+        do {
+            return try await search(escaped, in: Self.searchFields)
+        } catch SignInTriageError.transport(status: 400) {
+            // (verify) on a live tenant. If Graph refuses the wider filter, ask with the two
+            // fields it has always accepted rather than find nobody.
+            return try await search(escaped, in: Self.narrowSearchFields)
+        }
+    }
+
+    /// Where a typed name or address may begin. A first name and a surname as well as the
+    /// whole display name: Graph's `startswith` on displayName matches only its beginning,
+    /// so "smith" alone never found John Smith. All five are in the basic profile.
+    static let searchFields = ["displayName", "givenName", "surname", "userPrincipalName", "mail"]
+    static let narrowSearchFields = ["displayName", "userPrincipalName"]
+
+    private func search(_ escaped: String, in fields: [String]) async throws -> [DirectoryUser] {
+        let filter = fields.map { "startswith(" + $0 + ",'" + escaped + "')" }.joined(separator: " or ")
         let request = GraphRequest(
             path: Self.usersPath,
             template: Self.usersPath + "?search",
             query: [
-                URLQueryItem(name: "$filter", value: "startswith(displayName,'" + escaped + "') or startswith(userPrincipalName,'" + escaped + "')"),
+                URLQueryItem(name: "$filter", value: filter),
                 URLQueryItem(name: "$select", value: "id,displayName,userPrincipalName,mail"),
-                URLQueryItem(name: "$top", value: "10")
+                URLQueryItem(name: "$top", value: "25")
             ],
             scopes: [SignInTriageScopes.users])
         do {

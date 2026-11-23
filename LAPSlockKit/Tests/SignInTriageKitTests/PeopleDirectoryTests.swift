@@ -97,18 +97,57 @@ final class PeopleDirectoryTests: XCTestCase {
         XCTAssertEqual(outcome, .capped)
     }
 
-    func test_oneThrottleIsWaitedOutAndASecondStopsTheFill() async {
-        let next = "https://graph.microsoft.com/v1.0/users?$skiptoken=1"
-        let once = Pages([page(["a"], next: next), .failure(.throttled(retryAfter: 90)), page(["b"], next: nil)])
+    private let secondPage = "https://graph.microsoft.com/v1.0/users?$skiptoken=1"
+
+    /// A throttled page is asked for again, and never sooner than Graph said. Two 429s in
+    /// a row used to end the fill; at fifty pages that left large directories half loaded.
+    func test_aThrottledPageIsAskedForAgainAfterTheTimeGraphNamed() async {
+        let provider = Pages([page(["a"], next: secondPage), .failure(.throttled(retryAfter: 20)),
+                              .failure(.throttled(retryAfter: 20)), page(["b"], next: nil)])
         let waits = Collected()
-        let outcome = await DirectoryFill.run(once, sleep: { await waits.add([], Int($0)) }) { _, _ in }
+        let outcome = await DirectoryFill.run(provider, sleep: { await waits.add([], Int($0)) }) { _, _ in }
         XCTAssertEqual(outcome, .complete)
         let waited = await waits.totals
-        XCTAssertEqual(waited, [30], "the wait is capped")
+        XCTAssertEqual(waited.count, 2)
+        XCTAssertTrue(waited.allSatisfy { (20...21).contains($0) }, "never sooner than Graph asked: \(waited)")
+        let asked = await provider.asked
+        XCTAssertEqual(asked.map { $0?.absoluteString }, [nil, secondPage, secondPage, secondPage], "the same page, not the next")
+    }
 
-        let twice = Pages([page(["a"], next: next), .failure(.throttled(retryAfter: 1)), .failure(.throttled(retryAfter: 1))])
-        let stopped = await DirectoryFill.run(twice, sleep: { _ in }) { _, _ in }
-        XCTAssertEqual(stopped, .failed(.throttled(retryAfter: 1)))
+    /// Graph asking for more than a minute wants the tenant left alone.
+    func test_aWaitLongerThanAMinuteStopsTheFillAndKeepsWhatLoaded() async {
+        let provider = Pages([page(["a"], next: secondPage), .failure(.throttled(retryAfter: 90))])
+        let collected = Collected()
+        let outcome = await DirectoryFill.run(provider, sleep: { _ in XCTFail("no wait this long is honoured") }) { users, total in await collected.add(users, total) }
+        XCTAssertEqual(outcome, .failed(.throttled(retryAfter: 90)))
+        let ids = await collected.ids
+        XCTAssertEqual(ids, ["a"])
+    }
+
+    /// One dropped connection, or one 503, used to end the fill.
+    func test_aDroppedConnectionAndAServerErrorAreRetriedAndTheFillFinishes() async {
+        let provider = Pages([page(["a"], next: secondPage), .failure(.transport(status: -1)),
+                              .failure(.serviceUnavailable(status: 503)), page(["b"], next: nil)])
+        let collected = Collected()
+        let outcome = await DirectoryFill.run(provider, sleep: { _ in }) { users, total in await collected.add(users, total) }
+        XCTAssertEqual(outcome, .complete)
+        let ids = await collected.ids
+        XCTAssertEqual(ids, ["a", "b"], "nothing skipped and nothing twice")
+    }
+
+    func test_aPageThatFailsFourTimesStopsTheFill() async {
+        let provider = Pages([page(["a"], next: secondPage)] + Array(repeating: .failure(.transport(status: -1)), count: 4))
+        let outcome = await DirectoryFill.run(provider, sleep: { _ in }) { _, _ in }
+        XCTAssertEqual(outcome, .failed(.transport(status: -1)))
+        let asked = await provider.asked
+        XCTAssertEqual(asked.count, 5, "one page, then four attempts at the next")
+    }
+
+    /// A refusal is not going to change, so it is not asked for again.
+    func test_aRefusalPartWayIsNotRetried() async {
+        let provider = Pages([page(["a"], next: secondPage), .failure(.notAuthorized)])
+        let outcome = await DirectoryFill.run(provider, sleep: { _ in XCTFail("a refusal is not waited on") }) { _, _ in }
+        XCTAssertEqual(outcome, .failed(.notAuthorized))
     }
 
     func test_aFirstPageRefusedIsAFailureWithNothingLoaded() async {

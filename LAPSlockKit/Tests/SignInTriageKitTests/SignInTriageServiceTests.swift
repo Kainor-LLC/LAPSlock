@@ -82,9 +82,25 @@ final class SignInTriageServiceTests: XCTestCase {
         let found = try await service.searchUsers(prefix: "o'b")
         XCTAssertEqual(found.map(\.displayName), ["Al", "Zed"])
         let url = try XCTUnwrap(StubProtocol.requests.last?.url?.absoluteString.removingPercentEncoding)
-        XCTAssertTrue(url.contains("startswith(displayName,'o''b') or startswith(userPrincipalName,'o''b')"), url)
-        XCTAssertTrue(url.contains("$top=10"), url)
+        XCTAssertTrue(url.contains("$top=25"), url)
         XCTAssertEqual(auth.calls.last, ["User.ReadBasic.All"])
+        // A surname finds its person: startswith on displayName matches only its beginning.
+        for field in ["displayName", "givenName", "surname", "userPrincipalName", "mail"] {
+            XCTAssertTrue(url.contains("startswith(" + field + ",'o''b')"), field + " is not searched: " + url)
+        }
+    }
+
+    /// If Graph refuses the wider filter, the search falls back to the two fields it has
+    /// always accepted instead of finding nobody.
+    func test_aRefusedWiderSearchFallsBackToTheNarrowOne() async throws {
+        StubProtocol.replies = ["v1.0/users": [
+            .init(status: 400, body: #"{"error":{"code":"Request_UnsupportedQuery"}}"#),
+            .init(status: 200, body: #"{"value":[{"id":"u1","displayName":"Al","userPrincipalName":"al@c.com"}]}"#)]]
+        let found = try await service.searchUsers(prefix: "al")
+        XCTAssertEqual(found.map(\.id), ["u1"])
+        let url = try XCTUnwrap(StubProtocol.requests.last?.url?.absoluteString.removingPercentEncoding)
+        XCTAssertFalse(url.contains("surname"), url)
+        XCTAssertTrue(url.contains("startswith(displayName,'al') or startswith(userPrincipalName,'al')"), url)
     }
 
     func test_theDirectoryIsReadInGraphsLargestPagesWithTheBasicScope() async throws {

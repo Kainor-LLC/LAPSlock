@@ -1,4 +1,5 @@
 import Foundation
+import AuthKit
 
 // People as a directory (DIGEST-AND-PEOPLE-PLAN.md, step L): the whole directory loaded the
 // way the device list loads the fleet, so an admin can scroll to a person as well as search.
@@ -143,23 +144,22 @@ public enum DirectorySearch {
 
 /// Pages the directory to the end, or to the cap, calling back after every page.
 ///
-/// Throttling is honoured once, as the device fill does: a second 429 stops the fill, what
-/// is loaded stays, and search says the list is incomplete and asks Graph instead.
+/// A page that fails for a passing reason (a dropped connection, a 5xx, a 429) is asked for
+/// again, as `FillRetry` says: up to three more times, waiting as long as Graph asked. A
+/// page that fails four times, or for a lasting reason, stops the fill: what is loaded
+/// stays, and search says the list is incomplete and asks Graph instead.
 public enum DirectoryFill {
 
     /// People before stopping. Beyond this the list says it is not everyone, and search
     /// asks Graph for anyone not loaded.
     public static let defaultMaxPeople = 50_000
 
-    static let maxRetryWait: TimeInterval = 30
-    static let defaultRetryWait: TimeInterval = 5
-
     public enum Outcome: Sendable, Equatable {
         case complete
         /// Stopped at the cap with pages remaining.
         case capped
         case cancelled
-        /// A page failed after any retry. What loaded is kept. The first page failing is
+        /// A page failed after its retries. What loaded is kept. The first page failing is
         /// this too, with nothing loaded.
         case failed(SignInTriageError)
     }
@@ -172,7 +172,7 @@ public enum DirectoryFill {
     ) async -> Outcome {
         var next: URL?
         var total = 0
-        var throttledOnce = false
+        var failures = 0
         var started = false
         while total < maxPeople {
             if Task.isCancelled { return .cancelled }
@@ -180,24 +180,40 @@ public enum DirectoryFill {
             do {
                 let page = try await provider.directoryPage(after: next)
                 started = true
+                failures = 0
                 next = page.next
                 total += page.users.count
                 await onPage(page.users, total)
-            } catch SignInTriageError.throttled(let retryAfter) where !throttledOnce {
-                throttledOnce = true
-                do {
-                    try await sleep(min(retryAfter ?? defaultRetryWait, maxRetryWait))
-                } catch {
-                    return .cancelled
-                }
             } catch is CancellationError {
                 return .cancelled
             } catch let error as SignInTriageError {
-                return error == .cancelled ? .cancelled : .failed(error)
+                if error == .cancelled { return .cancelled }
+                failures += 1
+                guard let problem = error.fillRetryProblem,
+                      let wait = FillRetry.wait(after: problem, failures: failures) else { return .failed(error) }
+                do {
+                    try await sleep(wait)
+                } catch {
+                    return .cancelled
+                }
             } catch {
                 return .failed(.transport(status: -1))
             }
         }
         return next == nil ? .complete : .capped
+    }
+}
+
+
+extension SignInTriageError {
+    /// Whether a fill should ask for the page again: throttling, a dropped connection or a
+    /// 5xx. A refusal (consent, a role, a malformed request) is not going to change.
+    var fillRetryProblem: FillRetry.Problem? {
+        switch self {
+        case .throttled(let retryAfter):              return .throttled(retryAfter: retryAfter)
+        case .serviceUnavailable:                     return .transient
+        case .transport(let status) where status < 0 || status >= 500: return .transient
+        default:                                      return nil
+        }
     }
 }

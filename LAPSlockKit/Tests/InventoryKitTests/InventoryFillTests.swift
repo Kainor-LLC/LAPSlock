@@ -131,34 +131,64 @@ final class InventoryFillTests: XCTestCase {
         // is fetched again and succeeds; nothing is skipped or duplicated.
         let inv = try await inventory(pages: 4, failures: [2: [.throttled(retryAfter: 0)]])
         let log = PageLog()
-        let outcome = await InventoryFill.run(inv) { await log.record($0, $1) }
+        let outcome = await InventoryFill.run(inv, sleep: { _ in }) { await log.record($0, $1) }
         XCTAssertEqual(outcome, .complete)
         let counts = await log.counts
         XCTAssertEqual(counts, [6, 9, 12], "the throttled page was retried, not skipped")
     }
 
-    func test_aSecondThrottleStopsTheFillAndKeepsWhatLoaded() async throws {
-        // A background job that keeps hammering a throttled tenant competes with the
-        // user's own taps for the same budget. Stop, keep everything, leave load-more.
+    /// Two throttles, a dropped connection and a 503 across a fill used to end it at the
+    /// second. Each page is asked for again, and the fill finishes with nothing skipped.
+    func test_throttlesAndPassingFailuresAcrossAFillAreRetriedAndItFinishes() async throws {
         let inv = try await inventory(pages: 5, failures: [
             2: [.throttled(retryAfter: 0)],
-            3: [.throttled(retryAfter: 0)],
+            3: [.throttled(retryAfter: 0), .transport(status: -1)],
+            4: [.serviceUnavailable(status: 503)],
         ])
-        let outcome = await InventoryFill.run(inv) { _, _ in }
-        XCTAssertEqual(outcome, .failed(.throttled(retryAfter: 0)))
-        let loaded = await inv.loaded.count
-        XCTAssertEqual(loaded, 6, "page 2 landed before the second throttle")
+        let log = PageLog()
+        let outcome = await InventoryFill.run(inv, sleep: { _ in }) { await log.record($0, $1) }
+        XCTAssertEqual(outcome, .complete)
+        let counts = await log.counts
+        XCTAssertEqual(counts, [6, 9, 12, 15], "every page once, in order")
     }
 
-    func test_anyOtherErrorStopsTheFillWithoutLosingPages() async throws {
-        let inv = try await inventory(pages: 5, failures: [3: [.serviceUnavailable(status: 503)]])
+    /// A throttled tenant is asked again only after the time Graph named.
+    func test_aThrottledPageWaitsAtLeastAsLongAsGraphAsked() async throws {
+        let inv = try await inventory(pages: 3, failures: [2: [.throttled(retryAfter: 12)]])
+        let waits = PageLog()
+        let outcome = await InventoryFill.run(inv, sleep: { await waits.record([], Int($0)) }) { _, _ in }
+        XCTAssertEqual(outcome, .complete)
+        let waited = await waits.counts
+        XCTAssertEqual(waited.count, 1)
+        XCTAssertTrue((12...13).contains(waited[0]), "\(waited)")
+    }
+
+    /// Graph asking for more than a minute wants the tenant left alone: stop, keep
+    /// everything, leave load-more.
+    func test_aWaitLongerThanAMinuteStopsTheFillAndKeepsWhatLoaded() async throws {
+        let inv = try await inventory(pages: 5, failures: [3: [.throttled(retryAfter: 300)]])
+        let outcome = await InventoryFill.run(inv, sleep: { _ in XCTFail("no wait this long is honoured") }) { _, _ in }
+        XCTAssertEqual(outcome, .failed(.throttled(retryAfter: 300)))
+        let loaded = await inv.loaded.count
+        XCTAssertEqual(loaded, 6, "page 2 landed before the stop")
+    }
+
+    func test_aPageThatFailsFourTimesStopsTheFillWithoutLosingPages() async throws {
+        let inv = try await inventory(pages: 5, failures: [3: Array(repeating: .serviceUnavailable(status: 503), count: 4)])
         let log = PageLog()
-        let outcome = await InventoryFill.run(inv) { await log.record($0, $1) }
+        let outcome = await InventoryFill.run(inv, sleep: { _ in }) { await log.record($0, $1) }
         XCTAssertEqual(outcome, .failed(.serviceUnavailable(status: 503)))
         let counts = await log.counts
         XCTAssertEqual(counts, [6], "the page before the failure was delivered")
         let loaded = await inv.loaded.count
         XCTAssertEqual(loaded, 6)
+    }
+
+    /// A refusal is not going to change, so it is not asked for again.
+    func test_aRefusalStopsTheFillAtOnce() async throws {
+        let inv = try await inventory(pages: 5, failures: [3: [.notAuthorized]])
+        let outcome = await InventoryFill.run(inv, sleep: { _ in XCTFail("a refusal is not waited on") }) { _, _ in }
+        XCTAssertEqual(outcome, .failed(.notAuthorized))
     }
 
     func test_cancellationStopsPagingPromptly() async throws {
