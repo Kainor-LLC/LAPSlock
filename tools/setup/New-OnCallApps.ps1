@@ -49,6 +49,12 @@
 .PARAMETER ConsentPage
     The page admin consent returns to. Registered as the web redirect URI on each app.
 
+.PARAMETER PublisherId
+    Kainor's Microsoft partner ID, to mark each app as coming from a verified publisher, so
+    its consent screen does not say "unverified". The same ID the shared read app carries.
+    Optional. Needs an account that is also an administrator in Partner Center, signed in
+    with multifactor authentication.
+
 .PARAMETER Apply
     Make the changes. Without it, nothing is changed.
 
@@ -66,6 +72,7 @@
 param(
     [string] $TenantId,
     [string] $ConsentPage = 'https://tenantkeep.app/consent/',
+    [string] $PublisherId,
     [switch] $Apply
 )
 
@@ -139,6 +146,28 @@ function Write-Step([string] $Text) {
     Write-Information "$prefix $Text" -InformationAction Continue
 }
 
+# Marks an app as from the verified publisher, when an ID was given and it is not already.
+# A refusal is a warning: the app works without it, and Microsoft's reasons (no Partner
+# Center role, no multifactor sign-in, a publisher domain that does not match) are the
+# caller's to fix, not this script's.
+function Set-Publisher($App, [string] $Name) {
+    if (-not $PublisherId) { return }
+    if (-not $App) { Write-Step "Mark '$Name' as from the verified publisher $PublisherId"; return }
+    $current = if ($App.VerifiedPublisher) { $App.VerifiedPublisher.VerifiedPublisherId } else { $null }
+    if ($current -eq $PublisherId) {
+        Write-Information "     '$Name' is already from the verified publisher." -InformationAction Continue
+        return
+    }
+    Write-Step "Mark '$Name' as from the verified publisher $PublisherId"
+    if ($Apply) {
+        try {
+            Set-MgApplicationVerifiedPublisher -ApplicationId $App.Id -VerifiedPublisherId $PublisherId
+        } catch {
+            Write-Warning "Could not set the verified publisher on '$Name': $($_.Exception.Message)"
+        }
+    }
+}
+
 # A dry run only reads.
 $connectScope = if ($Apply) { 'Application.ReadWrite.All' } else { 'Application.Read.All' }
 $connect = @{ Scopes = $connectScope; NoWelcome = $true }
@@ -186,6 +215,7 @@ $results = @(foreach ($definition in $definitions) {
         Write-Step "  redirects: $($definition.Redirects -join ', ') and $ConsentPage"
         if ($Apply) { Update-MgApplication -ApplicationId $app.Id @settings }
     }
+    Set-Publisher $app $name
     if ($app) { [pscustomobject]@{ App = $name; ClientId = $app.AppId } }
 })
 
@@ -250,6 +280,7 @@ if ($defined) {
         }
     }
 }
+Set-Publisher $alerts $alertsName
 if ($alerts) { $results += [pscustomobject]@{ App = $alertsName; ClientId = $alerts.AppId } }
 
 # An app an earlier version of the alerts plan created. Reported, never changed here.
