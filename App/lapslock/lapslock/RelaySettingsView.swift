@@ -111,6 +111,17 @@ final class RelayCoordinator {
         await register(code, setup: setup, interactive: true)
     }
 
+    /// Sign-out. Instant alerts were registered as this person, for this organization, so
+    /// signing out ends them: the phone is unregistered and its key deleted while the
+    /// sign-in can still say so to the service. A phone that never turned them on does
+    /// nothing here and contacts nothing.
+    func turnOffForSignOut() async {
+        switch status {
+        case .on, .problem: await turnOff()
+        case .off, .working, .needsApproval: return
+        }
+    }
+
     func turnOff() async {
         if let setup, let code = try? phone.pairingCode(), let token = try? await setup.token(false) {
             var request = URLRequest(url: Self.endpoint)

@@ -188,6 +188,10 @@ final class PersonGroupsModel {
 
     /// The review sheet's confirm. The destructive tier goes on to the typed name.
     func reviewed(_ pending: Pending) {
+        // One confirmation, one send. The sheet's button stays on screen while the sheet
+        // closes, so a second tap arrives here after the first has cleared `reviewing`;
+        // without this it sent the change twice.
+        guard reviewing?.id == pending.id, working == nil, undoing == nil else { return }
         reviewing = nil
         if tier(pending) == .destructive {
             typedName = ""
@@ -203,8 +207,10 @@ final class PersonGroupsModel {
 
     /// Face ID, then the countdown with Undo and Send now, then the change.
     func typedConfirmed(_ pending: Pending) async {
+        guard typing?.id == pending.id, working == nil, undoing == nil else { return }
         typing = nil
         guard typedNameMatches(pending) else { return }
+        typedName = ""
         switch await BiometricGate().authenticate(for: .groupChange(adding: pending.kind == .add, member: member.label, group: pending.group.name)) {
         case .authenticated: break
         case .unavailable(let reason): errorMessage = reason; return
@@ -233,6 +239,14 @@ final class PersonGroupsModel {
         Task { await countdown.sendNow() }
     }
 
+    /// Leaving the app drops a waiting sign-in step. The tap that sends should follow the
+    /// confirmation it belongs to, not be found on the screen later with nothing asked.
+    func abandonChallenge() {
+        guard pendingChallenge != nil else { return }
+        pendingChallenge = nil
+        errorMessage = "Not sent. Start the action again when you are ready."
+    }
+
     func continueSignIn() async {
         guard let waiting = pendingChallenge else { return }
         pendingChallenge = nil
@@ -243,6 +257,7 @@ final class PersonGroupsModel {
     }
 
     private func send(_ pending: Pending) async {
+        guard working == nil else { return }
         working = pending.group.id
         defer { working = nil }
         let action = pending.kind.action(group: pending.group, member: member, decision: pending.decision, strict: strict)
@@ -317,7 +332,7 @@ struct PersonGroupsView: View {
                     if let note = model.note { Text(note).font(.footnote) }
                     if let error = model.errorMessage { Text(error).font(.footnote).foregroundStyle(.red) }
                     if model.pendingChallenge != nil {
-                        Button("Continue sign-in") { Task { await model.continueSignIn() } }
+                        Button("Continue sign-in and send: " + (model.pendingChallenge?.pending.kind.title ?? "the change")) { Task { await model.continueSignIn() } }
                     }
                 }
             }
@@ -385,7 +400,10 @@ struct PersonGroupsView: View {
         .task { await model.load() }
         .onDisappear { model.closed() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { Task { await PendingActions.shared.cancelAll() } }
+            if phase == .background {
+                model.abandonChallenge()
+                Task { await PendingActions.shared.cancelAll() }
+            }
         }
     }
 }

@@ -515,10 +515,14 @@ final class AppRootModel {
         // The module shell is keyed by the operating tenant, so every screen model is
         // rebuilt from the new session as well.
         let tenant = await session.auth.operatingTenantId ?? session.tenantId
-        operatingTenantId = tenant
         await auth?.setCombinedWrites(
             WriteRoutes.startingRoute(for: tenant, beforeTheSplit: readsThroughOriginalRegistration), inTenant: tenant)
+        // These two change together, with no suspension between them. The shell is keyed on
+        // the operating tenant and builds every module's model from the session it finds at
+        // that moment: an await here lets it build the new tenant's shell on the old
+        // tenant's session, and keep it. A test holds the two lines together.
         liveSession = LiveSession(auth: session.auth, tenantId: tenant)
+        operatingTenantId = tenant
         Task { await settleAllWriteRoutes() }
         return nil
     }
@@ -693,6 +697,8 @@ final class AppRootModel {
     }
 
     func signOut() async {
+        // Before the sign-in goes: unregistering from Instant alerts needs it.
+        await RelayCoordinator.shared.turnOffForSignOut()
         if case .live(let account) = mode, let auth {
             try? await auth.signOut(account: account)
         }

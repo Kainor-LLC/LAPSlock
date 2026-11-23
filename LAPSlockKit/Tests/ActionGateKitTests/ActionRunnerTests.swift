@@ -315,9 +315,14 @@ final class ActionRunnerTests: XCTestCase {
         XCTAssertEqual(ActionTier.destructive.requirements, [.typedName, .appLockReprompt, .undoWindow(seconds: 10)])
     }
 
+    /// A failure never says the action was done. Since the review of build 13 it does not
+    /// say that nothing was done either: a 502 or a 504 can come back after Microsoft
+    /// acted, and a connection can drop after the request left the phone, so the copy asks
+    /// the person to check before sending again. The next tap could be a second wipe.
     func test_failureCopyNeverPromisesWhatDidNotHappen() {
-        for failure in [ActionFailure.serviceUnavailable(status: 503), .transport(status: -1)] {
-            XCTAssertTrue(failure.description.contains("Nothing was") , failure.description)
+        for failure in [ActionFailure.serviceUnavailable(status: 504), .transport(status: -1)] {
+            XCTAssertFalse(failure.description.contains("Nothing was"), failure.description)
+            XCTAssertTrue(failure.description.contains("check before sending it again"), failure.description)
         }
     }
 }

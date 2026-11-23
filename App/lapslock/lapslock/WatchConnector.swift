@@ -371,6 +371,13 @@ enum WatchHandlers {
     /// remembered one cannot be decided twice.
     static func decide(_ approvals: any ApprovalsProviding, id: String, approve: Bool, reason: String,
                        known: [PendingApproval]) async -> WatchReply {
+        // A strict organization asks for Face ID before a decision is sent, as the phone's
+        // own screen does. The wrist cannot give it, so the phone finishes. Here, in the
+        // one function both the foreground and the background handlers call.
+        if ManagedConfigStore.read().confirmationLevel == .strict {
+            await WatchConnector.notifyFinishOnPhone("Your organization asks for Face ID before an approval. Open TenantKeep to finish.")
+            return WatchReply(outcome: .finishOnPhone, message: "Your organization asks for Face ID first. Finish on your iPhone.")
+        }
         var found = known.first(where: { $0.id == id })
         if found == nil { found = (try? await approvals.pending())?.first(where: { $0.id == id }) }
         guard let approval = found else {

@@ -121,6 +121,9 @@ final class UserActionsModel {
     }
 
     func confirmed(_ kind: UserActionKind) {
+        // Not guarded on `confirming`: the system dialog may clear it through its binding
+        // before this runs, and it calls its button once.
+        guard working == nil, undoing == nil else { return }
         confirming = nil
         Task {
             if kind == .issueTemporaryAccessPass {
@@ -139,8 +142,12 @@ final class UserActionsModel {
 
     /// Face ID, then ten seconds with Undo, then the sequence, only while this sheet is up.
     func destructiveConfirmed(_ kind: UserActionKind) async {
+        // One confirmation, one send. This sheet's button stays on screen while the sheet
+        // closes, so a second tap arrives here after the first has cleared `destructive`.
+        guard destructive == kind, undoing == nil, working == nil else { return }
         destructive = nil
         guard typedUPNMatches else { return }
+        typedUPN = ""
         clearMessages()
         guard await faceID(for: .userAction(title: kind.title, person: target.label)) else { return }
         let countdown = UndoCountdown(key: target.userId, seconds: DeviceActionsModel.undoSeconds)
@@ -150,7 +157,15 @@ final class UserActionsModel {
         undoing = nil
         self.countdown = nil
         if proceed {
-            if kind == .authenticationWipe { await wipe(challenge: nil) } else { await run(kind) }
+            // A strict policy moves the pass up to this tier. It still has its own path:
+            // the service refuses it through `run`. Face ID was just asked above.
+            if kind == .authenticationWipe {
+                await wipe(challenge: nil)
+            } else if kind == .issueTemporaryAccessPass {
+                await issuePass(confirmedByFaceID: true)
+            } else {
+                await run(kind)
+            }
         } else {
             note = kind.title + " cancelled. Nothing was sent."
         }
@@ -167,6 +182,14 @@ final class UserActionsModel {
         Task { await countdown.sendNow() }
     }
 
+    /// Leaving the app drops a waiting sign-in step. The tap that sends should follow the
+    /// confirmation it belongs to, not be found on the screen later with nothing asked.
+    func abandonChallenge() {
+        guard pendingChallenge != nil else { return }
+        pendingChallenge = nil
+        errorMessage = "Not sent. Start the action again when you are ready."
+    }
+
     func continueSignIn() async {
         guard let pending = pendingChallenge else { return }
         pendingChallenge = nil
@@ -181,6 +204,7 @@ final class UserActionsModel {
     }
 
     private func run(_ kind: UserActionKind) async {
+        guard working == nil else { return }
         working = kind
         clearMessages()
         defer { working = nil }
@@ -189,6 +213,7 @@ final class UserActionsModel {
     }
 
     private func wipe(challenge: ClaimsChallenge?) async {
+        guard working == nil else { return }
         working = .authenticationWipe
         clearMessages()
         defer { working = nil }
@@ -202,13 +227,17 @@ final class UserActionsModel {
 
     // MARK: - the Temporary Access Pass
 
-    private func issuePass() async {
+    private func issuePass(confirmedByFaceID: Bool = false) async {
+        guard working == nil else { return }
         clearMessages()
         if let gate = await provider.checkRoles(.issueTemporaryAccessPass, on: target) {
             handle(gate, kind: .issueTemporaryAccessPass)
             return
         }
-        guard await faceID(for: .issueTemporaryAccessPass(person: target.label)) else { return }
+        if !confirmedByFaceID {
+            guard await faceID(for: .issueTemporaryAccessPass(person: target.label)) else { return }
+        }
+        guard working == nil else { return }
         working = .issueTemporaryAccessPass
         defer { working = nil }
         do {
@@ -256,7 +285,9 @@ final class UserActionsModel {
     }
 
     /// Wipes the pass from memory. The clipboard keeps its own expiry; leaving the sheet
-    /// clears it too if it still holds the pass.
+    /// clears it too if it still holds the pass. It is not cleared here on purpose: this
+    /// runs when the app leaves the foreground, which is the moment an admin who copied
+    /// the pass is switching to the app they will paste it into.
     func hidePass() {
         passVisible = false
         pass?.wipe()
@@ -378,7 +409,7 @@ struct PersonActionsView: View {
                 }
                 if model.pendingChallenge != nil {
                     Button { Task { await model.continueSignIn() } } label: {
-                        Label("Continue sign-in", systemImage: "person.crop.circle.badge.checkmark").font(.footnote.weight(.medium))
+                        Label("Continue sign-in and send: " + (model.pendingChallenge?.kind.title ?? "the action"), systemImage: "person.crop.circle.badge.checkmark").font(.footnote.weight(.medium))
                     }
                 }
                 if let entry = model.lastEntry {
@@ -443,7 +474,10 @@ struct PersonActionsView: View {
         .onDisappear { model.closed() }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { model.hidePass() }
-            if phase == .background { Task { await PendingActions.shared.cancelAll() } }
+            if phase == .background {
+                model.abandonChallenge()
+                Task { await PendingActions.shared.cancelAll() }
+            }
         }
     }
 
@@ -646,16 +680,24 @@ struct LeaverDeviceRow: View {
                 }
                 .accessibilityElement(children: .contain)
             } else {
-                HStack(spacing: 16) {
-                    ForEach([DeviceActionKind.retire, .wipe]) { kind in
-                        let reason = model.reason(for: kind)
-                        Button(kind.title) { model.tapped(kind) }
-                            .buttonStyle(.bordered)
-                            .disabled(reason != nil || model.working != nil)
-                            .accessibilityHint(reason ?? kind.confirmation)
-                    }
-                    if let reason = model.reason(for: .wipe) {
-                        Text(reason).font(.caption2).foregroundStyle(.secondary)
+                // `kinds` leaves out retire and wipe when the organization switched them off.
+                let offered = model.kinds.filter(\.isDestructive)
+                if offered.isEmpty {
+                    Text("Your organization has turned off retire and wipe in this app.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 16) {
+                        ForEach(offered) { kind in
+                            let reason = model.reason(for: kind)
+                            Button(kind.title) { model.tapped(kind) }
+                                .buttonStyle(.bordered)
+                                .disabled(reason != nil || model.working != nil)
+                                .accessibilityLabel(kind.title + " " + device.label)
+                                .accessibilityHint(reason ?? kind.confirmation)
+                        }
+                        if let reason = model.reason(for: .wipe) {
+                            Text(reason).font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }

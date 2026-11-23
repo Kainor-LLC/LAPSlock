@@ -140,8 +140,10 @@ public enum ActionFailure: Sendable, Equatable {
         case .throttled(let retryAfter):
             if let retryAfter { return "Microsoft Graph is rate limiting this tenant. Try again in about \(Int(retryAfter)) seconds." }
             return "Microsoft Graph is rate limiting this tenant. Try again shortly."
-        case .serviceUnavailable:         return "Microsoft Graph is unavailable right now. Nothing was sent."
-        case .transport:                  return "The request did not get through. Nothing was done."
+        // These two cannot promise that nothing happened: a 502 or 504 can come back after
+        // Microsoft acted, and a connection can drop after the request left the phone.
+        case .serviceUnavailable:         return "Microsoft Graph returned an error. The action may not have been carried out: check before sending it again."
+        case .transport:                  return "The connection failed before Microsoft answered. The request may still have arrived: check before sending it again."
         case .cancelled:                  return "Cancelled."
         case .refused(let reason):        return reason
         }

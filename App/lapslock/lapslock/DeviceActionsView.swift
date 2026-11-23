@@ -73,7 +73,10 @@ final class DeviceActionsModel {
 
     /// The tap. Sync runs; anything else asks first.
     func tapped(_ kind: DeviceActionKind) {
-        guard reason(for: kind) == nil, working == nil else { return }
+        // `kinds` leaves out retire and wipe when the organization switched them off, and
+        // that has to hold for every screen that offers them, not only the one that lists
+        // `kinds`. Nothing new starts while an action is counting down or being sent.
+        guard kinds.contains(kind), reason(for: kind) == nil, working == nil, undoing == nil else { return }
         // An organization's strict policy moves every tier up one.
         let strict = ManagedConfigStore.read().confirmationLevel == .strict
         switch kind.tier.effective(strict: strict) {
@@ -114,8 +117,12 @@ final class DeviceActionsModel {
     /// The destructive tier's second and third steps: the app lock asked again, even if it
     /// just passed, then ten seconds in which one tap undoes it. Only then the one send.
     func destructiveConfirmed(_ kind: DeviceActionKind) async {
+        // One confirmation, one send. The sheet's button stays on screen while the sheet
+        // closes, so a second tap arrives here after the first has cleared `destructive`.
+        guard destructive == kind, undoing == nil, working == nil else { return }
         destructive = nil
         guard typedNameMatches else { return }
+        typedName = ""
         errorMessage = nil
         note = nil
         switch await BiometricGate().authenticate(for: .deviceAction(title: kind.title, device: target.deviceName)) {
@@ -165,11 +172,15 @@ final class DeviceActionsModel {
     }
 
     func confirmed(_ kind: DeviceActionKind) {
+        // Not guarded on `confirming`: the system dialog may clear it through its binding
+        // before this runs, and it calls its button once.
+        guard working == nil, undoing == nil else { return }
         confirming = nil
         Task { await run(kind) }
     }
 
     func run(_ kind: DeviceActionKind) async {
+        guard working == nil else { return }
         working = kind
         note = nil
         errorMessage = nil
@@ -177,6 +188,15 @@ final class DeviceActionsModel {
         pendingChallenge = nil
         defer { working = nil }
         await handle(await provider.run(kind, on: target), kind: kind)
+    }
+
+
+    /// Leaving the app drops a waiting sign-in step. The tap that sends should follow the
+    /// confirmation it belongs to, not be found on the screen later with nothing asked.
+    func abandonChallenge() {
+        guard pendingChallenge != nil else { return }
+        pendingChallenge = nil
+        errorMessage = "Not sent. Start the action again when you are ready."
     }
 
     /// The person's tap after a challenge, never automatic.
@@ -246,7 +266,10 @@ struct DeviceActionsContainer: View {
             // screen, which is no reason to cancel. The device screen going away is, and
             // that cancels through PendingActions, see DeviceDetailView.
             .onChange(of: scenePhase) { _, phase in
-                if phase == .background { Task { await PendingActions.shared.cancelAll() } }
+                if phase == .background {
+                    model.abandonChallenge()
+                    Task { await PendingActions.shared.cancelAll() }
+                }
             }
     }
 }
@@ -322,7 +345,7 @@ struct DeviceActionsSections: View {
                 Button {
                     Task { await model.continueSignIn() }
                 } label: {
-                    Label("Continue sign-in", systemImage: "person.crop.circle.badge.checkmark")
+                    Label("Continue sign-in and send: " + (model.pendingChallenge?.kind.title ?? "the action"), systemImage: "person.crop.circle.badge.checkmark")
                         .font(.footnote.weight(.medium))
                 }
                 .disabled(model.working != nil)
