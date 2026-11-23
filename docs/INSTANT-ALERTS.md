@@ -65,16 +65,16 @@ The answer carries the service's public sender key, which the phone keeps for th
 
 ## 5. What the Service Keeps
 
-For each organization: its tenant ID; its name, which alerts carry; the object IDs of the named break-glass accounts; whether the approval is in place; and, for each kind of alert, the time and opaque identifiers of the last events seen, so nothing is announced twice.
+For each organization: its tenant ID; its name, which alerts carry; the object IDs of the named break-glass accounts; whether the approval is in place; and, for each kind of alert, the time and identifiers of the last events seen, so nothing is announced twice. For a security incident its severity is kept beside its identifier, so a raised severity can be announced.
 
-For each phone: its push token, its public key, the registering administrator's object ID, and when it last checked in.
+For each phone: its push token, which of Apple's two push services the token belongs to (`environment`), its public key, and when it last checked in. Not who registered it: the administrator's token is checked at registration, and nothing from it is kept but the organization. The break-glass addresses the phone sends are used once, to find the accounts' object IDs, and are not kept.
 
-It does not keep the sign-ins, audit entries or incidents it reads. Each is examined in memory to decide whether to alert, and discarded. It keeps no names, email addresses, IP addresses or locations. Its telemetry records counts and durations, never a tenant ID, push token, object ID or anything read from a tenant.
+It does not keep the sign-ins, audit entries or incidents it reads. Each is examined in memory to decide whether to alert, and discarded. It keeps no names of people, email addresses, IP addresses or locations. Its telemetry records counts, durations and the kind of answer Apple or Microsoft gave, never a tenant ID, push token, object ID or anything read from a tenant.
 
 | Data | Deleted |
 |---|---|
-| A phone | When Instant alerts are turned off on it, or 30 days after it last checked in |
-| Everything for an organization | Within a day of the organization removing TenantKeep Watch from Entra ID |
+| A phone | When Instant alerts are turned off on it or its administrator signs out; when Apple answers that its push token is no longer valid; or 30 days after it last checked in |
+| Everything for an organization | Within two days of the organization removing TenantKeep Watch from Entra ID: once Entra ID has reported the removal for a full day, at the next daily cleanup |
 
 The service runs in Microsoft Azure, Central US. Its sub-processors are Microsoft (Azure) and Apple (Apple Push Notification service, which sees the push token and an encrypted alert it cannot read).
 
@@ -85,7 +85,7 @@ Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in
 ## 7. Stopping It
 
 - **One phone:** turn Instant alerts off in the app. The phone is removed from the service and its key is deleted.
-- **The whole organization:** delete TenantKeep Watch in Microsoft Entra ID, Enterprise applications. The service can no longer read anything from that moment, and deletes what it holds within a day.
+- **The whole organization:** delete TenantKeep Watch in Microsoft Entra ID, Enterprise applications. The service can no longer read anything from that moment, and deletes what it holds within two days.
 
 ## 8. Verify This Yourself
 
@@ -98,3 +98,4 @@ Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in
 
 - 2026-11-15: version 1. Break-glass sign-ins, Conditional Access changes and security incidents.
 - 2026-11-23: the service sends through the relay as itself, by managed identity, on the relay's own route for it. Until then an organization whose administrators subscribed in the app, with no organization license, was refused by the relay and received nothing. No change to what the service reads or keeps.
+- 2026-11-23: section 5 corrected to what the service stores. It never stored the registering administrator's object ID, though this page said so; it stores which of Apple's push services a token belongs to, and an incident's severity beside its identifier, which this page did not say. An organization that removes TenantKeep Watch is deleted within two days, not one: the service waits a full day so that a passing error deletes nothing. A phone whose push token Apple rejects is deleted at the next alert. No change to what the service reads.

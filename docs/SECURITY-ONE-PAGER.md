@@ -64,9 +64,10 @@ For an **organization that turns on Instant alerts** (Pro, off by default): a Ka
 signed in as a separate application, TenantKeep Watch, that the organization approves in Entra ID,
 reads the sign-ins of the break-glass accounts it names, Conditional Access audit entries and
 security incidents, with read-only application permissions and no write permission or access to
-credentials. It keeps identifiers only (tenant, account and administrator object IDs, each phone's
-push token and public key), never what it reads, and encrypts each alert for one phone. Removing
-TenantKeep Watch stops it at once and deletes what it holds within a day. Full specification:
+credentials. It keeps identifiers only (the tenant's ID and name, the named accounts' object IDs,
+each phone's push token and public key), never what it reads or who registered a phone, and encrypts
+each alert for one phone. Removing TenantKeep Watch stops it at once and deletes what it holds
+within two days. Full specification:
 `docs/INSTANT-ALERTS.md`.
 
 **No analytics, telemetry or crash reporting of any kind**, on any tier. Diagnostics exist,

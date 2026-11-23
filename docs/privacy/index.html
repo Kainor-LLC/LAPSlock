@@ -87,7 +87,7 @@
     <div class="head-main">
       <span class="eyebrow">TenantKeep On-Call</span>
       <h1 class="display">Privacy Policy</h1>
-      <p class="updated">Effective 15 November 2026</p>
+      <p class="updated">Effective 23 November 2026</p>
     </div>
   </div>
 </header>
@@ -329,14 +329,21 @@
     <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/INSTANT-ALERTS.md">Instant alerts contract</a>.</p>
     <p><strong>What our service keeps.</strong> For your organization: your tenant ID and name, whether the
     approval is in place, the Microsoft object IDs of the break-glass accounts you named, and, for each
-    kind of alert, the time and opaque identifiers of the last events already seen, so nothing is
-    announced twice. For each registered phone: its Apple push token, its public encryption key, the
-    Microsoft object ID of the administrator who registered it, and when it last checked in. It does not
-    keep the log entries, audit entries or incidents it reads: each is examined in memory to decide
-    whether to alert, and discarded. It keeps no names, email addresses, IP addresses or locations.</p>
+    kind of alert, the time and identifiers of the last events already seen, so nothing is announced
+    twice. For a security incident its severity is kept beside its identifier, so that a raised severity
+    can be announced. For each registered phone: its Apple push token, which of Apple's two push services
+    that token belongs to, its public encryption key, and when it last checked in. It does not keep who
+    registered a phone: the administrator's sign-in is checked when the phone registers, and nothing from
+    it is stored but the organization. The addresses of the break-glass accounts you name are used once,
+    to find their object IDs, and are not kept. It does not keep the log entries, audit entries or
+    incidents it reads: each is examined in memory to decide whether to alert, and discarded. It keeps no
+    names of people, email addresses, IP addresses or locations.</p>
     <p><strong>How long.</strong> A phone that has not checked in for 30 days is deleted. Turning Instant
-    alerts off on a phone deletes that phone at once. When your organization removes TenantKeep Watch
-    from Entra ID, everything held for your organization is deleted within a day.</p>
+    alerts off on a phone, or signing out, deletes that phone at once; if the phone cannot reach the
+    service at that moment, it is deleted when Apple reports its push token as no longer valid, or after
+    the 30 days. When your organization removes TenantKeep Watch from Entra ID, everything held for your
+    organization is deleted within two days: the service waits until Entra ID has reported the removal
+    for a full day, so that a passing error deletes nothing, and then deletes at its next daily cleanup.</p>
     <p><strong>What an alert contains.</strong> The kind of event and your organization's name, for example
     "Contoso: break-glass sign-in". Each alert is encrypted on our service for one phone, to a key that
     phone made in its own Secure Enclave, and passed to Apple for delivery. Apple sees only the phone's
@@ -344,8 +351,8 @@
     from Microsoft, as that administrator, exactly as it does today.</p>
     <p><strong>What we can and cannot see.</strong> Our service necessarily knows that an alert of a given
     kind happened in your organization at a given time, because it creates the alert; it does not keep
-    that fact after the alert is sent. Its logs record counts and durations, never a tenant ID, a push
-    token, an object ID, or anything from your logs.</p>
+    that fact after the alert is sent. Its logs record counts, durations and the kind of answer Apple or
+    Microsoft gave, never a tenant ID, a push token, an object ID, or anything from your logs.</p>
     <p><strong>Where, and who else.</strong> The service runs in Microsoft Azure, in the Central US region.
     Microsoft (Azure hosts it; Microsoft Graph is where it reads) and Apple (Apple Push Notification
     service delivers the encrypted alert) receive nothing from us beyond what is described here.</p>
@@ -360,9 +367,9 @@
     <h2 class="sec">Your rights</h2>
     <p>Data protection laws such as the GDPR and the CCPA give you rights to access, correct, and delete
     personal information a company holds about you. Kainor LLC holds no personal information about
-    TenantKeep On-Call users, except, for a phone registered for Instant alerts, the registering
-    administrator's Microsoft object ID and the phone's push token. Turning Instant alerts off on the phone
-    deletes them, and you can email us to have them deleted. If you email us and we are holding
+    TenantKeep On-Call users, except, for a phone registered for Instant alerts, the phone's push token
+    and public encryption key, held under the organization's tenant ID. Turning Instant alerts off on the
+    phone deletes them, and you can email us to have them deleted. If you email us and we are holding
     something we have not described here, we will tell you and delete it.</p>
     <p>For your organization's data in Microsoft Entra ID and Intune, those requests go to your own IT
     department or to Microsoft, since that is where the data lives.</p>
