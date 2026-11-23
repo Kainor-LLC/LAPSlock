@@ -1571,6 +1571,7 @@ struct AppRootView: View {
                             requestMacOSRevealConsent: { await root.requestMacOSRevealConsent() },
                             registrations: SettingsRegistrations(
                                 readsThroughOriginal: root.readsThroughOriginalRegistration,
+                                customerCount: root.savedTenants.count,
                                 finishReadUpgrade: { await root.finishReadUpgrade() },
                                 readConsentURL: root.consentURL(for: .read),
                                 writeRouteChoice: root.writeRouteChoice,

@@ -145,4 +145,18 @@ final class AppWiringTests: XCTestCase {
         // The gated check-in is the only registration nobody asked for.
         XCTAssertEqual(relay.components(separatedBy: "interactive: false").count - 1, 1)
     }
+
+    // MARK: - a provider is told before finishing the update
+
+    /// Finishing the update moves reads to the read-only app for every organization at
+    /// once, and approval is per organization: a customer that has not approved it stops
+    /// working on that device. Until the route is per organization, someone with customers
+    /// is told so before the button.
+    func testSomeoneWithCustomersIsWarnedBeforeFinishingTheUpdate() throws {
+        let settings = try appSource("RegistrationSettings.swift")
+        let warning = try XCTUnwrap(settings.range(of: "if registrations.customerCount > 0 {"))
+        let button = try XCTUnwrap(settings.range(of: "message = await registrations.finishReadUpgrade()"))
+        XCTAssertLessThan(warning.lowerBound, button.lowerBound, "the warning comes before the button it is about")
+        XCTAssertTrue(try appSource("LAPSlockApp.swift").contains("customerCount: root.savedTenants.count"))
+    }
 }

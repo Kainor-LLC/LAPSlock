@@ -7,6 +7,9 @@ struct SettingsRegistrations {
     /// This install signed in before the split and its organization has not approved the
     /// read-only app yet.
     var readsThroughOriginal: Bool
+    /// How many customer organizations this person has saved. Finishing the update moves
+    /// reads to the read-only app for all of them at once, so a provider is told first.
+    var customerCount: Int = 0
     /// Signs into the read-only app. Nil on success, or a sentence to show.
     var finishReadUpgrade: () async -> String?
     /// The link an administrator approves the read-only app with.
@@ -27,6 +30,14 @@ struct ReadUpgradeSection: View {
         Section {
             Text("TenantKeep now signs in through a read-only app, with separate apps for actions. Your organization has not approved the read-only app yet, so this device still uses the earlier sign-in. Everything you could do before still works.")
                 .font(.callout)
+            if registrations.customerCount > 0 {
+                Label {
+                    Text("You also work in customer organizations. Finish updating moves this device to the read-only app for every one of them, so approve it in each customer first. A customer that has not approved it stops working on this device until it does.")
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle")
+                }
+                .font(.callout)
+            }
             Button {
                 Task {
                     working = true
