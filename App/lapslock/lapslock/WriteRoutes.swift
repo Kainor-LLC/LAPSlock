@@ -49,11 +49,22 @@ enum WriteRoutes {
     }
 
     /// The set the sign-in manager should start a session with.
-    static func startingRoute(for tenant: String) -> Set<AppRegistration> {
+    ///
+    /// `beforeTheSplit` is an install whose session predates the separate registrations.
+    /// Whatever writes it had turned on were approved on the original registration, which
+    /// is now the one app for every action, so until the organization's approvals have
+    /// been read that is where its writes keep going.
+    static func startingRoute(for tenant: String, beforeTheSplit: Bool) -> Set<AppRegistration> {
         switch choice(for: tenant) {
-        case .combined:  return Set(AppRegistration.separateWrites)
-        case .separate:  return []
-        case .automatic: return combined(for: tenant)
+        case .combined:
+            return Set(AppRegistration.separateWrites)
+        case .separate:
+            return []
+        case .automatic:
+            if UserDefaults.standard.object(forKey: combinedKey(tenant)) == nil, beforeTheSplit {
+                return Set(AppRegistration.separateWrites)
+            }
+            return combined(for: tenant)
         }
     }
 

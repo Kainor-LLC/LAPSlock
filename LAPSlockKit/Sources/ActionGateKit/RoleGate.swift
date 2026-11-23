@@ -38,12 +38,30 @@ public struct GraphRoleGate: RoleGateChecking {
         self.privileged = privileged
     }
 
+    /// The scope tried when the organization has not approved the read one: the activation
+    /// permission, which reads the same list. An install from before the split has only
+    /// this, and so does an organization that approved role activation and not role
+    /// status. It is asked for silently, so it is used only where the person already
+    /// signed into it, and what it reads is their own roles.
+    public static let fallbackScope = PrivilegedAccessGraph.roleActivateScope
+
+    /// Runs `read` with the read-only scope, then once more with the fallback when the
+    /// organization has not approved the first.
+    private func withEitherScope<T>(_ read: (String) async throws -> T) async throws -> T {
+        do {
+            return try await read(Self.scope)
+        } catch GraphError.consentRequired {
+            return try await read(Self.fallbackScope)
+        }
+    }
+
     public func activeRoleTemplateIds() async throws -> Set<String> {
-        let request = GraphRequest(
-            path: Self.instancesPath,
-            query: [URLQueryItem(name: "$select", value: "roleDefinitionId,assignmentType,endDateTime")],
-            scopes: [Self.scope])
-        let page = try await graph.collection(Instance.self, from: request, maxPages: 2)
+        let page = try await withEitherScope { scope in
+            try await graph.collection(Instance.self, from: GraphRequest(
+                path: Self.instancesPath,
+                query: [URLQueryItem(name: "$select", value: "roleDefinitionId,assignmentType,endDateTime")],
+                scopes: [scope]), maxPages: 2)
+        }
         let now = Date()
         // Built-in role definition ids are the role template ids, the same GUIDs in every
         // tenant, which is what makes a table of required roles possible at all.
@@ -60,14 +78,15 @@ public struct GraphRoleGate: RoleGateChecking {
     /// The person's roles active right now, by name, with when each ends (nil for a
     /// permanent assignment), soonest ending first. For the Apple Watch glance.
     public func activeRoles() async throws -> [ActiveRole] {
-        let request = GraphRequest(
-            path: Self.instancesPath,
-            template: "/roleManagement/directory/roleAssignmentScheduleInstances/filterByCurrentUser(principal)?names",
-            query: [URLQueryItem(name: "$select", value: "roleDefinitionId,assignmentType,endDateTime"),
-                    URLQueryItem(name: "$expand", value: "roleDefinition($select=displayName)")],
-            scopes: [Self.scope])
         let now = Date()
-        let items = try await graph.collection(NamedInstance.self, from: request, maxPages: 2).items
+        let items = try await withEitherScope { scope in
+            try await graph.collection(NamedInstance.self, from: GraphRequest(
+                path: Self.instancesPath,
+                template: "/roleManagement/directory/roleAssignmentScheduleInstances/filterByCurrentUser(principal)?names",
+                query: [URLQueryItem(name: "$select", value: "roleDefinitionId,assignmentType,endDateTime"),
+                        URLQueryItem(name: "$expand", value: "roleDefinition($select=displayName)")],
+                scopes: [scope]), maxPages: 2).items
+        }
         return items.compactMap { item in
             if let end = item.endDateTime, end < now { return nil }
             return ActiveRole(name: item.roleDefinition?.displayName ?? "A directory role", endsAt: item.endDateTime,

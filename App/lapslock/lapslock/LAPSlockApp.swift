@@ -516,8 +516,10 @@ final class AppRootModel {
         // rebuilt from the new session as well.
         let tenant = await session.auth.operatingTenantId ?? session.tenantId
         operatingTenantId = tenant
-        await auth?.setCombinedWrites(WriteRoutes.startingRoute(for: tenant), inTenant: tenant)
+        await auth?.setCombinedWrites(
+            WriteRoutes.startingRoute(for: tenant, beforeTheSplit: readsThroughOriginalRegistration), inTenant: tenant)
         liveSession = LiveSession(auth: session.auth, tenantId: tenant)
+        Task { await settleAllWriteRoutes() }
         return nil
     }
 
@@ -570,12 +572,14 @@ final class AppRootModel {
         }
         let tenant = await auth.operatingTenantId ?? account.tenantId
         operatingTenantId = tenant
-        await auth.setCombinedWrites(WriteRoutes.startingRoute(for: tenant), inTenant: tenant)
         readsThroughOriginalRegistration = await auth.isReadingThroughOriginalRegistration
+        await auth.setCombinedWrites(
+            WriteRoutes.startingRoute(for: tenant, beforeTheSplit: readsThroughOriginalRegistration), inTenant: tenant)
         liveSession = LiveSession(auth: auth, tenantId: tenant)
         mode = .live(account)
         AlertsRunner.unpauseAll()
         recomputeEntitlement()
+        Task { await settleAllWriteRoutes() }
         await refreshTenants()
     }
 
@@ -602,12 +606,13 @@ final class AppRootModel {
             }
             let tenant = await auth.operatingTenantId ?? account.tenantId
             operatingTenantId = tenant
-            await auth.setCombinedWrites(WriteRoutes.startingRoute(for: tenant), inTenant: tenant)
+            await auth.setCombinedWrites(WriteRoutes.startingRoute(for: tenant, beforeTheSplit: false), inTenant: tenant)
             readsThroughOriginalRegistration = false
             liveSession = LiveSession(auth: auth, tenantId: tenant)
             mode = .live(account)
             AlertsRunner.unpauseAll()
             recomputeEntitlement()
+            Task { await settleAllWriteRoutes() }
         } catch let error as AuthError {
             // Consent problems get a recovery path, not just an error (§8).
             if let state = ConsentDiagnostics.state(from: error) {
@@ -993,6 +998,30 @@ final class AppRootModel {
         WriteRoutes.store(combined: combined, for: tenant)
     }
 
+    /// The same decision for every kind of write at once, when a session starts, so a
+    /// feature that was already turned on keeps using the registration the organization
+    /// approved without anyone flipping its switch again. Does nothing when the route was
+    /// set by hand or the organization's approvals cannot be read.
+    private func settleAllWriteRoutes() async {
+        guard let auth, let session = liveSession else { return }
+        let tenant = session.tenantId
+        guard WriteRoutes.choice(for: tenant) == .automatic,
+              let approved = await ApprovalProbe(graph: session.graph)
+                .approvedScopes(for: AppRegistration.separateWrites + [.actions]) else { return }
+        var combined = await auth.registrationRoute.combined
+        for registration in AppRegistration.separateWrites {
+            switch ApprovalProbe.choose(for: registration, approved: approved) {
+            case .some(.actions): combined.insert(registration)
+            case .some:           combined.remove(registration)
+            case .none:           break
+            }
+        }
+        // The answer is for the organization it was read in, and the person may have moved.
+        guard liveSession?.tenantId == tenant else { return }
+        await auth.setCombinedWrites(combined, inTenant: tenant)
+        WriteRoutes.store(combined: combined, for: tenant)
+    }
+
     /// Whether the organization has approved a kind of write on either route. Nil when its
     /// approvals cannot be read.
     private func isApproved(_ registration: AppRegistration) async -> Bool? {
@@ -1009,7 +1038,9 @@ final class AppRootModel {
     func setWriteRouteChoice(_ choice: WriteRouteChoice) async {
         guard let tenant = operatingTenantId ?? signedInTenantId else { return }
         WriteRoutes.setChoice(choice, for: tenant)
-        await auth?.setCombinedWrites(WriteRoutes.startingRoute(for: tenant), inTenant: tenant)
+        await auth?.setCombinedWrites(
+            WriteRoutes.startingRoute(for: tenant, beforeTheSplit: readsThroughOriginalRegistration), inTenant: tenant)
+        await settleAllWriteRoutes()
     }
 
     /// Signs the person into the read-only registration and moves reads onto it. Nil on
@@ -1019,6 +1050,7 @@ final class AppRootModel {
         do {
             try await auth.moveReadsToReadRegistration()
             readsThroughOriginalRegistration = await auth.isReadingThroughOriginalRegistration
+            await settleAllWriteRoutes()
             return nil
         } catch let error as AuthError {
             if case .differentAccount = error { return Self.differentAccountMessage }
