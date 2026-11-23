@@ -108,7 +108,11 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
                 {
                     var status = await sender.SendAsync(tenant.TenantId, device, alert.Kind, alert.Title, alert.Body, alert.Link, alert.Urgent, ct);
                     if (status == 202) alerts++;
-                    if (status == 410) await store.DeleteDeviceAsync(tenant.TenantId, device.RowKey, ct);
+                    else if (status == 410) await store.DeleteDeviceAsync(tenant.TenantId, device.RowKey, ct);
+                    // Anything else is an alert that did not go. Counted, so a relay that
+                    // refuses every one shows in the run's line instead of passing as quiet:
+                    // a 402 for every subscriber once went unnoticed for exactly that reason.
+                    else failures++;
                 }
                 catch (Exception) when (!ct.IsCancellationRequested)
                 {

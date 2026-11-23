@@ -9,6 +9,16 @@ public sealed class WatchOptions
     public required string RelayUrl { get; init; }
     public required string EntitlementUrl { get; init; }
     /// <summary>
+    /// The relay's own app registration, as api://client-id: what this function's identity
+    /// asks Microsoft Entra ID for a token for, to send as the alert service itself
+    /// (RELAY-API.md section 15). While it is unset, alerts go the earlier way, with each
+    /// organization's entitlement token, which delivers only to an organization licence.
+    /// </summary>
+    public string? RelayServiceAudience { get; init; }
+
+    /// <summary>The alert service's route on the relay: beside the one RELAY_URL names.</summary>
+    public string RelayServiceUrl => RelayUrl.TrimEnd('/') + "/service";
+    /// <summary>
     /// The client ID of the registration that defines Alerts.Register: phones present tokens
     /// issued for that scope. More than one may be listed, separated by commas, while phones
     /// move from one registration to another.
@@ -28,6 +38,7 @@ public sealed class WatchOptions
         SenderKeySecretUri = Required("SENDER_KEY_SECRET_URI"),
         RelayUrl = Required("RELAY_URL"),
         EntitlementUrl = Required("ENTITLEMENT_URL"),
+        RelayServiceAudience = Environment.GetEnvironmentVariable("RELAY_SERVICE_AUDIENCE") is { Length: > 0 } audience ? audience.TrimEnd('/') : null,
         AlertsApiAudience = Required("ALERTS_API_AUDIENCE"),
     };
 

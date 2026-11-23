@@ -4,8 +4,9 @@ using Microsoft.Azure.Functions.Worker;
 
 namespace Kainor.TenantKeep.Relay;
 
-/// <summary>POST /relay. Reads the body, hands it to RelayHandler, writes the answer.
-/// No logger is injected on purpose: there is nothing about a request worth writing down.</summary>
+/// <summary>POST /relay and POST /relay/service. Each reads the body, hands it to
+/// RelayHandler, writes the answer. No logger is injected on purpose: there is nothing about
+/// a request worth writing down.</summary>
 public sealed class RelayFunction
 {
     readonly RelayHandler _handler;
@@ -14,6 +15,21 @@ public sealed class RelayFunction
 
     [Function("Relay")]
     public async Task<IActionResult> Run([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "relay")] HttpRequest request, CancellationToken cancel)
+    {
+        var body = await ReadAsync(request, cancel);
+        return Write(request, await _handler.HandleAsync(body, request.QueryString.HasValue, request.HttpContext.Connection.RemoteIpAddress?.ToString(), cancel));
+    }
+
+    /// <summary>docs/RELAY-API.md section 15: Kainor's alert service, by its own identity.</summary>
+    [Function("RelayService")]
+    public async Task<IActionResult> RunService([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "relay/service")] HttpRequest request, CancellationToken cancel)
+    {
+        var body = await ReadAsync(request, cancel);
+        return Write(request, await _handler.HandleServiceAsync(body, request.QueryString.HasValue, request.Headers.Authorization, cancel));
+    }
+
+    /// One byte past the limit at most, so an oversized body is refused without being held.
+    static async Task<byte[]> ReadAsync(HttpRequest request, CancellationToken cancel)
     {
         using var buffer = new MemoryStream();
         var limit = RelayRequest.BodyLimit + 1;
@@ -24,7 +40,11 @@ public sealed class RelayFunction
             buffer.Write(chunk, 0, read);
             if (buffer.Length > limit) break;
         }
-        var answer = await _handler.HandleAsync(buffer.ToArray(), request.QueryString.HasValue, request.HttpContext.Connection.RemoteIpAddress?.ToString(), cancel);
+        return buffer.ToArray();
+    }
+
+    static ContentResult Write(HttpRequest request, RelayHandler.Answer answer)
+    {
         if (answer.RetryAfter is int seconds) request.HttpContext.Response.Headers.RetryAfter = seconds.ToString();
         return new ContentResult { StatusCode = answer.Status, Content = answer.Body, ContentType = "application/json; charset=utf-8" };
     }

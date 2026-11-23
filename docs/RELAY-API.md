@@ -19,6 +19,12 @@ with a proxy. Section 12 tells them how.
 > Automation account, which is retired as a route to the phone. Pairing (section 6) happens
 > automatically when the phone registers. Sections 1, 6, 9.1 and 11 say what that changes.
 
+> **Updated 2026-11-23: how Kainor's alert service is recognized.** The envelope and the route
+> in section 2 are unchanged. The alert service now sends on a second route,
+> [section 15](#15-the-alert-services-route), where the relay recognizes it by its own identity
+> instead of by each organization's entitlement token. On that route the relay is not told
+> which organization an alert is for. Section 15.1 says why it was needed.
+
 ---
 
 ## 1. What the relay is, and what it deliberately is not
@@ -129,6 +135,9 @@ issues or refreshes one.
 ---
 
 ## 4. The entitlement check, offline
+
+*This is the check on `POST /relay`. Kainor's alert service is checked as
+[section 15](#15-the-alert-services-route) says, and sends no entitlement token.*
 
 In this order, all in memory, before anything is sent to Apple:
 
@@ -255,14 +264,17 @@ delivers when it can, and the relay is not told.
 |---|---|---|
 | `400` | `bad_request` | The body is not valid JSON, a field is missing, unknown or out of range, or a query string was sent. |
 | `401` | `entitlement_invalid` | Any step 1 to 5 in section 4 failed. |
+| `401` | `service_token_invalid` | Section 15's route only: the caller is not Kainor's alert service. |
 | `402` | `entitlement_tier` | The token is valid but the tier cannot relay. |
 | `410` | `device_unregistered` | APNs answered 410: the app was removed or the token changed. Pair again. |
 | `413` | `too_large` | The body is over 6 KiB, or the ciphertext over its limit. |
 | `429` | `rate_limited` | Section 8. `Retry-After` says when. |
 | `502` | `apns_rejected` | APNs refused for another reason. `message` carries Apple's own reason string, such as `BadDeviceToken`, and nothing from the request. |
 | `503` | `apns_unavailable` | APNs did not answer in time, or the relay is shedding load. Nothing was kept; try again later. |
+| `503` | `keys_unavailable` | Section 15's route only: Microsoft's signing keys could not be fetched, so the caller could not be checked. Nothing was kept; try again shortly. |
 
-No response ever echoes a device token, an envelope, a tenant ID or an entitlement token.
+No response ever echoes a device token, an envelope, a tenant ID, an entitlement token or
+the alert service's token.
 
 ---
 
@@ -281,6 +293,8 @@ tenant ID in the clear. They vanish when the process recycles, and each instance
 its own, so the limits are approximate and generous on purpose. They exist to keep one
 misconfigured run from spending the shared APNs budget, not to meter anyone.
 
+These are the limits on `POST /relay`. The alert service's route has its own, in section 15.4.
+
 ---
 
 ## 9. What the relay sees, and what it keeps
@@ -289,7 +303,8 @@ misconfigured run from spending the shared APNs budget, not to meter anyone.
 |---|---|---|
 | Alert content | Never. Ciphertext only. | No |
 | Device token | During the request, to address APNs | No |
-| Tenant ID | During the request, inside the entitlement token | No |
+| Tenant ID | On `POST /relay`, during the request, inside the entitlement token. On the alert service's route (section 15), never: nothing sent there names an organization | No |
+| The alert service's token | On the alert service's route, during the request. It identifies Kainor's own service and carries nothing about a customer | No |
 | Urgency | During the request | No |
 | Source IP address | During the request, at the platform's edge | Masked to `0.0.0.0` in telemetry, Application Insights' default, which stays on |
 | That a relay request happened, its status and duration | Yes | Platform request telemetry: timestamp, path `/relay`, status, duration. No body, no headers, no query, no custom properties. 30-day retention, ingestion capped at 0.1 GB a day |
@@ -350,8 +365,11 @@ registration for each phone; the privacy policy says what it holds, and the labe
 - **The kill switch.** Turning the relay off deletes the Enclave key and the sender pins.
   Anything sent afterwards fails verification. Turning it on again makes a new key, which
   needs pairing again.
-- **Pro.** The switch is disabled on the free tier with the plan named. The relay's
-  entitlement check is what actually enforces it.
+- **Pro.** The switch is disabled on the free tier with the plan named. A phone whose plan
+  has lapsed stops checking in with the alert service, which removes a phone 30 days after
+  its last check-in. On `POST /relay` the relay's entitlement check enforces the plan as
+  well; on the alert service's route the plan is checked on the phone, where the App Store
+  subscription is known (section 15.5).
 
 ---
 
@@ -368,6 +386,7 @@ registration for each phone; the privacy policy says what it holds, and the labe
 | Replay of a captured request | The phone drops a repeated `id` for 24 hours, and the plaintext carries its time, which the phone shows. |
 | Kainor's APNs signing key is stolen | The thief can push to any device token they know, but only the placeholder: they cannot produce a payload the extension accepts. The key is held in Key Vault, non-exportable, used by the function's managed identity. |
 | A stolen entitlement token | Lets someone use the relay at Kainor's cost until the token expires. It exposes nothing about the tenant. |
+| The alert service's token is stolen | The same, until the token expires, within a day: pushes to device tokens the thief already knows, which show only the "could not be verified" notice, because the thief does not have the sender key. The token is issued to a managed identity, so there is no stored secret to copy; it exists in the service's memory. It is good for the relay and nothing else. |
 | Denial of service | Rate limits per tenant, device and address; consumption-plan scaling; a budget alert. Nothing the attacker does is stored. |
 
 ---
@@ -410,6 +429,86 @@ and a privacy page change in the same release.
   section 9 can be checked against the code as well as a proxy.
 - **Still at submission:** the App Privacy label definitions, section 9.1.
 
+## 15. The alert service's route
+
+| | |
+|---|---|
+| Method | `POST` |
+| Path | `/relay/service` |
+| For | Kainor's own alert service ([INSTANT-ALERTS.md](INSTANT-ALERTS.md)), and no one else |
+| Authentication | `Authorization: Bearer`, a token Microsoft Entra ID issued to the alert service's managed identity, for the relay |
+| Body | Section 3's, without `entitlement`. A body that carries one is refused with `400`, as any unknown field is |
+| Everything else | As section 2: `https` only, 6 KiB, no query string, the envelope of section 5, the answers of section 7 |
+
+A second path, as section 13 requires for anything that changes what the relay sees.
+`POST /relay` is as it was.
+
+### 15.1 Why it exists
+
+The entitlement token of section 4 is issued for an organization license, by tenant ID. A
+Pro subscription bought in the app belongs to an Apple account and is known only to the
+phone: the entitlement service is never told who subscribes, on purpose. So when the sender
+became Kainor's alert service (2026-11-15), it had no token the relay would accept for an
+organization whose administrators subscribe in the app, and their alerts were refused with
+`402`. Found in review on 2026-11-23, before release.
+
+Teaching a server about App Store purchases would have meant keeping a record of who
+subscribes. Instead the relay recognizes the one sender it is run for.
+
+### 15.2 The check
+
+In this order, in memory, before the body is parsed:
+
+1. The token is signed by one of Microsoft Entra ID's published keys for Kainor's tenant.
+   The relay fetches those keys from Microsoft over `https` and caches them. They are
+   Microsoft's public keys, the same for everyone; fetching them tells Microsoft nothing
+   about a request.
+2. Its issuer and its `tid` are Kainor's tenant. A token from any other tenant is refused,
+   whatever it carries.
+3. Its audience is the relay's own app registration, "TenantKeep Relay", which holds no
+   permission to anything. A token for anything else is refused here, and a token for the
+   relay is useless anywhere else.
+4. It is in date, with two minutes of skew allowed.
+5. It is an application's own token, not a person's, and carries the role `Alerts.Send`.
+   The registration requires assignment, and the role is assigned to one identity: the
+   alert service's function app.
+
+A token that fails any step is refused with `401` and the step is not named. If Microsoft's
+keys cannot be fetched the answer is `503 keys_unavailable`, so the alert service tries
+again instead of taking it for a refusal.
+
+There is no secret to steal. The alert service's identity is an Azure managed identity:
+Azure issues its tokens to the running service, and no key or password for it exists to be
+copied.
+
+### 15.3 What the relay sees on this route
+
+The token names Kainor's alert service and carries nothing about a customer. The body
+carries no tenant ID and no entitlement token. So on this route the relay sees a device
+token, an urgency and ciphertext, and **cannot tell which organization an alert is for**:
+less than on `POST /relay`, where the entitlement token names the tenant. It keeps nothing,
+as section 9 says.
+
+### 15.4 Rate limits
+
+| Key | Limit |
+|---|---|
+| Per device token | 30 requests a minute |
+| The whole service | 3,000 requests a minute |
+| Sandbox, the whole service | 120 requests a minute |
+
+Counted as section 8 describes. There is no limit per tenant, because none is seen, and
+none per source address, because the alert service's few addresses carry every
+organization's alerts.
+
+### 15.5 Where the plan is checked
+
+On the phone, where it is known. The app offers the Instant alerts switch only with Pro or
+an organization license, and stops checking in with the alert service once the plan has
+lapsed, after which the service removes the phone (30 days after its last check-in). The
+relay delivers only to the On-Call app's own push topic, under Kainor's key, so nothing but
+the app from the App Store receives what it sends.
+
 ## Change log
 
 - 2026-10-27, draft 1. Written from the 2026-10-25 decision for route D'. One change from
@@ -421,3 +520,7 @@ and a privacy page change in the same release.
 - 2026-11-15, the sender changes to Kainor's alert service (INSTANT-ALERTS.md); pairing is
   automatic. Envelope, request and relay unchanged, so no version change. Sections 1, 6, 9.1
   and 11 annotated.
+- 2026-11-23, a second route, `POST /relay/service`, for Kainor's alert service, recognized
+  by its own identity (section 15). A new path, as section 13 requires. `POST /relay`, the
+  envelope and what the relay keeps are unchanged; on the new route the relay no longer sees
+  a tenant ID.

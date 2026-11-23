@@ -35,6 +35,15 @@ builder.Services.AddSingleton(_ => new HttpClient(new SocketsHttpHandler
     PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
 }) { Timeout = TimeSpan.FromSeconds(10) });
 builder.Services.AddSingleton<IApnsSender, ApnsSender>();
-builder.Services.AddSingleton<RelayHandler>();
+// The alert service's route, RELAY-API.md section 15: accepted only once both settings name
+// Kainor's tenant and the relay's own registration. Until then it refuses everyone.
+ServiceCaller? service = options is { ServiceTenantId: { } tenant, ServiceClientId: { } client }
+    ? new ServiceCaller(tenant, client, new EntraServiceKeys(tenant))
+    : null;
+builder.Services.AddSingleton(provider => new RelayHandler(
+    provider.GetRequiredService<EntitlementCheck>(),
+    provider.GetRequiredService<RelayRateLimiter>(),
+    provider.GetRequiredService<IApnsSender>(),
+    service));
 
 builder.Build().Run();

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -12,7 +13,8 @@ namespace Kainor.TenantKeep.Watch;
 /// <summary>
 /// Sends one alert to one phone through the relay, exactly as RELAY-API.md describes: the
 /// alert sealed with HPKE in authenticated mode, from the watcher's sender key to the phone's
-/// Secure Enclave key, with the tenant's entitlement token beside it.
+/// Secure Enclave key. The relay is told who is sending by this function's own identity
+/// (section 15), so what it is sent names no organization.
 /// </summary>
 public sealed class AlertSender(WatchOptions options, TokenCredential credential, HttpClient http)
 {
@@ -83,16 +85,43 @@ public sealed class AlertSender(WatchOptions options, TokenCredential credential
         var plaintext = JsonSerializer.SerializeToUtf8Bytes(alert);
         var context = Hpke.SetupAuthSender(Base64Url.Decode(device.PublicKey), await KeyAsync(ct), Info, 2, null);
         var ciphertext = context.Seal(Encoding.ASCII.GetBytes(device.DeviceToken), plaintext);
+        var urgency = timeSensitive ? "time-sensitive" : "normal";
+        var envelope = new { suite = Suite, mode = "auth", enc = Base64Url.Encode(context.Enc), ct = Base64Url.Encode(ciphertext) };
+        if (options.RelayServiceAudience is { } audience)
+        {
+            var token = await credential.GetTokenAsync(new TokenRequestContext([audience + "/.default"]), ct);
+            using var message = ServiceRequest(options.RelayServiceUrl, token.Token, device, urgency, envelope);
+            using var answer = await http.SendAsync(message, ct);
+            return (int)answer.StatusCode;
+        }
+        // The earlier way, until RELAY_SERVICE_AUDIENCE is set: the organization's entitlement
+        // token in the body. The entitlement service knows organization licences only, so an
+        // organization whose administrators subscribe in the app is refused with 402 here.
         var request = new
         {
             v = 1,
             deviceToken = device.DeviceToken,
             environment = device.Environment,
-            urgency = timeSensitive ? "time-sensitive" : "normal",
+            urgency,
             entitlement = await EntitlementAsync(tenantId, ct),
-            envelope = new { suite = Suite, mode = "auth", enc = Base64Url.Encode(context.Enc), ct = Base64Url.Encode(ciphertext) },
+            envelope,
         };
         using var response = await http.PostAsJsonAsync(options.RelayUrl, request, ct);
         return (int)response.StatusCode;
+    }
+
+    /// <summary>
+    /// The request for the alert service's route: this function's token for the relay in the
+    /// Authorization header, and a body of the phone's address, the urgency and the sealed
+    /// alert. No organization, and no entitlement token, which the route refuses.
+    /// </summary>
+    internal static HttpRequestMessage ServiceRequest(string url, string token, DeviceRecord device, string urgency, object envelope)
+    {
+        var message = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(new { v = 1, deviceToken = device.DeviceToken, environment = device.Environment, urgency, envelope }),
+        };
+        message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return message;
     }
 }

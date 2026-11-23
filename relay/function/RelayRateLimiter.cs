@@ -17,6 +17,7 @@ public sealed class RelayRateLimiter
     readonly Dictionary<string, (long Window, int Count)> _counts = new();
 
     public const int PerTenant = 120, PerDevice = 30, PerAddress = 240, SandboxPerTenant = 10;
+    public const int PerService = 3000, SandboxPerService = 120;
 
     public RelayRateLimiter(TimeProvider time) { _time = time; }
 
@@ -27,6 +28,18 @@ public sealed class RelayRateLimiter
         var b = Count("d:" + Hash(deviceToken), PerDevice);
         var c = Count("a:" + Hash(address ?? "unknown"), PerAddress);
         return a && b && c;
+    }
+
+    /// <summary>
+    /// The alert service's route, section 15. No tenant is seen there, and the service's few
+    /// addresses carry every organization's alerts, so neither is a key: each phone keeps
+    /// its own limit, under one ceiling for the whole service.
+    /// </summary>
+    public bool TryAcquireService(string deviceToken, bool sandbox)
+    {
+        var a = Count(sandbox ? "s:sandbox" : "s:production", sandbox ? SandboxPerService : PerService);
+        var b = Count("d:" + Hash(deviceToken), PerDevice);
+        return a && b;
     }
 
     public int SecondsUntilNextWindow => 60 - (int)(_time.GetUtcNow().ToUnixTimeSeconds() % 60);

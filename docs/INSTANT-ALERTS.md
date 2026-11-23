@@ -22,7 +22,7 @@ An alert names the kind of event and the organization, for example "Contoso: bre
 2. The organization approves the **TenantKeep Watch** application in Microsoft Entra ID, once. Only a Global Administrator or Privileged Role Administrator can. The app shows the approval link and can send it to one.
 3. The phone registers with the service (section 4) and starts receiving alerts.
 
-Instant alerts are part of Pro and organization licenses.
+Instant alerts are part of Pro and organization licenses. The app checks the plan: it offers the switch only with one, and a phone whose plan has lapsed stops checking in, so the service removes it 30 days later.
 
 ## 3. What the Service Reads
 
@@ -80,7 +80,7 @@ The service runs in Microsoft Azure, Central US. Its sub-processors are Microsof
 
 ## 6. The Alert
 
-Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in authenticated mode, from the service's sender key to the phone's Secure Enclave key, bound to the phone's push token, sent through Kainor's relay to Apple. Kainor's service necessarily knows that an alert of a given kind happened in an organization at a given time, because it creates the alert; it does not keep that fact once the alert is sent.
+Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in authenticated mode, from the service's sender key to the phone's Secure Enclave key, bound to the phone's push token, sent through Kainor's relay to Apple. The service identifies itself to the relay with its own Azure managed identity ([RELAY-API.md](RELAY-API.md) section 15), and what it sends the relay names no organization: a push token, an urgency and the encrypted alert. Kainor's service necessarily knows that an alert of a given kind happened in an organization at a given time, because it creates the alert; it does not keep that fact once the alert is sent.
 
 ## 7. Stopping It
 
@@ -97,3 +97,4 @@ Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in
 ## Change Log
 
 - 2026-11-15: version 1. Break-glass sign-ins, Conditional Access changes and security incidents.
+- 2026-11-23: the service sends through the relay as itself, by managed identity, on the relay's own route for it. Until then an organization whose administrators subscribed in the app, with no organization license, was refused by the relay and received nothing. No change to what the service reads or keeps.

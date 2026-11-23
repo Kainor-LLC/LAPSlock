@@ -2,8 +2,17 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Kainor.TenantKeep.Relay;
+using Microsoft.IdentityModel.JsonWebTokens;
+using Microsoft.IdentityModel.Tokens;
 
 namespace TenantKeep.Relay.Tests;
+
+/// The keys Microsoft would publish, for a test: one RSA key, or a failure to fetch any.
+sealed class FakeKeys(SecurityKey? key) : IServiceKeys
+{
+    public Task<IEnumerable<SecurityKey>> GetAsync(CancellationToken cancel) =>
+        key is null ? throw new HttpRequestException("no route to Microsoft") : Task.FromResult<IEnumerable<SecurityKey>>([key]);
+}
 
 sealed class FixedTime(DateTimeOffset now) : TimeProvider
 {
@@ -58,11 +67,45 @@ static class Fixtures
             "\",\"entitlement\":\"" + (jwt ?? Jwt()) + "\",\"envelope\":{\"suite\":\"" + RelayRequest.Suite + "\",\"mode\":\"" + mode +
             "\",\"enc\":\"" + (enc ?? Enc) + "\",\"ct\":\"" + Ct + "\"}" + (extra ?? "") + "}");
 
-    public static RelayHandler Handler(FakeApns apns, FixedTime? time = null)
+    public static RelayHandler Handler(FakeApns apns, FixedTime? time = null, ServiceCaller? service = null)
     {
         var t = time ?? new FixedTime(Now);
-        return new RelayHandler(new EntitlementCheck(Keyring, t), new RelayRateLimiter(t), apns);
+        return new RelayHandler(new EntitlementCheck(Keyring, t), new RelayRateLimiter(t), apns, service);
     }
+
+    // The alert service's route, RELAY-API.md section 15.
+    public const string Kainor = "11111111-2222-3333-4444-555555555555";
+    public const string RelayClient = "99999999-8888-7777-6666-555555555555";
+    public static readonly RsaSecurityKey ServiceKey = new(RSA.Create(2048)) { KeyId = "service-test" };
+
+    public static ServiceCaller Service(SecurityKey? key = null, bool reachable = true) =>
+        new(Kainor, RelayClient, new FakeKeys(reachable ? key ?? ServiceKey : null));
+
+    /// A token as Microsoft Entra ID issues one to an application: by default the alert
+    /// service's, from Kainor's tenant, for the relay, with the role.
+    public static string ServiceToken(string tenant = Kainor, string audience = RelayClient, string[]? roles = null, string? scp = null,
+        bool expired = false, RsaSecurityKey? key = null, bool olderFormat = false)
+    {
+        var now = DateTime.UtcNow;
+        var claims = new Dictionary<string, object> { ["tid"] = tenant, ["oid"] = Guid.NewGuid().ToString() };
+        if ((roles ?? [ServiceCaller.Role]) is { Length: > 0 } held) claims["roles"] = held;
+        if (scp is not null) claims["scp"] = scp;
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = olderFormat ? $"https://sts.windows.net/{tenant}/" : $"https://login.microsoftonline.com/{tenant}/v2.0",
+            Audience = olderFormat ? "api://" + audience : audience,
+            Claims = claims,
+            IssuedAt = expired ? now.AddHours(-3) : now,
+            NotBefore = expired ? now.AddHours(-3) : now.AddMinutes(-1),
+            Expires = expired ? now.AddHours(-2) : now.AddHours(1),
+            SigningCredentials = new SigningCredentials(key ?? ServiceKey, SecurityAlgorithms.RsaSha256),
+        });
+    }
+
+    public static byte[] ServiceBody(string env = "production", string? extra = null, string? token = null) =>
+        Encoding.UTF8.GetBytes("{\"v\":1,\"deviceToken\":\"" + (token ?? Token) + "\",\"environment\":\"" + env +
+            "\",\"urgency\":\"normal\",\"envelope\":{\"suite\":\"" + RelayRequest.Suite + "\",\"mode\":\"auth\",\"enc\":\"" + Enc +
+            "\",\"ct\":\"" + Ct + "\"}" + (extra ?? "") + "}");
 }
 
 public class RequestTests
@@ -372,5 +415,198 @@ public class ApnsSenderTests
         time.Now = time.Now.AddMinutes(2);
         await Send(sender);
         Assert.Equal(2, signer.Calls);
+    }
+}
+
+/// The alert service's route, RELAY-API.md section 15: the caller is Kainor's own service,
+/// proved by a token from Kainor's tenant for the relay with the Alerts.Send role.
+public class ServiceCallerTests
+{
+    static Task<ServiceCaller.Result> Verify(string? token, ServiceCaller? caller = null) =>
+        (caller ?? Fixtures.Service()).VerifyAsync(token is null ? null : "Bearer " + token, CancellationToken.None);
+
+    [Fact]
+    public async Task TheAlertServicesOwnTokenIsAccepted() =>
+        Assert.Equal(ServiceCaller.Result.Valid, await Verify(Fixtures.ServiceToken()));
+
+    [Fact]
+    public async Task TheOlderTokenFormatIsAcceptedToo() =>
+        Assert.Equal(ServiceCaller.Result.Valid, await Verify(Fixtures.ServiceToken(olderFormat: true)));
+
+    [Fact]
+    public async Task AnIdentityWithoutTheRoleIsRefused()
+    {
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(roles: [])));
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(roles: ["Something.Else"])));
+    }
+
+    [Fact]
+    public async Task AnotherTenantsTokenIsRefusedEvenWithTheRole() =>
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(tenant: Fixtures.Tenant)));
+
+    [Fact]
+    public async Task ATokenForSomethingElseIsRefused() =>
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(audience: "00000003-0000-0000-c000-000000000000")));
+
+    [Fact]
+    public async Task AnExpiredTokenIsRefused() =>
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(expired: true)));
+
+    [Fact]
+    public async Task ATokenSignedByAnotherKeyIsRefused() =>
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(key: new RsaSecurityKey(RSA.Create(2048)) { KeyId = "service-test" })));
+
+    [Fact]
+    public async Task APersonsTokenIsRefused() =>
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(scp: "Alerts.Send")));
+
+    [Fact]
+    public async Task AnUnsignedTokenIsRefused()
+    {
+        var parts = Fixtures.ServiceToken().Split('.');
+        var none = Convert.ToBase64String(Encoding.ASCII.GetBytes("{\"alg\":\"none\",\"typ\":\"JWT\"}")).TrimEnd('=');
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(none + "." + parts[1] + "."));
+    }
+
+    [Fact]
+    public async Task NoTokenAtAllIsRefused()
+    {
+        Assert.Equal(ServiceCaller.Result.Invalid, await Fixtures.Service().VerifyAsync(null, CancellationToken.None));
+        Assert.Equal(ServiceCaller.Result.Invalid, await Fixtures.Service().VerifyAsync("Basic abc", CancellationToken.None));
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify("not-a-token"));
+    }
+
+    [Fact]
+    public async Task KeysThatCannotBeFetchedAreNotTheCallersFault() =>
+        Assert.Equal(ServiceCaller.Result.Unavailable, await Verify(Fixtures.ServiceToken(), Fixtures.Service(reachable: false)));
+}
+
+public class ServiceRouteTests
+{
+    static readonly ApnsResult Accepted = new(200, "1f3a2b4c-5d6e-7f80-91a2-b3c4d5e6f708", null);
+
+    static async Task<RelayHandler.Answer> Run(FakeApns apns, string? token, byte[]? body = null, bool query = false, ServiceCaller? service = null, bool configured = true) =>
+        await Fixtures.Handler(apns, service: configured ? service ?? Fixtures.Service() : null)
+            .HandleServiceAsync(body ?? Fixtures.ServiceBody(), query, token is null ? null : "Bearer " + token, CancellationToken.None);
+
+    [Fact]
+    public async Task TheAlertServiceSendsWithNoEntitlementToken()
+    {
+        var apns = new FakeApns(Accepted);
+        var answer = await Run(apns, Fixtures.ServiceToken());
+        Assert.Equal(202, answer.Status);
+        Assert.Contains("1f3a2b4c", answer.Body);
+        Assert.Equal(1, apns.Calls);
+    }
+
+    [Fact]
+    public void TheBodyIsTheSameRequestWithoutTheEntitlement()
+    {
+        Assert.NotNull(RelayRequest.Parse(Fixtures.ServiceBody(), service: true).Request);
+        // Each route refuses the other's body: nothing is carried that the route does not check.
+        Assert.Null(RelayRequest.Parse(Fixtures.Body(), service: true).Request);
+        Assert.Null(RelayRequest.Parse(Fixtures.ServiceBody()).Request);
+        Assert.Null(RelayRequest.Parse(Fixtures.ServiceBody(extra: ",\"tenant\":\"" + Fixtures.Tenant + "\""), service: true).Request);
+    }
+
+    [Fact]
+    public async Task AnyoneElseIs401AndNothingIsSent()
+    {
+        foreach (var token in new[] { null, "a.b.c", Fixtures.ServiceToken(roles: []), Fixtures.ServiceToken(tenant: Fixtures.Tenant), Fixtures.Jwt() })
+        {
+            var apns = new FakeApns(Accepted);
+            var answer = await Run(apns, token);
+            Assert.Equal(401, answer.Status);
+            Assert.Contains("service_token_invalid", answer.Body);
+            Assert.Equal(0, apns.Calls);
+        }
+    }
+
+    [Fact]
+    public async Task ARelayNotSetUpForTheServiceRefusesEveryone()
+    {
+        var apns = new FakeApns(Accepted);
+        Assert.Equal(401, (await Run(apns, Fixtures.ServiceToken(), configured: false)).Status);
+        Assert.Equal(0, apns.Calls);
+    }
+
+    [Fact]
+    public async Task TheCallerIsCheckedBeforeTheBodyIsRead()
+    {
+        // A stranger learns nothing about what a well-formed body looks like.
+        var answer = await Run(new FakeApns(Accepted), null, body: Encoding.UTF8.GetBytes("not json"));
+        Assert.Equal(401, answer.Status);
+    }
+
+    [Fact]
+    public async Task AMalformedBodyFromTheServiceIs400()
+    {
+        var apns = new FakeApns(Accepted);
+        Assert.Equal(400, (await Run(apns, Fixtures.ServiceToken(), body: Fixtures.Body())).Status);
+        Assert.Equal(400, (await Run(apns, Fixtures.ServiceToken(), query: true)).Status);
+        Assert.Equal(0, apns.Calls);
+    }
+
+    [Fact]
+    public async Task KeysThatCannotBeFetchedAre503SoTheServiceTriesAgain()
+    {
+        var apns = new FakeApns(Accepted);
+        var answer = await Run(apns, Fixtures.ServiceToken(), service: Fixtures.Service(reachable: false));
+        Assert.Equal(503, answer.Status);
+        Assert.Contains("keys_unavailable", answer.Body);
+        Assert.Equal(0, apns.Calls);
+    }
+
+    [Fact]
+    public async Task TheEntitlementRouteDoesNotTakeTheServicesToken()
+    {
+        // The token in the Authorization header means nothing to POST /relay, which reads its body only.
+        var apns = new FakeApns(Accepted);
+        var answer = await Fixtures.Handler(apns, service: Fixtures.Service()).HandleAsync(Fixtures.ServiceBody(), false, "1.2.3.4", CancellationToken.None);
+        Assert.Equal(400, answer.Status);
+        Assert.Equal(0, apns.Calls);
+    }
+
+    [Fact]
+    public async Task EachPhoneKeepsItsLimitAndTheServicesOneAddressIsNotOne()
+    {
+        var handler = Fixtures.Handler(new FakeApns(Accepted), service: Fixtures.Service());
+        var bearer = "Bearer " + Fixtures.ServiceToken();
+        // More phones in a minute than one address may send on the other route.
+        for (int i = 0; i < RelayRateLimiter.PerAddress + 60; i++)
+            Assert.Equal(202, (await handler.HandleServiceAsync(Fixtures.ServiceBody(token: i.ToString("x64")), false, bearer, CancellationToken.None)).Status);
+        // One phone still gets thirty.
+        for (int i = 0; i < RelayRateLimiter.PerDevice; i++)
+            Assert.Equal(202, (await handler.HandleServiceAsync(Fixtures.ServiceBody(), false, bearer, CancellationToken.None)).Status);
+        var limited = await handler.HandleServiceAsync(Fixtures.ServiceBody(), false, bearer, CancellationToken.None);
+        Assert.Equal(429, limited.Status);
+        Assert.NotNull(limited.RetryAfter);
+    }
+
+    [Fact]
+    public void TheServiceHasOneCeilingAndSandboxALowerOne()
+    {
+        var limiter = new RelayRateLimiter(new FixedTime(Fixtures.Now));
+        for (int i = 0; i < RelayRateLimiter.SandboxPerService; i++) Assert.True(limiter.TryAcquireService(i.ToString("x64"), true));
+        Assert.False(limiter.TryAcquireService("ff".PadLeft(64, '0'), true));
+        // Sandbox spending its ceiling does not take production's.
+        Assert.True(limiter.TryAcquireService("ee".PadLeft(64, '0'), false));
+    }
+
+    [Fact]
+    public async Task NoAnswerEchoesTheTokenOrThePhone()
+    {
+        var token = Fixtures.ServiceToken();
+        var answers = new List<RelayHandler.Answer>();
+        foreach (var apple in new[] { 200, 400, 410, 503 }) answers.Add(await Run(new FakeApns(new ApnsResult(apple, null, "BadDeviceToken")), token));
+        answers.Add(await Run(new FakeApns(Accepted), "a.b.c"));
+        answers.Add(await Run(new FakeApns(Accepted), token, query: true));
+        foreach (var a in answers)
+        {
+            Assert.DoesNotContain(Fixtures.Token, a.Body);
+            Assert.DoesNotContain(Fixtures.Ct, a.Body);
+            Assert.DoesNotContain(token, a.Body);
+            Assert.DoesNotContain(Fixtures.Kainor, a.Body);
+        }
     }
 }

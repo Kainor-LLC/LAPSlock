@@ -69,6 +69,15 @@ pwsh ./watch/infra/New-WatchSenderKey.ps1 -VaultName kainor-watch-prod-kv
 az role assignment delete --role "Key Vault Secrets Officer" --assignee connor@kainor.com --scope /subscriptions/<subscription id>/resourceGroups/kainor-watch-prod-rg/providers/Microsoft.KeyVault/vaults/kainor-watch-prod-kv
 ```
 
+6. The relay's trust in this service. Read the plan it prints, then run it again with `-Apply`. It makes the "TenantKeep Relay" registration, gives this function's identity the `Alerts.Send` role on it, and sets the relay's two settings. It sets this function's `RELAY_SERVICE_AUDIENCE` only once the relay answers on `/relay/service`, so publish the relay first and run it once more. It prints `relayAudience`.
+
+```
+pwsh ./watch/infra/New-RelayServiceTrust.ps1
+pwsh ./watch/infra/New-RelayServiceTrust.ps1 -Apply
+```
+
+Any later deployment of `main.bicep` must pass `watchClientId`, `alertsApiAudience` and `relayServiceAudience=<relayAudience>` together: the template writes every setting, and one left out is written empty.
+
 Nothing runs until the function code is published (step H3), so these resources cost
 almost nothing before then.
 

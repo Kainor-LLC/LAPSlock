@@ -33,6 +33,9 @@ param watchClientId string = ''
 @description('The TenantKeep Alerts API app ID URI, from New-WatchApps.ps1. Empty on the first run.')
 param alertsApiAudience string = ''
 
+@description('The relay\'s app registration as api://client-id, from New-RelayServiceTrust.ps1. Empty sends the earlier way, which delivers to organization licences only.')
+param relayServiceAudience string = ''
+
 var storageName = replace('${prefix}st', '-', '')
 var deploymentContainer = 'deploymentpackage'
 
@@ -130,6 +133,7 @@ resource site 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'ALERTS_API_AUDIENCE', value: alertsApiAudience }
         { name: 'SENDER_KEY_SECRET_URI', value: '${vault.properties.vaultUri}secrets/watch-sender-key' }
         { name: 'RELAY_URL', value: 'https://kainor-relay-prod-func.azurewebsites.net/relay' }
+        { name: 'RELAY_SERVICE_AUDIENCE', value: relayServiceAudience }
         { name: 'ENTITLEMENT_URL', value: 'https://kainor-lapslock-prod-func.azurewebsites.net/entitlement' }
       ]
     }

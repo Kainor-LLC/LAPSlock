@@ -169,4 +169,38 @@ public class WatchTests
         Assert.False(DeviceFunctions.IsPublicKey("not base64url!"));
         Assert.False(DeviceFunctions.IsPublicKey(null));
     }
+
+    [Fact]
+    public async Task AsTheAlertServiceTheRequestNamesNoOrganizationAndCarriesNoEntitlement()
+    {
+        // RELAY-API.md section 15. The relay refuses any other field, so this list is the contract.
+        var device = new DeviceRecord { PartitionKey = "c0ffee00-1111-2222-3333-444455556666", RowKey = "key", DeviceToken = new string('b', 64), Environment = "production", PublicKey = "unused" };
+        using var message = AlertSender.ServiceRequest("https://relay.example/relay/service", "the-services-token", device, "time-sensitive",
+            new { suite = "DHKEM-P256-HKDF-SHA256/HKDF-SHA256/AES-256-GCM", mode = "auth", enc = "e", ct = "c" });
+
+        Assert.Equal(HttpMethod.Post, message.Method);
+        Assert.Equal("https://relay.example/relay/service", message.RequestUri!.ToString());
+        Assert.Equal("Bearer", message.Headers.Authorization!.Scheme);
+        Assert.Equal("the-services-token", message.Headers.Authorization.Parameter);
+
+        var body = await message.Content!.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal(["deviceToken", "envelope", "environment", "urgency", "v"], json.RootElement.EnumerateObject().Select(p => p.Name).Order());
+        Assert.Equal(["ct", "enc", "mode", "suite"], json.RootElement.GetProperty("envelope").EnumerateObject().Select(p => p.Name).Order());
+        Assert.Equal("time-sensitive", json.RootElement.GetProperty("urgency").GetString());
+        Assert.DoesNotContain("c0ffee00", body);
+        Assert.DoesNotContain("the-services-token", body);
+    }
+
+    [Fact]
+    public void TheServiceRouteSitsBesideTheRelaysOwnAndIsOffUntilItsAudienceIsSet()
+    {
+        var options = new WatchOptions
+        {
+            StorageAccount = "s", WatchClientId = "w", SenderKeySecretUri = "u", EntitlementUrl = "e", AlertsApiAudience = "a",
+            RelayUrl = "https://relay.example/relay",
+        };
+        Assert.Equal("https://relay.example/relay/service", options.RelayServiceUrl);
+        Assert.Null(options.RelayServiceAudience);
+    }
 }
