@@ -126,6 +126,10 @@ final class RelayCoordinator {
         if let setup, let code = try? phone.pairingCode(), let token = try? await setup.token(false) {
             var request = URLRequest(url: Self.endpoint)
             request.httpMethod = "DELETE"
+            // Short: this now also runs at sign-out, and a phone with no connection must
+            // not sit on the sign-out button for the default minute. The key is deleted
+            // below either way, and the service drops a phone it cannot reach.
+            request.timeoutInterval = 8
             request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try? JSONEncoder().encode(["deviceToken": code.deviceToken])
