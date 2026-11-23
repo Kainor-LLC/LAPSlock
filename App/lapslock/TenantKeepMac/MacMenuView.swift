@@ -26,8 +26,14 @@ struct MacMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
-            if model.mode != .signedOut {
+            if model.turnedOffByOrganization {
+                Text("TenantKeep On-Call").font(.headline)
+                Label("Your organization has turned this app off on its Macs. Nothing is signed in and nothing is read.", systemImage: "lock")
+                    .font(.caption).foregroundStyle(.secondary)
+            } else {
+                header
+            }
+            if model.mode != .signedOut, !model.turnedOffByOrganization {
                 Picker("View", selection: $tab) {
                     ForEach(Tab.allCases) { Text($0.label).tag($0) }
                 }
@@ -48,7 +54,7 @@ struct MacMenuView: View {
             Divider()
                 .onAppear { model.menuOpened() }
             HStack {
-                if model.mode != .signedOut {
+                if model.mode != .signedOut, !model.turnedOffByOrganization {
                     Button("Refresh") { Task { await model.refreshAll() } }
                     Button(model.mode == .demo ? "Leave demo" : "Sign out") { Task { await model.signOut() } }
                 }

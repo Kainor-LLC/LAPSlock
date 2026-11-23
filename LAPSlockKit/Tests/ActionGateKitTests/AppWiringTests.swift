@@ -218,6 +218,32 @@ final class AppWiringTests: XCTestCase {
         XCTAssertEqual(mac.components(separatedBy: "activationRouteSettled = false").count - 1, 3)
     }
 
+    /// An organization can turn the Mac menu bar app off on its Macs, or keep it to its own
+    /// tenant, with a managed preference. Only a forced value counts, the check comes
+    /// before anyone is let in, and it is made again while the app runs.
+    func testTheMacAppObeysItsOrganizationsSwitch() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let mac = try String(contentsOf: root.appendingPathComponent("App/lapslock/TenantKeepMac/MacModel.swift"), encoding: .utf8)
+        XCTAssertTrue(mac.contains("CFPreferencesAppValueIsForced(key as CFString, app) ? CFPreferencesCopyAppValue(key as CFString, app) : nil"),
+                      "a value somebody wrote with defaults is not the organization's")
+        XCTAssertTrue(mac.contains("static let disabledKey = \"menuBar.disabled\""))
+        XCTAssertTrue(mac.contains("static let tenantPinKey = \"tenant.pin\""))
+
+        let signIn = body(of: "func signIn() async {", in: mac)
+        let refused = try XCTUnwrap(signIn.range(of: "guard !policy.disabled else { turnedOffByOrganization = true; return }"))
+        let asked = try XCTUnwrap(signIn.range(of: "try await auth.signIn()"))
+        XCTAssertLessThan(refused.lowerBound, asked.lowerBound, "a switched-off app does not ask anyone to sign in")
+        XCTAssertTrue(signIn.contains("await enter(auth, signed, policy: policy)"), "the tenant pin is checked before going live")
+        XCTAssertFalse(signIn.contains("goLive("), "sign-in never goes live around the pin")
+
+        let enter = body(of: "private func enter(_ auth: MSALAuthManager, _ signed: AdminAccount, policy: Policy) async {", in: mac)
+        XCTAssertTrue(enter.contains("guard policy.allows(tenant: signed.tenantId) else {"))
+        XCTAssertTrue(enter.contains("try? await auth.signOut(account: signed)"))
+        XCTAssertTrue(body(of: "func refreshStatus() async {", in: mac).contains("await applyPolicy()"), "read again while it runs")
+        XCTAssertEqual(mac.components(separatedBy: "goLive(auth, ").count - 1, 1, "one way in, and it is through the pin")
+    }
+
     // MARK: - a provider's customers move one at a time
 
     /// Approval is per organization, so the move to the read-only app is too. Finishing

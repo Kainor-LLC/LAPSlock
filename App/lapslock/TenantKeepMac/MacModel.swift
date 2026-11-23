@@ -17,6 +17,49 @@ final class MacModel {
     private(set) var sessionProblem: String?
     private(set) var busy = false
     var message: String?
+    /// The organization turned this app off on its Macs. Nothing is signed in or read.
+    private(set) var turnedOffByOrganization = false
+
+    /// What an organization set for this app on a Mac it manages: a managed preference for
+    /// `com.kainor.tenantkeep.menubar`, delivered by a configuration profile (in Intune, a
+    /// preference file for that domain). Only a value the organization forced counts, so a
+    /// value somebody wrote with `defaults` changes nothing. Like the iPhone app's policy,
+    /// it can only take away: turn the app off, or keep it to one organization.
+    struct Policy: Equatable {
+        /// `menuBar.disabled`: this app is not to be used on the organization's Macs.
+        var disabled = false
+        /// `tenant.pin`: the one organization this app may be signed in to.
+        var tenantPin: String?
+
+        static let disabledKey = "menuBar.disabled"
+        static let tenantPinKey = "tenant.pin"
+
+        /// `value` returns a key's value only when the organization forced it.
+        init(forced value: (String) -> Any?) {
+            switch value(Self.disabledKey) {
+            case let flag as Bool:     disabled = flag
+            case let text as String:   disabled = ["true", "yes", "1"].contains(text.trimmingCharacters(in: .whitespaces).lowercased())
+            case let number as NSNumber: disabled = number.boolValue
+            default:                   disabled = false
+            }
+            if let pin = (value(Self.tenantPinKey) as? String)?.trimmingCharacters(in: .whitespaces).lowercased(),
+               UUID(uuidString: pin) != nil {
+                tenantPin = pin
+            }
+        }
+
+        static func current() -> Policy {
+            let app = (Bundle.main.bundleIdentifier ?? "com.kainor.tenantkeep.menubar") as CFString
+            return Policy { key in
+                CFPreferencesAppValueIsForced(key as CFString, app) ? CFPreferencesCopyAppValue(key as CFString, app) : nil
+            }
+        }
+
+        /// Whether an account from `tenant` may stay signed in.
+        func allows(tenant: String) -> Bool {
+            tenantPin.map { $0 == tenant.lowercased() } ?? true
+        }
+    }
 
     // Devices
     /// What is typed. The results follow it once typing pauses.
@@ -93,19 +136,53 @@ final class MacModel {
             return
         }
         self.auth = auth
-        if let restored = await auth.restoreSession() {
-            goLive(auth, restored)
+        let policy = Policy.current()
+        let restored = await auth.restoreSession()
+        if policy.disabled {
+            // Turned off since somebody last signed in here: that session ends too.
+            if let restored { try? await auth.signOut(account: restored) }
+            turnedOffByOrganization = true
+            return
+        }
+        if let restored { await enter(auth, restored, policy: policy) }
+    }
+
+    /// Goes live, unless the organization keeps this app to another organization than the
+    /// one that signed in. Then the account is signed straight back out, as on the iPhone.
+    private func enter(_ auth: MSALAuthManager, _ signed: AdminAccount, policy: Policy) async {
+        guard policy.allows(tenant: signed.tenantId) else {
+            try? await auth.signOut(account: signed)
+            message = "This Mac's organization allows TenantKeep for its own tenant only. That account belongs to another."
+            return
+        }
+        goLive(auth, signed)
+    }
+
+    /// The policy again, while running: a menu bar app stays open for days.
+    private func applyPolicy() async {
+        let policy = Policy.current()
+        if policy.disabled {
+            if mode == .live { await signOut() }
+            turnedOffByOrganization = true
+        } else {
+            turnedOffByOrganization = false
+            if mode == .live, let account, !policy.allows(tenant: account.tenantId) {
+                await signOut()
+                message = "This Mac's organization allows TenantKeep for its own tenant only. That account belongs to another."
+            }
         }
     }
 
     func signIn() async {
+        let policy = Policy.current()
+        guard !policy.disabled else { turnedOffByOrganization = true; return }
         guard let auth = auth ?? (try? MSALAuthManager(config: Self.authConfiguration)) else { return }
         self.auth = auth
         busy = true
         defer { busy = false }
         do {
             let signed = try await auth.signIn()
-            goLive(auth, signed)
+            await enter(auth, signed, policy: policy)
         } catch {
             message = "Sign-in didn't complete. " + (error as? AuthError).map { String(describing: $0) }.map { "(" + $0 + ")" }.orEmpty
         }
@@ -168,13 +245,17 @@ final class MacModel {
     /// The session and service health: what the menu bar icon shows. Never the devices.
     func refreshStatus() async {
         statusCheckedAt = Date()
+        await applyPolicy()
+        guard mode != .signedOut else { return }
         await checkSession()
         await loadPulse()
     }
 
     /// The menu opened: a status older than five minutes is read again.
     func menuOpened() {
-        guard mode != .signedOut else { return }
+        // Signed out, the timer is not running: the organization's switch is read here, so
+        // turning the app off or back on shows without a relaunch.
+        guard mode != .signedOut else { turnedOffByOrganization = Policy.current().disabled; return }
         if let statusCheckedAt, Date().timeIntervalSince(statusCheckedAt) < 5 * 60 { return }
         Task { await refreshStatus() }
     }
