@@ -101,7 +101,14 @@ pwsh ./watch/infra/Get-WatchRuns.ps1
 ```
 
 `notSent=403x1` on a line means one alert was answered 403 by the relay; `0` is a request
-that got no answer. `RegisterDevice refused reason=Expired` is a phone whose Microsoft
+that got no answer. `outcomes=` says what became of every alert in the run:
+`202 production x1, 502 BadDeviceToken sandbox x2; newest 202 production` is one alert
+Apple took for a production address and two Apple refused, with Apple's own word for why,
+for addresses registered as sandbox. `newest` is the outcome for the phone that registered
+or checked in last, which answers "it says registered and nothing arrived" for the phone
+in your hand. `BadDeviceToken` is an address that is not valid for the service it was
+registered for: an old address, or a development build's address registered as production
+or the reverse. `RegisterDevice refused reason=Expired` is a phone whose Microsoft
 sign-in the service would not accept, which the phone shows as "answered 401". The reason
 is the kind of refusal only (Expired, InvalidAudience, InvalidIssuer, noScope, noToken).
 To test the whole path, sign in with a break-glass account the organization has named and

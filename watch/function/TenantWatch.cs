@@ -24,6 +24,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
         var slow = DateTime.UtcNow.Minute % 5 == 0;
         int organizations = 0, alerts = 0, failures = 0;
         var notSent = new Dictionary<int, int>();
+        var outcomes = new Outcomes();
         foreach (var tenant in await store.TenantsAsync(ct))
         {
             // One organization's failure, whatever it is, must not end the run for the
@@ -31,7 +32,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
             // registered key that cannot be used once stopped everyone later in the list.
             try
             {
-                var (watched, sent, failed) = await WatchOneAsync(tenant, slow, notSent, ct);
+                var (watched, sent, failed) = await WatchOneAsync(tenant, slow, notSent, outcomes, ct);
                 if (watched) organizations++;
                 alerts += sent;
                 failures += failed;
@@ -43,9 +44,10 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
         }
         // Counts only: no tenant, account, policy or device. The relay's answers to alerts
         // that did not go are counted by status, because the relay keeps no request log and
-        // nothing else says why a phone was not reached.
-        log.LogInformation("TenantWatch organizations={Organizations} alerts={Alerts} failures={Failures} notSent={NotSent}",
-            organizations, alerts, failures, NotSent(notSent));
+        // nothing else says why a phone was not reached. `outcomes` says the same for every
+        // alert, with Apple's word for a refusal and which of Apple's services the address is for.
+        log.LogInformation("TenantWatch organizations={Organizations} alerts={Alerts} failures={Failures} notSent={NotSent} outcomes={Outcomes}",
+            organizations, alerts, failures, NotSent(notSent), outcomes.ToString());
     }
 
     /// <summary>
@@ -55,7 +57,32 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
     internal static string NotSent(Dictionary<int, int> byStatus) =>
         byStatus.Count == 0 ? "none" : string.Join(',', byStatus.OrderBy(s => s.Key).Select(s => $"{s.Key}x{s.Value}"));
 
-    async Task<(bool Watched, int Alerts, int Failures)> WatchOneAsync(TenantRecord tenant, bool slow, Dictionary<int, int> notSent, CancellationToken ct)
+    /// <summary>
+    /// What became of each alert in a run, as counts: the relay's status, its word for an
+    /// alert that did not go (Apple's own, when Apple refused), and whether the phone's
+    /// address is for Apple's production or sandbox service. "202 production x1, 502
+    /// BadDeviceToken sandbox x2; newest 202 production". No organization, account or phone.
+    /// `newest` is the same for the phone that registered or checked in last: the one
+    /// somebody is usually holding when they ask why nothing arrived.
+    /// </summary>
+    internal sealed class Outcomes
+    {
+        readonly SortedDictionary<string, int> counts = new(StringComparer.Ordinal);
+        (DateTimeOffset Seen, string What)? newest;
+
+        public void Add(int status, string? reason, string? environment, DateTimeOffset? seen)
+        {
+            var what = status + (reason is null ? "" : " " + reason) + " " + (environment is "production" or "sandbox" ? environment : "unknown");
+            counts[what] = counts.GetValueOrDefault(what) + 1;
+            var at = seen ?? DateTimeOffset.MinValue;
+            if (newest is not { } held || at >= held.Seen) newest = (at, what);
+        }
+
+        public override string ToString() =>
+            newest is not { } last ? "none" : string.Join(", ", counts.Select(c => $"{c.Key} x{c.Value}")) + "; newest " + last.What;
+    }
+
+    async Task<(bool Watched, int Alerts, int Failures)> WatchOneAsync(TenantRecord tenant, bool slow, Dictionary<int, int> notSent, Outcomes outcomes, CancellationToken ct)
     {
         var devices = await store.DevicesAsync(tenant.TenantId, ct);
         if (devices.Count == 0) return (false, 0, 0);
@@ -117,7 +144,8 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
                 // Each phone on its own too: one that cannot be sent to does not cost the others their alert.
                 try
                 {
-                    var status = await sender.SendAsync(tenant.TenantId, device, alert.Kind, alert.Title, alert.Body, alert.Link, alert.Urgent, ct);
+                    var (status, reason) = await sender.SendAsync(tenant.TenantId, device, alert.Kind, alert.Title, alert.Body, alert.Link, alert.Urgent, ct);
+                    outcomes.Add(status, reason, device.Environment, device.LastSeen);
                     if (status == 202) alerts++;
                     else if (status == 410) await store.DeleteDeviceAsync(tenant.TenantId, device.RowKey, ct);
                     // Anything else is an alert that did not go. Counted, so a relay that
@@ -133,6 +161,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
                 {
                     failures++;
                     notSent[0] = notSent.GetValueOrDefault(0) + 1;
+                    outcomes.Add(0, null, device.Environment, device.LastSeen);
                 }
             }
         return (true, alerts, failures);

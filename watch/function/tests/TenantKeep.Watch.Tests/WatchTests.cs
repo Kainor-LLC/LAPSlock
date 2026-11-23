@@ -229,6 +229,42 @@ public class WatchTests
     }
 
     /// <summary>
+    /// "Registered, and nothing arrived" had no answer in the log: three alerts went, two
+    /// did not, and nothing said which phone was which or why Apple refused. The run now
+    /// says, in counts, and names the outcome for the phone that registered last.
+    /// </summary>
+    [Fact]
+    public void ARunSaysWhatBecameOfEveryAlertAndOfTheNewestPhones()
+    {
+        var outcomes = new TenantWatch.Outcomes();
+        Assert.Equal("none", outcomes.ToString());
+
+        var now = DateTimeOffset.UtcNow;
+        outcomes.Add(202, null, "sandbox", now.AddDays(-1));
+        outcomes.Add(502, "BadDeviceToken", "sandbox", now.AddHours(-2));
+        outcomes.Add(202, null, "production", now);
+        outcomes.Add(202, null, "sandbox", null);
+        outcomes.Add(0, null, "somewhere else", now.AddHours(-3));
+        Assert.Equal("0 unknown x1, 202 production x1, 202 sandbox x2, 502 BadDeviceToken sandbox x1; newest 202 production", outcomes.ToString());
+    }
+
+    [Fact]
+    public void TheReasonForAnUnsentAlertIsOneWordFromTheRelayOrNothing()
+    {
+        // Apple's own identifier when Apple refused.
+        Assert.Equal("BadDeviceToken", AlertSender.Reason("{\"error\":\"apns_rejected\",\"message\":\"Apple refused the notification: BadDeviceToken.\"}"));
+        // The relay's code otherwise, and when Apple gave no identifier.
+        Assert.Equal("apns_rejected", AlertSender.Reason("{\"error\":\"apns_rejected\",\"message\":\"Apple refused the notification: no reason given.\"}"));
+        Assert.Equal("rate_limited", AlertSender.Reason("{\"error\":\"rate_limited\",\"message\":\"Too many requests. Try again shortly.\"}"));
+        // Nothing that is not a plain identifier reaches the log.
+        Assert.Null(AlertSender.Reason("{\"error\":\"a tenant 11111111-1111-4111-8111-111111111111\",\"message\":\"x\"}"));
+        Assert.Null(AlertSender.Reason("{\"error\":[\"apns_rejected\"]}"));
+        Assert.Null(AlertSender.Reason("\"apns_rejected\""));
+        Assert.Null(AlertSender.Reason("<html>Bad Gateway</html>"));
+        Assert.Null(AlertSender.Reason(""));
+    }
+
+    /// <summary>
     /// A refused phone sees only "401". The log says which kind of refusal it was, and
     /// nothing else: the token library's messages can quote the token.
     /// </summary>
