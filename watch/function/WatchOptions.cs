@@ -8,8 +8,18 @@ public sealed class WatchOptions
     public required string SenderKeySecretUri { get; init; }
     public required string RelayUrl { get; init; }
     public required string EntitlementUrl { get; init; }
-    /// <summary>The On-Call app's client ID: phones present tokens issued for its Alerts.Register scope.</summary>
+    /// <summary>
+    /// The client ID of the registration that defines Alerts.Register: phones present tokens
+    /// issued for that scope. More than one may be listed, separated by commas, while phones
+    /// move from one registration to another.
+    /// </summary>
     public required string AlertsApiAudience { get; init; }
+
+    /// <summary>Each accepted audience, as the bare client ID and as its api:// form.</summary>
+    public IReadOnlyList<string> AlertsApiAudiences =>
+        [.. AlertsApiAudience
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .SelectMany(id => new[] { id, "api://" + id })];
 
     public static WatchOptions FromEnvironment() => new()
     {

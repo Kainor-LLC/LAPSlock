@@ -32,9 +32,9 @@ public sealed record PhoneCaller(string TenantId, string ObjectId, IReadOnlySet<
 }
 
 /// <summary>
-/// Checks the bearer token a phone sends: issued by Microsoft Entra ID for the On-Call app's
-/// Alerts.Register scope, signed by Entra's published keys, in date, and from the tenant it
-/// names. No Graph token ever reaches the watcher; this one is good only for registering.
+/// Checks the bearer token a phone sends: issued by Microsoft Entra ID for the Alerts.Register
+/// scope of the TenantKeep Alerts registration, signed by Entra's published keys, in date,
+/// and from the tenant it names. No Graph token ever reaches the watcher; this one is good only for registering.
 /// </summary>
 public sealed class PhoneToken(WatchOptions options)
 {
@@ -54,7 +54,7 @@ public sealed class PhoneToken(WatchOptions options)
         var configuration = await keys.GetConfigurationAsync(ct);
         var result = await handler.ValidateTokenAsync(authorization["Bearer ".Length..].Trim(), new TokenValidationParameters
         {
-            ValidAudiences = [options.AlertsApiAudience, "api://" + options.AlertsApiAudience],
+            ValidAudiences = options.AlertsApiAudiences,
             IssuerSigningKeys = configuration.SigningKeys,
             // Multi-tenant: the issuer must be Entra's for the tenant the token itself names.
             IssuerValidator = (issuer, token, _) =>

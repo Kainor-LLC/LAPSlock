@@ -35,6 +35,8 @@ public enum UserActionScopes {
     public static let authenticationMethods = "UserAuthenticationMethod.ReadWrite.All"
     /// Confirm compromised and dismiss; needs Entra ID P2 in the tenant.
     public static let riskyUsers = "IdentityRiskyUser.ReadWrite.All"
+    /// The risk level shown on a person. A read, through the read registration.
+    public static let riskRead = "IdentityRiskyUser.Read.All"
     /// The TAP, issued on the credential path, asked for with the rest.
     public static let temporaryAccessPass = "UserAuthMethod-TAP.ReadWrite.All"
 
@@ -582,7 +584,7 @@ public actor UserActionsService: UserActionsProviding {
         let request = GraphRequest(path: "/identityProtection/riskyUsers/" + target.userId,
                                    template: "/identityProtection/riskyUsers/{id}",
                                    query: [URLQueryItem(name: "$select", value: "riskLevel")],
-                                   scopes: [UserActionScopes.riskyUsers])
+                                   scopes: [UserActionScopes.riskRead])
         do {
             return try await graph.decode(RiskRecord.self, from: request).riskLevel
         } catch GraphError.notFound {

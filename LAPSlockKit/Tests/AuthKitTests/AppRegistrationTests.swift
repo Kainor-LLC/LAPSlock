@@ -47,10 +47,37 @@ final class AppRegistrationTests: XCTestCase {
     /// single switch that turns it off.
     func testNoWritePermissionIsHeldTwice() {
         var seen: [String: AppRegistration] = [:]
-        for registration in AppRegistration.allCases where !registration.isReadOnly {
+        for registration in AppRegistration.separateWrites {
             for scope in registration.scopes where !AppRegistration.read.scopes.contains(scope) {
                 XCTAssertNil(seen[scope], scope + " is in two registrations")
                 seen[scope] = registration
+            }
+        }
+    }
+
+    /// The one-approval route must be able to do exactly what the separate apps can,
+    /// no more and no less, and must not be able to read anything they cannot.
+    func testTheCombinedRegistrationHoldsExactlyWhatTheSeparateOnesHold() {
+        let separate = Set(AppRegistration.separateWrites.flatMap(\.scopes))
+        XCTAssertEqual(Set(AppRegistration.actions.scopes), separate)
+        XCTAssertEqual(AppRegistration.separateWrites.count, 5)
+        XCTAssertFalse(AppRegistration.separateWrites.contains(.actions))
+    }
+
+    func testTheAlertsRegistrationHoldsNothingOnGraph() {
+        XCTAssertTrue(AppRegistration.alerts.scopes.isEmpty)
+        XCTAssertEqual(AppRegistration.alerts.ownScopes, ["api://" + AppRegistration.alerts.clientId + "/Alerts.Register"])
+        for registration in AppRegistration.allCases where registration != .alerts {
+            XCTAssertTrue(registration.ownScopes.isEmpty, registration.rawValue)
+        }
+    }
+
+    func testConsentScopesAreNamedInFullAndNeverDefault() {
+        for registration in AppRegistration.allCases {
+            XCTAssertFalse(registration.qualifiedScopes.isEmpty, registration.rawValue)
+            for scope in registration.qualifiedScopes {
+                XCTAssertFalse(scope.hasSuffix(".default"), scope)
+                XCTAssertTrue(scope.hasPrefix("https://graph.microsoft.com/") || scope.hasPrefix("api://"), scope)
             }
         }
     }
@@ -125,14 +152,97 @@ final class AppRegistrationTests: XCTestCase {
         }
     }
 
-    /// A registration's own API scope, which is how a phone registers for Instant alerts.
+    /// A registration's own scope, which is how a phone registers for Instant alerts.
     func testARegistrationsOwnScopeBelongsToIt() throws {
-        let read = "api://" + AppRegistration.read.clientId + "/Alerts.Register"
-        XCTAssertEqual(try ScopeRouter.registration(for: [read]), .read)
-        let before = "api://" + AppRegistration.roleActivation.clientId.uppercased() + "/Alerts.Register"
-        XCTAssertEqual(try ScopeRouter.registration(for: [before]), .roleActivation)
+        let register = try XCTUnwrap(AppRegistration.alerts.ownScopes.first)
+        XCTAssertEqual(try ScopeRouter.registration(for: [register]), .alerts)
+        XCTAssertEqual(try ScopeRouter.registration(for: [register.uppercased()]), .alerts)
+        // The same scope name on another registration is not a scope anybody defined.
+        XCTAssertThrowsError(try ScopeRouter.registration(for: ["api://" + AppRegistration.read.clientId + "/Alerts.Register"]))
         XCTAssertThrowsError(try ScopeRouter.registration(for: ["api://00000000-0000-0000-0000-000000000000/Anything"]))
-        XCTAssertThrowsError(try ScopeRouter.registration(for: [read, "Device.Read.All"]))
+        XCTAssertThrowsError(try ScopeRouter.registration(for: [register, "Device.Read.All"]))
+    }
+
+    /// Scopes name the registration they belong to; the combined registration is never
+    /// that. It only ever stands in, when an organization's route says so.
+    func testScopesNeverBelongToTheCombinedRegistration() throws {
+        for registration in AppRegistration.separateWrites {
+            XCTAssertEqual(try ScopeRouter.registration(for: registration.scopes), registration)
+            for scope in registration.scopes where !AppRegistration.read.scopes.contains(scope) {
+                XCTAssertEqual(try ScopeRouter.registration(for: [scope]), registration)
+            }
+        }
+    }
+
+    // MARK: - what a switch asks for
+
+    /// Turning on group changes: three reads through the read registration, then the one
+    /// write through its own.
+    func testASwitchIsSplitIntoOneRequestPerRegistrationReadsFirst() throws {
+        let asked = ["GroupMember.ReadWrite.All", "Directory.Read.All", "Policy.Read.All", "PrivilegedEligibilitySchedule.Read.AzureADGroup"]
+        let requests = try ScopeRouter.requests(for: asked)
+        XCTAssertEqual(requests.map(\.registration), [.read, .groupMembership])
+        XCTAssertEqual(requests[0].scopes, ["Directory.Read.All", "Policy.Read.All", "PrivilegedEligibilitySchedule.Read.AzureADGroup"])
+        XCTAssertEqual(requests[1].scopes, ["GroupMember.ReadWrite.All"])
+    }
+
+    /// The user actions switch covers two registrations. Each is asked for what was named
+    /// and belongs to it, and the read Graph wants beside "block sign-in" goes with it.
+    func testAWriteRegistrationIsAskedForWhatWasNamedAndTheReadItMustCarry() throws {
+        let asked = ["User.RevokeSessions.All", "User.EnableDisableAccount.All", "User.Read.All",
+                     "UserAuthenticationMethod.ReadWrite.All", "IdentityRiskyUser.ReadWrite.All", "UserAuthMethod-TAP.ReadWrite.All"]
+        let requests = try ScopeRouter.requests(for: asked)
+        XCTAssertEqual(requests.map(\.registration), [.read, .userActions, .accountRecovery])
+        XCTAssertEqual(requests[0].scopes, ["User.Read.All"])
+        XCTAssertEqual(requests[1].scopes, ["User.RevokeSessions.All", "User.EnableDisableAccount.All", "IdentityRiskyUser.ReadWrite.All", "User.Read.All"])
+        XCTAssertEqual(requests[2].scopes, ["UserAuthenticationMethod.ReadWrite.All", "UserAuthMethod-TAP.ReadWrite.All"])
+        // Each request is one a single registration can answer.
+        for request in requests {
+            XCTAssertEqual(try ScopeRouter.registration(for: request.scopes), request.registration)
+        }
+    }
+
+    /// Mac password reveal names one permission of the device actions registration, and
+    /// one is what Microsoft is asked for.
+    func testASwitchAsksForNoMoreThanItNamed() throws {
+        let requests = try ScopeRouter.requests(for: ["DeviceManagementManagedDevices.PrivilegedOperations.All"])
+        XCTAssertEqual(requests.map(\.registration), [.deviceActions])
+        XCTAssertEqual(requests[0].scopes, ["DeviceManagementManagedDevices.PrivilegedOperations.All"])
+    }
+
+    func testASwitchWithAnUnknownPermissionIsRefused() {
+        XCTAssertThrowsError(try ScopeRouter.requests(for: ["Device.Read.All", "Mail.Send"]))
+        XCTAssertThrowsError(try ScopeRouter.requests(for: []))
+    }
+
+    // MARK: - the organization's route
+
+    func testByDefaultEveryRequestUsesItsOwnRegistration() {
+        let route = RegistrationRoute()
+        for registration in AppRegistration.allCases {
+            XCTAssertEqual(route.client(for: registration), registration)
+        }
+    }
+
+    func testAnOrganizationOnTheCombinedRouteWritesThroughIt() {
+        let route = RegistrationRoute(combined: [.deviceActions, .accountRecovery])
+        XCTAssertEqual(route.client(for: .deviceActions), .actions)
+        XCTAssertEqual(route.client(for: .accountRecovery), .actions)
+        // Kinds of write it approved separately keep their own registration.
+        XCTAssertEqual(route.client(for: .userActions), .userActions)
+        // The route never moves a read or the alerts scope onto a registration that writes.
+        XCTAssertEqual(route.client(for: .read), .read)
+        XCTAssertEqual(RegistrationRoute(combined: [.read, .alerts]).client(for: .read), .read)
+        XCTAssertEqual(RegistrationRoute(combined: [.read, .alerts]).client(for: .alerts), .alerts)
+    }
+
+    /// An install from before the split keeps reading through the original registration
+    /// until its organization approves the read one. Writes are not affected.
+    func testReadsCanStayOnTheOriginalRegistration() {
+        let route = RegistrationRoute(readsThroughOriginal: true)
+        XCTAssertEqual(route.client(for: .read), .actions)
+        XCTAssertEqual(route.client(for: .deviceActions), .deviceActions)
+        XCTAssertEqual(route.client(for: .alerts), .alerts)
     }
 
     // MARK: - the published list and the source tree
@@ -157,14 +267,14 @@ final class AppRegistrationTests: XCTestCase {
             XCTAssertEqual(entry["summary"] as? String, registration.summary, key)
             XCTAssertEqual(entry["readOnly"] as? Bool, registration.isReadOnly, key)
             XCTAssertEqual(entry["scopes"] as? [String], registration.scopes, key)
+            XCTAssertEqual(entry["ownScopes"] as? [String], registration.ownScopes, key)
         }
     }
 
     /// Scopes written in the source that no registration holds, each with its reason. A
     /// permission added to a module without a home in `AppRegistration` fails the test below.
     private static let notRouted: [String: String] = [
-        "SecurityAlert.Read.All": "defined in SecurityKit, held in reserve, never requested",
-        "User.Read": "the Mac menu bar app's session check; to be replaced by a base scope"
+        "SecurityAlert.Read.All": "defined in SecurityKit, held in reserve, never requested"
     ]
 
     func testEveryPermissionWrittenInTheSourceHasARegistration() throws {

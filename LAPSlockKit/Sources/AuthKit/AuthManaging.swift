@@ -82,6 +82,7 @@ public enum AuthError: Error, Sendable, Equatable {
     case consentRequired             // scope not yet consented (incremental consent, §4)
     case userCancelled
     case tenantMismatch              // token tenant != expected account tenant (§3.3 guard)
+    case differentAccount            // an interactive sign-in came back as somebody else; their session was discarded
     case underlying(String)          // MSAL/other, message only, never contains a secret
 }
 

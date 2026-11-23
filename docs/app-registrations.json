@@ -1,6 +1,7 @@
 {
-  "about": "The Microsoft Entra app registrations TenantKeep On-Call signs in through, and the delegated Microsoft Graph permissions it asks each one for. Published for the approval page and for TenantKeep Posture, which shares the read registration. A test in LAPSlockKit holds this file and the app's code together. For the read registration, the list is On-Call's share: TenantKeep Posture may hold further read permissions on it.",
+  "about": "The Microsoft Entra app registrations TenantKeep On-Call signs in through, and the delegated Microsoft Graph permissions it asks each one for. Published for the consent page and for TenantKeep Posture, which shares the read registration. A test in LAPSlockKit holds this file and the app's code together. For the read registration, the list is On-Call's share: TenantKeep Posture may hold further read permissions on it. For writes an organization approves either the separate registrations it wants or the one named TenantKeep Actions, which holds all of them; where both are approved the separate one is used.",
   "resource": "https://graph.microsoft.com",
+  "consentPage": "https://tenantkeep.app/consent/",
   "registrations": [
     {
       "key": "read",
@@ -34,18 +35,41 @@
         "PrivilegedAssignmentSchedule.Read.AzureADGroup",
         "PrivilegedEligibilitySchedule.Read.AzureADGroup",
         "RoleManagementPolicy.Read.AzureADGroup"
-      ]
+      ],
+      "ownScopes": []
+    },
+    {
+      "key": "actions",
+      "name": "TenantKeep Actions",
+      "clientId": "50c9aa83-4f5c-4203-a3c0-adab54a2ba3a",
+      "readOnly": false,
+      "summary": "Every action in one app: role activation, device actions, user actions, account recovery and group membership. Approve this one, or the separate apps for the actions you want.",
+      "scopes": [
+        "RoleAssignmentSchedule.ReadWrite.Directory",
+        "PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup",
+        "DeviceManagementManagedDevices.PrivilegedOperations.All",
+        "DeviceManagementManagedDevices.ReadWrite.All",
+        "User.RevokeSessions.All",
+        "User.EnableDisableAccount.All",
+        "User.Read.All",
+        "IdentityRiskyUser.ReadWrite.All",
+        "UserAuthenticationMethod.ReadWrite.All",
+        "UserAuthMethod-TAP.ReadWrite.All",
+        "GroupMember.ReadWrite.All"
+      ],
+      "ownScopes": []
     },
     {
       "key": "roleActivation",
       "name": "TenantKeep Role Activation",
-      "clientId": "50c9aa83-4f5c-4203-a3c0-adab54a2ba3a",
+      "clientId": "315a1b17-88ea-4255-9b1f-b945cf84750b",
       "readOnly": false,
       "summary": "Activates the roles and group memberships you are eligible for, and approves or denies requests.",
       "scopes": [
         "RoleAssignmentSchedule.ReadWrite.Directory",
         "PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup"
-      ]
+      ],
+      "ownScopes": []
     },
     {
       "key": "deviceActions",
@@ -56,7 +80,8 @@
       "scopes": [
         "DeviceManagementManagedDevices.PrivilegedOperations.All",
         "DeviceManagementManagedDevices.ReadWrite.All"
-      ]
+      ],
+      "ownScopes": []
     },
     {
       "key": "userActions",
@@ -69,7 +94,8 @@
         "User.EnableDisableAccount.All",
         "User.Read.All",
         "IdentityRiskyUser.ReadWrite.All"
-      ]
+      ],
+      "ownScopes": []
     },
     {
       "key": "accountRecovery",
@@ -80,7 +106,8 @@
       "scopes": [
         "UserAuthenticationMethod.ReadWrite.All",
         "UserAuthMethod-TAP.ReadWrite.All"
-      ]
+      ],
+      "ownScopes": []
     },
     {
       "key": "groupMembership",
@@ -90,6 +117,18 @@
       "summary": "Adds and removes group members.",
       "scopes": [
         "GroupMember.ReadWrite.All"
+      ],
+      "ownScopes": []
+    },
+    {
+      "key": "alerts",
+      "name": "TenantKeep Alerts",
+      "clientId": "d7c387b7-8e67-4957-bc67-4b71824a60ea",
+      "readOnly": false,
+      "summary": "Registers a phone to receive Instant alerts. It has no access to Microsoft Graph.",
+      "scopes": [],
+      "ownScopes": [
+        "api://d7c387b7-8e67-4957-bc67-4b71824a60ea/Alerts.Register"
       ]
     }
   ]

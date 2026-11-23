@@ -24,11 +24,11 @@ public protocol RoleGateChecking: Sendable {
 public struct GraphRoleGate: RoleGateChecking {
 
     public static let instancesPath = "/roleManagement/directory/roleAssignmentScheduleInstances/filterByCurrentUser(on='principal')"
-    /// The ReadWrite scope the PIM opt-in already consented to, so the gate never adds a
-    /// consent prompt of its own. Least privilege on the page is
-    /// `RoleAssignmentSchedule.Read.Directory`; asking for it would prompt again for a
-    /// strict subset of what was granted.
-    public static let scope = PrivilegedAccessGraph.roleActivateScope
+    /// The read-only scope, so the check goes through the read registration and never
+    /// through one that can activate a role. Requested silently: when the organization has
+    /// not approved it the gate cannot tell, the runner proceeds, and Microsoft's 403 is
+    /// the answer.
+    public static let scope = PrivilegedAccessGraph.roleActiveReadScope
 
     private let graph: GraphClient
     private let privileged: any PrivilegedAccessProviding

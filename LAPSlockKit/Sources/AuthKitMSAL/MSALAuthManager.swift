@@ -21,7 +21,9 @@ import AuthKit
 //   * per-account tenant-specific authority for silent acquisition (§2.1)
 //   * tenant pinning: the token's tid must match the account's tenant (§3.3)
 //   * ThisDeviceOnly, non-synced keychain for the MSAL token cache (§4)
-//   * config injection for BYO registration (§9)
+//   * one MSAL client per app registration (AuthKit's AppRegistration), chosen from the
+//     scopes a request names, so a read never travels through a registration that can
+//     write, and every client is the same person in the same tenant
 //
 // Concurrency: MSAL dereferences the presenting view controller inside acquireToken, on
 // the calling thread. This actor runs on the cooperative pool, so calling acquireToken
@@ -32,40 +34,29 @@ import AuthKit
 // Silent acquisition presents nothing and stays here. Any new MSAL entry point that can
 // show a screen must be dispatched the same way.
 
-/// Configuration for the app registration. `.vendorDefault` ships with the app;
-/// `.custom` is supplied by an enterprise using their own registration (§9 BYO).
+/// What differs between the apps that sign in: where Microsoft returns to. The client IDs
+/// are not here; they come from `AppRegistration`, one per registration.
 public struct AuthConfiguration: Sendable {
-    public let clientId: String
+    /// `msauth.{bundle id}://auth`, which every registration this app signs into must list.
     public let redirectUri: String
     /// nil → use /common for account selection, then pin to the account's tenant.
-    /// Set to a specific tenant GUID only for single-tenant BYO deployments.
     public let authorityTenant: String?
 
-    public init(clientId: String, redirectUri: String, authorityTenant: String? = nil) {
-        self.clientId = clientId
+    public init(redirectUri: String, authorityTenant: String? = nil) {
         self.redirectUri = redirectUri
         self.authorityTenant = authorityTenant
     }
 
-    /// Vendor multi-tenant default (§9).
-    ///
-    /// This client ID points at the "LAPSlock" app registration in the Kainor LLC tenant.
-    /// It is NOT a secret, it appears in every authorization request and is public by
-    /// design for a PKCE public client. What it is, however, is load-bearing: every
-    /// shipped build references it, and every customer tenant's consent creates a service
-    /// principal pointing at this object. Changing or deleting it breaks every install.
-    ///
-    /// Registration facts:
-    ///   * Audience: AzureADMultipleOrgs (any work/school tenant, no personal accounts)
-    ///   * Public client, allow public client flows = Yes, no client secret
-    ///   * Delegated Graph scopes only: DeviceManagementManagedDevices.Read.All,
-    ///     Device.Read.All, DeviceLocalCredential.ReadBasic.All,
-    ///     DeviceLocalCredential.Read.All
+    /// The iPhone and iPad app.
     ///
     /// The bundle identifier of the app target MUST be com.kainor.lapslock, because the
     /// redirect URI below is derived from it. A mismatch produces an MSAL redirect error.
+    ///
+    /// The registrations themselves are multi-tenant public clients with no secret and
+    /// delegated permissions only. Their client IDs are load-bearing: every shipped build
+    /// references them, and every customer tenant's consent creates a service principal
+    /// pointing at them. Changing or deleting one breaks every install.
     public static let vendorDefault = AuthConfiguration(
-        clientId: "50c9aa83-4f5c-4203-a3c0-adab54a2ba3a",
         redirectUri: "msauth.com.kainor.lapslock://auth",
         authorityTenant: nil    // multi-tenant: /common for selection, then pin per account
     )
@@ -73,8 +64,21 @@ public struct AuthConfiguration: Sendable {
 
 public actor MSALAuthManager: AuthManaging {
     private let config: AuthConfiguration
-    private let application: MSALPublicClientApplication
+    /// One MSAL client per registration, built the first time it is needed. They share one
+    /// keychain cache and nothing else: an account one client signed in is invisible to
+    /// the others (verified on a phone), so each registration's first token is interactive.
+    private var applications: [AppRegistration: MSALPublicClientApplication] = [:]
     private var pinnedAccount: AdminAccount?
+
+    /// True when this install signed in before the split and its organization has not
+    /// approved the read registration yet: reads keep going through the original
+    /// registration, as they always did, until `moveReadsToReadRegistration()` succeeds.
+    private var readsThroughOriginal = false
+
+    /// Per tenant, the kinds of write that go through the combined registration because
+    /// the organization approved that one and not the separate one. Decided by the app
+    /// from what the organization approved; empty means every write uses its own.
+    private var combinedWrites: [String: Set<AppRegistration>] = [:]
 
     /// The most recent MSAL failure, reduced to the allowlisted shape in `AuthFailureDetail`.
     ///
@@ -116,16 +120,64 @@ public actor MSALAuthManager: AuthManaging {
         _ = Self.debugLoggingInstalled
         #endif
 
+        // Built now so a bad configuration fails here, at launch, and not at first sign-in.
+        self.applications = [.read: try Self.makeApplication(.read, config: config)]
+    }
+
+    private static func makeApplication(_ registration: AppRegistration, config: AuthConfiguration) throws -> MSALPublicClientApplication {
         let authorityURL = URL(string: "https://login.microsoftonline.com/\(config.authorityTenant ?? "common")")!
         let authority = try MSALAADAuthority(url: authorityURL)
         let pcaConfig = MSALPublicClientApplicationConfig(
-            clientId: config.clientId,
+            clientId: registration.clientId,
             redirectUri: config.redirectUri,
             authority: authority
         )
         // Keep tokens on this device only; never sync to iCloud Keychain (§4).
         pcaConfig.cacheConfig.keychainSharingGroup = Bundle.main.bundleIdentifier ?? "com.kainor.lapslock"
-        self.application = try MSALPublicClientApplication(configuration: pcaConfig)
+        return try MSALPublicClientApplication(configuration: pcaConfig)
+    }
+
+    private func application(for registration: AppRegistration) throws -> MSALPublicClientApplication {
+        if let existing = applications[registration] { return existing }
+        let made = try Self.makeApplication(registration, config: config)
+        applications[registration] = made
+        return made
+    }
+
+    /// The registration reads go through: the read one, or the original one for an install
+    /// from before the split whose organization has not approved the read one.
+    private var primaryRegistration: AppRegistration { readsThroughOriginal ? .actions : .read }
+
+    // MARK: - which registration
+
+    /// How requests reach the registrations in the tenant being operated in.
+    public var registrationRoute: RegistrationRoute {
+        RegistrationRoute(combined: combinedWrites[operatingPin?.expected ?? ""] ?? [],
+                          readsThroughOriginal: readsThroughOriginal)
+    }
+
+    /// Records which kinds of write `tenantId` sends through the combined registration.
+    /// An empty set means each uses its own. The app decides this from what the
+    /// organization approved; nothing here guesses.
+    public func setCombinedWrites(_ registrations: Set<AppRegistration>, inTenant tenantId: String) {
+        combinedWrites[tenantId.lowercased()] = registrations.intersection(AppRegistration.separateWrites)
+    }
+
+    /// The registration and client a request for `scopes` in `tenant` goes through.
+    private func client(for scopes: [String], tenant: String) throws -> MSALPublicClientApplication {
+        let home: AppRegistration
+        do {
+            home = try ScopeRouter.registration(for: scopes)
+        } catch ScopeRouter.RoutingError.unknownScope(let scope) {
+            throw AuthError.underlying("no app registration holds " + scope)
+        } catch ScopeRouter.RoutingError.mixedRegistrations {
+            throw AuthError.underlying("the scopes belong to more than one app registration")
+        } catch {
+            throw AuthError.underlying("no scopes to ask for")
+        }
+        let route = RegistrationRoute(combined: combinedWrites[tenant.lowercased()] ?? [],
+                                      readsThroughOriginal: readsThroughOriginal)
+        return try application(for: route.client(for: home))
     }
 
     public var currentAccount: AdminAccount? {
@@ -140,7 +192,8 @@ public actor MSALAuthManager: AuthManaging {
         guard let account = pinnedAccount else { return nil }
         let wanted = tenantId.lowercased()
         guard wanted != account.tenantId.lowercased(),
-              let msalAccount = try? application.account(forIdentifier: account.id),
+              let app = try? application(for: primaryRegistration),
+              let msalAccount = try? app.account(forIdentifier: account.id),
               let profile = msalAccount.tenantProfiles?.first(where: { $0.tenantId?.lowercased() == wanted })
         else { return account.objectId }
         return (profile.claims?["oid"] as? String) ?? profile.identifier ?? account.objectId
@@ -150,17 +203,37 @@ public actor MSALAuthManager: AuthManaging {
 
     @discardableResult
     public func signIn() async throws -> AdminAccount {
+        // Always the read registration. A person who signs in today has no session on the
+        // original one to fall back to, and should not acquire one.
+        let app = try application(for: .read)
         let webParams = try await MainActorUI.webviewParameters()
         let params = MSALInteractiveTokenParameters(scopes: Self.baseScopes, webviewParameters: webParams)
         params.promptType = .selectAccount
 
-        let result = try await recording(.signIn) { try await acquireInteractive(params) }
+        let result = try await recording(.signIn) { try await acquireInteractive(app, params) }
         let account = try Self.account(from: result)
         self.pinnedAccount = account
+        self.readsThroughOriginal = false
         // A new account starts in its own tenant. Carrying a previous session's customer
         // tenant across a sign-in would be both confusing and wrong.
         self.activeTenant = nil
+        // Nor does anyone else's session on another registration survive it.
+        removeAccounts(except: account.id, keepingPrimary: false)
         return account
+    }
+
+    /// Removes cached accounts from the registrations: everyone but `identifier`, or with
+    /// `identifier` nil, everyone. The primary registration is skipped when the caller
+    /// signs it out itself, with Microsoft's own sign-out.
+    private func removeAccounts(except identifier: String?, keepingPrimary: Bool) {
+        for registration in AppRegistration.allCases {
+            if keepingPrimary, registration == primaryRegistration { continue }
+            guard let app = try? application(for: registration),
+                  let accounts = try? app.allAccounts() else { continue }
+            for other in accounts where identifier == nil || other.identifier != identifier {
+                try? app.remove(other)
+            }
+        }
     }
 
     /// Restores a previous session without prompting, or returns nil.
@@ -181,11 +254,22 @@ public actor MSALAuthManager: AuthManaging {
     /// a cached account alone would show the device list and then fail on the first Graph
     /// call, which is worse than showing the sign-in screen.
     public func restoreSession() async -> AdminAccount? {
-        guard let msalAccount = (try? application.allAccounts())?.first,
+        if let restored = await restore(through: .read) { return restored }
+        // An install from before the split has its session on the original registration
+        // and none on the read one. It carries on exactly as it did, reading through the
+        // original, until the organization approves the read registration and the person
+        // signs into it once (`moveReadsToReadRegistration`).
+        return await restore(through: .actions)
+    }
+
+    private func restore(through registration: AppRegistration) async -> AdminAccount? {
+        guard let app = try? application(for: registration),
+              let msalAccount = (try? app.allAccounts())?.first,
               let account = Self.account(from: msalAccount)
         else { return nil }
 
         pinnedAccount = account
+        readsThroughOriginal = (registration == .actions)
         // A restored session starts in the account's own tenant. An MSP's customer selection
         // is deliberately not carried across a launch, operating in someone else's tenant
         // should be a decision made now, not one inherited from last week.
@@ -197,8 +281,25 @@ public actor MSALAuthManager: AuthManaging {
         } catch {
             pinnedAccount = nil
             activeTenant = nil
+            readsThroughOriginal = false
             return nil
         }
+    }
+
+    /// True while reads still go through the original registration (see `restoreSession`).
+    public var isReadingThroughOriginalRegistration: Bool { readsThroughOriginal }
+
+    /// Signs the same person into the read registration and moves reads onto it. One
+    /// interactive sign-in. Throws `consentRequired` or `userCancelled` when the
+    /// organization has not approved the read registration, and reads then stay where
+    /// they were, so nothing stops working.
+    public func moveReadsToReadRegistration() async throws {
+        guard let account = pinnedAccount else { throw AuthError.noAccount }
+        guard readsThroughOriginal else { return }
+        guard let home = TenantPin(expected: account.tenantId) else { throw AuthError.tenantMismatch }
+        _ = try await interactiveToken(try application(for: .read), scopes: Self.baseScopes,
+                                       account: account, pin: home, claims: nil)
+        readsThroughOriginal = false
     }
 
     /// Builds an `AdminAccount` from a cached MSAL account.
@@ -234,29 +335,31 @@ public actor MSALAuthManager: AuthManaging {
     public func token(scopes: [String], allowInteractive: Bool) async throws -> String {
         guard let account = pinnedAccount else { throw AuthError.noAccount }
         guard let pin = operatingPin else { throw AuthError.noAccount }
+        let app = try client(for: scopes, tenant: pin.expected)
+
+        // A registration this person has not signed into on this device has nothing
+        // cached, so there is nothing to try silently: its first token is interactive.
+        guard let msalAccount = try? app.account(forIdentifier: account.id) else {
+            guard allowInteractive else { throw AuthError.interactionRequired }
+            return try await interactiveToken(app, scopes: scopes, account: account, pin: pin, claims: nil)
+        }
 
         // Pin acquisition to the tenant we are deliberately operating in (§2.1, §3.3). For a
         // single-organization admin that is their own tenant; for an MSP who has switched, it
         // is the customer's. Either way the authority we ASK and the tenant we ACCEPT are the
         // same value, which is the property that makes the guard below meaningful.
-        let tenantAuthority = try MSALAADAuthority(url: pin.authorityURL)
-
-        // account(forIdentifier:) returns a NON-optional MSALAccount and throws if the
-        // account isn't in the cache, so no conditional binding here.
-        let msalAccount = try application.account(forIdentifier: account.id)
-
         let silent = MSALSilentTokenParameters(scopes: scopes, account: msalAccount)
-        silent.authority = tenantAuthority
+        silent.authority = try MSALAADAuthority(url: pin.authorityURL)
 
         do {
-            let result = try await recording(.tokenSilent) { try await acquireSilent(silent) }
+            let result = try await recording(.tokenSilent) { try await acquireSilent(app, silent) }
             try pin.validate(returnedTenantId: Self.tenantId(of: result))   // §3.3 guard
             return result.accessToken
         } catch let error as AuthError {
             switch error {
             case .interactionRequired, .consentRequired:
                 guard allowInteractive else { throw AuthError.interactionRequired }
-                return try await interactiveToken(scopes: scopes, account: account, pin: pin)
+                return try await interactiveToken(app, scopes: scopes, account: account, pin: pin, claims: nil)
             default:
                 throw error
             }
@@ -269,44 +372,73 @@ public actor MSALAuthManager: AuthManaging {
     public func silentToken(scopes: [String], tenantId: String) async throws -> String {
         guard let account = pinnedAccount else { throw AuthError.noAccount }
         guard let pin = TenantPin(expected: tenantId) else { throw AuthError.tenantMismatch }
-        let msalAccount = try application.account(forIdentifier: account.id)
+        let app = try client(for: scopes, tenant: pin.expected)
+        guard let msalAccount = try? app.account(forIdentifier: account.id) else { throw AuthError.interactionRequired }
         let silent = MSALSilentTokenParameters(scopes: scopes, account: msalAccount)
         silent.authority = try MSALAADAuthority(url: pin.authorityURL)
-        let result = try await recording(.tokenSilent) { try await acquireSilent(silent) }
+        let result = try await recording(.tokenSilent) { try await acquireSilent(app, silent) }
         try pin.validate(returnedTenantId: Self.tenantId(of: result))
         return result.accessToken
     }
 
     public func signOut(account: AdminAccount) async throws {
+        // Every other registration first, so no client keeps a session the person believes
+        // they ended. Local removal only: the primary registration's sign-out below is the
+        // one that talks to Microsoft.
+        removeAccounts(except: nil, keepingPrimary: true)
+
         // A throw here means nothing is cached for this account, which is
         // indistinguishable from "already signed out", so absorb it.
+        let app = try application(for: primaryRegistration)
         let msalAccount: MSALAccount
         do {
-            msalAccount = try application.account(forIdentifier: account.id)
+            msalAccount = try app.account(forIdentifier: account.id)
         } catch {
-            if pinnedAccount?.id == account.id { pinnedAccount = nil; activeTenant = nil }
+            if pinnedAccount?.id == account.id { clearSession() }
             return
         }
         let webParams = try await MainActorUI.webviewParameters()
         let params = MSALSignoutParameters(webviewParameters: webParams)
 
-        try await performSignout(msalAccount, params)
-        if pinnedAccount?.id == account.id { pinnedAccount = nil; activeTenant = nil }
+        try await performSignout(app, msalAccount, params)
+        if pinnedAccount?.id == account.id { clearSession() }
+    }
+
+    private func clearSession() {
+        pinnedAccount = nil
+        activeTenant = nil
+        readsThroughOriginal = false
+        combinedWrites = [:]
     }
 
     // MARK: - interactive fallback (incremental consent, §4)
 
+    /// One interactive request through `app`, for the person already signed in.
+    ///
+    /// **The account that comes back must be that person.** Microsoft's screen lets
+    /// somebody else sign in instead, which is what happens when an administrator approves
+    /// a permission on a technician's phone. The approval, if it was for the organization,
+    /// is recorded at Microsoft and stands. The administrator's session is removed from
+    /// this device and the request fails with `differentAccount`: reads and writes are
+    /// always sent as the one person who signed in, in the one tenant they chose.
     private func interactiveToken(
+        _ app: MSALPublicClientApplication,
         scopes: [String],
         account: AdminAccount,
-        pin: TenantPin
+        pin: TenantPin,
+        claims: MSALClaimsRequest?
     ) async throws -> String {
         let webParams = try await MainActorUI.webviewParameters()
         let params = MSALInteractiveTokenParameters(scopes: scopes, webviewParameters: webParams)
         params.authority = try MSALAADAuthority(url: pin.authorityURL)
         params.loginHint = account.username
+        if let claims { params.claimsRequest = claims }
 
-        let result = try await recording(.tokenInteractive) { try await acquireInteractive(params) }
+        let result = try await recording(.tokenInteractive) { try await acquireInteractive(app, params) }
+        guard result.account.identifier == account.id else {
+            try? app.remove(result.account)
+            throw AuthError.differentAccount
+        }
         try pin.validate(returnedTenantId: Self.tenantId(of: result))
         return result.accessToken
     }
@@ -338,15 +470,8 @@ public actor MSALAuthManager: AuthManaging {
             throw AuthError.underlying("malformed claims request (\(claimsError.code))")
         }
 
-        let webParams = try await MainActorUI.webviewParameters()
-        let params = MSALInteractiveTokenParameters(scopes: scopes, webviewParameters: webParams)
-        params.authority = try MSALAADAuthority(url: pin.authorityURL)
-        params.loginHint = account.username
-        params.claimsRequest = claimsRequest
-
-        let result = try await recording(.tokenInteractive) { try await acquireInteractive(params) }
-        try pin.validate(returnedTenantId: Self.tenantId(of: result))
-        return result.accessToken
+        let app = try client(for: scopes, tenant: pin.expected)
+        return try await interactiveToken(app, scopes: scopes, account: account, pin: pin, claims: claimsRequest)
     }
 
     // MARK: - tenant switching (MSP tiers)
@@ -393,8 +518,7 @@ public actor MSALAuthManager: AuthManaging {
     /// Interactive acquisition. Dispatched to the main thread because MSAL touches UIKit
     /// inside this call, not only while building the parameters. See the concurrency note
     /// at the top of the file before changing this.
-    private func acquireInteractive(_ params: MSALInteractiveTokenParameters) async throws -> MSALResult {
-        let app = application
+    private func acquireInteractive(_ app: MSALPublicClientApplication, _ params: MSALInteractiveTokenParameters) async throws -> MSALResult {
         return try await withCheckedThrowingContinuation { cont in
             DispatchQueue.main.async {
                 app.acquireToken(with: params) { result, error in
@@ -407,10 +531,10 @@ public actor MSALAuthManager: AuthManaging {
 
     /// Sign-out can present a web view, so it gets the same treatment as acquireToken.
     private func performSignout(
+        _ app: MSALPublicClientApplication,
         _ account: MSALAccount,
         _ params: MSALSignoutParameters
     ) async throws {
-        let app = application
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
             DispatchQueue.main.async {
                 app.signout(with: account, signoutParameters: params) { _, error in
@@ -426,12 +550,12 @@ public actor MSALAuthManager: AuthManaging {
     /// for MSAL's own network timeout, so the cross-tenant run's budget and the background
     /// check's deadline hold while a token refresh hangs on a weak connection. MSAL's
     /// answer, if it comes later, is dropped; the token it fetched stays in MSAL's cache.
-    private func acquireSilent(_ params: MSALSilentTokenParameters) async throws -> MSALResult {
+    private func acquireSilent(_ app: MSALPublicClientApplication, _ params: MSALSilentTokenParameters) async throws -> MSALResult {
         let once = SilentResume()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { cont in
                 guard once.begin(cont) else { return }
-                application.acquireTokenSilent(with: params) { result, error in
+                app.acquireTokenSilent(with: params) { result, error in
                     if let result { once.finish(.success(result)) }
                     else { once.finish(.failure(MSALFailure(error: error))) }
                 }

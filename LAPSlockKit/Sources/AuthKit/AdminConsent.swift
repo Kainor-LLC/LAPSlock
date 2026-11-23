@@ -3,7 +3,7 @@ import Foundation
 // Build Spec §4, §8, consent onboarding.
 //
 // THE PROBLEM THIS SOLVES
-// All four Graph scopes TenantKeep requests are admin-restricted. That produces a
+// Nearly every Graph scope TenantKeep requests is admin-restricted. That produces a
 // predictable and nasty onboarding failure:
 //
 //   An admin signs in, approves the consent prompt, but does NOT tick "Consent on
@@ -21,29 +21,40 @@ import Foundation
 /// Builds the URLs used to grant tenant-wide admin consent.
 public enum AdminConsentLink {
 
+    /// Where Microsoft returns an administrator after consent, registered on every
+    /// registration. The page says which app was approved, from `state`.
+    public static let consentPage = "https://tenantkeep.app/consent/"
+
     /// The v2 admin consent endpoint. Sending an admin here grants for the whole
     /// organization, there is no per-user option on this flow, which is precisely why
     /// it is the reliable remedy for a missed checkbox.
     ///
+    /// The link names its scopes and never uses `.default`. On the read registration,
+    /// which TenantKeep Posture shares, `.default` would ask an organization for both
+    /// products' permissions when it wanted one.
+    ///
     /// - Parameters:
-    ///   - clientId: the app registration's client ID.
+    ///   - registration: the app registration being approved.
     ///   - tenant: a tenant ID (GUID) or verified domain. `nil` uses `organizations`,
     ///     which lets the admin sign in and have their own tenant resolved.
-    ///   - redirectUri: where Entra returns after consent. Optional; when omitted,
-    ///     Entra uses the app's configured reply URL.
-    public static func url(clientId: String, tenant: String? = nil, redirectUri: String? = nil) -> URL? {
+    ///   - scopes: what to approve. `nil` means everything On-Call asks this registration
+    ///     for; a module passes its own share of the read registration.
+    public static func url(registration: AppRegistration, tenant: String? = nil, scopes: [String]? = nil) -> URL? {
         let authority = (tenant?.isEmpty == false ? tenant! : "organizations")
         var comps = URLComponents(string: "https://login.microsoftonline.com/\(authority)/v2.0/adminconsent")
-        var items = [URLQueryItem(name: "client_id", value: clientId)]
-        if let redirectUri, !redirectUri.isEmpty {
-            items.append(URLQueryItem(name: "redirect_uri", value: redirectUri))
-        }
-        // `scope` is required on the v2 endpoint. .default requests every delegated
-        // permission configured on the registration, which is what tenant-wide consent
-        // means here.
-        items.append(URLQueryItem(name: "scope", value: "https://graph.microsoft.com/.default"))
-        comps?.queryItems = items
+        let named = scopes.map { $0.map(qualified) } ?? registration.qualifiedScopes
+        comps?.queryItems = [
+            URLQueryItem(name: "client_id", value: registration.clientId),
+            URLQueryItem(name: "scope", value: named.joined(separator: " ")),
+            URLQueryItem(name: "redirect_uri", value: consentPage),
+            URLQueryItem(name: "state", value: "oncall." + registration.rawValue)
+        ]
         return comps?.url
+    }
+
+    /// A Graph permission with its resource in front; anything already qualified is left.
+    private static func qualified(_ scope: String) -> String {
+        scope.contains("://") ? scope : "https://graph.microsoft.com/" + scope
     }
 
     /// Message an admin can forward to whoever holds Global Administrator or Privileged

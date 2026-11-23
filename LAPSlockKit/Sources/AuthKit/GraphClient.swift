@@ -505,7 +505,9 @@ public final class GraphClient: Sendable {
             switch error {
             case .consentRequired, .interactionRequired, .noAccount:
                 throw GraphError.consentRequired
-            case .userCancelled:
+            case .userCancelled, .differentAccount:
+                // A different person signed in at the prompt. Their session was discarded
+                // and nothing was sent, which is what a cancelled request means here.
                 throw GraphError.cancelled
             case .tenantMismatch, .underlying:
                 throw GraphError.transport(status: -1)

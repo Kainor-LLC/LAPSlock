@@ -143,6 +143,10 @@ public enum PrivilegedAccessGraph {
     public static let roleActivationPath = "/v1.0/roleManagement/directory/roleAssignmentScheduleRequests"
     public static let roleReadScope = "RoleEligibilitySchedule.Read.Directory"
     public static let roleActivateScope = "RoleAssignmentSchedule.ReadWrite.Directory"
+    /// Reading the roles a person holds right now: the role check before a write, and the
+    /// Apple Watch glance. A read, so it goes through the read registration and works
+    /// whether or not role activation was ever turned on.
+    public static let roleActiveReadScope = "RoleAssignmentSchedule.Read.Directory"
 
     // PIM for Groups.
     //

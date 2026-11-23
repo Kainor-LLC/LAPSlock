@@ -1038,6 +1038,30 @@
     "justification"
    ],
    "smoke": null
+  },
+  {
+   "id": "auth.approvals.principals",
+   "kit": "AuthKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/servicePrincipals",
+   "select": [
+    "id",
+    "appId"
+   ],
+   "smoke": "/servicePrincipals?$top=1&$select=id,appId"
+  },
+  {
+   "id": "auth.approvals.grants",
+   "kit": "AuthKit",
+   "method": "GET",
+   "version": "v1.0",
+   "path": "/servicePrincipals/{id}/oauth2PermissionGrants",
+   "select": [
+    "consentType",
+    "scope"
+   ],
+   "smoke": null
   }
  ],
  "feeds": [

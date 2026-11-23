@@ -311,6 +311,12 @@ final class AppRootModel {
     /// share the same session rather than creating a second one.
     private(set) var auth: MSALAuthManager?
 
+    /// True for an install that signed in before TenantKeep's sign-in was split into a
+    /// read-only app and separate apps for actions, and whose organization has not
+    /// approved the read-only one yet. Everything it could do before still works; the
+    /// screens say what is waiting and offer `finishReadUpgrade()`.
+    private(set) var readsThroughOriginalRegistration = false
+
     /// Live services, created after sign-in so they share the authenticated session.
     /// Nil whenever the app is not signed in.
     private(set) var liveSession: LiveSession? {
@@ -364,10 +370,12 @@ final class AppRootModel {
             if case .live(let account) = mode { return account.tenantId }
             return nil
         }()
-        return AdminConsentLink.url(
-            clientId: AuthConfiguration.vendorDefault.clientId,
-            tenant: tenant
-        )
+        return AdminConsentLink.url(registration: .read, tenant: tenant)
+    }
+
+    /// The link that approves one registration for the organization being worked in.
+    func consentURL(for registration: AppRegistration) -> URL? {
+        AdminConsentLink.url(registration: registration, tenant: operatingTenantId ?? signedInTenantId)
     }
 
     /// Contract section 7.7: `storeKit || tier != free`. StoreKit is not wired yet, so the
@@ -471,6 +479,7 @@ final class AppRootModel {
         let updated = TenantList.removing(tenantId, from: (try? TenantStores.live.load()) ?? [])
         try? TenantStores.live.save(updated)
         savedTenants = TenantList.sorted(updated)
+        WriteRoutes.forget(tenantId)
     }
 
     func resolveTenant(_ input: String) async -> Result<String, TenantDirectoryError> {
@@ -507,6 +516,7 @@ final class AppRootModel {
         // rebuilt from the new session as well.
         let tenant = await session.auth.operatingTenantId ?? session.tenantId
         operatingTenantId = tenant
+        await auth?.setCombinedWrites(WriteRoutes.startingRoute(for: tenant), inTenant: tenant)
         liveSession = LiveSession(auth: session.auth, tenantId: tenant)
         return nil
     }
@@ -560,6 +570,8 @@ final class AppRootModel {
         }
         let tenant = await auth.operatingTenantId ?? account.tenantId
         operatingTenantId = tenant
+        await auth.setCombinedWrites(WriteRoutes.startingRoute(for: tenant), inTenant: tenant)
+        readsThroughOriginalRegistration = await auth.isReadingThroughOriginalRegistration
         liveSession = LiveSession(auth: auth, tenantId: tenant)
         mode = .live(account)
         AlertsRunner.unpauseAll()
@@ -590,6 +602,8 @@ final class AppRootModel {
             }
             let tenant = await auth.operatingTenantId ?? account.tenantId
             operatingTenantId = tenant
+            await auth.setCombinedWrites(WriteRoutes.startingRoute(for: tenant), inTenant: tenant)
+            readsThroughOriginalRegistration = false
             liveSession = LiveSession(auth: auth, tenantId: tenant)
             mode = .live(account)
             AlertsRunner.unpauseAll()
@@ -647,6 +661,7 @@ final class AppRootModel {
         case .consentRequired:     return .consentRequired
         case .userCancelled:       return .userCancelled
         case .tenantMismatch:      return .tenantMismatch
+        case .differentAccount:    return .unknown
         case .underlying:          return .unknown
         }
     }
@@ -680,6 +695,7 @@ final class AppRootModel {
         // drops every service's cache with it.
         liveSession = nil
         operatingTenantId = nil
+        readsThroughOriginalRegistration = false
         demoCustomer = .contoso
         savedSearches.clear()
         pendingSearch = nil
@@ -688,9 +704,10 @@ final class AppRootModel {
         recomputeEntitlement()
     }
 
-    /// The On-Call app's own scope for registering a phone with Kainor's alert service.
+    /// The scope a phone presents to Kainor's alert service, defined by the TenantKeep
+    /// Alerts registration, which holds nothing on Microsoft Graph.
     enum InstantAlertsScope {
-        static let register = "api://" + AuthConfiguration.vendorDefault.clientId + "/Alerts.Register"
+        static let register = AppRegistration.alerts.ownScopes[0]
     }
 
     func enterDemoMode() {
@@ -856,23 +873,15 @@ final class AppRootModel {
     /// requested. This one is the heavier ask of the two, it lets the app request a
     /// privilege escalation, so it stays off by default.
     func requestPrivilegedActivationConsent() async -> String? {
-        guard let auth else { return "Sign in first." }
-        do {
-            // ALL of them, read and activate. Consenting to activation alone left the
-            // read scopes unconsented, so the sheet failed the moment it opened.
-            _ = try await auth.token(scopes: PrivilegedAccessGraph.allScopes, allowInteractive: true)
-            // The write gate stopped asking for a scope it could not get; it can now.
-            await liveSession?.actionRunner.roleCheckMayWork()
-            return nil
-        } catch let error as AuthError {
-            if ConsentDiagnostics.state(from: error) != nil {
-                return "Your organization hasn't approved permission for TenantKeep to request role activation. An Entra administrator needs to grant it."
-            }
-            if case .userCancelled = error { return "Permission wasn't granted." }
-            return "Couldn't request permission. Check your connection and try again."
-        } catch {
-            return "Couldn't request permission. Check your connection and try again."
-        }
+        // ALL of them, read and activate. Consenting to activation alone left the read
+        // scopes unconsented, so the sheet failed the moment it opened. The reads go
+        // through the read registration and activation through its own.
+        let failure = await requestConsent(
+            scopes: PrivilegedAccessGraph.allScopes + [PrivilegedAccessGraph.roleActiveReadScope],
+            deniedMessage: "Your organization hasn't approved permission for TenantKeep to read which roles you can activate. An Entra administrator needs to grant it.")
+        // The write gate stopped asking for a scope it could not get; it can now.
+        if failure == nil { await liveSession?.actionRunner.roleCheckMayWork() }
+        return failure
     }
 
     /// Requests the Conditional Access module's scopes, the first time the module is opened
@@ -915,17 +924,113 @@ final class AppRootModel {
 
     /// One consent request, the same shape every module uses: nil on success, or a
     /// sentence the screen can show.
+    ///
+    /// What a switch needs is split into one request per app registration, reads first.
+    /// A write's registration is settled before Microsoft is asked for anything: its own,
+    /// or the one app for every action, whichever this organization approved.
     private func requestConsent(scopes: [String], deniedMessage: String) async -> String? {
         guard let auth else { return "Sign in first." }
+        var asking = AppRegistration.read
         do {
-            _ = try await auth.token(scopes: scopes, allowInteractive: true)
+            for request in try ScopeRouter.requests(for: scopes) {
+                asking = request.registration
+                await settleWriteRoute(for: asking)
+                _ = try await auth.token(scopes: request.scopes, allowInteractive: true)
+            }
             return nil
         } catch let error as AuthError {
-            if ConsentDiagnostics.state(from: error) != nil { return deniedMessage }
-            if case .userCancelled = error { return "Permission wasn't granted." }
+            if case .differentAccount = error { return Self.differentAccountMessage }
+            if ConsentDiagnostics.state(from: error) != nil {
+                return asking == .read ? deniedMessage : Self.approvalNeeded(asking)
+            }
+            if case .userCancelled = error {
+                return asking == .read
+                    ? "Permission wasn't granted."
+                    : "Permission wasn't granted. If Microsoft said approval is needed: " + Self.approvalNeeded(asking)
+            }
             return "Couldn't request permission. Check your connection and try again."
         } catch {
             return "Couldn't request permission. Check your connection and try again."
+        }
+    }
+
+    static let differentAccountMessage = "Microsoft signed in a different account, so TenantKeep did not use it and removed it from this device. If that account approved the permission for your organization, turn this on again to continue as yourself."
+
+    /// What to tell a person whose organization has not approved a registration.
+    static func approvalNeeded(_ registration: AppRegistration) -> String {
+        if AppRegistration.separateWrites.contains(registration) {
+            return "Your organization hasn't approved \(registration.displayName). An Entra administrator can approve it, or TenantKeep Actions for every kind of action, at tenantkeep.app/consent."
+        }
+        return "Your organization hasn't approved \(registration.displayName). An Entra administrator can approve it at tenantkeep.app/consent."
+    }
+
+    /// Decides which registration one kind of write uses in the organization being worked
+    /// in, and tells the sign-in manager, before anything is asked of Microsoft.
+    ///
+    /// Set by hand in Settings, that is the answer. Otherwise the organization's own record
+    /// of what it approved for everyone is read: the separate registration when it is
+    /// approved, the combined one when only that is. When the record cannot be read,
+    /// nothing changes, which leaves the separate registration, the narrower of the two.
+    private func settleWriteRoute(for registration: AppRegistration) async {
+        guard AppRegistration.separateWrites.contains(registration),
+              let auth, let session = liveSession else { return }
+        let tenant = session.tenantId
+        var combined = await auth.registrationRoute.combined
+        switch WriteRoutes.choice(for: tenant) {
+        case .combined:
+            combined.insert(registration)
+        case .separate:
+            combined.remove(registration)
+        case .automatic:
+            let approved = await ApprovalProbe(graph: session.graph).approvedScopes(for: [registration, .actions])
+            switch ApprovalProbe.choose(for: registration, approved: approved) {
+            case .some(.actions): combined.insert(registration)
+            case .some:           combined.remove(registration)
+            case .none:           break
+            }
+        }
+        await auth.setCombinedWrites(combined, inTenant: tenant)
+        WriteRoutes.store(combined: combined, for: tenant)
+    }
+
+    /// Whether the organization has approved a kind of write on either route. Nil when its
+    /// approvals cannot be read.
+    private func isApproved(_ registration: AppRegistration) async -> Bool? {
+        guard let session = liveSession else { return nil }
+        guard let approved = await ApprovalProbe(graph: session.graph).approvedScopes(for: [registration, .actions]) else { return nil }
+        return ApprovalProbe.choose(for: registration, approved: approved) != nil
+    }
+
+    /// The setting in Settings, for the organization being worked in.
+    var writeRouteChoice: WriteRouteChoice {
+        WriteRoutes.choice(for: operatingTenantId ?? signedInTenantId ?? "")
+    }
+
+    func setWriteRouteChoice(_ choice: WriteRouteChoice) async {
+        guard let tenant = operatingTenantId ?? signedInTenantId else { return }
+        WriteRoutes.setChoice(choice, for: tenant)
+        await auth?.setCombinedWrites(WriteRoutes.startingRoute(for: tenant), inTenant: tenant)
+    }
+
+    /// Signs the person into the read-only registration and moves reads onto it. Nil on
+    /// success, or a sentence to show. Until it succeeds nothing changes.
+    func finishReadUpgrade() async -> String? {
+        guard let auth else { return "Sign in first." }
+        do {
+            try await auth.moveReadsToReadRegistration()
+            readsThroughOriginalRegistration = await auth.isReadingThroughOriginalRegistration
+            return nil
+        } catch let error as AuthError {
+            if case .differentAccount = error { return Self.differentAccountMessage }
+            if case .userCancelled = error {
+                return "Not finished. If Microsoft said approval is needed, an Entra administrator can approve TenantKeep at tenantkeep.app/consent. Everything you could do before still works."
+            }
+            if ConsentDiagnostics.state(from: error) != nil {
+                return "Your organization hasn't approved the read-only TenantKeep app yet. An Entra administrator can approve it at tenantkeep.app/consent. Everything you could do before still works."
+            }
+            return "Couldn't finish. Check your connection and try again."
+        } catch {
+            return "Couldn't finish. Check your connection and try again."
         }
     }
 
@@ -939,19 +1044,8 @@ final class AppRootModel {
 
     /// Requests consent to read users' display names. Same opt-in shape as the other two.
     func requestUserNamesConsent() async -> String? {
-        guard let auth else { return "Sign in first." }
-        do {
-            _ = try await auth.token(scopes: [UserNameResolver.scope], allowInteractive: true)
-            return nil
-        } catch let error as AuthError {
-            if ConsentDiagnostics.state(from: error) != nil {
-                return "Your organization hasn't approved permission for TenantKeep to read user names. An Entra administrator needs to grant it."
-            }
-            if case .userCancelled = error { return "Permission wasn't granted." }
-            return "Couldn't request permission. Check your connection and try again."
-        } catch {
-            return "Couldn't request permission. Check your connection and try again."
-        }
+        await requestConsent(scopes: [UserNameResolver.scope],
+                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to read user names. An Entra administrator needs to grant it.")
     }
 
     /// The tenant's activation rules for one piece of eligible access.
@@ -1072,27 +1166,29 @@ final class AppRootModel {
     }
 
     func requestUserActionsConsent() async -> String? {
-        await requestConsent(scopes: UserActionScopes.module,
-                             deniedMessage: "Your organization hasn't approved permission for TenantKeep to change people's sign-in. An Entra administrator needs to grant it.")
+        let containment = [UserActionScopes.revokeSessions, UserActionScopes.enableDisable, UserActionScopes.userRead,
+                           UserActionScopes.riskyUsers, UserActionScopes.riskRead]
+        if let failure = await requestConsent(
+            scopes: containment,
+            deniedMessage: "Your organization hasn't approved permission for TenantKeep to read people's account state. An Entra administrator needs to grant it.") {
+            return failure
+        }
+        // Removing sign-in methods and issuing a Temporary Access Pass are a registration of
+        // their own, which an organization may leave out. Revoke and block must not wait
+        // on it, so it is asked for only where it is approved, or where that cannot be
+        // told, and a refusal leaves user actions on. Those rows say what they need.
+        if await isApproved(.accountRecovery) != false {
+            _ = await requestConsent(scopes: [UserActionScopes.authenticationMethods, UserActionScopes.temporaryAccessPass],
+                                     deniedMessage: "")
+        }
+        return nil
     }
 
     /// Both write scopes together, the first time device actions are turned on. Microsoft
     /// splits them: sync, restart and lock need privileged operations; locate and key
     /// rotation need read-write. Asking for one would leave half the rows failing.
     func requestDeviceActionsConsent() async -> String? {
-        guard let auth else { return "Sign in first." }
-        do {
-            _ = try await auth.token(scopes: DeviceActionScopes.module, allowInteractive: true)
-            return nil
-        } catch let error as AuthError {
-            if ConsentDiagnostics.state(from: error) != nil {
-                return "Your organization hasn't approved permission for TenantKeep to modify devices. An Entra administrator needs to grant it."
-            }
-            if case .userCancelled = error { return "Permission wasn't granted." }
-            return "Couldn't request permission. Check your connection and try again."
-        } catch {
-            return "Couldn't request permission. Check your connection and try again."
-        }
+        await requestConsent(scopes: DeviceActionScopes.module, deniedMessage: "")
     }
 }
 
@@ -1345,10 +1441,7 @@ struct AppRootView: View {
                                 remember: { root.rememberTenant($0) },
                                 forget: { root.forgetTenant($0) },
                                 consentURL: { tenant in
-                                    AdminConsentLink.url(
-                                        clientId: AuthConfiguration.vendorDefault.clientId,
-                                        tenant: tenant
-                                    )
+                                    AdminConsentLink.url(registration: .read, tenant: tenant)
                                 }
                             )
                         } : nil,
@@ -1436,6 +1529,12 @@ struct AppRootView: View {
                             requestPrivilegedConsent: { await root.requestPrivilegedActivationConsent() },
                             requestUserNamesConsent: { await root.requestUserNamesConsent() },
                             requestMacOSRevealConsent: { await root.requestMacOSRevealConsent() },
+                            registrations: SettingsRegistrations(
+                                readsThroughOriginal: root.readsThroughOriginalRegistration,
+                                finishReadUpgrade: { await root.finishReadUpgrade() },
+                                readConsentURL: root.consentURL(for: .read),
+                                writeRouteChoice: root.writeRouteChoice,
+                                setWriteRouteChoice: { await root.setWriteRouteChoice($0) }),
                             privilegedSheet: {
                                 privilegedAccessView(deviceName: nil, embedded: false)
                             },
@@ -1454,6 +1553,9 @@ struct AppRootView: View {
                     pendingSearch: $root.pendingSearch
                 )
                 .environment(\.awayTenant, root.isOperatingAwayFromHome ? root.operatingTenantLabel : nil)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if root.readsThroughOriginalRegistration { ReadUpgradeBanner() }
+                }
                 // Keyed by the tenant being operated in. A switch rebuilds every module's
                 // model, so nothing one customer loaded can stay on screen in another (§7).
                 .id(root.operatingTenantId ?? root.signedInTenantId ?? "")

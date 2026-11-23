@@ -238,6 +238,9 @@ struct SettingsView: View {
     var requestUserNamesConsent: (() async -> String?)? = nil
     /// Requests consent for the Mac admin password permission. Nil in demo.
     var requestMacOSRevealConsent: (() async -> String?)? = nil
+    /// The app registrations: the update waiting on approval, and which apps actions use.
+    /// Nil in demo and signed out.
+    var registrations: SettingsRegistrations? = nil
     /// Opens the activation sheet, injected so Settings need not know about Graph.
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
     /// Apple subscriptions. Nil in demo mode and while signed out, there is nothing to buy
@@ -266,6 +269,9 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 accountSection
+                if let registrations, registrations.readsThroughOriginal {
+                    ReadUpgradeSection(registrations: registrations)
+                }
                 if managed.config.isManaged {
                     managedSection
                 }
@@ -363,7 +369,8 @@ struct SettingsView: View {
                                 requestGroupWritesConsent: requestGroupWritesConsent,
                                 requestPrivilegedConsent: requestPrivilegedConsent,
                                 privilegedSheet: privilegedSheet,
-                                requestMacOSRevealConsent: requestMacOSRevealConsent)
+                                requestMacOSRevealConsent: requestMacOSRevealConsent,
+                                registrations: registrations)
         case .shiftLog:
             SettingsShiftLogPage(shiftLog: shiftLog, shiftLogTenantId: shiftLogTenantId)
         case .license:

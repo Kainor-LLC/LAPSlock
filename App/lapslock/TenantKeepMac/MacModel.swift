@@ -57,10 +57,9 @@ final class MacModel {
     @ObservationIgnored private var statusRefresher: NSBackgroundActivityScheduler?
     @ObservationIgnored private var statusCheckedAt: Date?
 
-    /// The same app registration as the iPhone and iPad app, with this app's own redirect,
-    /// which the registration's iOS / macOS platform must list for this bundle id.
+    /// The same app registrations as the iPhone and iPad app, with this app's own
+    /// redirect, which the read and role activation registrations list for this bundle id.
     static let authConfiguration = AuthConfiguration(
-        clientId: AuthConfiguration.vendorDefault.clientId,
         redirectUri: "msauth." + (Bundle.main.bundleIdentifier ?? "com.kainor.tenantkeep.menubar") + "://auth")
 
     var attention: Bool { !degraded.isEmpty || sessionProblem != nil }
@@ -197,7 +196,7 @@ final class MacModel {
     func checkSession() async {
         guard mode == .live, let auth else { return }
         do {
-            _ = try await auth.token(scopes: ["User.Read"], allowInteractive: false)
+            _ = try await auth.token(scopes: DeviceInventoryService.requiredScopes, allowInteractive: false)
             sessionCheckedAt = Date()
             sessionProblem = nil
         } catch {
@@ -251,6 +250,13 @@ final class MacModel {
         guard let privileged else { return "Sign in to activate." }
         busy = true
         defer { busy = false }
+        // Activation has an app registration of its own. Its first use on this Mac is one
+        // sign-in; after that this is silent.
+        do {
+            _ = try await auth?.token(scopes: [access.activateScope], allowInteractive: true)
+        } catch {
+            return "Role activation needs a sign-in to TenantKeep Role Activation, and it didn't complete. An Entra administrator can approve it at tenantkeep.app/consent."
+        }
         do {
             switch try await privileged.activate(access, justification: justification, ticketNumber: nil, duration: duration) {
             case .activated:                return (access.displayName ?? "The role") + " is active."

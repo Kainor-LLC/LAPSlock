@@ -302,13 +302,13 @@ struct AdminApprovalSheet: View {
 #Preview("Approval required") {
     SignInView(
         consentState: .organizationApprovalRequired,
-        consentURL: AdminConsentLink.url(clientId: "abc-123", tenant: "contoso.com")
+        consentURL: AdminConsentLink.url(registration: .read, tenant: "contoso.com")
     ) { }
 }
 
 #Preview("Granted for one user only") {
     SignInView(
         consentState: .grantedForThisUserOnly,
-        consentURL: AdminConsentLink.url(clientId: "abc-123", tenant: "contoso.com")
+        consentURL: AdminConsentLink.url(registration: .read, tenant: "contoso.com")
     ) { }
 }

@@ -10,56 +10,68 @@ import XCTest
 
 final class AdminConsentLinkTests: XCTestCase {
 
-    private let clientId = "00000000-1111-2222-3333-444444444444"
+    private func query(_ url: URL?) -> [String: String] {
+        let items = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
+        return Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+    }
 
     func test_buildsURLWithTenantGuid() {
-        let url = AdminConsentLink.url(clientId: clientId, tenant: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+        let url = AdminConsentLink.url(registration: .read, tenant: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
         XCTAssertNotNil(url)
         let s = url!.absoluteString
         XCTAssertTrue(s.contains("login.microsoftonline.com/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"))
         XCTAssertTrue(s.contains("/v2.0/adminconsent"))
-        XCTAssertTrue(s.contains("client_id=\(clientId)"))
+        XCTAssertEqual(query(url)["client_id"], AppRegistration.read.clientId)
     }
 
     func test_buildsURLWithDomain() {
-        let url = AdminConsentLink.url(clientId: clientId, tenant: "contoso.com")
+        let url = AdminConsentLink.url(registration: .read, tenant: "contoso.com")
         XCTAssertTrue(url!.absoluteString.contains("login.microsoftonline.com/contoso.com"))
     }
 
     func test_nilTenantUsesOrganizations() {
         // `organizations` lets the admin sign in and have their tenant resolved, which
         // is the right default when we don't know it yet.
-        let url = AdminConsentLink.url(clientId: clientId, tenant: nil)
+        let url = AdminConsentLink.url(registration: .read, tenant: nil)
         XCTAssertTrue(url!.absoluteString.contains("/organizations/"))
     }
 
     func test_emptyTenantTreatedAsNil() {
-        let url = AdminConsentLink.url(clientId: clientId, tenant: "")
+        let url = AdminConsentLink.url(registration: .read, tenant: "")
         XCTAssertTrue(url!.absoluteString.contains("/organizations/"))
     }
 
-    func test_includesDefaultScope() {
-        // The v2 adminconsent endpoint requires a scope; .default means every delegated
-        // permission on the registration, which is what tenant-wide consent implies.
-        let url = AdminConsentLink.url(clientId: clientId)
-        XCTAssertTrue(url!.absoluteString.contains("scope="))
-        XCTAssertTrue(url!.absoluteString.contains(".default"))
+    /// `.default` on the shared read registration would ask for TenantKeep Posture's
+    /// permissions too. Every link names what it asks for.
+    func test_namesItsScopesAndNeverUsesDefault() {
+        for registration in AppRegistration.allCases {
+            let scope = query(AdminConsentLink.url(registration: registration))["scope"] ?? ""
+            XCTAssertFalse(scope.contains(".default"), registration.rawValue)
+            XCTAssertEqual(scope.split(separator: " ").map(String.init), registration.qualifiedScopes, registration.rawValue)
+        }
     }
 
-    func test_omitsRedirectWhenNotProvided() {
-        let url = AdminConsentLink.url(clientId: clientId)
-        XCTAssertFalse(url!.absoluteString.contains("redirect_uri"))
+    func test_aModuleCanAskForItsShareOfTheReadRegistration() {
+        let url = AdminConsentLink.url(registration: .read, scopes: ["AuditLog.Read.All", "Policy.Read.All"])
+        XCTAssertEqual(query(url)["scope"], "https://graph.microsoft.com/AuditLog.Read.All https://graph.microsoft.com/Policy.Read.All")
     }
 
-    func test_includesRedirectWhenProvided() {
-        let url = AdminConsentLink.url(clientId: clientId, redirectUri: "msauth.com.example.app://auth")
-        XCTAssertTrue(url!.absoluteString.contains("redirect_uri="))
+    func test_returnsToTheConsentPageAndSaysWhichApp() {
+        let url = AdminConsentLink.url(registration: .deviceActions, tenant: "contoso.com")
+        XCTAssertEqual(query(url)["redirect_uri"], "https://tenantkeep.app/consent/")
+        XCTAssertEqual(query(url)["state"], "oncall.deviceActions")
+        XCTAssertEqual(query(url)["client_id"], AppRegistration.deviceActions.clientId)
+    }
+
+    func test_theAlertsLinkNamesItsOwnScope() {
+        let url = AdminConsentLink.url(registration: .alerts)
+        XCTAssertEqual(query(url)["scope"], "api://" + AppRegistration.alerts.clientId + "/Alerts.Register")
     }
 
     // MARK: - the forwardable message
 
     func test_requestMessageExplainsTheOrgCheckboxTrap() {
-        let url = AdminConsentLink.url(clientId: clientId, tenant: "contoso.com")
+        let url = AdminConsentLink.url(registration: .read, tenant: "contoso.com")
         let msg = AdminConsentLink.requestMessage(consentURL: url)
         XCTAssertTrue(msg.contains("on behalf of your organization"),
                       "The message must name the exact checkbox that gets missed.")

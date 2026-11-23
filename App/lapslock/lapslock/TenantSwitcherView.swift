@@ -296,6 +296,10 @@ struct SwitchFailure: Equatable {
             isConsent = false
             title = "Not signed in"
             explanation = "Sign in before switching organizations."
+        case .differentAccount:
+            isConsent = false
+            title = "That was a different account"
+            explanation = "Microsoft signed in someone other than you, so TenantKeep did not use it and removed it from this device. You are still in the organization you started in."
         case .interactionRequired:
             isConsent = false
             title = "Microsoft needs you to sign in again"

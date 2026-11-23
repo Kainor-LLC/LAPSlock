@@ -19,6 +19,8 @@ struct SettingsActionsPage: View {
     var privilegedSheet: (() -> PrivilegedAccessView)? = nil
     /// Requests consent for the Mac admin password permission. Nil in demo.
     var requestMacOSRevealConsent: (() async -> String?)? = nil
+    /// Which apps this organization's actions go through. Nil in demo.
+    var registrations: SettingsRegistrations? = nil
 
     @State private var isRequestingConsent = false
     @State private var consentError: String?
@@ -36,6 +38,9 @@ struct SettingsActionsPage: View {
             groupWritesSection
             privilegedAccessSection
             macOSSection
+            if let registrations, !isDemo {
+                WriteRouteSection(registrations: registrations)
+            }
         }
         .navigationTitle("Actions and Permissions")
         // On the page, not the Section: a Section re-renders on every form state change,
