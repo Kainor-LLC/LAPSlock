@@ -293,7 +293,7 @@ Write-Information '' -InformationAction Continue
 if ($results) { Write-Information ($results | Format-Table -AutoSize | Out-String) -InformationAction Continue }
 if ($Apply) {
     Write-Information 'Done. The client IDs above go into the On-Call code and the consent page.' -InformationAction Continue
-    Write-Information 'Still to do by hand for each app: verified publisher, and its ID in docs/.well-known/microsoft-identity-association.json.' -InformationAction Continue
+    Write-Information 'Each app also belongs in docs/.well-known/microsoft-identity-association.json, and wants a verified publisher: pass -PublisherId to set it, or to check that it is set.' -InformationAction Continue
 } else {
     Write-Information 'Nothing changed. Run again with -Apply.' -InformationAction Continue
 }
