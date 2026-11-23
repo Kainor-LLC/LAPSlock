@@ -1582,12 +1582,11 @@ struct AppRootView: View {
                     savedSearches: root.isPro ? root.savedSearches : nil,
                     // MSP: the switcher's plan, and Pro for the saved searches it runs.
                     crossTenant: root.isPro && root.canSwitchTenants ? root.crossTenantSetup(session: session) : nil,
-                    pendingSearch: $root.pendingSearch
+                    pendingSearch: $root.pendingSearch,
+                    updateWaiting: root.readsThroughOriginalRegistration
                 )
                 .environment(\.awayTenant, root.isOperatingAwayFromHome ? root.operatingTenantLabel : nil)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if root.readsThroughOriginalRegistration { ReadUpgradeBanner() }
-                }
+
                 // Keyed by the tenant being operated in. A switch rebuilds every module's
                 // model, so nothing one customer loaded can stay on screen in another (§7).
                 .id(root.operatingTenantId ?? root.signedInTenantId ?? "")

@@ -229,6 +229,9 @@ struct ModuleShell: View {
     @StateModel private var directoryModel: PeopleDirectoryModel
     @StateModel private var securityModel: SecurityListModel
     @StateModel private var digestModel: ThreatDigestModel
+    /// True while this install waits for its organization to approve the read-only app.
+    /// The module list says so, with the way to Settings.
+    private let updateWaiting: Bool
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
     /// The device as it was when opened. A pull to refresh starts the list again from its
@@ -294,8 +297,10 @@ struct ModuleShell: View {
         openRoute: Binding<AlertRoute?>,
         savedSearches: SavedSearchLibrary?,
         crossTenant: CrossTenantSearchSetup? = nil,
-        pendingSearch: Binding<SavedSearch?> = .constant(nil)
+        pendingSearch: Binding<SavedSearch?> = .constant(nil),
+        updateWaiting: Bool = false
     ) {
+        self.updateWaiting = updateWaiting
         _openRoute = openRoute
         self.savedSearches = savedSearches
         self.crossTenant = crossTenant
@@ -385,6 +390,9 @@ struct ModuleShell: View {
         }
         .task { await credentials.onAppearRefresh?() }
         .onChange(of: selectedModule) { _, module in
+            // A module chosen by something other than a tap on the module list, an alert
+            // or a saved search, has to move a compact stack off that list itself.
+            if module != nil, sizeClass == .compact, compactColumn == .sidebar { compactColumn = .content }
             // A module change closes whatever the previous one had open. On iPhone the
             // sidebar selection clears when the stack pops to it, which is not a change
             // of mind, so nil is not remembered.
@@ -418,7 +426,14 @@ struct ModuleShell: View {
             // An iPhone starts on the module list, not inside the last module: in a compact
             // stack the remembered module was a screen deep before anything was chosen. A
             // tapped alert, opened next, still goes straight to its module.
-            if sizeClass == .compact { selectedModule = nil }
+            //
+            // Both halves are needed. Clearing the module alone left the stack on the list
+            // column with no module in it: an empty "Choose a module" screen one level
+            // deep, which is what a person saw first.
+            if sizeClass == .compact {
+                selectedModule = nil
+                compactColumn = .sidebar
+            }
             open(openRoute)
         }
         .onChange(of: openRoute) { _, route in open(route) }
@@ -697,7 +712,15 @@ struct ModuleShell: View {
             }
         }
         .safeAreaInset(edge: .top) {
-            if isDemo { DemoBanner() }
+            if isDemo {
+                DemoBanner()
+            } else if updateWaiting {
+                // Inside this column, under its own navigation bar. Across the top of the
+                // whole app it sat over the back button and nothing could be backed out of.
+                Button { showingSettings = true } label: { ReadUpgradeBanner() }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens Settings")
+            }
         }
     }
 
