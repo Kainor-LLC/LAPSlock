@@ -103,7 +103,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        Task { @MainActor in RelayCoordinator.shared.registrationFailed() }
+        let reason = error.localizedDescription
+        Task { @MainActor in RelayCoordinator.shared.registrationFailed(reason) }
     }
 
     func application(

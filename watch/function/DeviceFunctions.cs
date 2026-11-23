@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
 
 namespace Kainor.TenantKeep.Watch;
 
@@ -14,7 +15,7 @@ namespace Kainor.TenantKeep.Watch;
 /// Registering again is the daily check-in: it refreshes the phone's last-seen time, its push
 /// token, and, from an administrator who may configure, the break-glass accounts.
 /// </summary>
-public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tokens, WatchStore store, TenantSetup setup, AlertSender sender)
+public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tokens, WatchStore store, TenantSetup setup, AlertSender sender, ILogger<DeviceFunctions> log)
 {
     [GeneratedRegex("^[0-9a-f]{64,200}$")]
     private static partial Regex TokenPattern();
@@ -26,8 +27,8 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
     public async Task<IActionResult> Register(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/devices")] HttpRequest request, CancellationToken ct)
     {
-        var caller = await tokens.ValidateAsync(request.Headers.Authorization, ct);
-        if (caller is null) return new UnauthorizedResult();
+        var (found, refusal) = await tokens.CheckAsync(request.Headers.Authorization, ct);
+        if (found is not { } caller) return Refused("RegisterDevice", refusal);
 
         RegisterBody? body;
         try { body = await JsonSerializer.DeserializeAsync<RegisterBody>(request.Body, JsonSerializerOptions.Web, ct); }
@@ -98,14 +99,24 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
     public async Task<IActionResult> Unregister(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "v1/devices")] HttpRequest request, CancellationToken ct)
     {
-        var caller = await tokens.ValidateAsync(request.Headers.Authorization, ct);
-        if (caller is null) return new UnauthorizedResult();
+        var (found, refusal) = await tokens.CheckAsync(request.Headers.Authorization, ct);
+        if (found is not { } caller) return Refused("UnregisterDevice", refusal);
         UnregisterBody? body;
         try { body = await JsonSerializer.DeserializeAsync<UnregisterBody>(request.Body, JsonSerializerOptions.Web, ct); }
         catch (JsonException) { body = null; }
         if (body is null || !TokenPattern().IsMatch(body.DeviceToken ?? "")) return new BadRequestObjectResult(new { error = "malformed" });
         await store.DeleteDeviceAsync(caller.TenantId, DeviceRecord.KeyFor(body.DeviceToken!), ct);
         return new NoContentResult();
+    }
+
+    /// <summary>
+    /// 401, with the kind of refusal in the log. A phone that is refused only sees "401", and
+    /// until this line the log said no more than that.
+    /// </summary>
+    private UnauthorizedResult Refused(string endpoint, string? reason)
+    {
+        log.LogInformation("{Endpoint} refused reason={Reason}", endpoint, reason ?? "invalid");
+        return new UnauthorizedResult();
     }
 
     /// <summary>

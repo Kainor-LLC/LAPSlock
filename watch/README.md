@@ -93,16 +93,21 @@ func azure functionapp publish kainor-watch-prod-func --dotnet-isolated
 ## Checking It
 
 The service has no endpoint that reports its state. Its log has one line a minute holding
-counts only, and this prints how many runs there were, when the last one was, and each run
-that sent an alert or had a failure:
+counts only, and this prints how many runs there were, when the last one was, each run
+that sent an alert or had a failure, and each phone the service refused to register:
 
 ```
 pwsh ./watch/infra/Get-WatchRuns.ps1
 ```
 
 `notSent=403x1` on a line means one alert was answered 403 by the relay; `0` is a request
-that got no answer. To test the whole path, sign in with a break-glass account the
-organization has named and expect the alert within about five minutes.
+that got no answer. `RegisterDevice refused reason=Expired` is a phone whose Microsoft
+sign-in the service would not accept, which the phone shows as "answered 401". The reason
+is the kind of refusal only (Expired, InvalidAudience, InvalidIssuer, noScope, noToken).
+To test the whole path, sign in with a break-glass account the organization has named and
+expect the alert within about five minutes. The phone has to allow notifications from
+TenantKeep: iOS gives an app no push address until it may show them, so turning Instant
+alerts on asks first.
 
 ## Before Customers See It
 

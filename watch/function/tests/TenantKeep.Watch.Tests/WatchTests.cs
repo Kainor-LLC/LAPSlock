@@ -227,4 +227,21 @@ public class WatchTests
         Assert.Equal("none", TenantWatch.NotSent([]));
         Assert.Equal("0x1,403x2,429x1", TenantWatch.NotSent(new() { [429] = 1, [403] = 2, [0] = 1 }));
     }
+
+    /// <summary>
+    /// A refused phone sees only "401". The log says which kind of refusal it was, and
+    /// nothing else: the token library's messages can quote the token.
+    /// </summary>
+    [Fact]
+    public void ARefusalIsLoggedAsItsKindAndNothingFromTheToken()
+    {
+        Assert.Equal("Expired", PhoneToken.Reason(
+            new Microsoft.IdentityModel.Tokens.SecurityTokenExpiredException("IDX10223: the token and its claims")));
+        Assert.Equal("InvalidAudience", PhoneToken.Reason(
+            new Microsoft.IdentityModel.Tokens.SecurityTokenInvalidAudienceException("IDX10214: the audience")));
+        Assert.Equal("InvalidIssuer", PhoneToken.Reason(
+            new Microsoft.IdentityModel.Tokens.SecurityTokenInvalidIssuerException("the issuer")));
+        Assert.Equal("Argument", PhoneToken.Reason(new ArgumentException("the token")));
+        Assert.Equal("invalid", PhoneToken.Reason(null));
+    }
 }

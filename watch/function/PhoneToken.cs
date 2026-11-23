@@ -48,9 +48,17 @@ public sealed class PhoneToken(WatchOptions options)
     readonly JsonWebTokenHandler handler = new();
 
     /// <summary>The caller, or null when the token is missing, invalid, or for something else.</summary>
-    public async Task<PhoneCaller?> ValidateAsync(string? authorization, CancellationToken ct)
+    public async Task<PhoneCaller?> ValidateAsync(string? authorization, CancellationToken ct) =>
+        (await CheckAsync(authorization, ct)).Caller;
+
+    /// <summary>
+    /// The caller, or why there is none, for the log. The reason is a word or the kind of
+    /// failure the token library reported (expired, wrong audience, wrong issuer). Never its
+    /// message, and never anything from the token: a refusal names no organization and no person.
+    /// </summary>
+    public async Task<(PhoneCaller? Caller, string? Refusal)> CheckAsync(string? authorization, CancellationToken ct)
     {
-        if (authorization is null || !authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return null;
+        if (authorization is null || !authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return (null, "noToken");
         var configuration = await keys.GetConfigurationAsync(ct);
         var result = await handler.ValidateTokenAsync(authorization["Bearer ".Length..].Trim(), new TokenValidationParameters
         {
@@ -68,17 +76,27 @@ public sealed class PhoneToken(WatchOptions options)
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromMinutes(2),
         });
-        if (!result.IsValid || result.SecurityToken is not JsonWebToken token) return null;
+        if (!result.IsValid || result.SecurityToken is not JsonWebToken token) return (null, Reason(result.Exception));
 
         var scopes = token.TryGetPayloadValue<string>("scp", out var scp) ? scp.Split(' ') : [];
-        if (!scopes.Contains(Scope)) return null;
+        if (!scopes.Contains(Scope)) return (null, "noScope");
         // wids appears only when the app registration asks for directory roles in tokens;
         // the On-Call app does not, so an empty list means "not stated", and the endpoint
         // reads the caller's active roles from Graph instead (DeviceFunctions).
         var roles = token.TryGetPayloadValue<string[]>("wids", out var wids) ? wids : [];
-        return new PhoneCaller(
+        return (new PhoneCaller(
             token.GetPayloadValue<string>("tid").ToLowerInvariant(),
             token.GetPayloadValue<string>("oid"),
-            roles.ToHashSet());
+            roles.ToHashSet()), null);
+    }
+
+    /// <summary>The kind of failure only: "SecurityTokenExpiredException" becomes "Expired".</summary>
+    internal static string Reason(Exception? failure)
+    {
+        if (failure is null) return "invalid";
+        var name = failure.GetType().Name;
+        if (name.StartsWith("SecurityToken", StringComparison.Ordinal)) name = name["SecurityToken".Length..];
+        if (name.EndsWith("Exception", StringComparison.Ordinal)) name = name[..^"Exception".Length];
+        return name.Length == 0 ? "invalid" : name;
     }
 }

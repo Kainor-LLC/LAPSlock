@@ -146,6 +146,42 @@ final class AppWiringTests: XCTestCase {
         XCTAssertEqual(relay.components(separatedBy: "interactive: false").count - 1, 1)
     }
 
+    /// iOS gives an app no push address until it may show notifications, and calls neither
+    /// registration callback (Apple Developer Forums, thread 799635). Turning Instant
+    /// alerts on used to register without asking. On a phone that had never been asked it
+    /// timed out with "Apple didn't give this phone a push address", and a phone that was
+    /// already registered stayed silent while the screen said On.
+    func testTurningOnInstantAlertsAsksToNotifyBeforeAnythingElse() throws {
+        let relay = try appSource("RelaySettingsView.swift")
+        let turnOn = body(of: "func turnOn() async {", in: relay)
+        let asked = try XCTUnwrap(turnOn.range(of: "guard await AlertsRunner.requestAuthorization() else {"))
+        let key = try XCTUnwrap(turnOn.range(of: "try phone.turnOn(environment: Self.environment)"))
+        let push = try XCTUnwrap(turnOn.range(of: "UIApplication.shared.registerForRemoteNotifications()"))
+        XCTAssertLessThan(asked.lowerBound, key.lowerBound, "no key is made for a phone that cannot be alerted")
+        XCTAssertLessThan(asked.lowerBound, push.lowerBound)
+        XCTAssertTrue(turnOn.contains("status = .problem(Self.notificationsOffMessage)"))
+
+        // A phone that is registered and silent says so, with the way to fix it.
+        XCTAssertTrue(relay.contains("if !relay.notificationsAllowed {"))
+        XCTAssertTrue(relay.contains("UIApplication.openNotificationSettingsURLString"))
+        XCTAssertTrue(relay.contains(".task { await relay.refreshPermission() }"))
+    }
+
+    /// The push address kept with the alert key outlives the app: the Keychain survives a
+    /// reinstall, and iOS gives the reinstalled app a new address. The service is only
+    /// ever given one that Apple handed over in this launch.
+    func testTheAlertServiceIsOnlyGivenAnAddressAppleGaveThisLaunch() throws {
+        let relay = try appSource("RelaySettingsView.swift")
+        XCTAssertTrue(body(of: "func registered(token: Data) {", in: relay).contains("addressConfirmed = true"))
+        XCTAssertEqual(relay.components(separatedBy: "addressConfirmed = true").count - 1, 1, "only Apple's answer confirms it")
+        XCTAssertTrue(body(of: "func update() async {", in: relay)
+            .contains("guard let setup, addressConfirmed, let code = try? phone.pairingCode() else { return await turnOn() }"))
+        XCTAssertTrue(body(of: "private func checkInIfDue() {", in: relay).contains("isRegistered, addressConfirmed,"))
+        XCTAssertTrue(body(of: "private func pairingCode() async -> PairingCode? {", in: relay)
+            .contains("if addressConfirmed, let code = try? phone.pairingCode() { return code }"))
+        XCTAssertTrue(body(of: "func turnOff() async {", in: relay).contains("addressConfirmed = false"))
+    }
+
     // MARK: - a provider's customers move one at a time
 
     /// Approval is per organization, so the move to the read-only app is too. Finishing

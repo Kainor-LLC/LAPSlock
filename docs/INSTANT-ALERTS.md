@@ -18,7 +18,7 @@ An alert names the kind of event and the organization, for example "Contoso: bre
 
 ## 2. Turning It On
 
-1. An administrator turns on Instant alerts in TenantKeep On-Call (Settings, Notifications). The app says what follows, and asks to go ahead.
+1. An administrator turns on Instant alerts in TenantKeep On-Call (Settings, Notifications). The app says what follows, and asks to go ahead. If the phone has never been asked, iOS then asks whether TenantKeep may send notifications. It has to be allowed: iOS gives an app no push address until it may show them, and the app says so and offers the way to Settings when they are off.
 2. The organization approves the **TenantKeep Watch** application in Microsoft Entra ID, once. Only a Global Administrator or Privileged Role Administrator can. The app shows the approval link and can send it to one.
 3. The phone registers with the service (section 4) and starts receiving alerts.
 

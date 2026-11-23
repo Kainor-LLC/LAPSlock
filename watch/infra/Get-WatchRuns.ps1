@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
     Says whether the alert service is running, and lists its runs that sent an alert or had
-    a failure.
+    a failure, and the phones it refused to register.
 
 .DESCRIPTION
     Run in Kainor's tenant, signed in with the Azure CLI (az login --tenant kainor.com). It
@@ -13,6 +13,10 @@
     watched, alerts the relay accepted, failures, and the relay's answers to the alerts that
     did not go ("403x1" is one alert answered 403; status 0 is no answer at all). It names
     no organization, account, policy or phone, so neither does this.
+
+    A phone whose sign-in the service refuses sees only "401". The service logs the kind of
+    refusal (Expired, InvalidAudience, InvalidIssuer, noScope, noToken), and nothing from
+    the token.
 
     This is the only readout there is. The service has no endpoint that reports its state.
 
@@ -63,7 +67,17 @@ Write-Host "Runs in the last $Hours hours: $($summary[0][0]). Last run: $(Format
 $notable = Read-Log "$runs | where message !contains 'alerts=0 failures=0' | project timestamp, message | order by timestamp asc"
 if ($notable.Count -eq 0) {
     Write-Host 'No run sent an alert or had a failure.'
-    return
 }
-Write-Host 'Runs that sent an alert or had a failure (UTC):'
-foreach ($row in $notable) { Write-Host "  $(Format-Time $row[0])  $($row[1])" }
+else {
+    Write-Host 'Runs that sent an alert or had a failure (UTC):'
+    foreach ($row in $notable) { Write-Host "  $(Format-Time $row[0])  $($row[1])" }
+}
+
+$refused = Read-Log "traces | where timestamp > ago($($Hours)h) | where message contains ' refused reason=' | project timestamp, message | order by timestamp asc"
+if ($refused.Count -eq 0) {
+    Write-Host 'No phone was refused.'
+}
+else {
+    Write-Host 'Phones refused (UTC):'
+    foreach ($row in $refused) { Write-Host "  $(Format-Time $row[0])  $($row[1])" }
+}

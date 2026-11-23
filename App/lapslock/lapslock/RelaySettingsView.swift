@@ -4,9 +4,9 @@ import RelayKit
 
 // Instant alerts, hosted by Kainor (HOSTED-WATCH-PLAN.md, H4). An administrator turns them
 // on, reads what they share, and the phone registers itself with Kainor's alert service:
-// a new Secure Enclave key, a push registration, then one request carrying the push
-// address, the public key and the break-glass accounts set in Notifications, signed with a
-// Microsoft token for the On-Call app's Alerts.Register scope. The answer is the watcher's
+// permission to show notifications, a new Secure Enclave key, a push registration, then one
+// request carrying the push address, the public key and the break-glass accounts set in
+// Notifications, signed with a Microsoft token for the On-Call app's Alerts.Register scope. The answer is the watcher's
 // sender key, pinned for the organization, so the extension can open what it sends. An
 // organization that has not approved TenantKeep Watch gets the approval link instead.
 // Turning off unregisters and deletes the key, so nothing sent to it can be read.
@@ -41,9 +41,21 @@ final class RelayCoordinator {
         if case .problem(let text) = status { return text }
         return nil
     }
+    /// Whether iOS will show this app's notifications. Read when the section appears and
+    /// when the app comes forward, so a phone that is registered but silent says so.
+    private(set) var notificationsAllowed = true
     @ObservationIgnored var setup: InstantAlertsSetup?
     @ObservationIgnored private var planAllows = false
     @ObservationIgnored private var checkingIn = false
+    /// True once Apple has given this phone its push address in this launch. The address
+    /// kept with the key is there to open what arrives, and it outlives the app: the
+    /// Keychain survives a reinstall, and iOS gives the reinstalled app a new address.
+    /// Registering the kept one would say On for a phone nothing can reach.
+    @ObservationIgnored private var addressConfirmed = false
+    /// Why Apple's push service refused this phone, when it said.
+    @ObservationIgnored private var pushRefusal: String?
+
+    static let notificationsOffMessage = "Notifications are turned off for TenantKeep on this phone, so an alert could not be shown. Allow them, then try again."
 
     let phone: RelayPhone
 
@@ -92,23 +104,64 @@ final class RelayCoordinator {
             return
         }
         status = .working("Registering this phone")
+        // Before anything else. iOS gives an app no push address until it may show
+        // notifications: it calls neither registration callback, so the wait below would
+        // only time out. And an alert that did arrive would not be shown.
+        guard await AlertsRunner.requestAuthorization() else {
+            notificationsAllowed = false
+            status = .problem(Self.notificationsOffMessage)
+            return
+        }
+        notificationsAllowed = true
         do {
             if !phone.isOn { try phone.turnOn(environment: Self.environment) }
         } catch {
             status = .problem("Couldn't make the alert key on this device.")
             return
         }
+        pushRefusal = nil
         UIApplication.shared.registerForRemoteNotifications()
         guard let code = await pairingCode() else {
-            status = .problem("Apple didn't give this phone a push address. Check that notifications are allowed for TenantKeep, then try again.")
+            status = .problem(pushRefusal.map(Self.refused)
+                ?? "Apple didn't give this phone a push address. Check your connection, then try again.")
             return
         }
         await register(code, setup: setup, interactive: true)
     }
 
+    /// Reads whether iOS will show this app's notifications. When they have been allowed
+    /// since the last look, in Settings say, the push address is asked for again: iOS
+    /// would not give one before.
+    func refreshPermission() async {
+        let answer = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        notificationsAllowed = answer == .authorized || answer == .provisional || answer == .ephemeral
+        guard notificationsAllowed else { return }
+        if status == .problem(Self.notificationsOffMessage) {
+            // Turning on stopped at this question, and it has now been answered: carry on.
+            await turnOn()
+        } else if phone.isOn, !addressConfirmed {
+            UIApplication.shared.registerForRemoteNotifications()
+        }
+    }
+
+    /// The button beside the warning: the system's question when it has never been asked,
+    /// and otherwise the app's page in Settings, the only place the answer can be changed.
+    func allowNotifications() async {
+        if await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined {
+            _ = await AlertsRunner.requestAuthorization()
+        } else if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+            await UIApplication.shared.open(url)
+        }
+        await refreshPermission()
+    }
+
+    private static func refused(_ reason: String) -> String {
+        "This phone couldn't register with Apple's push service: " + reason
+    }
+
     /// Update: the break-glass accounts changed, or after the organization approved.
     func update() async {
-        guard let setup, let code = try? phone.pairingCode() else { return await turnOn() }
+        guard let setup, addressConfirmed, let code = try? phone.pairingCode() else { return await turnOn() }
         status = .working("Updating")
         await register(code, setup: setup, interactive: true)
     }
@@ -138,6 +191,7 @@ final class RelayCoordinator {
             _ = try? await URLSession.shared.data(for: request)
         }
         try? phone.turnOff()
+        addressConfirmed = false
         UIApplication.shared.unregisterForRemoteNotifications()
         UserDefaults.standard.removeObject(forKey: Self.stateKey)
         UserDefaults.standard.removeObject(forKey: Self.checkInKey)
@@ -148,9 +202,10 @@ final class RelayCoordinator {
     /// the last check-in, registers again quietly, so the service keeps a live address and
     /// does not delete the phone after 30 days.
     func registered(token: Data) {
-        guard phone.isOn else { return }
+        guard phone.isOn, let changed = try? phone.setDeviceToken(token) else { return }
         // A new push address makes a check-in due now, whenever it can next be made.
-        if (try? phone.setDeviceToken(token)) == true { UserDefaults.standard.removeObject(forKey: Self.checkInKey) }
+        if changed { UserDefaults.standard.removeObject(forKey: Self.checkInKey) }
+        addressConfirmed = true
         checkInIfDue()
     }
 
@@ -167,7 +222,7 @@ final class RelayCoordinator {
 
     private func checkInIfDue() {
         let last = UserDefaults.standard.object(forKey: Self.checkInKey) as? Date ?? .distantPast
-        guard planAllows, !checkingIn, isRegistered, Date().timeIntervalSince(last) > 86_400,
+        guard planAllows, !checkingIn, isRegistered, addressConfirmed, Date().timeIntervalSince(last) > 86_400,
               let setup, let code = try? phone.pairingCode() else { return }
         checkingIn = true
         Task {
@@ -176,14 +231,20 @@ final class RelayCoordinator {
         }
     }
 
-    func registrationFailed() {
-        if phone.isOn, !isRegistered { status = .problem("This device couldn't register for push. Check that notifications are allowed.") }
+    /// From the app delegate: Apple's push service refused this phone, and said why.
+    func registrationFailed(_ reason: String) {
+        pushRefusal = reason
+        // While turning on, the wait for the address ends on this and reports it.
+        if case .working = status { return }
+        if phone.isOn, !isRegistered { status = .problem(Self.refused(reason)) }
     }
 
-    /// The push address, once APNs has given one: up to twenty seconds after registering.
+    /// The push address, once Apple has given one in this launch: up to twenty seconds
+    /// after registering, less when Apple refuses outright.
     private func pairingCode() async -> PairingCode? {
         for _ in 0..<40 {
-            if let code = try? phone.pairingCode() { return code }
+            if addressConfirmed, let code = try? phone.pairingCode() { return code }
+            if pushRefusal != nil { return nil }
             try? await Task.sleep(for: .milliseconds(500))
         }
         return nil
@@ -329,6 +390,7 @@ struct RelaySettingsSection: View {
     let isDemo: Bool
     @State private var confirmingOn = false
     @State private var confirmingOff = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Section {
@@ -345,6 +407,11 @@ struct RelaySettingsSection: View {
                     Text("Break-glass sign-ins, Conditional Access changes and security incidents, within minutes")
                 }
                 .disabled(isWorking)
+                .task { await relay.refreshPermission() }
+                // Back from Settings, where the answer may have changed.
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { Task { await relay.refreshPermission() } }
+                }
                 // On the row that asks, not the Section: a Section's modifiers are copied
                 // onto each of its rows, and the copies race to present.
                 .alert("Turn On Instant Alerts?", isPresented: $confirmingOn) {
@@ -386,6 +453,13 @@ struct RelaySettingsSection: View {
         case .on(let label, let accounts, let canConfigure):
             Label("On for " + label, systemImage: "checkmark.circle")
                 .font(.footnote)
+            if !relay.notificationsAllowed {
+                // Registered, and silent: iOS shows nothing from an app it has not been
+                // told may notify.
+                Label("Notifications are turned off for TenantKeep on this phone, so alerts are not shown.", systemImage: "bell.slash")
+                    .font(.footnote).foregroundStyle(.red)
+                Button("Allow notifications") { Task { await relay.allowNotifications() } }
+            }
             Text(accounts == 0
                  ? "No break-glass accounts are watched yet. Add them under Notifications for your organization, then tap Update."
                  : accounts == 1 ? "Watching 1 break-glass account." : "Watching \(accounts) break-glass accounts.")
@@ -407,6 +481,9 @@ struct RelaySettingsSection: View {
             Button("Check again") { Task { await relay.update() } }
         case .problem(let text):
             Text(text).font(.footnote).foregroundStyle(.red)
+            if !relay.notificationsAllowed {
+                Button("Allow notifications") { Task { await relay.allowNotifications() } }
+            }
             Button("Try again") { Task { await relay.update() } }
         }
     }
