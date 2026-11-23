@@ -70,10 +70,21 @@ public actor MSALAuthManager: AuthManaging {
     private var applications: [AppRegistration: MSALPublicClientApplication] = [:]
     private var pinnedAccount: AdminAccount?
 
-    /// True when this install signed in before the split and its organization has not
-    /// approved the read registration yet: reads keep going through the original
-    /// registration, as they always did, until `moveReadsToReadRegistration()` succeeds.
-    private var readsThroughOriginal = false
+    /// True when this install signed in before the split and the person's own organization
+    /// has not moved to the read registration: the session itself lives on the original
+    /// registration, and every organization's reads go through it, as they always did,
+    /// until `moveReadsToReadRegistration()` succeeds.
+    private var sessionOnOriginal = false
+
+    /// After the person's own organization has moved: the customers that have not, which
+    /// keep reading through the original registration until each approves the read one.
+    /// The rules are in `ReadRoutes.swift`. Read from the store every time, never from a
+    /// copy, because the background check builds its own manager.
+    private let readRoutes: ReadRouteStore
+    /// Customers the person was asked about through the read registration this session
+    /// with no token coming back, and customers a silent request has already tried to move.
+    private var askedRead: Set<String> = []
+    private var probedRead: Set<String> = []
 
     /// Per tenant, the kinds of write that go through the combined registration because
     /// the organization approved that one and not the separate one. Decided by the app
@@ -113,8 +124,9 @@ public actor MSALAuthManager: AuthManaging {
         return active.expected != home.lowercased()
     }
 
-    public init(config: AuthConfiguration) throws {
+    public init(config: AuthConfiguration, readRoutes: ReadRouteStore = .standard) throws {
         self.config = config
+        self.readRoutes = readRoutes
 
         #if DEBUG
         _ = Self.debugLoggingInstalled
@@ -144,16 +156,30 @@ public actor MSALAuthManager: AuthManaging {
         return made
     }
 
-    /// The registration reads go through: the read one, or the original one for an install
-    /// from before the split whose organization has not approved the read one.
-    private var primaryRegistration: AppRegistration { readsThroughOriginal ? .actions : .read }
+    /// The registration the session lives on: the read one, or the original one for an
+    /// install from before the split whose own organization has not moved. Sign-out talks
+    /// to Microsoft through this one.
+    private var primaryRegistration: AppRegistration { sessionOnOriginal ? .actions : .read }
+
+    /// Whether `tenant`'s reads go through the original registration: every organization's
+    /// while the session lives there, and afterwards a customer that has not moved.
+    private func readsThroughOriginal(in tenant: String) -> Bool {
+        sessionOnOriginal || waits(tenant)
+    }
+
+    /// A customer recorded as not having moved, for the person signed in.
+    private func waits(_ tenant: String) -> Bool {
+        guard !sessionOnOriginal, let home = pinnedAccount?.tenantId else { return false }
+        return readRoutes.waits(tenant, home: home)
+    }
 
     // MARK: - which registration
 
     /// How requests reach the registrations in the tenant being operated in.
     public var registrationRoute: RegistrationRoute {
-        RegistrationRoute(combined: combinedWrites[operatingPin?.expected ?? ""] ?? [],
-                          readsThroughOriginal: readsThroughOriginal)
+        let tenant = operatingPin?.expected ?? ""
+        return RegistrationRoute(combined: combinedWrites[tenant] ?? [],
+                                 readsThroughOriginal: readsThroughOriginal(in: tenant))
     }
 
     /// Records which kinds of write `tenantId` sends through the combined registration.
@@ -176,7 +202,7 @@ public actor MSALAuthManager: AuthManaging {
             throw AuthError.underlying("no scopes to ask for")
         }
         let route = RegistrationRoute(combined: combinedWrites[tenant.lowercased()] ?? [],
-                                      readsThroughOriginal: readsThroughOriginal)
+                                      readsThroughOriginal: readsThroughOriginal(in: tenant))
         return try application(for: route.client(for: home))
     }
 
@@ -192,7 +218,8 @@ public actor MSALAuthManager: AuthManaging {
         guard let account = pinnedAccount else { return nil }
         let wanted = tenantId.lowercased()
         guard wanted != account.tenantId.lowercased(),
-              let app = try? application(for: primaryRegistration),
+              // The registration that organization reads through is the one that has its profile.
+              let app = try? application(for: readsThroughOriginal(in: wanted) ? .actions : .read),
               let msalAccount = try? app.account(forIdentifier: account.id),
               let profile = msalAccount.tenantProfiles?.first(where: { $0.tenantId?.lowercased() == wanted })
         else { return account.objectId }
@@ -213,7 +240,10 @@ public actor MSALAuthManager: AuthManaging {
         let result = try await recording(.signIn) { try await acquireInteractive(app, params) }
         let account = try Self.account(from: result)
         self.pinnedAccount = account
-        self.readsThroughOriginal = false
+        // Nor a list of customers to read through it: that belonged to a session from
+        // before the split, and this is not one.
+        self.sessionOnOriginal = false
+        forgetReadRoutes()
         // A new account starts in its own tenant. Carrying a previous session's customer
         // tenant across a sign-in would be both confusing and wrong.
         self.activeTenant = nil
@@ -286,7 +316,8 @@ public actor MSALAuthManager: AuthManaging {
         else { return nil }
 
         pinnedAccount = account
-        readsThroughOriginal = (registration == .actions)
+        sessionOnOriginal = (registration == .actions)
+        readRoutes.keep(onlyFor: account.tenantId)
         // A restored session starts in the account's own tenant. An MSP's customer selection
         // is deliberately not carried across a launch, operating in someone else's tenant
         // should be a decision made now, not one inherited from last week.
@@ -298,25 +329,142 @@ public actor MSALAuthManager: AuthManaging {
         } catch {
             pinnedAccount = nil
             activeTenant = nil
-            readsThroughOriginal = false
+            sessionOnOriginal = false
             return nil
         }
     }
 
-    /// True while reads still go through the original registration (see `restoreSession`).
-    public var isReadingThroughOriginalRegistration: Bool { readsThroughOriginal }
+    /// What is still waiting to move to the read registration, for the organization
+    /// being worked in: everything, this customer, or nothing.
+    public var pendingReadUpdate: ReadUpdate? {
+        if sessionOnOriginal { return .ownOrganization }
+        if let tenant = operatingPin?.expected, waits(tenant) { return .thisCustomer }
+        return nil
+    }
 
-    /// Signs the same person into the read registration and moves reads onto it. One
-    /// interactive sign-in. Throws `consentRequired` or `userCancelled` when the
-    /// organization has not approved the read registration, and reads then stay where
-    /// they were, so nothing stops working.
-    public func moveReadsToReadRegistration() async throws {
+    /// The customers still reading through the original registration, for the screens
+    /// that list organizations. Empty until the person's own organization has moved.
+    public var customersWaitingToMove: Set<String> {
+        guard !sessionOnOriginal, let home = pinnedAccount?.tenantId else { return [] }
+        return readRoutes.waiting(home: home)
+    }
+
+    /// Signs the same person into the read registration and moves reads onto it, for
+    /// whatever `pendingReadUpdate` says is waiting. One interactive sign-in. Throws
+    /// `consentRequired` or `userCancelled` when the organization has not approved the
+    /// read registration, and reads then stay where they were, so nothing stops working.
+    ///
+    /// The person's own organization moves first, whichever organization is on screen:
+    /// the session itself moves with it, and a customer cannot move before the session
+    /// has. `customers` are the organizations saved on the device at that moment. They are
+    /// recorded as waiting, so each keeps reading through the original registration until
+    /// it has approved the read one. That is the only time the list is added to.
+    ///
+    /// Afterwards, in a waiting customer, this moves that customer alone.
+    public func moveReadsToReadRegistration(customers: [String] = []) async throws {
         guard let account = pinnedAccount else { throw AuthError.noAccount }
-        guard readsThroughOriginal else { return }
         guard let home = TenantPin(expected: account.tenantId) else { throw AuthError.tenantMismatch }
-        _ = try await interactiveToken(try application(for: .read), scopes: Self.baseScopes,
-                                       account: account, pin: home, claims: nil)
-        readsThroughOriginal = false
+        let read = try application(for: .read)
+
+        if sessionOnOriginal {
+            _ = try await interactiveToken(read, scopes: Self.baseScopes, account: account, pin: home, claims: nil)
+            var waiting = Set(customers.compactMap { TenantPin(expected: $0)?.expected })
+            // The customer on screen was reading through the original a moment ago,
+            // saved or not, and what is on screen must not stop.
+            if let active = activeTenant { waiting.insert(active.expected) }
+            sessionOnOriginal = false
+            readRoutes.begin(home: home.expected, waiting: waiting)
+            // It may have approved the read registration already.
+            if let active = activeTenant, waits(active.expected),
+               await probe(.read, pin: active, account: account).probe == .token {
+                markMoved(active.expected)
+            }
+            return
+        }
+
+        guard let pin = operatingPin, waits(pin.expected) else { return }
+        _ = try await interactiveToken(read, scopes: Self.baseScopes, account: account, pin: pin, claims: nil)
+        markMoved(pin.expected)
+    }
+
+    /// A customer removed from the device leaves the list with its other data. If it is
+    /// added again it reads through the read registration, like any customer added now.
+    public func forgetReadRoute(for tenantId: String) {
+        guard let home = pinnedAccount?.tenantId else { return }
+        readRoutes.remove(tenantId, home: home)
+    }
+
+    private func markMoved(_ tenant: String) {
+        guard let home = pinnedAccount?.tenantId else { return }
+        readRoutes.remove(tenant, home: home)
+        askedRead.remove(tenant)
+    }
+
+    private func forgetReadRoutes() {
+        readRoutes.clear()
+        askedRead = []
+        probedRead = []
+    }
+
+    private struct ProbeAnswer {
+        let probe: RouteProbe
+        var error: AuthError?
+        var detail: AuthFailureDetail?
+    }
+
+    /// One silent request for the sign-in scopes through `registration`, in `pin`'s
+    /// organization, reduced to what it means for the route. Never a prompt.
+    private func probe(_ registration: AppRegistration, pin: TenantPin, account: AdminAccount) async -> ProbeAnswer {
+        guard let app = try? application(for: registration) else {
+            return ProbeAnswer(probe: .failed, error: .underlying("no client for the registration"))
+        }
+        guard let msalAccount = try? app.account(forIdentifier: account.id) else {
+            // No session on this registration. For the original that settles it: a person
+            // with no session there does not acquire one to read through. For the read
+            // registration it means asking.
+            return ProbeAnswer(probe: registration == .actions ? .notApproved : .needsPrompt, error: .interactionRequired)
+        }
+        do {
+            let silent = MSALSilentTokenParameters(scopes: Self.baseScopes, account: msalAccount)
+            silent.authority = try MSALAADAuthority(url: pin.authorityURL)
+            let result = try await acquireSilent(app, silent)
+            try pin.validate(returnedTenantId: Self.tenantId(of: result))   // §3.3 guard
+            return ProbeAnswer(probe: .token)
+        } catch let failure as MSALFailure {
+            return ProbeAnswer(probe: Self.routeProbe(from: failure.error), error: Self.map(failure.error),
+                               detail: Self.detail(from: failure.error, step: .tokenSilent))
+        } catch let error as AuthError {
+            return ProbeAnswer(probe: .failed, error: error)
+        } catch {
+            return ProbeAnswer(probe: .failed, error: .underlying("the request did not finish"))
+        }
+    }
+
+    /// For a customer that has not moved, before it is entered: finds out whether it can
+    /// move now, and otherwise proves the original registration still answers there.
+    /// The read registration first, always. Throws with nothing changed.
+    private func settleReadRoute(for pin: TenantPin, account: AdminAccount) async throws {
+        let read = await probe(.read, pin: pin, account: account)
+        if read.probe == .token { return markMoved(pin.expected) }
+        let original = await probe(.actions, pin: pin, account: account)
+
+        switch ReadRoutes.settle(read: read.probe, original: original.probe, askedReadBefore: askedRead.contains(pin.expected)) {
+        case .read:
+            markMoved(pin.expected)
+        case .original:
+            return
+        case .ask(let registration):
+            if registration == .read { askedRead.insert(pin.expected) }
+            _ = try await interactiveToken(try application(for: registration), scopes: Self.baseScopes,
+                                           account: account, pin: pin, claims: nil)
+            if registration == .read { markMoved(pin.expected) }
+        case .notApproved:
+            lastFailure = read.detail
+            throw AuthError.consentRequired
+        case .fail:
+            lastFailure = read.detail ?? original.detail
+            throw read.error ?? original.error ?? AuthError.underlying("no answer from Microsoft")
+        }
     }
 
     /// Builds an `AdminAccount` from a cached MSAL account.
@@ -389,6 +537,12 @@ public actor MSALAuthManager: AuthManaging {
     public func silentToken(scopes: [String], tenantId: String) async throws -> String {
         guard let account = pinnedAccount else { throw AuthError.noAccount }
         guard let pin = TenantPin(expected: tenantId) else { throw AuthError.tenantMismatch }
+        // A customer that has not moved is tried on the read registration once a launch,
+        // so it moves as soon as it has approved it, without waiting to be switched into.
+        if waits(pin.expected), probedRead.insert(pin.expected).inserted,
+           await probe(.read, pin: pin, account: account).probe == .token {
+            markMoved(pin.expected)
+        }
         let app = try client(for: scopes, tenant: pin.expected)
         guard let msalAccount = try? app.account(forIdentifier: account.id) else { throw AuthError.interactionRequired }
         let silent = MSALSilentTokenParameters(scopes: scopes, account: msalAccount)
@@ -423,7 +577,8 @@ public actor MSALAuthManager: AuthManaging {
     private func clearSession() {
         pinnedAccount = nil
         activeTenant = nil
-        readsThroughOriginal = false
+        sessionOnOriginal = false
+        forgetReadRoutes()
         combinedWrites = [:]
     }
 
@@ -521,6 +676,16 @@ public actor MSALAuthManager: AuthManaging {
 
         // Already there. Do not spend a token acquisition confirming it.
         if pin.expected == operatingPin?.expected { return }
+
+        // A customer that has not moved to the read registration is settled first, with
+        // both registrations named outright, and committed only once one of them answers.
+        if waits(pin.expected) {
+            try await settleReadRoute(for: pin, account: account)
+            // Settling waits on Microsoft, and the person can have signed out meanwhile.
+            guard pinnedAccount?.id == account.id else { throw AuthError.noAccount }
+            activeTenant = pin
+            return
+        }
 
         let previous = activeTenant
         activeTenant = pin
@@ -669,6 +834,20 @@ public actor MSALAuthManager: AuthManaging {
             // the request. Its presence is the broker-path flag; its value is not kept.
             brokerInvolved: info[MSALBrokerVersionKey] != nil
         )
+    }
+
+    /// What a failed silent request says about a registration in one organization. Reads
+    /// the same fixed keys `detail(from:)` does, and keeps nothing.
+    private static func routeProbe(from error: Error?) -> RouteProbe {
+        guard let error = error as NSError?, error.domain == MSALErrorDomain else { return .failed }
+        let subError = error.userInfo
+            .filter { $0.key.lowercased().contains("suberror") }
+            .compactMap { $0.value as? String }
+            .joined(separator: " ")
+        return RouteProbe.failure(
+            aadCode: AuthFailureDetail.extractAADCode(from: error.userInfo[MSALErrorDescriptionKey] as? String),
+            subError: subError,
+            interactionRequired: error.code == MSALError.interactionRequired.rawValue)
     }
 
     /// Maps MSAL errors onto AuthError. Never includes secret material in the message.

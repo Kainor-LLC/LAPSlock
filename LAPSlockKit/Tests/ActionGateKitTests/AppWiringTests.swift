@@ -146,17 +146,40 @@ final class AppWiringTests: XCTestCase {
         XCTAssertEqual(relay.components(separatedBy: "interactive: false").count - 1, 1)
     }
 
-    // MARK: - a provider is told before finishing the update
+    // MARK: - a provider's customers move one at a time
 
-    /// Finishing the update moves reads to the read-only app for every organization at
-    /// once, and approval is per organization: a customer that has not approved it stops
-    /// working on that device. Until the route is per organization, someone with customers
-    /// is told so before the button.
-    func testSomeoneWithCustomersIsWarnedBeforeFinishingTheUpdate() throws {
+    /// Approval is per organization, so the move to the read-only app is too. Finishing
+    /// the update hands the sign-in manager the customers saved on the device, which it
+    /// records as still on the earlier sign-in, and the screen says none of them stops.
+    func testFinishingTheUpdateLeavesEachCustomerWhereItWas() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let finish = body(of: "func finishReadUpgrade() async -> String? {", in: app)
+        XCTAssertTrue(finish.contains("auth.moveReadsToReadRegistration(customers: savedTenants.map(\\.tenantId))"), finish)
+        XCTAssertTrue(finish.contains("await refreshUpdateWaiting(from: auth)"))
+
         let settings = try appSource("RegistrationSettings.swift")
-        let warning = try XCTUnwrap(settings.range(of: "if registrations.customerCount > 0 {"))
+        let told = try XCTUnwrap(settings.range(of: "if registrations.customerCount > 0 {"))
         let button = try XCTUnwrap(settings.range(of: "message = await registrations.finishReadUpgrade()"))
-        XCTAssertLessThan(warning.lowerBound, button.lowerBound, "the warning comes before the button it is about")
-        XCTAssertTrue(try appSource("LAPSlockApp.swift").contains("customerCount: root.savedTenants.count"))
+        XCTAssertLessThan(told.lowerBound, button.lowerBound, "a provider is told before the button")
+        XCTAssertTrue(settings.contains("none of them stops working when you finish here"))
+        XCTAssertFalse(settings.contains("stops working on this device until it does"), "the warning from when the move was all at once")
+        XCTAssertTrue(app.contains("customerCount: root.savedTenants.count"))
+    }
+
+    /// What is waiting is read again after everything that can change it, and a switch
+    /// reads it before it decides where the customer's writes start.
+    func testWhatIsWaitingIsReadPerOrganization() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let switching = body(of: "func switchTenant(to tenantId: String?) async -> AuthError? {", in: app)
+        let read = try XCTUnwrap(switching.range(of: "await refreshUpdateWaiting(from: session.auth)"))
+        let writes = try XCTUnwrap(switching.range(of: "WriteRoutes.startingRoute(for: tenant, beforeTheSplit: readsThroughOriginalRegistration)"))
+        XCTAssertLessThan(read.lowerBound, writes.lowerBound)
+        XCTAssertTrue(body(of: "func restoreSession() async {", in: app).contains("await refreshUpdateWaiting(from: auth)"))
+
+        // The approval link is for the organization Finish updating signs in to: the
+        // customer's when the customer is what waits, otherwise the person's own.
+        XCTAssertTrue(app.contains("readConsentURL: root.updateWaiting == .thisCustomer ? root.consentURL(for: .read) : root.consentURL,"))
+        // A customer removed from the device leaves the list of those still waiting.
+        XCTAssertTrue(body(of: "func forgetTenant(_ tenantId: String) {", in: app).contains("await auth.forgetReadRoute(for: tenantId)"))
     }
 }

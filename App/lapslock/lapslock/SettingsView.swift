@@ -269,7 +269,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 accountSection
-                if let registrations, registrations.readsThroughOriginal {
+                if let registrations, registrations.waiting != nil {
                     ReadUpgradeSection(registrations: registrations)
                 }
                 if managed.config.isManaged {

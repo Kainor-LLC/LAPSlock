@@ -311,11 +311,22 @@ final class AppRootModel {
     /// share the same session rather than creating a second one.
     private(set) var auth: MSALAuthManager?
 
-    /// True for an install that signed in before TenantKeep's sign-in was split into a
-    /// read-only app and separate apps for actions, and whose organization has not
-    /// approved the read-only one yet. Everything it could do before still works; the
-    /// screens say what is waiting and offer `finishReadUpgrade()`.
-    private(set) var readsThroughOriginalRegistration = false
+    /// For an install that signed in before TenantKeep's sign-in was split into a
+    /// read-only app and separate apps for actions: what has not moved to the read-only
+    /// one yet, for the organization being worked in. The person's own organization, and
+    /// with it everything, or afterwards this one customer. Everything it could do before
+    /// still works; the screens say what is waiting and offer `finishReadUpgrade()`.
+    private(set) var updateWaiting: ReadUpdate?
+    /// The customers that have not moved yet, for the organization list.
+    private(set) var customersWaitingToMove: Set<String> = []
+    /// The organization being worked in still reads through the earlier sign-in.
+    var readsThroughOriginalRegistration: Bool { updateWaiting != nil }
+
+    /// Read again whenever it can have changed: a restore, a switch, a finished update.
+    private func refreshUpdateWaiting(from auth: MSALAuthManager) async {
+        updateWaiting = await auth.pendingReadUpdate
+        customersWaitingToMove = await auth.customersWaitingToMove
+    }
 
     /// Live services, created after sign-in so they share the authenticated session.
     /// Nil whenever the app is not signed in.
@@ -482,6 +493,13 @@ final class AppRootModel {
         try? TenantStores.live.save(updated)
         savedTenants = TenantList.sorted(updated)
         WriteRoutes.forget(tenantId)
+        // Its place on the list of customers still on the earlier sign-in goes with it.
+        if let auth {
+            Task {
+                await auth.forgetReadRoute(for: tenantId)
+                customersWaitingToMove = await auth.customersWaitingToMove
+            }
+        }
     }
 
     func resolveTenant(_ input: String) async -> Result<String, TenantDirectoryError> {
@@ -517,6 +535,9 @@ final class AppRootModel {
         // The module shell is keyed by the operating tenant, so every screen model is
         // rebuilt from the new session as well.
         let tenant = await session.auth.operatingTenantId ?? session.tenantId
+        // Per organization: a customer that has not moved to the read-only app keeps the
+        // earlier sign-in, and one that has moved does not.
+        await refreshUpdateWaiting(from: session.auth)
         await auth?.setCombinedWrites(
             WriteRoutes.startingRoute(for: tenant, beforeTheSplit: readsThroughOriginalRegistration), inTenant: tenant)
         // These two change together, with no suspension between them. The shell is keyed on
@@ -578,7 +599,7 @@ final class AppRootModel {
         }
         let tenant = await auth.operatingTenantId ?? account.tenantId
         operatingTenantId = tenant
-        readsThroughOriginalRegistration = await auth.isReadingThroughOriginalRegistration
+        await refreshUpdateWaiting(from: auth)
         await auth.setCombinedWrites(
             WriteRoutes.startingRoute(for: tenant, beforeTheSplit: readsThroughOriginalRegistration), inTenant: tenant)
         liveSession = LiveSession(auth: auth, tenantId: tenant)
@@ -613,7 +634,8 @@ final class AppRootModel {
             let tenant = await auth.operatingTenantId ?? account.tenantId
             operatingTenantId = tenant
             await auth.setCombinedWrites(WriteRoutes.startingRoute(for: tenant, beforeTheSplit: false), inTenant: tenant)
-            readsThroughOriginalRegistration = false
+            updateWaiting = nil
+            customersWaitingToMove = []
             liveSession = LiveSession(auth: auth, tenantId: tenant)
             mode = .live(account)
             AlertsRunner.unpauseAll()
@@ -708,7 +730,8 @@ final class AppRootModel {
         // drops every service's cache with it.
         liveSession = nil
         operatingTenantId = nil
-        readsThroughOriginalRegistration = false
+        updateWaiting = nil
+        customersWaitingToMove = []
         demoCustomer = .contoso
         savedSearches.clear()
         pendingSearch = nil
@@ -1051,22 +1074,33 @@ final class AppRootModel {
         await settleAllWriteRoutes()
     }
 
-    /// Signs the person into the read-only registration and moves reads onto it. Nil on
-    /// success, or a sentence to show. Until it succeeds nothing changes.
+    /// Signs the person into the read-only registration and moves reads onto it, for what
+    /// `updateWaiting` names: their own organization first, and after that the one customer
+    /// being worked in. Nil on success, or a sentence to show. Until it succeeds nothing
+    /// changes.
+    ///
+    /// When their own organization moves, the customers saved on this device are recorded
+    /// as still waiting, so each keeps the earlier sign-in until its own administrator
+    /// approves the read-only app. Approval is per organization, and so is the move.
     func finishReadUpgrade() async -> String? {
         guard let auth else { return "Sign in first." }
+        let customer = updateWaiting == .thisCustomer
         do {
-            try await auth.moveReadsToReadRegistration()
-            readsThroughOriginalRegistration = await auth.isReadingThroughOriginalRegistration
+            try await auth.moveReadsToReadRegistration(customers: savedTenants.map(\.tenantId))
+            await refreshUpdateWaiting(from: auth)
             await settleAllWriteRoutes()
             return nil
         } catch let error as AuthError {
             if case .differentAccount = error { return Self.differentAccountMessage }
             if case .userCancelled = error {
-                return "Not finished. If Microsoft said approval is needed, an Entra administrator can approve TenantKeep at tenantkeep.app/consent. Everything you could do before still works."
+                return customer
+                    ? "Not finished. If Microsoft said approval is needed, this customer's Entra administrator can approve TenantKeep at tenantkeep.app/consent. Everything you could do before still works."
+                    : "Not finished. If Microsoft said approval is needed, an Entra administrator can approve TenantKeep at tenantkeep.app/consent. Everything you could do before still works."
             }
             if ConsentDiagnostics.state(from: error) != nil {
-                return "Your organization hasn't approved the read-only TenantKeep app yet. An Entra administrator can approve it at tenantkeep.app/consent. Everything you could do before still works."
+                return customer
+                    ? "This customer hasn't approved the read-only TenantKeep app yet. Its Entra administrator can approve it at tenantkeep.app/consent. Everything you could do before still works."
+                    : "Your organization hasn't approved the read-only TenantKeep app yet. An Entra administrator can approve it at tenantkeep.app/consent. Everything you could do before still works."
             }
             return "Couldn't finish. Check your connection and try again."
         } catch {
@@ -1482,7 +1516,9 @@ struct AppRootView: View {
                                 forget: { root.forgetTenant($0) },
                                 consentURL: { tenant in
                                     AdminConsentLink.url(registration: .read, tenant: tenant)
-                                }
+                                },
+                                ownUpdateWaiting: root.updateWaiting == .ownOrganization,
+                                waitingToMove: root.customersWaitingToMove
                             )
                         } : nil,
                         onAppearRefresh: { await root.refreshTenants() },
@@ -1570,10 +1606,12 @@ struct AppRootView: View {
                             requestUserNamesConsent: { await root.requestUserNamesConsent() },
                             requestMacOSRevealConsent: { await root.requestMacOSRevealConsent() },
                             registrations: SettingsRegistrations(
-                                readsThroughOriginal: root.readsThroughOriginalRegistration,
+                                waiting: root.updateWaiting,
+                                awayFromHome: root.isOperatingAwayFromHome,
                                 customerCount: root.savedTenants.count,
                                 finishReadUpgrade: { await root.finishReadUpgrade() },
-                                readConsentURL: root.consentURL(for: .read),
+                                // The link is for the organization Finish updating signs in to.
+                                readConsentURL: root.updateWaiting == .thisCustomer ? root.consentURL(for: .read) : root.consentURL,
                                 writeRouteChoice: root.writeRouteChoice,
                                 setWriteRouteChoice: { await root.setWriteRouteChoice($0) }),
                             privilegedSheet: {
@@ -1592,7 +1630,7 @@ struct AppRootView: View {
                     // MSP: the switcher's plan, and Pro for the saved searches it runs.
                     crossTenant: root.isPro && root.canSwitchTenants ? root.crossTenantSetup(session: session) : nil,
                     pendingSearch: $root.pendingSearch,
-                    updateWaiting: root.readsThroughOriginalRegistration
+                    updateWaiting: root.updateWaiting
                 )
                 .environment(\.awayTenant, root.isOperatingAwayFromHome ? root.operatingTenantLabel : nil)
 

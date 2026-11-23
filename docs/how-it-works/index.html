@@ -222,8 +222,11 @@
       <strong>Updating from LAPSlock.</strong> The earlier app signed in through one registration,
       <code>50c9aa83-4f5c-4203-a3c0-adab54a2ba3a</code>, which is now TenantKeep Actions. After the
       update everything you could do before keeps working through it, and Settings shows Update Waiting
-      until an administrator approves the read-only app once. If a Conditional Access policy names the
-      earlier app by ID, add the apps above to it.
+      until an administrator approves the read-only app once. A provider's customers move one at a
+      time: once your own organization has moved, each customer keeps working through the earlier app
+      until its own administrator approves the read-only one, and the organization list marks the ones
+      still waiting. A customer that has moved does not go back. If a Conditional Access policy names
+      the earlier app by ID, add the apps above to it.
     </div>
 
     <h3 id="permission-list">Every permission, and when it is requested</h3>

@@ -232,7 +232,7 @@ struct ModuleShell: View {
     @StateModel private var digestModel: ThreatDigestModel
     /// True while this install waits for its organization to approve the read-only app.
     /// The module list says so, with the way to Settings.
-    private let updateWaiting: Bool
+    private let updateWaiting: ReadUpdate?
     @State private var selectedModule: AppModule?
     @State private var selectedDeviceId: String?
     /// The device as it was when opened. A pull to refresh starts the list again from its
@@ -299,7 +299,7 @@ struct ModuleShell: View {
         savedSearches: SavedSearchLibrary?,
         crossTenant: CrossTenantSearchSetup? = nil,
         pendingSearch: Binding<SavedSearch?> = .constant(nil),
-        updateWaiting: Bool = false
+        updateWaiting: ReadUpdate? = nil
     ) {
         self.updateWaiting = updateWaiting
         _openRoute = openRoute
@@ -784,10 +784,10 @@ struct ModuleShell: View {
         .safeAreaInset(edge: .top) {
             if isDemo {
                 DemoBanner()
-            } else if updateWaiting {
+            } else if let updateWaiting {
                 // Inside this column, under its own navigation bar. Across the top of the
                 // whole app it sat over the back button and nothing could be backed out of.
-                Button { showingSettings = true } label: { ReadUpgradeBanner() }
+                Button { showingSettings = true } label: { ReadUpgradeBanner(waiting: updateWaiting) }
                     .buttonStyle(.plain)
                     .accessibilityHint("Opens Settings")
             }

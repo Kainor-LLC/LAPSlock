@@ -33,6 +33,13 @@ struct TenantSwitcherView: View {
     let forget: (String) -> Void
     /// Builds the per-tenant admin consent URL.
     let consentURL: (String) -> URL?
+    /// This device signed in before the read-only app existed and its own organization has
+    /// not moved to it. A customer that approved TenantKeep since then approved the
+    /// read-only app, which this device cannot use yet, and a failed switch says so.
+    var ownUpdateWaiting = false
+    /// Customers still on the earlier sign-in, each until its administrator approves the
+    /// read-only app. Marked in the list so they can be found without switching into each.
+    var waitingToMove: Set<String> = []
     /// Demo mode: two fixed sample customers, nothing to add and nothing to forget.
     var isDemo = false
 
@@ -86,6 +93,11 @@ struct TenantSwitcherView: View {
                     // customer or to Microsoft support, and it is the only unambiguous
                     // identifier for a directory.
                     Text(tenantId).font(Brand.data(11)).foregroundStyle(.secondary)
+                    if !isHome, waitingToMove.contains(tenantId.lowercased()) {
+                        Text("Earlier sign-in: has not approved the read-only app")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 if isCurrent {
@@ -145,6 +157,11 @@ struct TenantSwitcherView: View {
         Section {
             Text(failure.title).font(.subheadline.weight(.semibold))
             Text(failure.explanation).font(.footnote).foregroundStyle(.secondary)
+            if ownUpdateWaiting, failure.mayBeApproval {
+                Text("If this customer approved TenantKeep recently, it approved the read-only app, which this device has not moved to yet. Choose Finish updating in Settings, in your own organization, then switch again.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
 
             if failure.isConsent, let tenant = pendingConsentTenant, let url = consentURL(tenant) {
                 // The whole reason this section exists. Consent is granted per tenant by
@@ -249,6 +266,9 @@ struct SwitchFailure: Equatable {
     let title: String
     let explanation: String
     let isConsent: Bool
+    /// The failure can be a missing approval even when Microsoft did not say so: closing
+    /// its "approval required" page comes back as a cancelled sign-in.
+    var mayBeApproval = false
 
     init(directory error: TenantDirectoryError, typed: String) {
         isConsent = false
@@ -273,6 +293,7 @@ struct SwitchFailure: Equatable {
         switch error {
         case .consentRequired:
             isConsent = true
+            mayBeApproval = true
             title = "\(typed) hasn't approved TenantKeep yet"
             explanation = """
                 Microsoft requires each organization's own administrator to approve an app \
@@ -290,6 +311,7 @@ struct SwitchFailure: Equatable {
                 """
         case .userCancelled:
             isConsent = false
+            mayBeApproval = true
             title = "Sign-in was cancelled"
             explanation = "Nothing was changed. You are still in the organization you started in."
         case .noAccount:
@@ -306,6 +328,7 @@ struct SwitchFailure: Equatable {
             explanation = "Your access to \(typed) needs a fresh sign-in. Try once more."
         case .underlying:
             isConsent = false
+            mayBeApproval = true
             title = "Couldn't switch to \(typed)"
             explanation = """
                 Microsoft refused the request. The most common reasons are that your account \
