@@ -1,4 +1,5 @@
 import SwiftUI
+import AuthKit
 import InventoryKit
 import ConditionalAccessKit
 import TenantPulseKit
@@ -435,6 +436,9 @@ struct ModuleShell: View {
                 compactColumn = .sidebar
             }
             open(openRoute)
+            #if DEBUG
+            applyScreenshotRoute()
+            #endif
         }
         .onChange(of: openRoute) { _, route in open(route) }
         // A row tapped in the run across organizations. After a switch this is a new shell,
@@ -548,6 +552,72 @@ struct ModuleShell: View {
         guard crossTenant != nil else { return nil }
         return { runningEverywhere = $0 }
     }
+
+    #if DEBUG
+    /// Debug builds only, and only in demo mode: `-LAPSlockShot <name>` opens one screen
+    /// with demo data, so App Store screenshots can be taken by a script and taken again
+    /// the same way for the next release, on any simulator, the fold included, where
+    /// nothing can tap. It selects what a person would have tapped and nothing more:
+    /// a reveal still asks for Face ID.
+    private func applyScreenshotRoute() {
+        guard isDemo, let shot = ScreenshotRoute.requested else { return }
+        Task { @MainActor in
+            switch shot {
+            case "devices":
+                selectedModule = .credentials
+            case "device", "reveal":
+                selectedModule = .credentials
+                selectedDeviceId = await ScreenshotRoute.first { listModel.visibleDevices.first { $0.platform == .windows }?.id }
+            case "mac":
+                selectedModule = .credentials
+                selectedDeviceId = await ScreenshotRoute.first { listModel.visibleDevices.first { $0.platform == .macOS }?.id }
+            case "privileged":
+                selectedModule = .privilegedAccess
+            case "approvals":
+                selectedModule = .privilegedAccess
+                privilegedTab = .approvals
+            case "people":
+                selectedModule = .people
+            case "person":
+                // The demo person whose sign-ins include the failures worth showing.
+                selectedModule = .people
+                _ = await ScreenshotRoute.first { directoryModel.visible.first?.id }
+                openPerson("jane.okafor@demo.example")
+            case "pulse":
+                selectedModule = .tenantPulse
+            case "digest-item":
+                selectedModule = .security
+                securityTab = .digest
+                selectedDigestId = await ScreenshotRoute.first { digestModel.cards.first?.item.id }
+            case "policies":
+                selectedModule = .conditionalAccess
+            case "policy":
+                selectedModule = .conditionalAccess
+                selectedPolicyId = await ScreenshotRoute.first { policyModel.visible.first?.id }
+            case "incidents":
+                selectedModule = .security
+            case "incident":
+                selectedModule = .security
+                selectedIncidentId = await ScreenshotRoute.first { securityModel.visible.first?.id }
+            case "digest":
+                selectedModule = .security
+                securityTab = .digest
+            case "email":
+                selectedModule = .security
+                securityTab = .email
+            case "settings":
+                showingSettings = true
+            default:
+                break
+            }
+            // A compact stack shows one column: the one the shot is of.
+            if sizeClass == .compact {
+                let detail = ["device", "reveal", "mac", "person", "policy", "incident", "digest-item"].contains(shot)
+                if detail { compactColumn = .detail }
+            }
+        }
+    }
+    #endif
 
     private func open(_ route: AlertRoute?) {
         guard let route else { return }
@@ -1081,3 +1151,25 @@ private struct NoDeviceSelectedView: View {
         }
     }
 }
+
+#if DEBUG
+/// The screen a Debug build was asked to open for a screenshot, `-LAPSlockShot <name>`.
+/// Compiled out of Release builds entirely.
+enum ScreenshotRoute {
+    static var requested: String? {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "-LAPSlockShot"), i + 1 < args.count else { return nil }
+        return args[i + 1]
+    }
+
+    /// Waits for demo data to load, up to about six seconds, and returns the first value.
+    @MainActor
+    static func first<T>(_ read: () -> T?) async -> T? {
+        for _ in 0..<40 {
+            if let value = read() { return value }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+        return nil
+    }
+}
+#endif

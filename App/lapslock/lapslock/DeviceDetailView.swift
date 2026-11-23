@@ -850,6 +850,11 @@ struct DeviceDetailView: View {
             async let metadata: Void = model.loadMetadata()
             async let keys: Void = model.loadBitLockerKeys()
             _ = await (metadata, keys)
+            #if DEBUG
+            // For the scripted screenshot of a reveal: what a tap on Reveal does, so Face
+            // ID is still asked for. The route only exists in demo mode.
+            if ScreenshotRoute.requested == "reveal" { await model.reveal() }
+            #endif
         }
         .onChange(of: privacy.isCaptured) { _, captured in
             model.isCaptured = captured
