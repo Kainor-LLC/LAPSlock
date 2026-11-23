@@ -186,6 +186,33 @@ extension ThreatDigestServiceTests {
         XCTAssertEqual(StubProtocol.requests.count, 4, "one read of each feed")
     }
 
+    /// A digest with a source missing is asked for again after a minute, not held as fresh
+    /// for the fifteen a complete one is.
+    func test_aDigestWithASourceMissingIsNotHeldAsFresh() async throws {
+        let clock = Clock(now)
+        let service = ThreatDigestService(session: StubProtocol.session(), now: { clock.now }, newsSources: [])
+        seedAll(status: 503)
+        let failed = try await service.digest()
+        XCTAssertFalse(failed.unavailable.isEmpty)
+        let asked = StubProtocol.requests.count
+
+        // Moments later it is reused, so a feed that is down is not asked on every glance.
+        clock.advance(by: 30)
+        _ = try await service.digest()
+        XCTAssertEqual(StubProtocol.requests.count, asked)
+
+        // After a minute it is asked again, and the complete answer then counts as fresh.
+        clock.advance(by: 45)
+        seedAll()
+        let recovered = try await service.digest()
+        XCTAssertTrue(recovered.unavailable.isEmpty, "\(recovered.statuses)")
+        XCTAssertGreaterThan(StubProtocol.requests.count, asked)
+        let afterRecovery = StubProtocol.requests.count
+        clock.advance(by: 5 * 60)
+        _ = try await service.digest()
+        XCTAssertEqual(StubProtocol.requests.count, afterRecovery, "a complete digest is reused for fifteen minutes")
+    }
+
     func test_aRefreshAsksEachFeedWithItsValidatorAndReusesItsCopyOnA304() async throws {
         seedAll()
         let first = try await service.digest()
@@ -254,4 +281,13 @@ extension ThreatDigestServiceTests {
         let painted = await fresh.lastDigest()
         XCTAssertNil(painted)
     }
+}
+
+/// A clock a test can move.
+private final class Clock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Date
+    init(_ start: Date) { value = start }
+    var now: Date { lock.lock(); defer { lock.unlock() }; return value }
+    func advance(by seconds: TimeInterval) { lock.lock(); value = value.addingTimeInterval(seconds); lock.unlock() }
 }

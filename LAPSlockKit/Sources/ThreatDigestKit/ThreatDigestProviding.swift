@@ -46,6 +46,12 @@ public actor ThreatDigestService: ThreatDigestProviding {
     /// How long a digest is reused before the feeds are asked again.
     public static let freshFor: TimeInterval = 15 * 60
 
+    /// How long a digest with a source missing is reused. Not `freshFor`: a first open
+    /// without a connection, or a background run cut short, held "unavailable" on screen
+    /// for fifteen minutes with nothing asking again. Not zero either, so a feed that is
+    /// down for an afternoon is not asked on every glance.
+    public static let retryIncompleteAfter: TimeInterval = 60
+
     private let session: URLSession
     private let now: @Sendable () -> Date
     private let byteLimit: Int
@@ -115,7 +121,10 @@ public actor ThreatDigestService: ThreatDigestProviding {
     }
 
     public func digest() async throws -> DigestSnapshot {
-        if let lastSnapshot, now().timeIntervalSince(lastSnapshot.fetchedAt) < Self.freshFor { return lastSnapshot }
+        if let lastSnapshot {
+            let age = now().timeIntervalSince(lastSnapshot.fetchedAt)
+            if age < (lastSnapshot.unavailable.isEmpty ? Self.freshFor : Self.retryIncompleteAfter) { return lastSnapshot }
+        }
         return try await refreshedDigest()
     }
 
