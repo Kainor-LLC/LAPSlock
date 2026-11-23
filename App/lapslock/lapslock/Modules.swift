@@ -578,8 +578,9 @@ struct ModuleShell: View {
                 privilegedTab = .approvals
             case "people":
                 selectedModule = .people
-            case "person":
-                // The demo person whose sign-ins include the failures worth showing.
+            case "person", "confirm", "confirm-typed":
+                // The demo person whose sign-ins include the failures worth showing. For
+                // the two confirmations, `PersonColumn` then opens their actions.
                 selectedModule = .people
                 _ = await ScreenshotRoute.first { directoryModel.visible.first?.id }
                 openPerson("jane.okafor@demo.example")
@@ -605,14 +606,15 @@ struct ModuleShell: View {
             case "email":
                 selectedModule = .security
                 securityTab = .email
-            case "settings":
+            case "settings", "settings-actions":
+                // `SettingsView` pushes Actions and Permissions for the second.
                 showingSettings = true
             default:
                 break
             }
             // A compact stack shows one column: the one the shot is of.
             if sizeClass == .compact {
-                let detail = ["device", "reveal", "mac", "person", "policy", "incident", "digest-item"].contains(shot)
+                let detail = ["device", "reveal", "mac", "person", "confirm", "confirm-typed", "policy", "incident", "digest-item"].contains(shot)
                 if detail { compactColumn = .detail }
             }
         }
@@ -1160,6 +1162,12 @@ enum ScreenshotRoute {
         let args = CommandLine.arguments
         guard let i = args.firstIndex(of: "-LAPSlockShot"), i + 1 < args.count else { return nil }
         return args[i + 1]
+    }
+
+    /// The same, for a screen that cannot ask the shell whether this is demo mode. Only a
+    /// launch into demo data gets one: with a real sign-in nothing opens by itself.
+    static var requestedInDemo: String? {
+        CommandLine.arguments.contains("-LAPSlockDemo") ? requested : nil
     }
 
     /// Waits for demo data to load, up to about six seconds, and returns the first value.

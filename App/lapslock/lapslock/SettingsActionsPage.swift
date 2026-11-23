@@ -43,6 +43,8 @@ struct SettingsActionsPage: View {
             }
         }
         .navigationTitle("Actions and Permissions")
+        // Inline: as a large title it does not fit an iPhone's width and was cut off.
+        .navigationBarTitleDisplayMode(.inline)
         // On the page, not the Section: a Section re-renders on every form state change,
         // which dismissed the sheet the instant it opened.
         .sheet(isPresented: $showingPrivilegedSheet) {

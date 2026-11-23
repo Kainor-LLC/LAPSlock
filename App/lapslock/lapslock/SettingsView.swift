@@ -264,6 +264,10 @@ struct SettingsView: View {
 
     @State private var showingManageSubscriptions = false
     @State private var purchaseMessage: String?
+    #if DEBUG
+    /// `-LAPSlockShot settings-actions`, in demo data: opens on Actions and Permissions.
+    @State private var shotPage: SettingsPage? = ScreenshotRoute.requestedInDemo == "settings-actions" ? .actions : nil
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -300,6 +304,12 @@ struct SettingsView: View {
                 destination(page)
                     .toolbarBackground(.visible, for: .navigationBar)
             }
+            #if DEBUG
+            .navigationDestination(item: $shotPage) { page in
+                destination(page)
+                    .toolbarBackground(.visible, for: .navigationBar)
+            }
+            #endif
             .toolbarBackground(.visible, for: .navigationBar)
             // On the NavigationStack, not a Section: a Section re-renders on every form
             // state change, which dismissed a sheet the instant it opened once before.

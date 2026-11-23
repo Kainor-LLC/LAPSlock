@@ -470,7 +470,21 @@ struct PersonActionsView: View {
             typedUPNSheet(kind)
         }
         .privacyCover(isProtected: model.passVisible)
-        .task { await model.load() }
+        .task {
+            await model.load()
+            #if DEBUG
+            // `-LAPSlockShot confirm` or `confirm-typed`, in demo data: the confirmation a
+            // person would have tapped to, for the guide's pictures. It only asks. Sending
+            // still takes the tap, or the typing and Face ID. The pause lets the page
+            // finish arriving before anything is presented over it.
+            if ScreenshotRoute.requestedInDemo != nil { try? await Task.sleep(for: .seconds(1.5)) }
+            switch ScreenshotRoute.requestedInDemo {
+            case "confirm": model.tapped(.revokeSessions)
+            case "confirm-typed": model.tapped(.authenticationWipe)
+            default: break
+            }
+            #endif
+        }
         .onDisappear { model.closed() }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { model.hidePass() }

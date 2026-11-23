@@ -48,6 +48,16 @@ struct PersonColumn: View {
             // the account lines.
             if old.dropFirst(new.count).contains(where: { !$0.isSignIn }) { snapshotTick += 1 }
         }
+        #if DEBUG
+        .task {
+            // `-LAPSlockShot confirm` and `confirm-typed`, in demo data, go on to the
+            // person's actions. Once the page is on screen, not as the stack's first
+            // path: a path set before the column had arrived was sometimes dropped.
+            guard ["confirm", "confirm-typed"].contains(ScreenshotRoute.requestedInDemo ?? "") else { return }
+            try? await Task.sleep(for: .seconds(1))
+            path = [.actions]
+        }
+        #endif
     }
 
     @ViewBuilder
