@@ -17,13 +17,16 @@ import PackageDescription
 let package = Package(
     name: "LAPSlockKit",
     platforms: [
-        // iOS 17 floor. Chosen deliberately: iOS 17 shipped September 2023 and runs on
-        // iPhone XS and later, so in 2026 it covers essentially every phone an IT
-        // administrator carries for work. It buys ContentUnavailableView (proper empty
-        // and error states) and the two-parameter onChange, and avoids maintaining
-        // availability shims in the screens that matter most. Revisit only if a
-        // customer reports a fleet on iPhone 8-era hardware.
-        .iOS(.v17),
+        // iOS 18 floor, since 2026-11-23, decided by Connor for one reason: Microsoft's Intune
+        // App SDK, which app protection policies need, is built for iOS 18 and later in
+        // the release that goes with Xcode 27 (22.x; its binary says MinimumOSVersion 18.0).
+        // iOS 18 runs on iPhone XS and later, the same iPhones iOS 17 runs on, so no
+        // iPhone is left behind by hardware. Someone still on iOS 17 keeps the last
+        // version that ran there. The floor before this was iOS 17, chosen for
+        // ContentUnavailableView and the two-parameter onChange.
+        // Written as a string: this manifest's tools version predates the `.v18` name, and
+        // raising the tools version would change the language mode of every target.
+        .iOS("18.0"),
         .macOS(.v14),    // test-host only
         // The Apple Watch companion links WatchBridgeKit and nothing else from here.
         .watchOS(.v10)

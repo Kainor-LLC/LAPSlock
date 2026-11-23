@@ -36,7 +36,7 @@ public final class SubscriptionStore {
 
     /// Called on the main actor when the entitlement changes, and only then, for the app's
     /// tier logic outside any view. A callback rather than a publisher: Observation on the
-    /// iOS 17 floor has no stream of changes to subscribe to.
+    /// iOS 18 floor has no stream of changes to subscribe to.
     @ObservationIgnored public var onEntitlementChange: ((SubscriptionEntitlement) -> Void)?
 
     @ObservationIgnored private var updatesTask: Task<Void, Never>?

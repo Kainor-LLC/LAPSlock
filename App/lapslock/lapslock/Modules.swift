@@ -23,8 +23,8 @@ import SavedSearchKit
 // The shell is a three-column NavigationSplitView: modules, list, detail. On iPhone it
 // collapses to a stack whose root is the module list, and launch restores the last-used
 // module, so the admin who opens the app for one thing lands on that thing. A tab bar
-// would have been the other answer, but with an iOS 17 floor it cannot become a sidebar on
-// iPad, and two shells on the screen that shows passwords is two sets of navigation bugs.
+// would have been the other answer, but on iOS 17, the floor when this was built, it cannot
+// become a sidebar on iPad, and two shells on the screen that shows passwords is two sets of navigation bugs.
 //
 // Why selection lives here and not in the list. Favourites, recents and the free-tier
 // count used to update from the detail screen's `onDisappear`. In a split view the detail
