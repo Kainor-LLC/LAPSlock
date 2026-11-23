@@ -122,4 +122,27 @@ final class AppWiringTests: XCTestCase {
         let signOut = try XCTUnwrap(function.range(of: "auth.signOut(account: account)"))
         XCTAssertLessThan(off.lowerBound, signOut.lowerBound)
     }
+
+    // MARK: - Instant alerts stay with the plan
+
+    /// The relay recognizes Kainor's alert service by its own identity, so nothing on a
+    /// server checks the plan any more. The phone does: without the plan the daily check-in
+    /// stops, and the service drops the phone 30 days later. It must only stop checking in,
+    /// never turn anything off, because the plan reads as lapsed for a moment at launch,
+    /// before the App Store has answered, and turning off deletes the alert key.
+    func testAPhoneWithoutThePlanStopsCheckingInAndNothingElse() throws {
+        let relay = try appSource("RelaySettingsView.swift")
+        let checkIn = body(of: "private func checkInIfDue() {", in: relay)
+        XCTAssertTrue(checkIn.contains("guard planAllows,"), checkIn)
+
+        let changed = body(of: "func planChanged(allows: Bool) {", in: relay)
+        XCTAssertFalse(changed.contains("turnOff"), "a plan that reads as lapsed at launch must not delete the alert key")
+        XCTAssertTrue(changed.contains("checkInIfDue()"), "a check-in that waited for the plan is made once it is confirmed")
+
+        let apply = body(of: "private func apply(subscription: SubscriptionEntitlement) {", in: try appSource("LAPSlockApp.swift"))
+        XCTAssertTrue(apply.contains("RelayCoordinator.shared.planChanged(allows: merged.isPro)"))
+
+        // The gated check-in is the only registration nobody asked for.
+        XCTAssertEqual(relay.components(separatedBy: "interactive: false").count - 1, 1)
+    }
 }

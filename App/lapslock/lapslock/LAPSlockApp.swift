@@ -426,6 +426,8 @@ final class AppRootModel {
         // Notifications are Pro. A lapsed subscription turns the switches off rather than
         // leaving a background check running that the admin is no longer paying for.
         if case .live = mode, !merged.isPro { AlertsRunner.disableAll() }
+        // Instant alerts are Pro too. The phone is what checks, so it is told every time.
+        RelayCoordinator.shared.planChanged(allows: merged.isPro)
     }
 
     /// Customer organizations, most recently used first.

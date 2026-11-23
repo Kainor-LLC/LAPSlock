@@ -42,6 +42,8 @@ final class RelayCoordinator {
         return nil
     }
     @ObservationIgnored var setup: InstantAlertsSetup?
+    @ObservationIgnored private var planAllows = false
+    @ObservationIgnored private var checkingIn = false
 
     let phone: RelayPhone
 
@@ -147,11 +149,31 @@ final class RelayCoordinator {
     /// does not delete the phone after 30 days.
     func registered(token: Data) {
         guard phone.isOn else { return }
-        let changed = (try? phone.setDeviceToken(token)) == true
+        // A new push address makes a check-in due now, whenever it can next be made.
+        if (try? phone.setDeviceToken(token)) == true { UserDefaults.standard.removeObject(forKey: Self.checkInKey) }
+        checkInIfDue()
+    }
+
+    /// The plan in force, as the root model last worked it out. Instant alerts are part of
+    /// Pro, and since 2026-11-23 the relay no longer checks that for Kainor's alert service
+    /// (RELAY-API.md section 15), so the phone does: without the plan it stops checking in,
+    /// and the service removes a phone 30 days after its last check-in. Nothing is turned
+    /// off or deleted here, because a plan can read as lapsed for a moment at launch, before
+    /// the App Store has answered. When the plan is confirmed, a check-in that was due is made.
+    func planChanged(allows: Bool) {
+        planAllows = allows
+        checkInIfDue()
+    }
+
+    private func checkInIfDue() {
         let last = UserDefaults.standard.object(forKey: Self.checkInKey) as? Date ?? .distantPast
-        guard isRegistered, changed || Date().timeIntervalSince(last) > 86_400,
+        guard planAllows, !checkingIn, isRegistered, Date().timeIntervalSince(last) > 86_400,
               let setup, let code = try? phone.pairingCode() else { return }
-        Task { await register(code, setup: setup, interactive: false, quiet: true) }
+        checkingIn = true
+        Task {
+            await register(code, setup: setup, interactive: false, quiet: true)
+            checkingIn = false
+        }
     }
 
     func registrationFailed() {
