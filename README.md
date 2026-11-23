@@ -27,11 +27,17 @@ modification and publishing builds are not permitted. See [LICENSE](LICENSE).
    device over TLS. Kainor has no server that could see one. The app talks to exactly three
    hosts, and the third only after an organisation activates a licence. The ten-minute proxy
    recipe is in [NETWORK-TRANSPARENCY.md](docs/NETWORK-TRANSPARENCY.md).
-2. **Delegated permissions only.** The app can read what the signed-in account can read in
-   the admin center, and nothing else. Every reveal appears in the tenant's own Entra audit
-   log exactly as a read from the portal would.
-3. **Nothing collected.** No analytics, no telemetry, no crash reporting, no account. The
-   App Store privacy label says Data Not Collected. The reveal meter for the free tier is
+2. **Delegated permissions only, and a sign-in that cannot write.** The app can read what the
+   signed-in account can read in the admin center, and nothing else. It signs in through an
+   app registration that holds read permissions only; each kind of change goes through a
+   separate registration an organization approves separately. The list is
+   [docs/app-registrations.json](docs/app-registrations.json), and tests hold the read
+   registration to it. Every reveal appears in the tenant's own Entra audit log exactly as a
+   read from the portal would.
+3. **Nothing collected unless you turn on Instant alerts.** No analytics, no telemetry, no
+   crash reporting, no account. Instant alerts is a paid, opt-in service that keeps an
+   administrator ID and a push token, and says so in
+   [docs/INSTANT-ALERTS.md](docs/INSTANT-ALERTS.md). The reveal meter for the free tier is
    counted in the device Keychain and never leaves it.
 4. **Credential handling is isolated by construction.** The module that touches passwords,
    `CredentialKit`, imports Foundation and the auth protocol and nothing else. Adding a
@@ -59,7 +65,7 @@ to report it.
 |---|---|---|
 | Windows LAPS | Yes, Graph v1.0 | Yes, Graph v1.0 |
 | BitLocker | Yes | Yes |
-| macOS LAPS | Rotation date, Graph beta | Yes, Graph beta, off until turned on in Settings |
+| macOS LAPS | Rotation date, Graph beta | Experimental: Graph beta, off until turned on in Settings, not yet confirmed on an enrolled Mac |
 
 A Mac's admin password comes from the beta function
 `retrieveMacOSManagedDeviceLocalAdminAccountDetail`, for Macs enrolled through Automated Device

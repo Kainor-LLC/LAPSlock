@@ -180,6 +180,55 @@
     signed in. Permissions are requested in stages, so a first consent screen reads "reads device
     inventory" rather than "reads every password in your tenant".</p>
 
+    <h3 id="apps">Eight Microsoft apps, one of them read-only</h3>
+    <p>Microsoft puts every permission an organization has granted an app into the tokens it issues
+    that app, whichever permission the request named. Asking for less does not get less. So a sign-in
+    that cannot change your tenant has to be a separate app, not a narrower request. TenantKeep On-Call
+    signs in through an app that holds <strong>read permissions only</strong>. Anything that changes your
+    tenant goes through another app, which your organization approves separately or never approves,
+    and which the app signs in to only when you turn that kind of action on in Settings.</p>
+
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th>App and client ID</th><th>What approving it allows</th></tr></thead>
+      <tbody>
+        <tr><td><strong>TenantKeep (read-only)</strong><br><code>e5b148e7-9689-40b2-9b09-9d0bef133049</code></td><td>Reads devices, sign-ins, policies, service health and security incidents, and reveals Windows LAPS passwords and BitLocker recovery keys. It cannot change anything.</td></tr>
+        <tr><td><strong>TenantKeep Role Activation</strong><br><code>315a1b17-88ea-4255-9b1f-b945cf84750b</code></td><td>Activates the roles and group memberships you are eligible for, and approves or denies requests.</td></tr>
+        <tr><td><strong>TenantKeep Device Actions</strong><br><code>308de19e-a4d9-41b1-98c4-e9e136f74718</code></td><td>Syncs, restarts, locks, locates, retires and wipes devices, rotates keys and passwords, and reads a Mac&#39;s admin password.</td></tr>
+        <tr><td><strong>TenantKeep User Actions</strong><br><code>8b0d25f4-ce24-42e8-b179-ff3f8f824b6c</code></td><td>Revokes sessions, blocks or unblocks sign-in, and confirms or dismisses a user&#39;s risk.</td></tr>
+        <tr><td><strong>TenantKeep Account Recovery</strong><br><code>0bd2d07f-98fd-45c3-8b88-62752bc1dd6b</code></td><td>Removes a person&#39;s sign-in methods and issues a Temporary Access Pass.</td></tr>
+        <tr><td><strong>TenantKeep Group Membership</strong><br><code>8642d2ad-9722-42c5-959c-3058a3cc1f60</code></td><td>Adds and removes group members.</td></tr>
+        <tr><td><strong>TenantKeep Actions</strong><br><code>50c9aa83-4f5c-4203-a3c0-adab54a2ba3a</code></td><td>Every action in one app: role activation, device actions, user actions, account recovery and group membership. Approve this one, or the separate apps for the actions you want.</td></tr>
+        <tr><td><strong>TenantKeep Alerts</strong><br><code>d7c387b7-8e67-4957-bc67-4b71824a60ea</code></td><td>Registers a phone to receive Instant alerts. It has no access to Microsoft Graph.</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <p>For actions an organization chooses one of two routes: the separate app for each kind of action
+    it wants, or <strong>TenantKeep Actions</strong>, which holds all of them, for one approval. Where
+    both are approved the separate app is used, because its token is the narrower. With TenantKeep
+    Actions alone, turning on any action gives the phone a token that carries every action permission
+    your organization approved; your own roles still decide what you can do, and the read-only app
+    still cannot change anything.</p>
+
+    <p>An administrator can approve any of these for the whole organization at
+    <a href="https://tenantkeep.app/consent/">tenantkeep.app/consent</a>, without installing the app.
+    Whoever signs in for an action must be the person already signed in: if a different account
+    answers Microsoft's prompt, its approval for the organization stands, and its session is removed
+    from the device. The same list, with every permission, is published as
+    <a href="/app-registrations.json">app-registrations.json</a>.</p>
+
+    <div class="note">
+      <strong>Updating from LAPSlock.</strong> The earlier app signed in through one registration,
+      <code>50c9aa83-4f5c-4203-a3c0-adab54a2ba3a</code>, which is now TenantKeep Actions. After the
+      update everything you could do before keeps working through it, and Settings shows Update Waiting
+      until an administrator approves the read-only app once. If a Conditional Access policy names the
+      earlier app by ID, add the apps above to it.
+    </div>
+
+    <h3 id="permission-list">Every permission, and when it is requested</h3>
+    <p>Every read in this table belongs to the read-only app. Each write names its app.</p>
+
     <div class="table-scroll">
     <table>
       <thead>
@@ -219,15 +268,17 @@
         <tr>
           <td><code>DeviceManagementManagedDevices.ReadWrite.All</code> and <code>DeviceManagementManagedDevices.PrivilegedOperations.All</code></td>
           <td>Only if you enable device actions</td>
-          <td>The one write permission. Off by default, leave it off and TenantKeep On-Call only ever asks
-          for read access.</td>
+          <td>Through TenantKeep Device Actions. Off by default: leave it off and TenantKeep On-Call never
+          signs in to an app that can change a device.</td>
         </tr>
         <tr>
           <td><code>DeviceManagementManagedDevices.PrivilegedOperations.All</code></td>
           <td>Only if you allow Mac password reveal</td>
-          <td>Microsoft requires this permission, the remote-actions one, to read a Mac's admin password,
-          through a beta function. TenantKeep On-Call uses it there only to read the password; device actions
-          stay off until you allow them, and each still asks before it is sent.</td>
+          <td>Through TenantKeep Device Actions, because Microsoft requires this permission, the
+          remote-actions one, to read a Mac's admin password, through a beta function. TenantKeep On-Call
+          uses it there only to read the password; device actions stay off until you allow them, and each
+          still asks before it is sent. <strong>Experimental:</strong> built from Microsoft's documentation
+          and not yet confirmed on a Mac enrolled through Automated Device Enrollment.</td>
         </tr>
         <tr>
           <td><code>User.ReadBasic.All</code></td>
@@ -237,9 +288,9 @@
         <tr>
           <td>PIM role and group scopes</td>
           <td>Only if you enable role activation</td>
-          <td>Reading what you are eligible for and requesting activation, and, where you are an
-          approver, seeing requests waiting for you and approving or denying them with a reason. The
-          same permissions cover both; approving asks for nothing new. Off by default.</td>
+          <td>Reading what you are eligible for and which roles you hold now goes through the read-only
+          app. Requesting activation, and approving or denying requests where you are an approver, go
+          through TenantKeep Role Activation; approving asks for nothing new. Off by default.</td>
         </tr>
         <tr>
           <td><code>Policy.Read.All</code></td>
@@ -264,16 +315,19 @@
           <code>User.Read.All</code>, <code>UserAuthenticationMethod.ReadWrite.All</code>,
           <code>UserAuthMethod-TAP.ReadWrite.All</code>, <code>IdentityRiskyUser.ReadWrite.All</code></td>
           <td>Only if you enable user actions</td>
-          <td>Signing a person out everywhere, blocking and allowing sign-in, removing their sign-in
-          methods, issuing a Temporary Access Pass, and on Entra ID P2 marking risk. Off by default.
-          Your organization can switch them off through Intune.</td>
+          <td>Signing a person out everywhere, blocking and allowing sign-in, and on Entra ID P2
+          marking risk go through TenantKeep User Actions. Removing sign-in methods and issuing a
+          Temporary Access Pass go through TenantKeep Account Recovery, which an organization can
+          leave unapproved and keep the rest. Off by default. Your organization can switch them off
+          through Intune.</td>
         </tr>
         <tr>
           <td><code>GroupMember.ReadWrite.All</code>, <code>Directory.Read.All</code>,
           <code>Policy.Read.All</code>, <code>PrivilegedEligibilitySchedule.Read.AzureADGroup</code></td>
           <td>Only if you enable group changes</td>
-          <td>Adding a person to a group or removing them, never changing the group itself; the
-          narrow membership permission, not <code>Group.ReadWrite.All</code>. The reads check each
+          <td>Adding a person to a group or removing them, through TenantKeep Group Membership, never
+          changing the group itself; the narrow membership permission, not
+          <code>Group.ReadWrite.All</code>. The reads, through the read-only app, check each
           group before it is offered: what it licenses or grants, whether a Conditional Access
           policy names it, whether PIM manages it. Role-assignable, dynamic, PIM, synced and mail
           groups are never changed. By default only groups in your helpdesk administrative unit,
@@ -340,9 +394,10 @@
           <td>Secure Score and its seven-day change. Read-only.</td>
         </tr>
         <tr>
-          <td>TenantKeep On-Call's own <code>Alerts.Register</code></td>
+          <td>TenantKeep Alerts' own <code>Alerts.Register</code></td>
           <td>When you turn on Instant alerts</td>
-          <td>A token good only for registering this phone with Kainor's alert service. It reads nothing from Microsoft.</td>
+          <td>A token good only for registering this phone with Kainor's alert service. TenantKeep Alerts
+          holds no Microsoft Graph permission, so the token reads nothing from Microsoft.</td>
         </tr>
       </tbody>
     </table>
@@ -424,7 +479,9 @@
       reads Entra-backed LAPS. Entra-joined and hybrid-joined devices are both fine <em>provided the
       policy backs up to Entra ID</em>, but a device whose policy targets Windows Server Active
       Directory instead cannot be read, because Microsoft exposes no API for it.</li>
-      <li><strong>Mac admin passwords need Automated Device Enrollment, and a beta API.</strong> Intune
+      <li><strong>Mac admin passwords are experimental, and need Automated Device Enrollment and a beta
+      API.</strong> The feature is built from Microsoft's documentation and has not yet been confirmed on
+      an enrolled Mac, so it may not work for you. Intune
       creates the password only for a Mac enrolled through Automated Device Enrollment with a local admin
       account in its enrollment profile, and Microsoft returns it only through a beta function. Reveal is
       off until you allow it in Settings, and viewing one needs an Intune role with View macOS admin

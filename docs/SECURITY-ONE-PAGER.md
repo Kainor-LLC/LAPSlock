@@ -15,11 +15,19 @@ database of your devices, and no Kainor server between the administrator and the
 
 - **Delegated authentication only**, via Microsoft's MSAL library and your tenant's normal
   sign-in, including Conditional Access, MFA and PIM. The app has no permissions of its own.
+- **A sign-in that cannot write.** The app signs in through an Entra app registration that
+  holds read permissions only. Each kind of change (role activation, device actions, user
+  actions, account recovery, group membership) goes through its own registration, which
+  your organization approves separately or never approves, and which the app signs in to
+  only when an administrator turns that feature on. Entra puts every permission granted to
+  an app into its tokens, so this is what makes "read-only" a fact about the sign-in and not
+  a promise about the code. The registrations and their permissions are listed in
+  `docs/app-registrations.json`.
 - **Least-privilege by default.** Read-only Graph scopes at sign-in; the credential-read
-  scope is requested at the first reveal; the one write scope (BitLocker key rotation) is
-  requested only if the administrator turns rotation on in Settings. The same opt-in rule
-  covers role activation and reading user display names (`User.ReadBasic.All`): off by
-  default, requested at the moment the toggle is turned on, never at sign-in.
+  scope is requested at the first reveal; nothing that writes is requested until its switch
+  is turned on in Settings. The same opt-in rule covers reading user display names
+  (`User.ReadBasic.All`): off by default, requested at the moment the toggle is turned on,
+  never at sign-in.
 - **Your audit log, not ours.** Every credential read is a Graph call by the signed-in user
   and appears in your Entra audit log exactly as a read from the admin center would.
 - **Face ID or Touch ID gates every reveal**, and the gate runs *before* the Graph call, so

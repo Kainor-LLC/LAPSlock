@@ -2,6 +2,24 @@
   "associatedApplications": [
     {
       "applicationId": "50c9aa83-4f5c-4203-a3c0-adab54a2ba3a"
+    },
+    {
+      "applicationId": "315a1b17-88ea-4255-9b1f-b945cf84750b"
+    },
+    {
+      "applicationId": "308de19e-a4d9-41b1-98c4-e9e136f74718"
+    },
+    {
+      "applicationId": "8b0d25f4-ce24-42e8-b179-ff3f8f824b6c"
+    },
+    {
+      "applicationId": "0bd2d07f-98fd-45c3-8b88-62752bc1dd6b"
+    },
+    {
+      "applicationId": "8642d2ad-9722-42c5-959c-3058a3cc1f60"
+    },
+    {
+      "applicationId": "d7c387b7-8e67-4957-bc67-4b71824a60ea"
     }
   ]
 }

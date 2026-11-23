@@ -59,7 +59,7 @@ TenantKeep Watch signs in to Microsoft with a federated credential bound to the 
 | `publicKey` | The phone's public key, made in its Secure Enclave, X9.63, base64url |
 | `breakGlass` | The break-glass accounts set for the organization in the app. Applied only from an active Global Administrator or Security Administrator |
 
-The request carries a Microsoft token issued for the On-Call app's own `Alerts.Register` scope. The service checks its signature, lifetime, issuer and scope, takes the organization from it, and allows registration only for an account with an active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role. That token cannot read anything from Microsoft. No Microsoft Graph token ever reaches the service.
+The request carries a Microsoft token issued for the `Alerts.Register` scope of the TenantKeep Alerts app registration, which holds no Microsoft Graph permission. The service checks its signature, lifetime, issuer and scope, takes the organization from it, and allows registration only for an account with an active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role. That token cannot read anything from Microsoft. No Microsoft Graph token ever reaches the service.
 
 The answer carries the service's public sender key, which the phone keeps for that organization so it can open, and authenticate, what the service sends. `DELETE` on the same address, with the push token, removes the phone.
 
