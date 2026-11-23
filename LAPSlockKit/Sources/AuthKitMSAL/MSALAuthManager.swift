@@ -254,12 +254,29 @@ public actor MSALAuthManager: AuthManaging {
     /// a cached account alone would show the device list and then fail on the first Graph
     /// call, which is worse than showing the sign-in screen.
     public func restoreSession() async -> AdminAccount? {
-        if let restored = await restore(through: .read) { return restored }
-        // An install from before the split has its session on the original registration
-        // and none on the read one. It carries on exactly as it did, reading through the
-        // original, until the organization approves the read registration and the person
-        // signs into it once (`moveReadsToReadRegistration`).
-        return await restore(through: .actions)
+        // `SessionRestore` holds the decision and its reasons. In short: an install from
+        // before the split has its session on the original registration and none on the
+        // read one, and carries on reading through the original until the person signs
+        // into the read registration once (`moveReadsToReadRegistration`). Any other
+        // install restores through the read registration or not at all, and a cache that
+        // holds more than one person is emptied instead of guessed at.
+        switch SessionRestore.plan(readAccounts: cachedAccounts(.read), originalAccounts: cachedAccounts(.actions)) {
+        case .through(let registration):
+            guard let account = await restore(through: registration) else { return nil }
+            // Nobody else's session stays cached beside the one restored.
+            removeAccounts(except: account.id, keepingPrimary: false)
+            return account
+        case .clearThenSignIn:
+            removeAccounts(except: nil, keepingPrimary: false)
+            return nil
+        case .signIn:
+            return nil
+        }
+    }
+
+    private func cachedAccounts(_ registration: AppRegistration) -> Int {
+        guard let app = try? application(for: registration), let accounts = try? app.allAccounts() else { return 0 }
+        return accounts.count
     }
 
     private func restore(through registration: AppRegistration) async -> AdminAccount? {
@@ -382,26 +399,25 @@ public actor MSALAuthManager: AuthManaging {
     }
 
     public func signOut(account: AdminAccount) async throws {
-        // Every other registration first, so no client keeps a session the person believes
-        // they ended. Local removal only: the primary registration's sign-out below is the
-        // one that talks to Microsoft.
+        // Whatever happens below, this object stops acting as the person, and no
+        // registration keeps anybody cached: not the person signing out, and not anyone
+        // 1.0 left cached beside them, whom the next launch would otherwise restore. Both
+        // run even when Microsoft's sign-out throws, so a failure there cannot leave a
+        // live session behind a sign-in screen. (Deferred blocks run last declared first:
+        // the caches are emptied, then the session is cleared.)
+        defer { if pinnedAccount?.id == account.id { clearSession() } }
+        defer { removeAccounts(except: nil, keepingPrimary: false) }
+
+        // Every other registration first. Local removal only: the primary registration's
+        // sign-out below is the one that talks to Microsoft.
         removeAccounts(except: nil, keepingPrimary: true)
 
-        // A throw here means nothing is cached for this account, which is
-        // indistinguishable from "already signed out", so absorb it.
+        // Nothing cached for this account is indistinguishable from "already signed out".
         let app = try application(for: primaryRegistration)
-        let msalAccount: MSALAccount
-        do {
-            msalAccount = try app.account(forIdentifier: account.id)
-        } catch {
-            if pinnedAccount?.id == account.id { clearSession() }
-            return
-        }
+        guard let msalAccount = try? app.account(forIdentifier: account.id) else { return }
         let webParams = try await MainActorUI.webviewParameters()
         let params = MSALSignoutParameters(webviewParameters: webParams)
-
         try await performSignout(app, msalAccount, params)
-        if pinnedAccount?.id == account.id { clearSession() }
     }
 
     private func clearSession() {
@@ -436,7 +452,10 @@ public actor MSALAuthManager: AuthManaging {
 
         let result = try await recording(.tokenInteractive) { try await acquireInteractive(app, params) }
         guard result.account.identifier == account.id else {
+            // The other person's session must not stay cached: a later launch could
+            // restore it. If the one removal fails, the sweep still takes it.
             try? app.remove(result.account)
+            removeAccounts(except: account.id, keepingPrimary: false)
             throw AuthError.differentAccount
         }
         try pin.validate(returnedTenantId: Self.tenantId(of: result))
