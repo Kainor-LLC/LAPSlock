@@ -248,6 +248,26 @@ public class WatchTests
         Assert.Equal("0 unknown x1, 202 production x1, 202 sandbox x2, 502 BadDeviceToken sandbox x1; newest 202 production", outcomes.ToString());
     }
 
+    /// <summary>
+    /// A phone that moved between an Xcode build and a TestFlight build left addresses
+    /// registered for the wrong one of Apple's services. Apple refused each on every alert,
+    /// and they would have stayed for thirty days.
+    /// </summary>
+    [Fact]
+    public void AnAddressAppleWillNeverDeliverToIsDropped()
+    {
+        Assert.True(TenantWatch.DeadAddress(410, null));
+        Assert.True(TenantWatch.DeadAddress(502, "BadDeviceToken"));
+        // Anything that may pass is kept: Apple busy, the relay's own refusals, another reason.
+        Assert.False(TenantWatch.DeadAddress(202, null));
+        Assert.False(TenantWatch.DeadAddress(502, "TooManyRequests"));
+        Assert.False(TenantWatch.DeadAddress(502, null));
+        Assert.False(TenantWatch.DeadAddress(503, "apns_unavailable"));
+        Assert.False(TenantWatch.DeadAddress(401, "service_token_invalid"));
+        Assert.False(TenantWatch.DeadAddress(429, "BadDeviceToken"));
+        Assert.False(TenantWatch.DeadAddress(0, null));
+    }
+
     [Fact]
     public void TheReasonForAnUnsentAlertIsOneWordFromTheRelayOrNothing()
     {

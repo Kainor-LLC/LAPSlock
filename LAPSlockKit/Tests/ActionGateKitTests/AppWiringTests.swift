@@ -182,6 +182,18 @@ final class AppWiringTests: XCTestCase {
         XCTAssertTrue(body(of: "func turnOff() async {", in: relay).contains("addressConfirmed = false"))
     }
 
+    /// An address is registered under the push service of the build that was given it.
+    /// The service's name kept with the alert key survives a reinstall, so a phone that
+    /// had run an Xcode build registered a TestFlight build's address as sandbox, Apple
+    /// refused every alert for it, and the phone said it was registered.
+    func testAnAddressIsRegisteredUnderTheRunningBuildsPushService() throws {
+        let relay = try appSource("RelaySettingsView.swift")
+        let registered = body(of: "func registered(token: Data) {", in: relay)
+        XCTAssertTrue(registered.contains("phone.setDeviceToken(token, environment: Self.environment)"), registered)
+        XCTAssertTrue(registered.contains("if changed { UserDefaults.standard.removeObject(forKey: Self.checkInKey) }"),
+                      "a changed address or service is registered again at once")
+    }
+
     // MARK: - a provider's customers move one at a time
 
     /// Approval is per organization, so the move to the read-only app is too. Finishing

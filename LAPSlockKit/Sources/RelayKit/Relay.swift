@@ -293,16 +293,24 @@ public struct RelayPhone: Sendable {
     /// without its reference.
     public func turnOff() throws { try store.delete() }
 
-    /// Records APNs's token for this phone. Returns true when it replaced a different one:
-    /// the token is bound into every envelope, so Watch has to be given the new pairing code
-    /// or nothing it sends can be delivered or opened.
+    /// Records APNs's token for this phone, and which of Apple's two services gave it:
+    /// "sandbox" for a build run from Xcode, "production" for every other. The two are
+    /// recorded together because this state outlives the build that made it. It survives a
+    /// reinstall, so a phone that had run an Xcode build kept "sandbox" under a TestFlight
+    /// build, registered its production address under that name, and was never reached:
+    /// Apple answers BadDeviceToken to an address sent to the wrong service.
+    ///
+    /// Returns true when either replaced a different one: the token is bound into every
+    /// envelope and the service is where the alert is sent, so Watch has to be given the
+    /// new pairing code or nothing it sends can be delivered or opened.
     @discardableResult
-    public func setDeviceToken(_ token: Data) throws -> Bool {
+    public func setDeviceToken(_ token: Data, environment: String) throws -> Bool {
         guard var state = try store.load() else { throw RelayError.notPaired }
         let hex = token.map { String(format: "%02x", $0) }.joined()
-        let changed = state.deviceToken != nil && state.deviceToken != hex
-        guard state.deviceToken != hex else { return false }
+        guard state.deviceToken != hex || state.environment != environment else { return false }
+        let changed = state.deviceToken != nil
         state.deviceToken = hex
+        state.environment = environment
         try store.save(state)
         return changed
     }

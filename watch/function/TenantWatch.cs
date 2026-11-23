@@ -58,6 +58,16 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
         byStatus.Count == 0 ? "none" : string.Join(',', byStatus.OrderBy(s => s.Key).Select(s => $"{s.Key}x{s.Value}"));
 
     /// <summary>
+    /// An address Apple will never deliver to, so it is dropped: 410 is an app that is gone,
+    /// and BadDeviceToken is an address that does not belong to the service it was
+    /// registered for. The second is counted as a failure the once, because a phone
+    /// registered it believing it would be reached; left in place it failed on every alert
+    /// for thirty days. A phone still in use registers again at its next check-in.
+    /// </summary>
+    internal static bool DeadAddress(int status, string? reason) =>
+        status == 410 || (status == 502 && reason == "BadDeviceToken");
+
+    /// <summary>
     /// What became of each alert in a run, as counts: the relay's status, its word for an
     /// alert that did not go (Apple's own, when Apple refused), and whether the phone's
     /// address is for Apple's production or sandbox service. "202 production x1, 502
@@ -147,15 +157,15 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
                     var (status, reason) = await sender.SendAsync(tenant.TenantId, device, alert.Kind, alert.Title, alert.Body, alert.Link, alert.Urgent, ct);
                     outcomes.Add(status, reason, device.Environment, device.LastSeen);
                     if (status == 202) alerts++;
-                    else if (status == 410) await store.DeleteDeviceAsync(tenant.TenantId, device.RowKey, ct);
-                    // Anything else is an alert that did not go. Counted, so a relay that
-                    // refuses every one shows in the run's line instead of passing as quiet:
-                    // a 402 for every subscriber once went unnoticed for exactly that reason.
-                    else
+                    // Anything but Apple's own 410 is an alert that did not go. Counted, so a
+                    // relay that refuses every one shows in the run's line instead of passing
+                    // as quiet: a 402 for every subscriber once went unnoticed for exactly that reason.
+                    else if (status != 410)
                     {
                         failures++;
                         notSent[status] = notSent.GetValueOrDefault(status) + 1;
                     }
+                    if (DeadAddress(status, reason)) await store.DeleteDeviceAsync(tenant.TenantId, device.RowKey, ct);
                 }
                 catch (Exception) when (!ct.IsCancellationRequested)
                 {

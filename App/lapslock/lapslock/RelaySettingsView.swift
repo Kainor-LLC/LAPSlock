@@ -202,8 +202,11 @@ final class RelayCoordinator {
     /// the last check-in, registers again quietly, so the service keeps a live address and
     /// does not delete the phone after 30 days.
     func registered(token: Data) {
-        guard phone.isOn, let changed = try? phone.setDeviceToken(token) else { return }
-        // A new push address makes a check-in due now, whenever it can next be made.
+        // The address goes with the service this build's addresses come from, not the one
+        // kept from whichever build first turned Instant alerts on.
+        guard phone.isOn, let changed = try? phone.setDeviceToken(token, environment: Self.environment) else { return }
+        // A new push address, or one kept under the wrong service, makes a check-in due
+        // now, whenever it can next be made.
         if changed { UserDefaults.standard.removeObject(forKey: Self.checkInKey) }
         addressConfirmed = true
         checkInIfDue()
@@ -336,7 +339,7 @@ extension RelayCoordinator {
               let folder = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.kainor.lapslock") else { return }
         do {
             try phone.turnOn(environment: "sandbox")
-            try phone.setDeviceToken(Data((0..<32).map { UInt8($0) }))
+            try phone.setDeviceToken(Data((0..<32).map { UInt8($0) }), environment: "sandbox")
             let sender = P256.KeyAgreement.PrivateKey()
             let tenant = "c0ffee00-1111-2222-3333-444455556666"
             try phone.pin(SenderPin(tenant: tenant, senderKey: sender.publicKey.x963Representation))

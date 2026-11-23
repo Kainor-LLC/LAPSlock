@@ -108,7 +108,9 @@ for addresses registered as sandbox. `newest` is the outcome for the phone that 
 or checked in last, which answers "it says registered and nothing arrived" for the phone
 in your hand. `BadDeviceToken` is an address that is not valid for the service it was
 registered for: an old address, or a development build's address registered as production
-or the reverse. `RegisterDevice refused reason=Expired` is a phone whose Microsoft
+or the reverse. The service drops such an address after the one refusal, as it does an
+address Apple answers 410 for, and a phone still in use registers again at its next
+check-in. `RegisterDevice refused reason=Expired` is a phone whose Microsoft
 sign-in the service would not accept, which the phone shows as "answered 401". The reason
 is the kind of refusal only (Expired, InvalidAudience, InvalidIssuer, noScope, noToken).
 To test the whole path, sign in with a break-glass account the organization has named and

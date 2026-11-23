@@ -15,7 +15,7 @@ final class RelayTests: XCTestCase {
     private func pairedPhone() throws -> (RelayPhone, PairingCode, P256.KeyAgreement.PrivateKey) {
         let phone = RelayPhone(store: MemoryRelayStateStore())
         try phone.turnOn(environment: "sandbox")
-        try phone.setDeviceToken(token)
+        try phone.setDeviceToken(token, environment: "sandbox")
         let sender = P256.KeyAgreement.PrivateKey()
         try phone.pin(SenderPin(tenant: tenant, senderKey: sender.publicKey.x963Representation))
         return (phone, try phone.pairingCode(), sender)
@@ -44,11 +44,39 @@ final class RelayTests: XCTestCase {
     func testANewDeviceTokenIsReportedAsAChangeOnlyWhenOneWasThere() throws {
         let phone = RelayPhone(store: MemoryRelayStateStore())
         try phone.turnOn(environment: "sandbox")
-        XCTAssertFalse(try phone.setDeviceToken(token), "the first token is not a change")
-        XCTAssertFalse(try phone.setDeviceToken(token), "the same token again is not a change")
+        XCTAssertFalse(try phone.setDeviceToken(token, environment: "sandbox"), "the first token is not a change")
+        XCTAssertFalse(try phone.setDeviceToken(token, environment: "sandbox"), "the same token again is not a change")
         let other = Data((0..<32).map { UInt8(255 - $0) })
-        XCTAssertTrue(try phone.setDeviceToken(other))
+        XCTAssertTrue(try phone.setDeviceToken(other, environment: "sandbox"))
         XCTAssertEqual(try phone.pairingCode().deviceToken, other.map { String(format: "%02x", $0) }.joined())
+    }
+
+    /// The kept state survives a reinstall, so a phone that had run an Xcode build kept
+    /// "sandbox" under a TestFlight build and registered its production address under that
+    /// name. Apple refuses an address sent to the wrong service, and nothing arrived on a
+    /// phone that said it was registered. The address is recorded with the service of the
+    /// build that was given it.
+    func testAnAddressIsRecordedWithTheServiceOfTheBuildThatWasGivenIt() throws {
+        let phone = RelayPhone(store: MemoryRelayStateStore())
+        try phone.turnOn(environment: "sandbox")
+        XCTAssertFalse(try phone.setDeviceToken(token, environment: "sandbox"))
+        XCTAssertEqual(try phone.pairingCode().environment, "sandbox")
+
+        // The TestFlight build over it: a new address, from the other service.
+        let other = Data((0..<32).map { UInt8(255 - $0) })
+        XCTAssertTrue(try phone.setDeviceToken(other, environment: "production"))
+        XCTAssertEqual(try phone.pairingCode().environment, "production")
+
+        // The same address under the wrong name is a change too: the service must be told.
+        XCTAssertTrue(try phone.setDeviceToken(other, environment: "sandbox"))
+        XCTAssertEqual(try phone.pairingCode().environment, "sandbox")
+        XCTAssertFalse(try phone.setDeviceToken(other, environment: "sandbox"))
+
+        // A key made by one build with no address yet takes the service of the build that gets one.
+        let fresh = RelayPhone(store: MemoryRelayStateStore())
+        try fresh.turnOn(environment: "sandbox")
+        XCTAssertFalse(try fresh.setDeviceToken(token, environment: "production"), "the first address is not a change")
+        XCTAssertEqual(try fresh.pairingCode().environment, "production")
     }
 
     func testALateAlertSaysWhenItWasRaised() {
@@ -102,7 +130,7 @@ final class RelayTests: XCTestCase {
         XCTAssertThrowsError(try phone.open(enc: env.enc, ct: env.ct)) { XCTAssertEqual($0 as? RelayError, .notPaired) }
         // Turning on again makes a new key: the old envelope still cannot be read.
         try phone.turnOn(environment: "sandbox")
-        try phone.setDeviceToken(token)
+        try phone.setDeviceToken(token, environment: "sandbox")
         try phone.pin(SenderPin(tenant: tenant, senderKey: sender.publicKey.x963Representation))
         XCTAssertThrowsError(try phone.open(enc: env.enc, ct: env.ct))
     }
