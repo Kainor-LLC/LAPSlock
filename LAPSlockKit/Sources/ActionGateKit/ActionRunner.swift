@@ -196,6 +196,7 @@ public actor ActionRunner {
             case .transport:          return "failed: transport"
             case .cancelled:          return "cancelled"
             case .refused:            return "refused"
+            case .incomplete:         return "incomplete"
             }
         }
     }

@@ -124,4 +124,42 @@ final class UserActionsServiceTests: XCTestCase {
         XCTAssertEqual(StubProtocol.count("DELETE|"), 2, "nothing is sent after the refusal")
         XCTAssertEqual(gate.calls, 1)
     }
+
+    // MARK: - a wipe that did not remove everything (second review, R2-4)
+
+    func test_aRemovalMicrosoftRefusesLeavesTheWipeIncomplete() async {
+        StubProtocol.replies = [
+            "GET|/authentication/methods": [.init(status: 200, body: methods)],
+            "DELETE|microsoftAuthenticatorMethods/m1": [.init(status: 204, body: "")],
+            "DELETE|phoneMethods/p1": [.init(status: 400, body: #"{"error":{"code":"invalidRequest"}}"#)],
+            "DELETE|fido2Methods/f1": [.init(status: 204, body: "")],
+        ]
+        let result = await service(holdsTheRole, log: InMemoryShiftLog()).authenticationWipe(jane, satisfying: nil)
+        XCTAssertEqual(result.removed.count, 2)
+        XCTAssertEqual(result.failed.count, 1)
+        XCTAssertEqual(result.uncertain, [])
+        guard case .failed(.incomplete(let detail)) = result.outcome else {
+            return XCTFail("expected incomplete, got \(String(describing: result.outcome))")
+        }
+        XCTAssertTrue(detail.contains("Not removed: " + result.failed[0] + "."), detail)
+        XCTAssertTrue(detail.contains("Run it again"), detail)
+        XCTAssertFalse(detail.contains("\u{2014}"))
+    }
+
+    func test_removalsLostOnTheNetworkAreNotKnownAndNotDone() async {
+        StubProtocol.replies = [
+            "GET|/authentication/methods": [.init(status: 200, body: methods)],
+            "DELETE|microsoftAuthenticatorMethods/m1": [.init(status: 503, body: "{}")],
+            "DELETE|phoneMethods/p1": [.init(status: 503, body: "{}")],
+            "DELETE|fido2Methods/f1": [.init(status: 503, body: "{}")],
+        ]
+        let result = await service(holdsTheRole, log: InMemoryShiftLog()).authenticationWipe(jane, satisfying: nil)
+        XCTAssertEqual(result.removed, [])
+        XCTAssertEqual(result.uncertain.count, 3)
+        guard case .failed(.incomplete(let detail)) = result.outcome else {
+            return XCTFail("expected incomplete, got \(String(describing: result.outcome))")
+        }
+        XCTAssertTrue(detail.hasPrefix("Removed: nothing."), detail)
+        XCTAssertTrue(detail.contains("Not known"), detail)
+    }
 }

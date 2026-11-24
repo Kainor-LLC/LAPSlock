@@ -22,6 +22,10 @@ public struct ShiftLogEntry: Sendable, Codable, Equatable, Identifiable {
     /// Microsoft's request-id when there was a response.
     public let requestId: String?
 
+    /// True when the request was sent and Microsoft accepted it: the one outcome that counts
+    /// as done on a checklist.
+    public var wasRequested: Bool { outcome == ActionRunner.word(for: .requested(requestId: nil)) }
+
     public init(id: String = UUID().uuidString, at: Date, tenantId: String, actionId: String, actionTitle: String, targetLabel: String, targetId: String, outcome: String, requestId: String?) {
         self.id = id
         self.at = at

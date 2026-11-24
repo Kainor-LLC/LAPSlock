@@ -142,4 +142,14 @@ final class UserActionsTests: XCTestCase {
         let allowed = await demo.snapshot(of: target)
         XCTAssertEqual(allowed.accountEnabled, true)
     }
+
+    // Second review, R2-4: a failed wipe of a device is not a done step.
+    func test_theDeviceStepIsDoneOnlyWhenEveryDeviceActedOnWasSent() {
+        XCTAssertEqual(LeaverDeviceOutcome.status(of: []), .pending)
+        XCTAssertEqual(LeaverDeviceOutcome.status(of: [.init(words: "wipe requested", sent: true)]), .done("1 device"))
+        XCTAssertEqual(LeaverDeviceOutcome.status(of: [.init(words: "wipe requested", sent: true),
+                                                       .init(words: "retire requested", sent: true)]), .done("2 devices"))
+        XCTAssertEqual(LeaverDeviceOutcome.status(of: [.init(words: "wipe requested", sent: true),
+                                                       .init(words: "wipe failed: transport", sent: false)]), .failed("1 device not sent"))
+    }
 }

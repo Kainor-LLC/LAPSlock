@@ -131,6 +131,20 @@ public enum ActionFailure: Sendable, Equatable {
     case cancelled
     /// The action was not a POST, or was otherwise refused before sending.
     case refused(reason: String)
+    /// A change made of several requests, some of which did not go through. The detail
+    /// says which did and which did not. Only the sign-in method wipe has parts.
+    case incomplete(String)
+
+    /// Whether the request may have been carried out although it failed: a 5xx can come
+    /// back after Microsoft acted, and a connection can drop after the request left the
+    /// phone. A status Microsoft answered with below 500 is a refusal.
+    public var mayHaveHappened: Bool {
+        switch self {
+        case .serviceUnavailable:          return true
+        case .transport(let status):       return status <= 0 || status >= 500
+        default:                           return false
+        }
+    }
 
     public var description: String {
         switch self {
@@ -146,6 +160,7 @@ public enum ActionFailure: Sendable, Equatable {
         case .transport:                  return "The connection failed before Microsoft answered. The request may still have arrived: check before sending it again."
         case .cancelled:                  return "Cancelled."
         case .refused(let reason):        return reason
+        case .incomplete(let detail):     return detail
         }
     }
 }

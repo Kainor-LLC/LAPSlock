@@ -325,4 +325,25 @@ final class ActionRunnerTests: XCTestCase {
             XCTAssertTrue(failure.description.contains("check before sending it again"), failure.description)
         }
     }
+
+    // Second review, R2-4: what a checklist may count as done.
+    func test_onlyARequestedEntryCountsAsSent() {
+        func entry(_ outcome: String) -> ShiftLogEntry {
+            ShiftLogEntry(at: Date(), tenantId: "t", actionId: "device.wipe", actionTitle: "Wipe", targetLabel: "d", targetId: "d", outcome: outcome, requestId: nil)
+        }
+        XCTAssertTrue(entry(ActionRunner.word(for: .requested(requestId: nil))).wasRequested)
+        for word in ["failed: transport", "failed: service unavailable", "cancelled", "refused", "incomplete", "notAuthorized", "challenged"] {
+            XCTAssertFalse(entry(word).wasRequested, word)
+        }
+    }
+
+    func test_whatMayHaveHappenedDespiteFailing() {
+        XCTAssertTrue(ActionFailure.serviceUnavailable(status: 503).mayHaveHappened)
+        XCTAssertTrue(ActionFailure.transport(status: -1).mayHaveHappened)
+        XCTAssertTrue(ActionFailure.transport(status: 0).mayHaveHappened)
+        XCTAssertFalse(ActionFailure.transport(status: 403).mayHaveHappened)
+        XCTAssertFalse(ActionFailure.badRequest(code: nil).mayHaveHappened)
+        XCTAssertFalse(ActionFailure.cancelled.mayHaveHappened)
+        XCTAssertFalse(ActionFailure.incomplete("x").mayHaveHappened)
+    }
 }

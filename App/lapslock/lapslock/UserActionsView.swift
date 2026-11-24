@@ -36,7 +36,7 @@ final class UserActionsModel {
     /// For the leaver checklist: what each user action came to, and what was skipped.
     private(set) var results: [UserActionKind: LeaverStepStatus] = [:]
     var skipped: Set<LeaverStep> = []
-    var deviceOutcomes: [String: String] = [:]
+    var deviceOutcomes: [String: LeaverDeviceOutcome] = [:]
     private(set) var devices: [UserDevice] = []
     private(set) var devicesError: String?
     private(set) var devicesLoaded = false
@@ -79,7 +79,7 @@ final class UserActionsModel {
         if let kind = step.action { return results[kind] ?? .pending }
         if step == .devices {
             if devices.isEmpty && devicesError == nil { return .pending }
-            return deviceOutcomes.isEmpty ? .pending : .done(deviceOutcomes.count == 1 ? "1 device" : "\(deviceOutcomes.count) devices")
+            return LeaverDeviceOutcome.status(of: Array(deviceOutcomes.values))
         }
         return .pending
     }
@@ -88,7 +88,7 @@ final class UserActionsModel {
         LeaverSummary.text(
             person: target,
             statuses: LeaverStep.allCases.map { ($0, status(of: $0)) },
-            devices: deviceOutcomes.sorted { $0.key < $1.key }.map { ($0.key, $0.value) },
+            devices: deviceOutcomes.sorted { $0.key < $1.key }.map { ($0.key, $0.value.words) },
             at: Date())
     }
 
@@ -326,7 +326,6 @@ final class UserActionsModel {
             if kind == .authenticationWipe, let result = wipeResult {
                 var text = "Removed: " + (result.removed.isEmpty ? "nothing" : result.removed.joined(separator: ", ")) + "."
                 if !result.kept.isEmpty { text += " Kept: " + result.kept.joined(separator: ", ") + "." }
-                if !result.failed.isEmpty { text += " Could not remove: " + result.failed.joined(separator: ", ") + "." }
                 note = text
             } else {
                 note = kind.successCopy
@@ -658,11 +657,11 @@ struct PersonActionsView: View {
 struct LeaverDeviceRow: View {
     let device: UserDevice
     @StateModel private var model: DeviceActionsModel
-    let report: (String) -> Void
+    let report: (LeaverDeviceOutcome) -> Void
     @State private var appeared = Date()
     @Environment(\.awayTenant) private var awayTenant
 
-    init(device: UserDevice, make: @escaping (DeviceActionTarget) -> DeviceActionsModel, report: @escaping (String) -> Void) {
+    init(device: UserDevice, make: @escaping (DeviceActionTarget) -> DeviceActionsModel, report: @escaping (LeaverDeviceOutcome) -> Void) {
         self.device = device
         self.report = report
         let platform: DeviceActionTarget.Platform = {
@@ -724,7 +723,7 @@ struct LeaverDeviceRow: View {
             // Only a retire or wipe made from this checklist counts, not the device's history.
             guard let entry, entry.at >= appeared,
                   [DeviceActionKind.retire.actionId, DeviceActionKind.wipe.actionId].contains(entry.actionId) else { return }
-            report(entry.actionTitle.lowercased() + " " + entry.outcome)
+            report(LeaverDeviceOutcome(words: entry.actionTitle.lowercased() + " " + entry.outcome, sent: entry.wasRequested))
         }
         .confirmationDialog(model.confirming.map(\.title) ?? "",
                             isPresented: Binding(get: { model.confirming != nil }, set: { if !$0 { model.confirming = nil } }),

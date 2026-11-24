@@ -242,14 +242,57 @@ public enum UserActionClaims {
 public struct AuthenticationWipeResult: Sendable, Equatable {
     public var removed: [String]
     public var kept: [String]
+    /// Every method whose removal failed, refused or not known.
     public var failed: [String]
+    /// Of `failed`, the ones that may have gone anyway: the connection failed or
+    /// Microsoft answered 5xx after the request was sent.
+    public var uncertain: [String]
     public var outcome: ActionOutcome?
 
-    public init(removed: [String] = [], kept: [String] = [], failed: [String] = [], outcome: ActionOutcome? = nil) {
+    public init(removed: [String] = [], kept: [String] = [], failed: [String] = [], uncertain: [String] = [], outcome: ActionOutcome? = nil) {
         self.removed = removed
         self.kept = kept
         self.failed = failed
+        self.uncertain = uncertain
         self.outcome = outcome
+    }
+
+    /// What a wipe that did not remove everything it tried to says, on the screen and in
+    /// the ticket: what went, what did not, and what is not known.
+    public var incompleteDetail: String {
+        var parts = ["Removed: " + (removed.isEmpty ? "nothing" : removed.joined(separator: ", ")) + "."]
+        let refused = failed.filter { !uncertain.contains($0) }
+        if !refused.isEmpty { parts.append("Not removed: " + refused.joined(separator: ", ") + ".") }
+        if !uncertain.isEmpty {
+            parts.append("Not known, because the connection or Microsoft failed: " + uncertain.joined(separator: ", ") + ". Check the person's methods.")
+        }
+        if !kept.isEmpty { parts.append("Kept: " + kept.joined(separator: ", ") + ".") }
+        parts.append("Run it again to remove what is left.")
+        return parts.joined(separator: " ")
+    }
+}
+
+/// What one device's retire or wipe from the leaver checklist ended as.
+public struct LeaverDeviceOutcome: Sendable, Equatable {
+    /// For the ticket: "wipe requested", "retire failed: transport".
+    public let words: String
+    /// Sent, and accepted by Microsoft.
+    public let sent: Bool
+
+    public init(words: String, sent: Bool) {
+        self.words = words
+        self.sent = sent
+    }
+
+    /// The device step. Done only when every device acted on from the checklist was sent;
+    /// a device left alone is the person's choice and does not count against it. Before
+    /// the second review (R2-4, 2026-11-24) any logged outcome counted as done, a failed
+    /// wipe included.
+    public static func status(of outcomes: [LeaverDeviceOutcome]) -> LeaverStepStatus {
+        guard !outcomes.isEmpty else { return .pending }
+        let notSent = outcomes.filter { !$0.sent }.count
+        guard notSent == 0 else { return .failed(notSent == 1 ? "1 device not sent" : "\(notSent) devices not sent") }
+        return .done(outcomes.count == 1 ? "1 device" : "\(outcomes.count) devices")
     }
 }
 
@@ -518,11 +561,14 @@ public actor UserActionsService: UserActionsProviding {
             case .challenged, .needsActivation, .notAuthorized:
                 result.outcome = outcome
                 return result
-            case .failed:
+            case .failed(let failure):
                 result.failed.append(method.label)
+                if failure.mayHaveHappened { result.uncertain.append(method.label) }
             }
         }
-        result.outcome = .requested(requestId: nil)
+        // Done only when nothing failed. Before the second review (R2-4, 2026-11-24) this
+        // said requested whatever failed, and the leaver checklist ticked the step.
+        result.outcome = result.failed.isEmpty ? .requested(requestId: nil) : .failed(.incomplete(result.incompleteDetail))
         return result
     }
 
