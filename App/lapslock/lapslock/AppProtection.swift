@@ -1,5 +1,7 @@
 import Foundation
 import AuthKit
+import ManagedConfigKit
+import RelayKit
 import IntuneMAMSwift
 
 // Intune App Protection.
@@ -57,6 +59,20 @@ final class AppProtection {
 
     private(set) var state: AppProtectionState = .idle
 
+    /// Whether an organization's policy is in force for the person signed in.
+    private(set) var policyInForce = false
+    /// What that policy lets a notification show. `full` with no policy.
+    private(set) var notificationDetail = NotificationDetail.current()
+
+    /// Why the Apple Watch is sent nothing, or nil when it may have the tenant's data.
+    /// Microsoft's SDK does not exist on the watch, so a policy cannot protect what is sent
+    /// there: while one is in force the phone sends nothing, unless the organization says
+    /// otherwise with `watch.allowed`.
+    var watchWithheld: String? {
+        guard policyInForce, !ManagedConfigStore.shared.config.watchAllowed else { return nil }
+        return "Your organization's Intune policy keeps TenantKeep's data on your iPhone."
+    }
+
     /// Set once the app has a sign-in manager. Until then every request is answered "none".
     var tokenSource: AppProtectionTokenSource? {
         get { bridge.tokenSource.value }
@@ -109,16 +125,72 @@ final class AppProtection {
     }
 
     private let bridge = Bridge()
+    @ObservationIgnored private var observers: [any NSObjectProtocol] = []
 
     private init() {}
 
     /// Before `willFinishLaunching` returns: the SDK reads its policy delegate there.
     func start() {
         bridge.report = { [weak self] state in
-            Task { @MainActor [weak self] in self?.state = state }
+            Task { @MainActor [weak self] in
+                self?.state = state
+                self?.refresh()
+            }
         }
         IntuneMAMEnrollmentManager.instance().delegate = bridge
         IntuneMAMPolicyManager.instance().delegate = bridge
+        for name in [NSNotification.Name.IntuneMAMPolicyDidChange, .IntuneMAMAppConfigDidChange] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.refresh() }
+            })
+        }
+        refresh()
+    }
+
+    /// Reads what the organization's policy and configuration say now and puts each where
+    /// the rest of the app looks for it: how much a notification may show, for the app and
+    /// its notification extension; the configuration keys, beside the ones an enrolled
+    /// device gets from iOS; and whether the watch is sent anything. With nobody enrolled
+    /// all three go back to how an install with no policy looks.
+    func refresh() {
+        let enrolled = enrolledObjectId
+        let managed = enrolled.map { isManaged(objectId: $0) } ?? false
+
+        var detail = NotificationDetail.full
+        if managed, let enrolled, let policy = IntuneMAMPolicyManager.instance().policy(forAccountId: enrolled) {
+            switch policy.notificationPolicy {
+            case .allow:        detail = .full
+            case .blockOrgData: detail = .withoutDetails
+            case .block:        detail = .none
+            @unknown default:   detail = .withoutDetails
+            }
+        }
+        if detail != NotificationDetail.current() { detail.store() }
+        if detail != notificationDetail {
+            notificationDetail = detail
+            // No notifications at all: the alert service is told to stop sending to this
+            // phone, which is the only way to stop a relayed alert from appearing.
+            if detail == .none { Task { await RelayCoordinator.shared.turnOffForSignOut() } }
+        }
+
+        let defaults = UserDefaults.standard
+        let key = ManagedConfiguration.appChannelDefaultsKey
+        var fromAppChannel: [String: Any] = [:]
+        if let enrolled {
+            let policies = IntuneMAMAppConfigManager.instance().appConfig(forAccountId: enrolled).fullData
+            fromAppChannel = ManagedConfiguration.flatten(policies?.map { policy in
+                Dictionary(uniqueKeysWithValues: policy.compactMap { key, value in (key as? String).map { ($0, value) } })
+            })
+        }
+        let held = defaults.dictionary(forKey: key) ?? [:]
+        if !NSDictionary(dictionary: held).isEqual(to: fromAppChannel) {
+            if fromAppChannel.isEmpty { defaults.removeObject(forKey: key) } else { defaults.set(fromAppChannel, forKey: key) }
+        }
+
+        if managed != policyInForce {
+            policyInForce = managed
+            WatchConnector.shared.requestPush(force: true)
+        }
     }
 
     /// The object ID Intune holds a policy for on this device, if any.
@@ -138,6 +210,7 @@ final class AppProtection {
         if Self.holds(manager.enrolledAccountIds(), objectId) {
             // Intune already answered for this person; the SDK refreshes that by itself.
             state = isManaged(objectId: objectId) ? .managed : .notTargeted
+            refresh()
             return
         }
         state = .checking
@@ -160,7 +233,10 @@ final class AppProtection {
     /// Microsoft documents the call as blocking until its token arrives. Sign-out must not
     /// wait on Microsoft, so it is given ten seconds and then sign-out carries on.
     func signingOut(objectId: String) async {
-        defer { state = .idle }
+        defer {
+            state = .idle
+            refresh()
+        }
         guard Self.holds(IntuneMAMEnrollmentManager.instance().registeredAccountIds(), objectId) else { return }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             let finished = Locked(false)

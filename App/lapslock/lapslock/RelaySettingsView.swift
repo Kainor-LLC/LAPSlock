@@ -103,6 +103,12 @@ final class RelayCoordinator {
             status = .problem("Sign in to your organization to turn on Instant alerts.")
             return
         }
+        // Nothing may be shown, so nothing is asked for: the alert service is not given
+        // this phone while the organization's Intune policy stops notifications.
+        guard NotificationDetail.current() != .none else {
+            status = .problem("Your organization's Intune policy stops notifications from TenantKeep, so Instant alerts stay off.")
+            return
+        }
         status = .working("Registering this phone")
         // Before anything else. iOS gives an app no push address until it may show
         // notifications: it calls neither registration callback, so the wait below would
@@ -306,10 +312,14 @@ final class RelayCoordinator {
         let seenURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.kainor.lapslock")?
             .appendingPathComponent("relay-seen.json")
         guard let alert = try? phone.open(enc: enc, ct: ct, seen: RelaySeenStore(url: seenURL)) else { return nil }
+        // Opened in the app, so the alert is returned for the tap either way. What is shown
+        // again as a notification follows the organization's Intune policy.
+        let detail = NotificationDetail.current()
+        guard let shown = detail.shown(title: alert.title, body: alert.body) else { return alert }
         let content = UNMutableNotificationContent()
-        content.title = alert.title
-        content.body = alert.body
-        if let late = alert.lateness() { content.subtitle = late }
+        content.title = shown.title
+        content.body = shown.body
+        if detail == .full, let late = alert.lateness() { content.subtitle = late }
         content.threadIdentifier = "relay-" + alert.tenant
         var info: [String: Any] = ["tenantId": alert.tenant, "relayKind": alert.kind]
         if let link = alert.link { info["link"] = link }

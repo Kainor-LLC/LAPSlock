@@ -1,5 +1,6 @@
 import SwiftUI
 import ManagedConfigKit
+import RelayKit
 import PlatformSecurity
 
 /// Appearance, the app lock and, with a session, Intune app protection and names in the
@@ -98,6 +99,8 @@ struct SettingsGeneralPage: View {
             switch protection.state {
             case .managed:
                 LabeledContent("Policy", value: "Applied")
+                LabeledContent("Notifications", value: notificationsLine)
+                LabeledContent("Apple Watch", value: protection.watchWithheld == nil ? "Allowed" : "Kept on iPhone")
             case .notTargeted:
                 LabeledContent("Policy", value: "None for you")
             case .checking:
@@ -138,6 +141,14 @@ struct SettingsGeneralPage: View {
                 separately, and asks Intune whether a policy applies to you. With no policy, \
                 nothing changes.
                 """)
+        }
+    }
+
+    private var notificationsLine: String {
+        switch protection.notificationDetail {
+        case .full:           return "Shown in full"
+        case .withoutDetails: return "Without details"
+        case .none:           return "Off"
         }
     }
 

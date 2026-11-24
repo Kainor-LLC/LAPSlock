@@ -246,6 +246,40 @@ final class AppWiringTests: XCTestCase {
 
     // MARK: - a provider's customers move one at a time
 
+    /// Under an Intune app protection policy, every notification the app or its extension
+    /// shows goes through the one rule for how much may be shown, and the watch, which the
+    /// policy cannot reach, is sent nothing and answered nothing.
+    func testAPolicysLimitsReachNotificationsAndTheWatch() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let ext = try String(contentsOf: root.appendingPathComponent("App/lapslock/RelayNotificationService/NotificationService.swift"), encoding: .utf8)
+        XCTAssertTrue(ext.contains("let detail = NotificationDetail.current()"))
+        XCTAssertFalse(ext.contains("content.title = alert.title"), "the extension shows an alert's words only through the rule")
+        XCTAssertFalse(ext.contains("import IntuneMAMSwift"), "the extension does not link Microsoft's SDK")
+
+        XCTAssertTrue(body(of: "static func post(_ alert: PlannedAlert) async {", in: try appSource("AlertsRunner.swift"))
+            .contains("guard let shown = NotificationDetail.current().shown(title: alert.title, body: alert.body) else { return }"))
+        XCTAssertTrue(try appSource("DigestAlerts.swift").contains("guard NotificationDetail.current() != .none else { return 0 }"))
+        let relay = try appSource("RelaySettingsView.swift")
+        XCTAssertTrue(body(of: "func turnOn() async {", in: relay).contains("guard NotificationDetail.current() != .none else {"),
+                      "a phone that may show nothing is not registered for alerts")
+        XCTAssertFalse(relay.contains("content.title = alert.title"))
+
+        let watch = try appSource("WatchConnector.swift")
+        XCTAssertTrue(body(of: "private func pushOnce() async {", in: watch).contains("if let withheld = AppProtection.shared.watchWithheld {"))
+        XCTAssertTrue(body(of: "fileprivate func handle(_ request: WatchRequest) async -> WatchReply {", in: watch)
+            .contains("if let withheld = AppProtection.shared.watchWithheld {"))
+        XCTAssertFalse(watch.contains("content.body = body"))
+
+        let wrapper = try appSource("AppProtection.swift")
+        XCTAssertTrue(wrapper.contains("guard policyInForce, !ManagedConfigStore.shared.config.watchAllowed else { return nil }"))
+        for line in ["case .allow:        detail = .full", "case .blockOrgData: detail = .withoutDetails",
+                     "case .block:        detail = .none", "@unknown default:   detail = .withoutDetails"] {
+            XCTAssertTrue(wrapper.contains(line), line)
+        }
+        XCTAssertTrue(try appSource("ManagedConfigStore.swift").contains("appChannel: UserDefaults.standard.dictionary(forKey: ManagedConfiguration.appChannelDefaultsKey)"))
+    }
+
     /// Intune can order an organization's data off the device. Everything goes, in an order
     /// that works: the alert service is told while a token can still say so, then every
     /// sign-in, then the rest of the Keychain, then files and settings. No Microsoft

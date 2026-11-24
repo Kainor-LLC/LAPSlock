@@ -47,6 +47,9 @@ public struct ManagedConfiguration: Sendable, Equatable {
     public var tenantPin: String?
     public var appLockRequired = false
     public var breakGlassUPNs: [String] = []
+    /// While an Intune app protection policy is in force the phone keeps tenant data off
+    /// the Apple Watch, which that policy cannot reach. True lets it through again.
+    public var watchAllowed = false
 
     /// Keys that were present, in the order the Settings summary lists them.
     public private(set) var appliedKeys: [String] = []
@@ -61,6 +64,37 @@ public struct ManagedConfiguration: Sendable, Equatable {
     public func isDisabled(_ id: String) -> Bool { disabledIds.contains(id) }
 
     // MARK: - parsing
+
+    /// Where the app keeps the settings that arrived through Intune's app channel, beside
+    /// the ones iOS delivers for an enrolled device under `userDefaultsKey`.
+    public static let appChannelDefaultsKey = "appProtection.managedConfiguration"
+
+    /// The settings from both channels. An enrolled device gets them from iOS; a phone that
+    /// is not enrolled gets them through Microsoft's Intune App SDK once an app protection
+    /// policy applies. Where both set a key, the app channel's value is used: it is the one
+    /// addressed to the person signed in.
+    public static func parse(device: [String: Any]?, appChannel: [String: Any]?) -> ManagedConfiguration {
+        var merged = device ?? [:]
+        for (key, value) in appChannel ?? [:] { merged[key] = value }
+        return parse(merged)
+    }
+
+    /// One dictionary from what Intune's app channel hands over: a list of dictionaries, one
+    /// for each configuration policy that reaches the person, the organization-wide default
+    /// marked `__IsDefault`. The default goes in first and the targeted policies over it, in
+    /// the order given. Intune's own bookkeeping keys, which begin `__`, are left out, and
+    /// so is any value that is not a string, a number, a boolean or a list of strings.
+    public static func flatten(_ policies: [[String: Any]]?) -> [String: Any] {
+        guard let policies else { return [:] }
+        func isDefault(_ policy: [String: Any]) -> Bool { policy["__IsDefault"].flatMap(bool) ?? false }
+        var flat: [String: Any] = [:]
+        for policy in policies.filter(isDefault) + policies.filter({ !isDefault($0) }) {
+            for (key, value) in policy where !key.hasPrefix("__") {
+                if value is String || value is NSNumber || value is [String] { flat[key] = value }
+            }
+        }
+        return flat
+    }
 
     public static func parse(_ dictionary: [String: Any]?) -> ManagedConfiguration {
         var config = ManagedConfiguration()
@@ -144,8 +178,17 @@ public struct ManagedConfiguration: Sendable, Equatable {
             }
         }
 
+        if let raw = dictionary["watch.allowed"] {
+            if let value = bool(raw) {
+                config.watchAllowed = value
+                config.appliedKeys.append("watch.allowed")
+            } else {
+                config.problems.append("watch.allowed: expected true or false")
+            }
+        }
+
         let known: Set<String> = ["modules.disabled", "confirmation.level", "groupWrite.scope", "groupWrite.administrativeUnit",
-                                  "groupWrite.prefix", "tenant.pin", "appLock.required", "breakGlass.upns"]
+                                  "groupWrite.prefix", "tenant.pin", "appLock.required", "breakGlass.upns", "watch.allowed"]
         // Intune adds its own tokens ({{userprincipalname}} and the like) under keys the
         // admin names; anything else unknown is listed so a typo is visible.
         for key in dictionary.keys.sorted() where !known.contains(key) && !key.hasPrefix("IntuneMAM") {
@@ -177,6 +220,8 @@ public struct ManagedConfiguration: Sendable, Equatable {
                 lines.append(appLockRequired ? "App lock required" : "App lock up to you")
             case "breakGlass.upns":
                 lines.append(breakGlassUPNs.count == 1 ? "1 break-glass account watched" : "\(breakGlassUPNs.count) break-glass accounts watched")
+            case "watch.allowed":
+                lines.append(watchAllowed ? "Apple Watch allowed under app protection" : "Apple Watch kept empty under app protection")
             default:
                 break
             }

@@ -116,4 +116,58 @@ final class ManagedConfigurationTests: XCTestCase {
         XCTAssertTrue(config.isDisabled("people"))
         XCTAssertTrue(config.problems.isEmpty)
     }
+
+    // MARK: - Intune's app channel
+
+    /// A phone that is not enrolled gets its settings through Intune's app channel, as a
+    /// list of policies. The organization-wide default goes under the policies targeted at
+    /// the person, Intune's bookkeeping keys are dropped, and so is anything that is not a
+    /// plain value.
+    func test_appChannelPoliciesFlattenWithTargetedOverTheDefault() {
+        let flat = ManagedConfiguration.flatten([
+            ["confirmation.level": "strict", "watch.allowed": "false", "__PolicyId": "b"],
+            ["__IsDefault": true, "confirmation.level": "standard", "appLock.required": "true"],
+            ["watch.allowed": "true", "odd": ["nested": 1]]
+        ])
+        XCTAssertEqual(flat["confirmation.level"] as? String, "strict")
+        XCTAssertEqual(flat["appLock.required"] as? String, "true", "the default still fills what nobody else set")
+        XCTAssertEqual(flat["watch.allowed"] as? String, "true", "a later targeted policy is over an earlier one")
+        XCTAssertNil(flat["__PolicyId"])
+        XCTAssertNil(flat["__IsDefault"])
+        XCTAssertNil(flat["odd"])
+        XCTAssertTrue(ManagedConfiguration.flatten(nil).isEmpty)
+        XCTAssertTrue(ManagedConfiguration.flatten([]).isEmpty)
+    }
+
+    /// Both channels feed one configuration. Where both set a key, the app channel's value
+    /// is the one used; each fills what the other left out; neither alone still works.
+    func test_theAppChannelIsReadOverTheDeviceChannel() {
+        let both = ManagedConfiguration.parse(
+            device: ["confirmation.level": "standard", "appLock.required": true],
+            appChannel: ["confirmation.level": "strict", "tenant.pin": "4470DC21-A4B7-4729-A232-56D4C0EEDF73"])
+        XCTAssertEqual(both.confirmationLevel, .strict)
+        XCTAssertTrue(both.appLockRequired)
+        XCTAssertEqual(both.tenantPin, "4470dc21-a4b7-4729-a232-56d4c0eedf73")
+        XCTAssertTrue(both.problems.isEmpty)
+
+        XCTAssertEqual(ManagedConfiguration.parse(device: nil, appChannel: ["appLock.required": "true"]).appLockRequired, true)
+        XCTAssertEqual(ManagedConfiguration.parse(device: ["appLock.required": true], appChannel: nil).appLockRequired, true)
+        XCTAssertEqual(ManagedConfiguration.parse(device: nil, appChannel: nil), ManagedConfiguration())
+    }
+
+    /// Under an Intune app protection policy the watch is sent nothing unless the
+    /// organization allows it. Off is the default, and a value that is not a boolean is
+    /// reported and leaves it off.
+    func test_theWatchIsAllowedOnlyWhenTheOrganizationSaysSo() {
+        XCTAssertFalse(ManagedConfiguration().watchAllowed)
+        let allowed = ManagedConfiguration.parse(["watch.allowed": "true"])
+        XCTAssertTrue(allowed.watchAllowed)
+        XCTAssertEqual(allowed.summaryLines, ["Apple Watch allowed under app protection"])
+        let kept = ManagedConfiguration.parse(["watch.allowed": false])
+        XCTAssertFalse(kept.watchAllowed)
+        XCTAssertEqual(kept.summaryLines, ["Apple Watch kept empty under app protection"])
+        let bad = ManagedConfiguration.parse(["watch.allowed": "maybe"])
+        XCTAssertFalse(bad.watchAllowed)
+        XCTAssertEqual(bad.problems, ["watch.allowed: expected true or false"])
+    }
 }

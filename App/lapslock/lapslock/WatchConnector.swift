@@ -1,4 +1,5 @@
 import Foundation
+import RelayKit
 import UIKit
 import UserNotifications
 import WatchConnectivity
@@ -106,7 +107,11 @@ final class WatchConnector: NSObject {
         guard configured, let session, session.activationState == .activated, session.isPaired, session.isWatchAppInstalled else { return }
         let built = generation
         let glance: WatchGlance
-        if let handlers {
+        if let withheld = AppProtection.shared.watchWithheld {
+            // An Intune app protection policy is in force and cannot reach the watch, so
+            // nothing of the tenant is sent there. The same empty glance as signed out.
+            glance = WatchGlance(updatedAt: Date(), tenant: "", isDemo: false, problem: withheld)
+        } else if let handlers {
             glance = await handlers.glance().fitted()
         } else {
             glance = WatchGlance(updatedAt: Date(), tenant: "", isDemo: false, problem: "Sign in on your iPhone.")
@@ -133,6 +138,10 @@ final class WatchConnector: NSObject {
     }
 
     fileprivate func handle(_ request: WatchRequest) async -> WatchReply {
+        // Nor is anything read or done for the wrist while the policy keeps data off it.
+        if let withheld = AppProtection.shared.watchWithheld {
+            return WatchReply(outcome: .failed, message: withheld)
+        }
         var active = handlers
         if active == nil, !configured { active = await headlessHandlers() }
         guard let handlers = active else {
@@ -183,9 +192,10 @@ final class WatchConnector: NSObject {
     /// For a step the wrist cannot do, such as a fresh MFA prompt: the phone says so where
     /// the admin will see it.
     static func notifyFinishOnPhone(_ body: String) async {
+        guard let shown = NotificationDetail.current().shown(title: "Finish on your iPhone", body: body) else { return }
         let content = UNMutableNotificationContent()
-        content.title = "Finish on your iPhone"
-        content.body = body
+        content.title = shown.title
+        content.body = shown.body
         content.userInfo = ["module": "privilegedAccess", "tab": "approvals"]
         let request = UNNotificationRequest(identifier: "watch-finish-" + UUID().uuidString, content: content, trigger: nil)
         try? await UNUserNotificationCenter.current().add(request)

@@ -35,6 +35,11 @@
 #   OnCallComplicationsExtension WatchBridgeKit only
 #   RelayNotificationService    RelayKit only
 #
+# AND WHERE MICROSOFT'S INTUNE APP SDK IS: the one closed-source component. The iPhone and
+# iPad app links it. The package does not depend on it, so no module can import it, and the
+# Mac app, the watch and the notification extension do not link it. Inside the app exactly
+# one file imports it.
+#
 # Runs on macOS and Linux with no dependencies. Wire into a CI step and a
 # local pre-commit hook.
 
@@ -392,6 +397,33 @@ check_target_links "OnCallWatch Watch App" only "WatchBridgeKit"
 check_target_links "OnCallComplicationsExtension" only "WatchBridgeKit"
 check_target_links "RelayNotificationService" only "RelayKit"
 
+# ---------------------------------------------------------------------------
+# Microsoft's Intune App SDK: the app target, one file, and nowhere else
+# ---------------------------------------------------------------------------
+echo "🔍 isolation-check: checking where Microsoft's Intune App SDK is…"
+check_target_links "TenantKeepMac" never "IntuneMAMSwift" "IntuneMAMStatic" "IntuneMAMTelemetry"
+
+if grep -qiE 'ms-intune-app-sdk-ios|IntuneMAM' "${KIT_DIR}/../Package.swift"; then
+  echo "❌ LAPSlockKit/Package.swift names Microsoft's Intune App SDK. The package must not depend on it:"
+  echo "   that is what keeps every module, CredentialKit first, unable to import it."
+  violations=$((violations + 1))
+fi
+
+kit_importers="$(grep -rlE '^[[:space:]]*(@testable[[:space:]]+)?import[[:space:]]+IntuneMAM' "${KIT_DIR}" 2>/dev/null || true)"
+if [[ -n "$kit_importers" ]]; then
+  echo "❌ A module imports Microsoft's Intune App SDK:"
+  printf '   %s\n' $kit_importers
+  violations=$((violations + 1))
+fi
+
+APP_DIR="${SCRIPT_DIR}/../App/lapslock"
+app_importers="$(cd "${APP_DIR}" && grep -rlE '^[[:space:]]*import[[:space:]]+IntuneMAM' --include='*.swift' . 2>/dev/null | sort || true)"
+if [[ "$app_importers" != "./lapslock/AppProtection.swift" ]]; then
+  echo "❌ Microsoft's Intune App SDK may be imported by lapslock/AppProtection.swift and by nothing else. It is imported by:"
+  printf '   %s\n' ${app_importers:-nothing}
+  violations=$((violations + 1))
+fi
+
 if [[ "$violations" -gt 0 ]]; then
   echo ""
   echo "❌ isolation-check FAILED: $violations issue(s)."
@@ -403,4 +435,5 @@ echo "✅ isolation-check passed: CredentialKit imports only Foundation + AuthKi
 echo "   LicensingKit cannot reach CredentialKit, and PrivilegedAccessKit, which requests"
 echo "   privilege escalation, cannot reach a credential. The inventory and the Mac menu"
 echo "   bar app cannot reach one either, and the watch and the notification extension"
-echo "   link only their own kits."
+echo "   link only their own kits. Microsoft's Intune App SDK is linked by the app alone"
+echo "   and imported by one file."

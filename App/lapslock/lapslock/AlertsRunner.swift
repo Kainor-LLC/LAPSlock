@@ -247,9 +247,12 @@ enum AlertsRunner {
     // MARK: - posting
 
     static func post(_ alert: PlannedAlert) async {
+        // An organization's Intune policy can keep its data out of notifications, or stop
+        // them. The tap still opens the right place: that is not shown to anyone.
+        guard let shown = NotificationDetail.current().shown(title: alert.title, body: alert.body) else { return }
         let content = UNMutableNotificationContent()
-        content.title = alert.title
-        content.body = alert.body
+        content.title = shown.title
+        content.body = shown.body
         content.threadIdentifier = alert.threadIdentifier
         content.userInfo = alert.userInfo
         if let category = alert.categoryIdentifier { content.categoryIdentifier = category }
