@@ -246,6 +246,17 @@ extension WatchConnector: WCSessionDelegate {
 // MARK: - building the handlers
 
 enum WatchHandlers {
+    /// Whether the organization has turned Privileged Access off (`modules.disabled`), read
+    /// at the moment of asking, as the strict confirmation is. The phone then hides the
+    /// module and its Approvals tab, and the wrist lists no requests, eligible access or
+    /// active roles, and decides and activates nothing, from a background launch too.
+    /// Before the second review (R2-3, 2026-11-24) nothing on the watch's paths read it.
+    nonisolated static var privilegedAccessOff: Bool {
+        ManagedConfigStore.read().isDisabled(AppModule.privilegedAccess.rawValue)
+    }
+
+    static let privilegedAccessOffMessage = "Your organization has turned off Privileged Access in TenantKeep."
+
     /// Fixed for the session, so the demo role's countdown counts down across refreshes.
     @MainActor static let demoRoleEnds = Date().addingTimeInterval(2 * 3600 + 14 * 60)
 
@@ -306,13 +317,15 @@ enum WatchHandlers {
         let memory = Memory()
         return WatchConnector.Handlers(
             glance: {
+                // Privileged Access off: nothing of it is read, so nothing of it is shown.
+                let privilegedOff = privilegedAccessOff
                 async let overviews = try? tenantPulse.healthOverviews()
                 async let expiring = memory.expiringItems { try await tenantPulse.expiringItems() }
                 async let score = try? tenantPulse.secureScore(snapshots: 1)
                 async let incidents = try? security.incidentStatuses(highOnly: false)
-                async let pending = try? approvals.pending()
-                async let roles = try? gate.activeRoles()
-                async let eligible = activationEnabled ? (try? privileged.eligibleAccess()) : nil
+                async let pending: [PendingApproval]? = privilegedOff ? [] : (try? approvals.pending())
+                async let roles: [ActiveRole]? = privilegedOff ? nil : (try? gate.activeRoles())
+                async let eligible = activationEnabled && !privilegedOff ? (try? privileged.eligibleAccess()) : nil
                 let horizon = Date().addingTimeInterval(30 * 86_400)
                 let latest = await score?.latest
                 let percent = latest.flatMap { s -> Int? in
@@ -344,6 +357,9 @@ enum WatchHandlers {
                 return reply
             },
             activate: { id, reason, hours in
+                guard !privilegedAccessOff else {
+                    return WatchReply(outcome: .failed, message: privilegedAccessOffMessage)
+                }
                 guard activationEnabled else {
                     return WatchReply(outcome: .failed, message: "Turn on role activation in Settings on your iPhone, under Actions and Permissions, first.")
                 }
@@ -381,6 +397,10 @@ enum WatchHandlers {
     /// remembered one cannot be decided twice.
     static func decide(_ approvals: any ApprovalsProviding, id: String, approve: Bool, reason: String,
                        known: [PendingApproval]) async -> WatchReply {
+        // The organization's switch first: a decision from the wrist is still a decision.
+        if privilegedAccessOff {
+            return WatchReply(outcome: .failed, message: privilegedAccessOffMessage)
+        }
         // A strict organization asks for Face ID before a decision is sent, as the phone's
         // own screen does. The wrist cannot give it, so the phone finishes. Here, in the
         // one function both the foreground and the background handlers call.

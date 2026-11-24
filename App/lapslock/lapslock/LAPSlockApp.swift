@@ -1670,9 +1670,11 @@ struct AppRootView: View {
                                     meter: RevealMeters.live,
                                     isPro: root.isPro
                                 ),
-                                privilegedSheet: {
+                                // Not offered when the organization turned Privileged Access off,
+                                // which also takes "Activate your role" off the device screen.
+                                privilegedSheet: AppModule.privilegedAccess.isEnabled ? {
                                     privilegedAccessView(deviceName: device.deviceName, embedded: false)
-                                },
+                                } : nil,
                                 makeActionsModel: AppSettings.shared.deviceActionsEffective
                                     ? { DeviceActionsModel(target: DeviceActionTarget(summary: device), provider: session.deviceActions) }
                                     : nil
@@ -1736,7 +1738,9 @@ struct AppRootView: View {
                             signedInAccount: root.signedInUsername,
                             operatingLabel: root.isOperatingAwayFromHome ? root.operatingTenantLabel : nil,
                             endSession: { await root.signOut() },
-                            requestPrivilegedConsent: { await root.requestPrivilegedActivationConsent() },
+                            // Nil hides Settings' role activation rows, for the same switch (R2-3).
+                            requestPrivilegedConsent: AppModule.privilegedAccess.isEnabled
+                                ? { await root.requestPrivilegedActivationConsent() } : nil,
                             requestUserNamesConsent: { await root.requestUserNamesConsent() },
                             turnOnAppProtection: { await root.turnOnAppProtection() },
                             requestMacOSRevealConsent: { await root.requestMacOSRevealConsent() },
@@ -1749,9 +1753,9 @@ struct AppRootView: View {
                                 readConsentURL: root.updateWaiting == .thisCustomer ? root.consentURL(for: .read) : root.consentURL,
                                 writeRouteChoice: root.writeRouteChoice,
                                 setWriteRouteChoice: { await root.setWriteRouteChoice($0) }),
-                            privilegedSheet: {
+                            privilegedSheet: AppModule.privilegedAccess.isEnabled ? {
                                 privilegedAccessView(deviceName: nil, embedded: false)
-                            },
+                            } : nil,
                             subscriptions: root.subscriptions
                         )
                     },

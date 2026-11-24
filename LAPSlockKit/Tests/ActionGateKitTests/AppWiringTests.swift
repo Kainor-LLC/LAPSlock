@@ -360,4 +360,33 @@ final class AppWiringTests: XCTestCase {
         // A customer removed from the device leaves the list of those still waiting.
         XCTAssertTrue(body(of: "func forgetTenant(_ tenantId: String) {", in: app).contains("await auth.forgetReadRoute(for: tenantId)"))
     }
+
+    // MARK: - the organization's switch for Privileged Access (second review, R2-3)
+
+    /// `modules.disabled: privilegedAccess` hides the module and its Approvals tab on the
+    /// phone. The watch listed requests and sent approve, deny and activate anyway, from a
+    /// background launch too, and the device screen and Settings still offered activation.
+    func testPrivilegedAccessOffReachesTheWatchAndEveryActivationButton() throws {
+        let watch = try appSource("WatchConnector.swift")
+        XCTAssertTrue(watch.contains("ManagedConfigStore.read().isDisabled(AppModule.privilegedAccess.rawValue)"),
+                      "read when asked, as the strict confirmation is")
+        // The one function both the foreground and the background handlers decide through.
+        let deciding = body(of: "known: [PendingApproval]) async -> WatchReply {", in: watch)
+        let refusal = try XCTUnwrap(deciding.range(of: "if privilegedAccessOff {"))
+        let sent = try XCTUnwrap(deciding.range(of: "await approvals.decide("))
+        XCTAssertLessThan(refusal.lowerBound, sent.lowerBound, "refused before anything is sent")
+        XCTAssertTrue(watch.contains("""
+            activate: { id, reason, hours in
+                            guard !privilegedAccessOff else {
+            """), "activation refused first")
+        XCTAssertTrue(watch.contains("async let pending: [PendingApproval]? = privilegedOff ? [] : (try? approvals.pending())"))
+        XCTAssertTrue(watch.contains("async let roles: [ActiveRole]? = privilegedOff ? nil : (try? gate.activeRoles())"))
+        XCTAssertTrue(watch.contains("async let eligible = activationEnabled && !privilegedOff ? (try? privileged.eligibleAccess()) : nil"))
+
+        let app = try appSource("LAPSlockApp.swift")
+        XCTAssertEqual(app.components(separatedBy: "privilegedSheet: AppModule.privilegedAccess.isEnabled ? {").count - 1, 2,
+                       "the device screen's sheet and Settings' sheet")
+        XCTAssertFalse(app.contains("privilegedSheet: {"), "no sheet offered unconditionally")
+        XCTAssertTrue(app.contains("requestPrivilegedConsent: AppModule.privilegedAccess.isEnabled"))
+    }
 }
