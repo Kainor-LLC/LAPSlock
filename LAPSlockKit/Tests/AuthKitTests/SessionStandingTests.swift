@@ -97,6 +97,15 @@ final class SessionStandingTests: XCTestCase {
         XCTAssertLessThan(asked.lowerBound, cached.lowerBound)
     }
 
+    /// A restore that asks Microsoft nothing does not carry an earlier answer.
+    func testEveryRestoreStartsWithNoAnswer() throws {
+        let restore = try function("public func restoreSession() async -> AdminAccount? {", in: try managerSource())
+        XCTAssertTrue(restore.contains("lastSessionStanding = nil"))
+        let cleared = try XCTUnwrap(restore.range(of: "lastSessionStanding = nil"))
+        let plan = try XCTUnwrap(restore.range(of: "SessionRestore.plan("))
+        XCTAssertLessThan(cleared.lowerBound, plan.lowerBound)
+    }
+
     /// Ending the session for Microsoft removes nothing: that is what keeps the waiting
     /// customers and the person's set-up for their next sign-in.
     func testDroppingTheSessionRemovesNothing() throws {
