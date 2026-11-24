@@ -249,16 +249,44 @@ final class UserActionsModel {
             await provider.logOffGate(.issueTemporaryAccessPass, on: target, outcome: .requested(requestId: nil))
             startPassTimer()
         } catch let error as CredentialError {
-            await provider.logOffGate(.issueTemporaryAccessPass, on: target, outcome: .failed(.transport(status: 0)))
+            let outcome = Self.passOutcome(for: error)
+            await provider.logOffGate(.issueTemporaryAccessPass, on: target, outcome: outcome)
             switch error {
             case .notAuthorized:   errorMessage = "Your account can't issue a pass. It needs Authentication Administrator or Privileged Authentication Administrator."
             case .consentRequired: errorMessage = "This organization hasn't granted permission to issue a Temporary Access Pass."
-            default:               errorMessage = "Couldn't issue a pass. Nothing was created that you can see; check the person's methods in Entra."
+            case .throttled:       errorMessage = "Microsoft Graph is rate limiting this tenant. Nothing was issued; try again shortly."
+            default:
+                if case .failed(let failure) = outcome, failure.mayHaveHappened {
+                    errorMessage = Self.passNotKnown
+                } else {
+                    errorMessage = "Couldn't issue a pass. Nothing was issued."
+                }
             }
         } catch {
-            errorMessage = "Couldn't issue a pass."
+            // The connection failed with the request out: a pass may exist. Before the second
+            // review (R2-22, 2026-11-24) this left no line in the shift log.
+            await provider.logOffGate(.issueTemporaryAccessPass, on: target, outcome: .failed(.transport(status: 0)))
+            errorMessage = Self.passNotKnown
         }
         lastEntry = await provider.lastLogEntry(userId: target.userId)
+    }
+
+    static let passNotKnown = "Couldn't tell whether a pass was issued: Microsoft did not answer. Check the person's methods in Entra before issuing another."
+
+    /// How a refused or lost pass is logged. A 5xx, no answer, or an answer that could not
+    /// be read after Microsoft accepted it may each mean a pass exists.
+    static func passOutcome(for error: CredentialError) -> ActionOutcome {
+        switch error {
+        case .notAuthorized:                return .notAuthorized(eligible: [])
+        case .consentRequired:              return .failed(.consentRequired)
+        case .throttled(let retryAfter):    return .failed(.throttled(retryAfter: retryAfter))
+        case .serviceUnavailable(let code): return .failed(.serviceUnavailable(status: code))
+        case .transport(let status):        return .failed(.transport(status: status))
+        case .decodeFailure:                return .failed(.transport(status: -1))
+        case .missingIdentifier(let why):   return .failed(.refused(reason: why))
+        case .notLapsEnabled, .emptyCredentialSet, .unsupportedOnPlatform:
+            return .failed(.refused(reason: "Not a pass this person can be given."))
+        }
     }
 
     private func startPassTimer() {

@@ -518,4 +518,14 @@ final class GraphClientTests: XCTestCase {
             XCTFail("expected GraphError, got \(error)", file: file, line: line)
         }
     }
+
+    // Second review, R2-21: a write stopped while it was out may have reached Microsoft.
+    func testAWriteCutOffIsNoAnswerAndAReadCutOffIsACancellation() {
+        let write = GraphRequest(method: .post, path: "/users/u/revokeSignInSessions", body: Data("{}".utf8), scopes: ["User.RevokeSessions.All"])
+        let read = GraphRequest(path: "/users", scopes: ["User.Read.All"])
+        let query = GraphRequest(method: .post, path: "/security/runHuntingQuery", body: Data("{}".utf8), scopes: ["ThreatHunting.Read.All"], readOnly: true)
+        XCTAssertEqual(GraphClient.cutOff(write), .transport(status: 0))
+        XCTAssertEqual(GraphClient.cutOff(read), .cancelled)
+        XCTAssertEqual(GraphClient.cutOff(query), .cancelled, "a POST that only reads is a read")
+    }
 }

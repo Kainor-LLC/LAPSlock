@@ -448,4 +448,15 @@ final class AppWiringTests: XCTestCase {
         XCTAssertTrue(turnOff.contains("await Self.within(seconds: 8,"), "the token wait has a limit of its own (R2-18)")
         XCTAssertTrue(turnOff.contains("UserDefaults.standard.removeObject(forKey: Self.personKey)"))
     }
+
+    /// Second review, R2-22: a pass lost on the network may exist, and the log says so.
+    func testAPassLostOnTheNetworkIsLogged() throws {
+        let view = try appSource("UserActionsView.swift")
+        let issue = body(of: "private func issuePass(confirmedByFaceID: Bool = false) async {", in: view)
+        let lastCatch = try XCTUnwrap(issue.range(of: "} catch {", options: .backwards))
+        let tail = issue[lastCatch.upperBound...]
+        XCTAssertTrue(tail.contains("await provider.logOffGate(.issueTemporaryAccessPass, on: target, outcome: .failed(.transport(status: 0)))"))
+        XCTAssertTrue(tail.contains("errorMessage = Self.passNotKnown"))
+        XCTAssertTrue(issue.contains("outcome: Self.passOutcome(for: error)") || issue.contains("let outcome = Self.passOutcome(for: error)"))
+    }
 }

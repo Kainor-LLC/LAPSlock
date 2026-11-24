@@ -346,4 +346,13 @@ final class ActionRunnerTests: XCTestCase {
         XCTAssertFalse(ActionFailure.cancelled.mayHaveHappened)
         XCTAssertFalse(ActionFailure.incomplete("x").mayHaveHappened)
     }
+
+    // Second review, R2-21 and UI-5: the shift log does not promise a failure it cannot know.
+    func test_theLogSaysNotKnownWhenTheActionMayHaveHappened() {
+        XCTAssertEqual(ActionRunner.word(for: .failed(.serviceUnavailable(status: 502))), "not known: service unavailable")
+        XCTAssertEqual(ActionRunner.word(for: .failed(.transport(status: 0))), "not known: no answer")
+        XCTAssertEqual(ActionRunner.word(for: .failed(.transport(status: -1))), "not known: no answer")
+        XCTAssertEqual(ActionRunner.word(for: .failed(.transport(status: 403))), "failed: transport", "Microsoft answered: a refusal")
+        XCTAssertEqual(ActionRunner.word(for: .failed(.badRequest(code: "x"))), "failed: bad request x")
+    }
 }

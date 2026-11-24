@@ -434,9 +434,9 @@ public final class GraphClient: Sendable {
                 do {
                     (data, response) = try await session.data(for: urlRequest)
                 } catch is CancellationError {
-                    throw GraphError.cancelled
+                    throw Self.cutOff(request)
                 } catch let error as URLError where error.code == .cancelled {
-                    throw GraphError.cancelled
+                    throw Self.cutOff(request)
                 } catch {
                     throw GraphError.transport(status: -1)
                 }
@@ -547,6 +547,14 @@ public final class GraphClient: Sendable {
 
     /// Seconds from `Retry-After`. Graph sends an integer; the HTTP-date form is ignored
     /// and falls back to the policy default.
+    /// A request stopped while it was out: a cancelled read is a cancellation, but a write
+    /// may already have reached Microsoft, so it is "no answer", which says the request may
+    /// have arrived. Before the second review (R2-21, 2026-11-24) a write cut off by a
+    /// sign-out or a switch of organization was shown and logged as cancelled.
+    static func cutOff(_ request: GraphRequest) -> GraphError {
+        request.isRetryable ? .cancelled : .transport(status: 0)
+    }
+
     static func retryAfter(_ http: HTTPURLResponse) -> TimeInterval? {
         guard let raw = http.value(forHTTPHeaderField: "Retry-After")?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
