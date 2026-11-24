@@ -356,7 +356,8 @@ final class AppRootModel {
                     },
                     breakGlass: {
                         (try? AlertsRunner.preferencesStore.load())?.tenant(tenantId)?.breakGlassUPNs ?? []
-                    })
+                    },
+                    person: { await session.auth.currentAccount?.id })
             }
         }
     }
@@ -630,6 +631,7 @@ final class AppRootModel {
         Task { await settleAllWriteRoutes() }
         Task { await settleAppProtection(for: account) }
         cameToFront()
+        await RelayCoordinator.shared.sessionStarted(for: account.id)
         await refreshTenants()
     }
 
@@ -668,6 +670,7 @@ final class AppRootModel {
             // Signed in just now, so the first check is ten minutes away.
             lastSessionCheck = Date()
             cameToFront()
+            await RelayCoordinator.shared.sessionStarted(for: account.id)
         } catch let error as AuthError {
             // Consent problems get a recovery path, not just an error (§8).
             if let state = ConsentDiagnostics.state(from: error) {
@@ -748,9 +751,11 @@ final class AppRootModel {
     }
 
     func signOut() async {
-        // Before the sign-in goes: unregistering from Instant alerts needs it.
-        await RelayCoordinator.shared.turnOffForSignOut()
         if case .live(let account) = mode, let auth {
+            // Before the sign-in goes: unregistering from Instant alerts needs it. Only from
+            // a live session: leaving the demo after a sign-in that could not be restored
+            // deleted the real alert key and told no one (second review, R2-17).
+            await RelayCoordinator.shared.turnOffForSignOut()
             // Before the tokens go: Microsoft's SDK needs one to tell Intune the account left.
             if let objectId = account.objectId {
                 await AppProtection.shared.signingOut(objectId: objectId)

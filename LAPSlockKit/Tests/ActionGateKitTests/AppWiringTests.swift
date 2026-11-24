@@ -426,4 +426,26 @@ final class AppWiringTests: XCTestCase {
         // A session that ends for any reason stops the loop.
         XCTAssertTrue(body(of: "private func endSession(forgetting: Bool = true) {", in: app).contains("sessionCheck?.cancel()"))
     }
+
+    // MARK: - Instant alerts at sign-out (second review, R2-9, R2-17, R2-18)
+
+    func testInstantAlertsEndWithTheSessionThatTurnedThemOn() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let signOut = body(of: "func signOut() async {", in: app)
+        let live = try XCTUnwrap(signOut.range(of: "if case .live(let account) = mode, let auth {"))
+        let off = try XCTUnwrap(signOut.range(of: "await RelayCoordinator.shared.turnOffForSignOut()"))
+        XCTAssertLessThan(live.lowerBound, off.lowerBound, "leaving the demo touches no real alert key (R2-17)")
+        // Each session says whose it is, after a restore and after a sign-in.
+        XCTAssertEqual(app.components(separatedBy: "await RelayCoordinator.shared.sessionStarted(for: account.id)").count - 1, 2)
+        XCTAssertTrue(app.contains("person: { await session.auth.currentAccount?.id })"))
+
+        let relay = try appSource("RelaySettingsView.swift")
+        let signOutOff = body(of: "func turnOffForSignOut() async {", in: relay)
+        XCTAssertTrue(signOutOff.contains("guard phone.isOn || status != .off else { return }"), "the key decides, not the status (R2-9)")
+        let started = body(of: "func sessionStarted(for person: String) async {", in: relay)
+        XCTAssertTrue(started.contains("if began != who { await turnOff() }"))
+        let turnOff = body(of: "func turnOff() async {", in: relay)
+        XCTAssertTrue(turnOff.contains("await Self.within(seconds: 8,"), "the token wait has a limit of its own (R2-18)")
+        XCTAssertTrue(turnOff.contains("UserDefaults.standard.removeObject(forKey: Self.personKey)"))
+    }
 }
