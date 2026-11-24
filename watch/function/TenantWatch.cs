@@ -25,6 +25,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
         int organizations = 0, alerts = 0, failures = 0;
         var notSent = new Dictionary<int, int>();
         var outcomes = new Outcomes();
+        var secondTries = new Budget(10);
         foreach (var tenant in await store.TenantsAsync(ct))
         {
             // One organization's failure, whatever it is, must not end the run for the
@@ -32,7 +33,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
             // registered key that cannot be used once stopped everyone later in the list.
             try
             {
-                var (watched, sent, failed) = await WatchOneAsync(tenant, slow, notSent, outcomes, ct);
+                var (watched, sent, failed) = await WatchOneAsync(tenant, slow, notSent, outcomes, secondTries, ct);
                 if (watched) organizations++;
                 alerts += sent;
                 failures += failed;
@@ -92,7 +93,14 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
             newest is not { } last ? "none" : string.Join(", ", counts.Select(c => $"{c.Key} x{c.Value}")) + "; newest " + last.What;
     }
 
-    async Task<(bool Watched, int Alerts, int Failures)> WatchOneAsync(TenantRecord tenant, bool slow, Dictionary<int, int> notSent, Outcomes outcomes, CancellationToken ct)
+    /// <summary>A count that runs out: the run's second tries at alerts the relay did not take.</summary>
+    internal sealed class Budget(int count)
+    {
+        int left = count;
+        public bool Take() => left > 0 && left-- > 0;
+    }
+
+    async Task<(bool Watched, int Alerts, int Failures)> WatchOneAsync(TenantRecord tenant, bool slow, Dictionary<int, int> notSent, Outcomes outcomes, Budget secondTries, CancellationToken ct)
     {
         // No more phones than an organization may register, so no organization's alerts can
         // hold the run, or the relay's one ceiling, for long (second review, R2-5).
@@ -148,7 +156,9 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
             });
         }
         Settle(tenant, ran, notInTenant, failed, DateTimeOffset.UtcNow);
-        await store.SaveAsync(tenant, ct);
+        var ranFor = tenant.BreakGlassIds;
+        var outcome = Snapshot(tenant);
+        await store.SaveAsync(tenant, now => Reapply(outcome, ranFor, to: now), ct);
 
         int alerts = 0, failures = failed ? 1 : 0;
         foreach (var alert in pending)
@@ -157,7 +167,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
                 // Each phone on its own too: one that cannot be sent to does not cost the others their alert.
                 try
                 {
-                    var (status, reason) = await sender.SendAsync(tenant.TenantId, device, alert.Kind, alert.Title, alert.Body, alert.Link, alert.Urgent, ct);
+                    var (status, reason) = await sender.SendAsync(tenant.TenantId, device, alert.Kind, alert.Title, alert.Body, alert.Link, alert.Urgent, ct, secondTries.Take);
                     outcomes.Add(status, reason, device.Environment, device.LastSeen);
                     if (status == 202) alerts++;
                     // Anything but Apple's own 410 is an alert that did not go. Counted, so a
@@ -205,6 +215,43 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
             tenant.NoConsentSince = null;
         }
         tenant.LastRun = now;
+    }
+
+    /// <summary>What a run writes to an organization's row: its cursors and its state, never the configuration.</summary>
+    internal static TenantRecord Snapshot(TenantRecord ran) => new()
+    {
+        RowKey = ran.RowKey,
+        SignInCursor = ran.SignInCursor,
+        SeenSignInIds = ran.SeenSignInIds,
+        PolicyCursor = ran.PolicyCursor,
+        SeenPolicyIds = ran.SeenPolicyIds,
+        IncidentCursor = ran.IncidentCursor,
+        SeenIncidents = ran.SeenIncidents,
+        State = ran.State,
+        NoConsentSince = ran.NoConsentSince,
+        LastRun = ran.LastRun,
+    };
+
+    /// <summary>
+    /// A run's outcome applied to a row someone else wrote meanwhile. The name and the
+    /// break-glass accounts stay as they are now. The sign-in cursor is the run's only if
+    /// the accounts are the ones it checked: a registration that changed them started that
+    /// baseline again, and the run's cursor belongs to the accounts before.
+    /// </summary>
+    internal static void Reapply(TenantRecord outcome, string ranForBreakGlass, TenantRecord to)
+    {
+        if (to.BreakGlassIds == ranForBreakGlass)
+        {
+            to.SignInCursor = outcome.SignInCursor;
+            to.SeenSignInIds = outcome.SeenSignInIds;
+        }
+        to.PolicyCursor = outcome.PolicyCursor;
+        to.SeenPolicyIds = outcome.SeenPolicyIds;
+        to.IncidentCursor = outcome.IncidentCursor;
+        to.SeenIncidents = outcome.SeenIncidents;
+        to.State = outcome.State;
+        to.NoConsentSince = outcome.NoConsentSince;
+        to.LastRun = outcome.LastRun;
     }
 
     internal static string IncidentBody(string label, List<string> severities)

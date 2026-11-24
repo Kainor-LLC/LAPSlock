@@ -110,7 +110,9 @@ public class WatchTests
         Assert.True(refused.IsConsent);
         Assert.False(refused.IsNotInTenant);
         Assert.False(new GraphException(System.Net.HttpStatusCode.ServiceUnavailable).IsNotInTenant);
-        Assert.True(new GraphException(System.Net.HttpStatusCode.Unauthorized).IsNotInTenant);
+        // A 401 from Microsoft Graph itself is a problem with the token, not a removal (R2-16).
+        Assert.False(new GraphException(System.Net.HttpStatusCode.Unauthorized).IsNotInTenant);
+        Assert.True(new GraphException(System.Net.HttpStatusCode.Unauthorized, notInTenant: true).IsNotInTenant);
     }
 
     [Fact]
@@ -175,14 +177,90 @@ public class WatchTests
     {
         var now = new DateTimeOffset(2026, 11, 24, 3, 15, 0, TimeSpan.Zero);
         var quiet = new TenantRecord { RowKey = "t", State = "ok", Timestamp = now.AddDays(-3) };
-        Assert.True(Housekeeping.ShouldDelete(quiet, phonesLeft: 0, now));
-        Assert.False(Housekeeping.ShouldDelete(quiet, phonesLeft: 1, now), "an organization with a phone stays");
+        Assert.True(Housekeeping.ShouldDelete(quiet, gone: false, phonesLeft: 0, now));
+        Assert.False(Housekeeping.ShouldDelete(quiet, gone: false, phonesLeft: 1, now), "an organization with a phone stays");
         // A registration saves the row a moment before its phone.
         var justSaved = new TenantRecord { RowKey = "t", State = "new", Timestamp = now.AddMinutes(-1) };
-        Assert.False(Housekeeping.ShouldDelete(justSaved, phonesLeft: 0, now));
+        Assert.False(Housekeeping.ShouldDelete(justSaved, gone: false, phonesLeft: 0, now));
         // Gone for a day goes whatever its phones.
         var gone = new TenantRecord { RowKey = "t", State = "noConsent", NoConsentSince = now.AddDays(-2), Timestamp = now };
-        Assert.True(Housekeeping.ShouldDelete(gone, phonesLeft: 3, now));
+        Assert.True(Housekeeping.ShouldDelete(gone, gone: Housekeeping.IsGone(gone, now), phonesLeft: 3, now));
+    }
+
+    // Second review, R2-12: a run and a registration that write one row each keep their own fields only.
+    [Fact]
+    public void ARunWrittenOverARegistrationKeepsTheNewAccountsAndTheirNewBaseline()
+    {
+        var read = new TenantRecord { RowKey = "t", Label = "Contoso", BreakGlassIds = "a", SignInCursor = DateTimeOffset.UnixEpoch, SeenSignInIds = "s1" };
+        var ranFor = read.BreakGlassIds;
+        // The run moves the cursors on its copy.
+        read.SignInCursor = DateTimeOffset.UnixEpoch.AddHours(1);
+        read.SeenSignInIds = "s1,s2";
+        read.PolicyCursor = DateTimeOffset.UnixEpoch.AddHours(2);
+        read.State = "ok";
+        var outcome = TenantWatch.Snapshot(read);
+
+        // Meanwhile an administrator's phone changed the accounts and the name.
+        var now = new TenantRecord { RowKey = "t", Label = "Contoso Ltd" };
+        Assert.True(DeviceFunctions.Apply(now, "Contoso Ltd", ["b", "a"]));
+        TenantWatch.Reapply(outcome, ranFor, to: now);
+
+        Assert.Equal("Contoso Ltd", now.Label);
+        Assert.Equal("a,b", now.BreakGlassIds);
+        Assert.Null(now.SignInCursor);
+        Assert.Equal("", now.SeenSignInIds);
+        Assert.Equal(outcome.PolicyCursor, now.PolicyCursor);
+        Assert.Equal("ok", now.State);
+    }
+
+    [Fact]
+    public void ARunWrittenOverACheckInThatChangedNothingKeepsItsCursor()
+    {
+        var outcome = TenantWatch.Snapshot(new TenantRecord { RowKey = "t", SignInCursor = DateTimeOffset.UnixEpoch.AddHours(3), SeenSignInIds = "x" });
+        var now = new TenantRecord { RowKey = "t", BreakGlassIds = "a" };
+        Assert.False(DeviceFunctions.Apply(now, "Contoso", ["a"]));
+        TenantWatch.Reapply(outcome, "a", to: now);
+        Assert.Equal(DateTimeOffset.UnixEpoch.AddHours(3), now.SignInCursor);
+        Assert.Equal("x", now.SeenSignInIds);
+    }
+
+    // Second review, R2-10: an alert the relay did not take for a passing reason gets one more try.
+    [Fact]
+    public void APassingRefusalIsTriedOnceMoreAndAppleOrAGoneAppIsNot()
+    {
+        foreach (var status in new[] { 0, 429, 500, 503, 504 }) Assert.True(AlertSender.WorthAnotherTry(status), status.ToString());
+        foreach (var status in new[] { 202, 400, 401, 402, 403, 410, 502 }) Assert.False(AlertSender.WorthAnotherTry(status), status.ToString());
+    }
+
+    [Fact]
+    public void TheRunsSecondTriesRunOut()
+    {
+        var budget = new TenantWatch.Budget(2);
+        Assert.True(budget.Take());
+        Assert.True(budget.Take());
+        Assert.False(budget.Take());
+        Assert.False(budget.Take());
+    }
+
+    // Second review, R2-16: a mistake on Kainor's side makes every organization look gone.
+    [Fact]
+    public void ANightThatFindsTooManyOrganizationsGoneDeletesNone()
+    {
+        Assert.False(Housekeeping.TooManyGone(3, 10));
+        Assert.True(Housekeeping.TooManyGone(4, 10));
+        Assert.False(Housekeeping.TooManyGone(20, 200), "a tenth of a larger service");
+        Assert.True(Housekeeping.TooManyGone(21, 200));
+        Assert.False(Housekeeping.TooManyGone(0, 0));
+    }
+
+    // Second review, R2-13: reordering the accounts is not a change of accounts.
+    [Fact]
+    public void TheSameBreakGlassAccountsInAnotherOrderAreNotAChange()
+    {
+        Assert.True(DeviceFunctions.SameAccounts(["b", "a"], ["a", "b"]));
+        Assert.True(DeviceFunctions.SameAccounts(["A"], ["a"]));
+        Assert.False(DeviceFunctions.SameAccounts(["a"], ["a", "b"]));
+        Assert.False(DeviceFunctions.SameAccounts(["a", "c"], ["a", "b"]));
     }
 
     // Second review, R2-5: no organization may register phones without end.

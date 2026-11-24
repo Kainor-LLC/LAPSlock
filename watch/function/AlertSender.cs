@@ -63,8 +63,21 @@ public sealed class AlertSender(WatchOptions options, TokenCredential credential
         return token;
     }
 
+    /// <summary>
+    /// Whether an alert the relay did not take may go if sent again: no answer, the relay's
+    /// own 429, or a 5xx other than Apple's refusal (502). The place in the log has already
+    /// moved past it, so a second try is its one other chance (second review, R2-10,
+    /// 2026-11-24). The same sealed alert is sent, so a phone that got the first copy drops
+    /// the second as one it has seen.
+    /// </summary>
+    internal static bool WorthAnotherTry(int status) => status is 0 or 429 or 500 or 503 or 504;
+
+    internal static readonly TimeSpan SecondTryAfter = TimeSpan.FromSeconds(1);
+
     /// <summary>Sends the alert; returns the relay's HTTP status and, when it did not go, its word for why.</summary>
-    public async Task<Sent> SendAsync(string tenantId, DeviceRecord device, string kind, string title, string body, string? link, bool timeSensitive, CancellationToken ct)
+    /// <param name="mayTryAgain">Asked before a second try; the run's budget of them, so one bad minute cannot hold the run.</param>
+    public async Task<Sent> SendAsync(string tenantId, DeviceRecord device, string kind, string title, string body, string? link, bool timeSensitive, CancellationToken ct,
+                                      Func<bool>? mayTryAgain = null)
     {
         var alert = new
         {
@@ -83,27 +96,44 @@ public sealed class AlertSender(WatchOptions options, TokenCredential credential
         var ciphertext = context.Seal(Encoding.ASCII.GetBytes(device.DeviceToken), plaintext);
         var urgency = timeSensitive ? "time-sensitive" : "normal";
         var envelope = new { suite = Suite, mode = "auth", enc = Base64Url.Encode(context.Enc), ct = Base64Url.Encode(ciphertext) };
-        if (options.RelayServiceAudience is { } audience)
+
+        async Task<Sent> Post()
         {
-            var token = await credential.GetTokenAsync(new TokenRequestContext([audience + "/.default"]), ct);
-            using var message = ServiceRequest(options.RelayServiceUrl, token.Token, device, urgency, envelope);
-            using var answer = await http.SendAsync(message, ct);
-            return new Sent((int)answer.StatusCode, await ReasonAsync(answer, ct));
+            try
+            {
+                if (options.RelayServiceAudience is { } audience)
+                {
+                    var token = await credential.GetTokenAsync(new TokenRequestContext([audience + "/.default"]), ct);
+                    using var message = ServiceRequest(options.RelayServiceUrl, token.Token, device, urgency, envelope);
+                    using var answer = await http.SendAsync(message, ct);
+                    return new Sent((int)answer.StatusCode, await ReasonAsync(answer, ct));
+                }
+                // The earlier way, until RELAY_SERVICE_AUDIENCE is set: the organization's entitlement
+                // token in the body. The entitlement service knows organization licences only, so an
+                // organization whose administrators subscribe in the app is refused with 402 here.
+                var request = new
+                {
+                    v = 1,
+                    deviceToken = device.DeviceToken,
+                    environment = device.Environment,
+                    urgency,
+                    entitlement = await EntitlementAsync(tenantId, ct),
+                    envelope,
+                };
+                using var response = await http.PostAsJsonAsync(options.RelayUrl, request, ct);
+                return new Sent((int)response.StatusCode, await ReasonAsync(response, ct));
+            }
+            catch (Exception e) when ((e is HttpRequestException || e is TaskCanceledException) && !ct.IsCancellationRequested)
+            {
+                // No answer, or none within the client's 20 seconds.
+                return new Sent(0, null);
+            }
         }
-        // The earlier way, until RELAY_SERVICE_AUDIENCE is set: the organization's entitlement
-        // token in the body. The entitlement service knows organization licences only, so an
-        // organization whose administrators subscribe in the app is refused with 402 here.
-        var request = new
-        {
-            v = 1,
-            deviceToken = device.DeviceToken,
-            environment = device.Environment,
-            urgency,
-            entitlement = await EntitlementAsync(tenantId, ct),
-            envelope,
-        };
-        using var response = await http.PostAsJsonAsync(options.RelayUrl, request, ct);
-        return new Sent((int)response.StatusCode, await ReasonAsync(response, ct));
+
+        var first = await Post();
+        if (!WorthAnotherTry(first.Status) || !(mayTryAgain?.Invoke() ?? false)) return first;
+        await Task.Delay(SecondTryAfter, ct);
+        return await Post();
     }
 
     static async Task<string?> ReasonAsync(HttpResponseMessage answer, CancellationToken ct)

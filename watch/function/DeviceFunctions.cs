@@ -31,6 +31,25 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
     internal static bool OverPhoneLimit(int registered, bool alreadyRegistered) =>
         !alreadyRegistered && registered >= MaxPhonesPerOrganization;
 
+    internal static bool SameAccounts(IEnumerable<string> sent, IEnumerable<string> kept) =>
+        sent.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(kept);
+
+    /// <summary>
+    /// What a registration writes to its organization's row: the name, and from an
+    /// administrator who may configure, the break-glass accounts. Whether the accounts changed.
+    /// The same accounts in another order are not a change: each change starts the sign-in
+    /// baseline again (second review, R2-13, 2026-11-24).
+    /// </summary>
+    internal static bool Apply(TenantRecord tenant, string label, IReadOnlyCollection<string>? breakGlass)
+    {
+        tenant.Label = label;
+        if (breakGlass is null || SameAccounts(breakGlass, tenant.BreakGlass)) return false;
+        tenant.BreakGlassIds = string.Join(',', breakGlass.OrderBy(id => id, StringComparer.OrdinalIgnoreCase));
+        tenant.SignInCursor = null;
+        tenant.SeenSignInIds = "";
+        return true;
+    }
+
     public sealed record RegisterBody(string DeviceToken, string Environment, string PublicKey, string[]? BreakGlass);
     public sealed record UnregisterBody(string DeviceToken);
 
@@ -71,27 +90,19 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
             return new ObjectResult(new { error = "limit", limit = MaxPhonesPerOrganization }) { StatusCode = 429 };
         }
 
-        var tenant = await store.TenantAsync(caller.TenantId, ct) ?? new TenantRecord { RowKey = caller.TenantId };
-        tenant.Label = label;
-        var breakGlassUpdated = false;
+        List<string>? ids = null;
         if (body.BreakGlass is { } accounts && caller.CanConfigure)
         {
-            List<string> ids;
             try { ids = await setup.ObjectIdsAsync(caller.TenantId, accounts, ct); }
             catch (GraphException e) when (e.Status == HttpStatusCode.NotFound)
             {
                 return new BadRequestObjectResult(new { error = "account", message = "One of the break-glass accounts was not found in this organization." });
             }
-            var joined = string.Join(',', ids);
-            if (joined != tenant.BreakGlassIds)
-            {
-                tenant.BreakGlassIds = joined;
-                tenant.SignInCursor = null;
-                tenant.SeenSignInIds = "";
-                breakGlassUpdated = true;
-            }
         }
-        await store.SaveAsync(tenant, ct);
+        var tenant = await store.TenantAsync(caller.TenantId, ct) ?? new TenantRecord { RowKey = caller.TenantId };
+        var breakGlassUpdated = Apply(tenant, label, ids);
+        // Applied again to what is there now if a run wrote the row meanwhile (R2-12).
+        await store.SaveAsync(tenant, now => breakGlassUpdated = Apply(now, label, ids) || breakGlassUpdated, ct);
 
         await store.SaveAsync(new DeviceRecord
         {

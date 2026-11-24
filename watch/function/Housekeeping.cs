@@ -33,8 +33,16 @@ public sealed class Housekeeping(WatchStore store, ILogger<Housekeeping> log)
     /// R2-6, 2026-11-24). The hour is for a registration that has saved the row and not yet
     /// its phone.
     /// </summary>
-    internal static bool ShouldDelete(TenantRecord tenant, int phonesLeft, DateTimeOffset now) =>
-        IsGone(tenant, now) || (phonesLeft == 0 && (tenant.Timestamp ?? DateTimeOffset.MinValue) <= now - QuietFor);
+    internal static bool ShouldDelete(TenantRecord tenant, bool gone, int phonesLeft, DateTimeOffset now) =>
+        gone || (phonesLeft == 0 && (tenant.Timestamp ?? DateTimeOffset.MinValue) <= now - QuietFor);
+
+    /// <summary>
+    /// More organizations reported gone in one night than this is a mistake on Kainor's side,
+    /// such as the wrong WATCH_CLIENT_ID or the Watch registration disabled, which makes every
+    /// organization look gone; the cleanup then deletes none of them and says so. Three, or a
+    /// tenth of all organizations, whichever is more (second review, R2-16, 2026-11-24).
+    /// </summary>
+    internal static bool TooManyGone(int gone, int organizations) => gone > Math.Max(3, organizations / 10);
 
     [Function("Housekeeping")]
     public async Task Run([TimerTrigger("0 15 3 * * *")] TimerInfo timer, CancellationToken ct)
@@ -42,10 +50,17 @@ public sealed class Housekeeping(WatchStore store, ILogger<Housekeeping> log)
         int phones = 0, organizations = 0;
         var now = DateTimeOffset.UtcNow;
         var cutoff = now - PhoneLifetime;
-        foreach (var tenant in await store.TenantsAsync(ct))
+        var tenants = await store.TenantsAsync(ct);
+        var gone = tenants.Where(t => IsGone(t, now)).Select(t => t.TenantId).ToHashSet();
+        if (TooManyGone(gone.Count, tenants.Count))
+        {
+            log.LogWarning("Housekeeping refused gone={Gone} organizations={All}: more than a night's limit", gone.Count, tenants.Count);
+            gone.Clear();
+        }
+        foreach (var tenant in tenants)
         {
             var devices = await store.DevicesAsync(tenant.TenantId, ct);
-            var removed = IsGone(tenant, now);
+            var removed = gone.Contains(tenant.TenantId);
             var left = 0;
             foreach (var device in devices)
             {
@@ -56,7 +71,7 @@ public sealed class Housekeeping(WatchStore store, ILogger<Housekeeping> log)
                 }
                 else left++;
             }
-            if (ShouldDelete(tenant, left, now))
+            if (ShouldDelete(tenant, removed, left, now))
             {
                 await store.DeleteTenantAsync(tenant.TenantId, ct);
                 organizations++;

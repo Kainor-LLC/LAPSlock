@@ -48,6 +48,10 @@ final class NotificationService: UNNotificationServiceExtension {
             // The phone has not been unlocked since it restarted, so the relay key cannot be
             // read yet. Not a forgery: keep the envelope, and the app opens it on a tap.
             Self.lockedSinceRestart(content, envelope: ["enc": enc, "ct": ct])
+        } catch RelayError.duplicate {
+            // The alert service tries an alert the relay did not take once more, with the same
+            // sealed alert, and both copies can arrive. Not a forgery: said quietly, once.
+            Self.repeated(content)
         } catch {
             Self.discard(content)
         }
@@ -65,6 +69,14 @@ final class NotificationService: UNNotificationServiceExtension {
         content.title = "TenantKeep"
         content.body = "An alert arrived before this iPhone was unlocked after a restart. Unlock and tap to read it."
         content.userInfo = ["e": envelope]
+    }
+
+    static func repeated(_ content: UNMutableNotificationContent) {
+        content.title = "TenantKeep"
+        content.body = "An alert arrived twice. It is shown once."
+        content.userInfo = [:]
+        content.interruptionLevel = .passive
+        content.sound = nil
     }
 
     static func discard(_ content: UNMutableNotificationContent) {
