@@ -72,14 +72,18 @@ final class TokenMeasurement {
         say("build: capability " + (declared ? "declared (CP1)" : "not declared") + ", session check " + (checkOff ? "off" : "on"))
     }
 
-    /// A forced refresh, and what the new token carries.
+    /// A forced refresh, and what the new token carries. For each read's permission, since
+    /// the sign-in library keeps a token for each set of permissions asked for, and the
+    /// reads that follow must use the new one.
     func freshToken() async {
         guard let auth = SessionAuth.shared.auth else { return say("no sign-in manager") }
-        do {
-            let token = try await auth.measurementToken(scopes: Self.deviceScopes, fresh: true)
-            say("fresh token: " + Self.describe(token))
-        } catch {
-            say("fresh token refused: " + Self.describe(error, detail: await auth.lastAuthFailure))
+        for read in [Read.devices, .signIns] {
+            do {
+                let token = try await auth.measurementToken(scopes: read.scopes, fresh: true)
+                say("fresh token for the " + read.name + ": " + Self.describe(token))
+            } catch {
+                say("fresh token for the " + read.name + " refused: " + Self.describe(error, detail: await auth.lastAuthFailure))
+            }
         }
     }
 
