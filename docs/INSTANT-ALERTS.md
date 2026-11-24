@@ -56,7 +56,7 @@ TenantKeep Watch signs in to Microsoft with a federated credential bound to the 
 | `deviceToken` | The phone's Apple push token |
 | `environment` | `production`, or `sandbox` for development builds |
 | `publicKey` | The phone's public key, made in its Secure Enclave, X9.63, base64url |
-| `breakGlass` | The break-glass accounts set for the organization in the app. Applied only from an active Global Administrator or Security Administrator |
+| `breakGlass` | The break-glass accounts set for the organization in the app, with any the organization names through Intune (`breakGlass.upns`). Applied only from an active Global Administrator or Security Administrator |
 
 The request carries a Microsoft token issued for the `Alerts.Register` scope of the TenantKeep Alerts app registration, which holds no Microsoft Graph permission. The service checks its signature, lifetime, issuer and scope, and that it was issued to TenantKeep's own app and not another one an administrator approved the scope for; takes the organization from it; and allows registration only for an account with an active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role. That token cannot read anything from Microsoft. No Microsoft Graph token ever reaches the service.
 

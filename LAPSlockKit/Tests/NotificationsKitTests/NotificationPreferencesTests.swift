@@ -48,4 +48,17 @@ final class NotificationPreferencesTests: XCTestCase {
         try store.clear()
         XCTAssertTrue(try store.load().tenants.isEmpty)
     }
+
+    /// The organization's accounts from Intune join the person's, in its own tenant only.
+    func test_theOrganizationsBreakGlassAccountsAreWatchedInItsOwnTenantOnly() {
+        let own = ["a@contoso.com"]
+        let managed = ["bg1@contoso.com", "A@contoso.com"]
+        XCTAssertEqual(TenantAlertPreferences.watchedUPNs(own: own, managed: managed, managedTenant: "t-home", tenantId: "T-HOME"),
+                       ["a@contoso.com", "bg1@contoso.com"])
+        XCTAssertEqual(TenantAlertPreferences.watchedUPNs(own: own, managed: managed, managedTenant: "t-home", tenantId: "t-customer"), own,
+                       "a customer's tenant is not the organization's own")
+        XCTAssertEqual(TenantAlertPreferences.watchedUPNs(own: own, managed: [], managedTenant: "t-home", tenantId: "t-home"), own)
+        XCTAssertEqual(TenantAlertPreferences.watchedUPNs(own: [], managed: managed, managedTenant: nil, tenantId: "t-home"), [],
+                       "no tenant to apply them to")
+    }
 }

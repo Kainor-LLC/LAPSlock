@@ -2,6 +2,7 @@ import SwiftUI
 import CryptoKit
 import UserNotifications
 import RelayKit
+import ManagedConfigKit
 
 // Instant alerts, hosted by Kainor (HOSTED-WATCH-PLAN.md, H4). An administrator turns them
 // on, reads what they share, and the phone registers itself with Kainor's alert service:
@@ -108,11 +109,25 @@ final class RelayCoordinator {
     /// or whose callback was missed otherwise never happens again.
     func registerIfOn() {
         guard phone.isOn else { return }
+        // Turned off by the organization since: off here too (see `turnedOffByOrganization`).
+        if Self.turnedOffByOrganization {
+            Task { await turnOff() }
+            return
+        }
         UIApplication.shared.registerForRemoteNotifications()
     }
 
+    /// The organization turned Notifications off in TenantKeep (`modules.disabled`), and
+    /// Instant alerts are notifications: before the second review's follow-up (2026-11-24)
+    /// they went on arriving, and could still be turned on.
+    static var turnedOffByOrganization: Bool { ManagedConfigStore.read().isDisabled("notifications") }
+
     /// The person turned Instant alerts on, after reading what they share.
     func turnOn() async {
+        guard !Self.turnedOffByOrganization else {
+            status = .problem("Your organization has turned off notifications in TenantKeep, so Instant alerts stay off.")
+            return
+        }
         guard let setup else {
             status = .problem("Sign in to your organization to turn on Instant alerts.")
             return
@@ -295,7 +310,7 @@ final class RelayCoordinator {
 
     private func checkInIfDue() {
         let last = UserDefaults.standard.object(forKey: Self.checkInKey) as? Date ?? .distantPast
-        guard planAllows, !checkingIn, isRegistered, addressConfirmed, Date().timeIntervalSince(last) > 86_400,
+        guard planAllows, !Self.turnedOffByOrganization, !checkingIn, isRegistered, addressConfirmed, Date().timeIntervalSince(last) > 86_400,
               let setup, let code = try? phone.pairingCode() else { return }
         checkingIn = true
         Task {

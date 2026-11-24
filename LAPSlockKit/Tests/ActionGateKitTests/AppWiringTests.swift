@@ -529,4 +529,18 @@ final class AppWiringTests: XCTestCase {
         XCTAssertTrue(detail.contains("if ScreenshotRoute.requestedInDemo == \"reveal\" { await model.reveal() }"))
         XCTAssertFalse(detail.contains("ScreenshotRoute.requested == \"reveal\""))
     }
+
+    /// The organization's switches reach Instant alerts: Notifications off keeps them off, and
+    /// the break-glass accounts it names go to the service as the background check watches them.
+    func testTheOrganizationsSettingsReachInstantAlerts() throws {
+        let relay = try appSource("RelaySettingsView.swift")
+        XCTAssertTrue(relay.contains("static var turnedOffByOrganization: Bool { ManagedConfigStore.read().isDisabled(\"notifications\") }"))
+        XCTAssertTrue(body(of: "func turnOn() async {", in: relay).contains("guard !Self.turnedOffByOrganization else {"))
+        XCTAssertTrue(body(of: "func registerIfOn() {", in: relay).contains("Task { await turnOff() }"))
+        XCTAssertTrue(relay.contains("guard planAllows, !Self.turnedOffByOrganization,"))
+        let app = try appSource("LAPSlockApp.swift")
+        XCTAssertTrue(app.contains("return TenantAlertPreferences.watchedUPNs("))
+        let runner = try appSource("AlertsRunner.swift")
+        XCTAssertTrue(runner.contains("own.breakGlassUPNs = TenantAlertPreferences.watchedUPNs("))
+    }
 }
