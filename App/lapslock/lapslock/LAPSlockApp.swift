@@ -354,8 +354,15 @@ final class AppRootModel {
                     token: { interactive in
                         try await session.auth.token(scopes: [InstantAlertsScope.register], allowInteractive: interactive)
                     },
-                    breakGlass: {
-                        (try? AlertsRunner.preferencesStore.load())?.tenant(tenantId)?.breakGlassUPNs ?? []
+                    breakGlass: { [weak self] in
+                        // The person's, and the organization's own from Intune, as the
+                        // background check watches them.
+                        let managed = ManagedConfigStore.read()
+                        return TenantAlertPreferences.watchedUPNs(
+                            own: (try? AlertsRunner.preferencesStore.load())?.tenant(tenantId)?.breakGlassUPNs ?? [],
+                            managed: managed.breakGlassUPNs,
+                            managedTenant: managed.tenantPin ?? self?.signedInTenantId?.lowercased(),
+                            tenantId: tenantId)
                     },
                     person: { await session.auth.currentAccount?.id })
             }

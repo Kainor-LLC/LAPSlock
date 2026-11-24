@@ -38,6 +38,16 @@ public struct TenantAlertPreferences: Codable, Sendable, Equatable, Identifiable
         return kinds.sorted().filter { $0 != .breakGlassSignIn || !breakGlassUPNs.isEmpty }
     }
 
+    /// The break-glass accounts watched in `tenantId`: the person's own, and in the
+    /// organization's own tenant (the pinned one, or the signed-in account's home) the ones
+    /// the organization names through Intune (`breakGlass.upns`). One rule for the
+    /// background check and for Instant alerts, which before the second review's follow-up
+    /// (2026-11-24) sent the service the person's list only.
+    public static func watchedUPNs(own: [String], managed: [String], managedTenant: String?, tenantId: String) -> [String] {
+        guard !managed.isEmpty, let managedTenant, managedTenant.lowercased() == tenantId.lowercased() else { return own }
+        return cleanUPNs(own + managed)
+    }
+
     /// Lowercases, trims, drops anything that is not shaped like a sign-in address, and
     /// removes duplicates, keeping the order typed.
     public static func cleanUPNs(_ input: [String]) -> [String] {

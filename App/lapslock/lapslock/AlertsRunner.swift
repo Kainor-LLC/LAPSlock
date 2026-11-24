@@ -75,8 +75,9 @@ enum AlertsRunner {
         // or the signed-in account's home tenant when nothing is pinned.
         let homeTenant = await auth.currentAccount?.tenantId.lowercased()
         let managedTenant = managed.tenantPin ?? homeTenant
-        if !managed.breakGlassUPNs.isEmpty, let managedTenant, var own = prefs.tenant(managedTenant) {
-            own.breakGlassUPNs = TenantAlertPreferences.cleanUPNs(own.breakGlassUPNs + managed.breakGlassUPNs)
+        if let managedTenant, var own = prefs.tenant(managedTenant) {
+            own.breakGlassUPNs = TenantAlertPreferences.watchedUPNs(
+                own: own.breakGlassUPNs, managed: managed.breakGlassUPNs, managedTenant: managedTenant, tenantId: own.tenantId)
             prefs.upsert(own)
         }
         let tenants = prefs.tenants.filter { tenant in
