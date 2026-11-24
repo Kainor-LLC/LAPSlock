@@ -5,7 +5,13 @@ import AuthKit
 /// Answers inventory requests from a script: the first page, then the pages its next links
 /// name, each after an optional delay so a reset can land while one is out.
 private final class InventoryStub: URLProtocol, @unchecked Sendable {
-    struct Reply { var body: String; var delay: TimeInterval = 0; var status: Int = 200 }
+    struct Reply {
+        var body: String
+        var delay: TimeInterval = 0
+        var status: Int = 200
+        /// The connection fails this way instead of answering.
+        var failure: URLError.Code? = nil
+    }
     nonisolated(unsafe) static var replies: [Reply] = []
     /// Answers for any request whose decoded URL contains the key, ahead of `replies`, for
     /// requests sent at once in no fixed order.
@@ -28,6 +34,10 @@ private final class InventoryStub: URLProtocol, @unchecked Sendable {
         }
         Self.lock.unlock()
         DispatchQueue.global().asyncAfter(deadline: .now() + reply.delay) { [self] in
+            if let failure = reply.failure {
+                client?.urlProtocol(self, didFailWithError: URLError(failure))
+                return
+            }
             let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: nil, headerFields: nil)!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(reply.body.utf8))
@@ -227,4 +237,72 @@ final class DeviceInventoryServiceTests: XCTestCase {
         let urls = InventoryStub.requested.map { $0.absoluteString.removingPercentEncoding ?? "" }
         XCTAssertTrue(urls.contains { $0.contains("deviceName eq 'o''brien'") }, urls.joined(separator: "\n"))
     }
+    // MARK: - what a phone's connection does to the fill (second review, R2-2)
+
+    private func fill(_ service: DeviceInventoryService) async -> (InventoryFill.Outcome, [TimeInterval]) {
+        let waits = WaitLog()
+        let outcome = await InventoryFill.run(service, sleep: { await waits.add($0) }, onPage: { _, _ in })
+        return (outcome, await waits.all)
+    }
+
+    func test_aDroppedConnectionInTheFillIsAskedForAgain() async throws {
+        let service = DeviceInventoryService(auth: SwitchableAuth(operating: "t"), pageSize: 2, fillPageSize: 2,
+                                             session: InventoryStub.session())
+        let third = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$skiptoken=p3"
+        InventoryStub.replies = [
+            .init(body: page(["d1", "d2"], next: nextLink)),
+            .init(body: "", failure: .networkConnectionLost),
+            .init(body: page(["d3", "d4"], next: third)),
+            .init(body: "", failure: .timedOut),
+            .init(body: page(["d5"])),
+        ]
+        try await service.loadFirstPage()
+        let (outcome, waits) = await fill(service)
+        XCTAssertEqual(outcome, .complete)
+        XCTAssertEqual(waits.count, 2, "one wait for each failure")
+        let all = try await service.cachedDevices()
+        XCTAssertEqual(all.map(\.id), ["d1", "d2", "d3", "d4", "d5"])
+    }
+
+    func test_aBodyCutOffInTheFillIsAskedForAgain() async throws {
+        let service = DeviceInventoryService(auth: SwitchableAuth(operating: "t"), pageSize: 2, fillPageSize: 2,
+                                             session: InventoryStub.session())
+        InventoryStub.replies = [
+            .init(body: page(["d1", "d2"], next: nextLink)),
+            .init(body: #"{"value":[{"id":"d3","deviceNa"#),
+            .init(body: page(["d3"])),
+        ]
+        try await service.loadFirstPage()
+        let (outcome, waits) = await fill(service)
+        XCTAssertEqual(outcome, .complete)
+        XCTAssertEqual(waits.count, 1)
+        let all = try await service.cachedDevices()
+        XCTAssertEqual(all.map(\.id), ["d1", "d2", "d3"])
+    }
+
+    func test_aConnectionThatKeepsDroppingStopsTheFillWithWhatIsLoaded() async throws {
+        let service = DeviceInventoryService(auth: SwitchableAuth(operating: "t"), pageSize: 2, fillPageSize: 2,
+                                             session: InventoryStub.session())
+        InventoryStub.replies = [InventoryStub.Reply(body: page(["d1", "d2"], next: nextLink))]
+            + Array(repeating: InventoryStub.Reply(body: "", failure: .notConnectedToInternet), count: FillRetry.maxAttempts)
+        try await service.loadFirstPage()
+        let (outcome, waits) = await fill(service)
+        XCTAssertEqual(outcome, .failed(.transport(status: -1)))
+        XCTAssertEqual(waits.count, FillRetry.maxAttempts - 1)
+        let all = try await service.cachedDevices()
+        XCTAssertEqual(all.map(\.id), ["d1", "d2"])
+        let more = try await service.hasMore()
+        XCTAssertTrue(more, "the manual load more stays")
+    }
+
+    func test_aCancelledRequestIsACancellationNotAFailure() {
+        XCTAssertEqual(InventoryFill.failure(from: URLError(.cancelled)), .cancelled)
+        XCTAssertEqual(InventoryFill.failure(from: URLError(.networkConnectionLost)), .transport(status: -1))
+        XCTAssertEqual(InventoryFill.failure(from: CocoaError(.propertyListReadCorrupt)), .transport(status: -1))
+    }
+}
+
+private actor WaitLog {
+    private(set) var all: [TimeInterval] = []
+    func add(_ wait: TimeInterval) { all.append(wait) }
 }

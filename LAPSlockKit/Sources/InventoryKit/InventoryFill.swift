@@ -70,18 +70,21 @@ public enum InventoryFill {
                 await onPage(page.devices, total)
             } catch is CancellationError {
                 return .cancelled
-            } catch let error as InventoryError {
-                if error == .cancelled { return .cancelled }
+            } catch {
+                // A dropped connection, a timeout or a body cut off arrives as the URL
+                // system's own error, or as a body that does not parse, never as an
+                // InventoryError. Each is as passing as a 5xx. Before the second review
+                // (R2-2, 2026-11-24) these ended the fill on the first one.
+                let failure = (error as? InventoryError) ?? Self.failure(from: error)
+                if failure == .cancelled { return .cancelled }
                 failures += 1
-                guard let problem = error.fillRetryProblem,
-                      let wait = FillRetry.wait(after: problem, failures: failures) else { return .failed(error) }
+                guard let problem = failure.fillRetryProblem,
+                      let wait = FillRetry.wait(after: problem, failures: failures) else { return .failed(failure) }
                 do {
                     try await sleep(wait)
                 } catch {
                     return .cancelled
                 }
-            } catch {
-                return .failed(.transport(status: -1))
             }
         }
 
@@ -89,6 +92,14 @@ public enum InventoryFill {
         // maxDevices devices is complete, not cut off.
         let more = (try? await inventory.hasMore()) ?? true
         return more ? .capped : .complete
+    }
+
+    /// What a failure that is not an `InventoryError` means to the fill: a cancelled
+    /// request is a cancellation, and anything else (the URL system's errors, a body that
+    /// does not parse) is a transport failure, which the fill asks again for.
+    static func failure(from error: Error) -> InventoryError {
+        if let url = error as? URLError, url.code == .cancelled { return .cancelled }
+        return .transport(status: -1)
     }
 }
 
