@@ -63,10 +63,49 @@ final class AppProtection {
         set { bridge.tokenSource.value = newValue }
     }
 
-    /// Called when Intune orders this account's data removed. Returns whether it all went.
-    var wipe: (@Sendable (_ objectId: String) -> Bool)? {
+    /// Called when Intune orders this account's data removed (a selective wipe). Returns
+    /// whether everything went.
+    var wipe: (@Sendable (_ objectId: String) async -> Bool)? {
         get { bridge.wipe.value }
         set { bridge.wipe.value = newValue }
+    }
+
+    /// Everything the app wrote outside the Keychain: its Application Support and Caches
+    /// folders, its temporary files, what it shares with the notification extension and the
+    /// watch, and its settings. Microsoft's SDK keeps its own state elsewhere, in
+    /// Library/.IntuneMAM and its Keychain group, and its settings are left alone.
+    nonisolated static func eraseFilesAndSettings() -> Bool {
+        let files = FileManager.default
+        let group = "group.com.kainor.lapslock"
+        var complete = true
+        var doomed: [URL] = []
+        for folder in [FileManager.SearchPathDirectory.applicationSupportDirectory, .cachesDirectory] {
+            guard let url = files.urls(for: folder, in: .userDomainMask).first else { continue }
+            doomed += (try? files.contentsOfDirectory(at: url, includingPropertiesForKeys: nil)) ?? []
+        }
+        doomed += (try? files.contentsOfDirectory(at: files.temporaryDirectory, includingPropertiesForKeys: nil)) ?? []
+        if let shared = files.containerURL(forSecurityApplicationGroupIdentifier: group) {
+            // The system keeps the group's settings under Library; those go by name below.
+            doomed += ((try? files.contentsOfDirectory(at: shared, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.lastPathComponent != "Library" }
+        }
+        for url in doomed {
+            do { try files.removeItem(at: url) } catch { complete = false }
+        }
+        URLCache.shared.removeAllCachedResponses()
+        for defaults in [UserDefaults.standard, UserDefaults(suiteName: group)].compactMap({ $0 }) {
+            let domain = defaults === UserDefaults.standard ? (Bundle.main.bundleIdentifier ?? "") : group
+            for key in (defaults.persistentDomain(forName: domain) ?? [:]).keys where !Self.isMicrosofts(key) {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        return complete
+    }
+
+    /// A settings key Microsoft's SDK may have written. The app writes none like it.
+    nonisolated static func isMicrosofts(_ key: String) -> Bool {
+        let lowered = key.lowercased()
+        return lowered.hasPrefix("com.microsoft.") || lowered.contains("intune") || lowered.hasPrefix("mam")
     }
 
     private let bridge = Bridge()
@@ -166,7 +205,7 @@ private nonisolated final class Locked<Value>: @unchecked Sendable {
 /// thread it is on, `restartApplication` from a background one.
 private nonisolated final class Bridge: NSObject, IntuneMAMEnrollmentDelegate, IntuneMAMPolicyDelegate, @unchecked Sendable {
     let tokenSource = Locked<AppProtectionTokenSource?>(nil)
-    let wipe = Locked<(@Sendable (String) -> Bool)?>(nil)
+    let wipe = Locked<(@Sendable (String) async -> Bool)?>(nil)
     var report: (@Sendable (AppProtectionState) -> Void)?
 
     // MARK: Tokens
@@ -245,9 +284,30 @@ private nonisolated final class Bridge: NSObject, IntuneMAMEnrollmentDelegate, I
 
     // MARK: Orders From Intune
 
-    /// The organization removed this account's access to the app's data.
+    /// The organization ordered this account's data removed from the app.
+    ///
+    /// Microsoft calls this from a background thread and wants no answer until the data is
+    /// gone, so this thread waits while the app does it. A minute at most: the one step that
+    /// can be slow is telling Kainor's alert service the phone has left, and that gives up
+    /// by itself. An answer of false makes the SDK delete the app's files itself.
     func wipeData(forAccountId accountId: String) -> Bool {
-        wipe.value?(accountId) ?? false
+        Self.trace("wipe ordered")
+        guard let wipe = wipe.value else { return false }
+        guard !Thread.isMainThread else {
+            // Never seen, and waiting here for work the main thread must do would hang the
+            // app. The data still goes; the SDK is told to remove the files as well.
+            Task.detached { _ = await wipe(accountId) }
+            return false
+        }
+        let finished = DispatchSemaphore(value: 0)
+        let complete = Locked(false)
+        Task.detached {
+            complete.value = await wipe(accountId)
+            finished.signal()
+        }
+        let done = finished.wait(timeout: .now() + 60) == .success && complete.value
+        Self.trace(done ? "wipe complete" : "wipe incomplete")
+        return done
     }
 
     /// The first policy needs a fresh process. False: the SDK says so and closes the app.

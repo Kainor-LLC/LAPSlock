@@ -744,6 +744,13 @@ final class AppRootModel {
             }
             try? await auth.signOut(account: account)
         }
+        endSession()
+    }
+
+    /// The app's side of nobody being signed in. Shared by sign-out and by an
+    /// organization's order to remove its data, so the two cannot leave different things
+    /// behind on screen.
+    private func endSession() {
         // Tenant-scoped data must not survive an account change (§7). Dropping the session
         // drops every service's cache with it.
         liveSession = nil
@@ -774,6 +781,41 @@ final class AppRootModel {
             return AppProtectionToken(
                 accessToken: token, username: account.username, objectId: objectId, tenantId: account.tenantId)
         }
+        AppProtection.shared.wipe = { [weak self] _ in
+            await self?.eraseForOrganization() ?? false
+        }
+    }
+
+    /// Intune ordered the organization's data off this device (a selective wipe).
+    ///
+    /// More than sign-out. Sign-out keeps what belongs to the install: the reveal count, the
+    /// licence record, the list of customer organizations, notification choices, the shift
+    /// log. This keeps none of it: all six Keychain items, the alert key, every file the
+    /// app wrote and every setting. Microsoft's SDK removes its own state and ends the
+    /// enrolment itself, so it is not asked to here.
+    ///
+    /// Nothing waits on a person. The one network call tells Kainor's alert service this
+    /// phone has left, while a token can still say so, and gives up after eight seconds.
+    /// Returns whether every store confirmed it.
+    func eraseForOrganization() async -> Bool {
+        var complete = true
+        // Instant alerts first: unregistering needs the sign-in that goes next.
+        await RelayCoordinator.shared.turnOff()
+        // Every sign-in on every registration, with no Microsoft page.
+        await auth?.forgetEveryone()
+        // The rest of the Keychain: the reveal count, the licence record, the customer
+        // organizations, and the notification choices with the break-glass accounts.
+        RevealMeters.live.resetLedger()
+        Entitlements.live.remove()
+        do { try TenantStores.live.clear() } catch { complete = false }
+        do { try AlertsRunner.preferencesStore.clear() } catch { complete = false }
+        // What is held in memory over a file, so nothing writes itself back.
+        await FileShiftLog.shared.clearAll()
+        savedSearches.clear()
+        // Then the files and settings themselves.
+        if !AppProtection.eraseFilesAndSettings() { complete = false }
+        endSession()
+        return complete
     }
 
     private func isSignedIn(as account: AdminAccount) -> Bool {

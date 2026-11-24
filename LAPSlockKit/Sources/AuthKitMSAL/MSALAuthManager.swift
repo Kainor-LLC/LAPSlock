@@ -574,6 +574,14 @@ public actor MSALAuthManager: AuthManaging {
         try await performSignout(app, msalAccount, params)
     }
 
+    /// Removes every cached sign-in on every registration and stops acting as anyone,
+    /// without Microsoft's sign-out page. For an organization's order to remove its data
+    /// from the app, which must not wait on a person or on a network.
+    public func forgetEveryone() {
+        removeAccounts(except: nil, keepingPrimary: false)
+        clearSession()
+    }
+
     private func clearSession() {
         pinnedAccount = nil
         activeTenant = nil

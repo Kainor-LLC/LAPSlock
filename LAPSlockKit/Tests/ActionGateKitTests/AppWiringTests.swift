@@ -246,6 +246,36 @@ final class AppWiringTests: XCTestCase {
 
     // MARK: - a provider's customers move one at a time
 
+    /// Intune can order an organization's data off the device. Everything goes, in an order
+    /// that works: the alert service is told while a token can still say so, then every
+    /// sign-in, then the rest of the Keychain, then files and settings. No Microsoft
+    /// sign-out page is shown, because nothing in a wipe may wait on a person.
+    func testAnOrganizationsWipeRemovesEverythingAndWaitsOnNobody() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let erase = body(of: "func eraseForOrganization() async -> Bool {", in: app)
+        let alerts = try XCTUnwrap(erase.range(of: "await RelayCoordinator.shared.turnOff()"))
+        let signIns = try XCTUnwrap(erase.range(of: "await auth?.forgetEveryone()"))
+        XCTAssertLessThan(alerts.lowerBound, signIns.lowerBound, "unregistering needs the sign-in that goes next")
+        for store in ["RevealMeters.live.resetLedger()", "Entitlements.live.remove()", "try TenantStores.live.clear()",
+                      "try AlertsRunner.preferencesStore.clear()", "await FileShiftLog.shared.clearAll()",
+                      "savedSearches.clear()", "AppProtection.eraseFilesAndSettings()", "endSession()"] {
+            XCTAssertTrue(erase.contains(store), store)
+        }
+        XCTAssertFalse(erase.contains("auth.signOut("), "Microsoft's sign-out page waits on a person")
+        XCTAssertFalse(erase.contains("signingOut("), "the SDK ends the enrolment itself during a wipe")
+        XCTAssertTrue(body(of: "func signOut() async {", in: app).contains("endSession()"), "sign-out and a wipe end the session the same way")
+        XCTAssertTrue(app.contains("AppProtection.shared.wipe = { [weak self] _ in"))
+
+        // Microsoft's SDK is answered only once the data is gone, and never by blocking the
+        // main thread on work the main thread must do.
+        let wrapper = try appSource("AppProtection.swift")
+        let ordered = body(of: "func wipeData(forAccountId accountId: String) -> Bool {", in: wrapper)
+        XCTAssertTrue(ordered.contains("guard !Thread.isMainThread else {"))
+        XCTAssertTrue(ordered.contains("finished.wait(timeout: .now() + 60) == .success && complete.value"))
+        // Its own settings are not the app's to delete.
+        XCTAssertTrue(wrapper.contains("where !Self.isMicrosofts(key)"))
+    }
+
     /// Approval is per organization, so the move to the read-only app is too. Finishing
     /// the update hands the sign-in manager the customers saved on the device, which it
     /// records as still on the earlier sign-in, and the screen says none of them stops.

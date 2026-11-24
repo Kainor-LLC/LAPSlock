@@ -107,6 +107,14 @@ public actor FileShiftLog: ShiftLogging {
         save(load().filter { $0.tenantId != tenantId })
     }
 
+    /// Every organization's lines, and the file. For an organization's order to remove its
+    /// data from the app. The copy kept in memory goes too: deleting the file alone would
+    /// leave the next line written to bring every old one back with it.
+    public func clearAll() {
+        cache = []
+        try? FileManager.default.removeItem(at: url)
+    }
+
     static func render(_ entries: [ShiftLogEntry], tenantId: String, now: Date) -> String {
         var lines = [
             "TenantKeep On-Call shift log",
