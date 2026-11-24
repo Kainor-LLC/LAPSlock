@@ -340,8 +340,10 @@
     read after removal.</p>
     <p><strong>What our service reads.</strong> Read-only access, granted by your organization's approval,
     to exactly this: sign-in log entries for the break-glass accounts your administrator names, and no one
-    else's; directory audit entries about Conditional Access policies; and security incidents in Microsoft
-    Defender XDR. It cannot change anything in your organization. It cannot read local administrator
+    else's; directory audit entries about Conditional Access policies; security incidents in Microsoft
+    Defender XDR; and, when a phone registers, your organization's name, the registering administrator's
+    active roles, and the directory entries of the break-glass accounts named, to find their object IDs.
+    It cannot change anything in your organization. It cannot read local administrator
     passwords, BitLocker recovery keys, mail, files or messages: those permissions are never requested.
     The full permission list is in the
     <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/INSTANT-ALERTS.md">Instant alerts contract</a>.</p>
@@ -361,16 +363,21 @@
     service at that moment, it is deleted when Apple reports its push token as no longer valid, or after
     the 30 days. When your organization removes TenantKeep Watch from Entra ID, everything held for your
     organization is deleted within two days: the service waits until Entra ID has reported the removal
-    for a full day, so that a passing error deletes nothing, and then deletes at its next daily cleanup.</p>
+    for a full day, so that a passing error deletes nothing, and then deletes at its next daily cleanup.
+    When your organization has no registered phones left, everything held for it is deleted at the next
+    daily cleanup.</p>
     <p><strong>What an alert contains.</strong> The kind of event and your organization's name, for example
     "Contoso: break-glass sign-in". Each alert is encrypted on our service for one phone, to a key that
     phone made in its own Secure Enclave, and passed to Apple for delivery. Apple sees only the phone's
     push token and the encrypted alert. When the administrator taps it, the app reads the details itself,
     from Microsoft, as that administrator, exactly as it does today.</p>
     <p><strong>What we can and cannot see.</strong> Our service necessarily knows that an alert of a given
-    kind happened in your organization at a given time, because it creates the alert; it does not keep
-    that fact after the alert is sent. Its logs record counts, durations and the kind of answer Apple or
-    Microsoft gave, never a tenant ID, a push token, an object ID, or anything from your logs.</p>
+    kind happened in your organization at a given time, because it creates the alert. Of that it keeps
+    only what is listed above: the time and identifiers of the last event of each kind, so nothing is
+    announced twice. For break-glass sign-ins that is the time of the last one. Its logs record counts,
+    durations and the kind of answer Apple or Microsoft gave, never a tenant ID, a push token, an object
+    ID, or anything from your logs. Each minute's log line has its time, so with very few organizations a
+    line that counts an alert shows when one was sent.</p>
     <p><strong>Where, and who else.</strong> The service runs in Microsoft Azure, in the Central US region.
     Microsoft (Azure hosts it; Microsoft Graph is where it reads) and Apple (Apple Push Notification
     service delivers the encrypted alert) receive nothing from us beyond what is described here.</p>
