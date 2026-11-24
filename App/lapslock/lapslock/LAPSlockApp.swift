@@ -85,6 +85,15 @@ struct LAPSlockApp: App {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
+        willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // Intune app protection. Microsoft's SDK reads its policy delegate before this returns.
+        AppProtection.shared.start()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         // Alerts while the app is open, and a tap routed to its module.
