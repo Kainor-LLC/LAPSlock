@@ -135,6 +135,21 @@ final class ManagedConfigurationTests: XCTestCase {
         XCTAssertNil(flat["__PolicyId"])
         XCTAssertNil(flat["__IsDefault"])
         XCTAssertNil(flat["odd"])
+    }
+
+    /// Intune configures its own SDK through the same channel, with keys no administrator
+    /// typed. Seen on a phone: two of them listed in Settings as "not a TenantKeep
+    /// setting". Only keys in TenantKeep's families are taken, so those are neither applied
+    /// nor reported, while a mistyped TenantKeep key still is.
+    func test_intunesOwnKeysInTheAppChannelAreNotOurs() {
+        let flat = ManagedConfiguration.flatten([
+            ["DisableMonotonicClock": "true", "com.microsoft.intune.mam.MenuFilterAction": "1", "IntuneMAMUPN": "someone@contoso.com"],
+            ["confirmation.levl": "strict", "appLock.required": "true"]
+        ])
+        XCTAssertEqual(Set(flat.keys), ["confirmation.levl", "appLock.required"])
+        let config = ManagedConfiguration.parse(device: nil, appChannel: flat)
+        XCTAssertTrue(config.appLockRequired)
+        XCTAssertEqual(config.problems, ["confirmation.levl: not a TenantKeep setting"])
         XCTAssertTrue(ManagedConfiguration.flatten(nil).isEmpty)
         XCTAssertTrue(ManagedConfiguration.flatten([]).isEmpty)
     }

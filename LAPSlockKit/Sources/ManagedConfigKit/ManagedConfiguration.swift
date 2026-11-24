@@ -79,17 +79,27 @@ public struct ManagedConfiguration: Sendable, Equatable {
         return parse(merged)
     }
 
+    /// The families TenantKeep's keys belong to. A key from Intune's app channel counts as
+    /// TenantKeep's only when it begins with one of these.
+    public static let keyFamilies = ["modules.", "confirmation.", "groupWrite.", "tenant.", "appLock.", "breakGlass.", "watch."]
+
     /// One dictionary from what Intune's app channel hands over: a list of dictionaries, one
     /// for each configuration policy that reaches the person, the organization-wide default
     /// marked `__IsDefault`. The default goes in first and the targeted policies over it, in
-    /// the order given. Intune's own bookkeeping keys, which begin `__`, are left out, and
-    /// so is any value that is not a string, a number, a boolean or a list of strings.
+    /// the order given.
+    ///
+    /// Only TenantKeep's keys are kept. Intune uses the same channel to configure its own
+    /// SDK, with keys no administrator typed (seen on a phone, 2026-11-24, listed in
+    /// Settings as "not a TenantKeep setting"), and those are not ours to report. A
+    /// mistyped key inside one of TenantKeep's families is still kept, so it is still
+    /// reported. Any value that is not a string, a number, a boolean or a list of strings
+    /// is left out.
     public static func flatten(_ policies: [[String: Any]]?) -> [String: Any] {
         guard let policies else { return [:] }
         func isDefault(_ policy: [String: Any]) -> Bool { policy["__IsDefault"].flatMap(bool) ?? false }
         var flat: [String: Any] = [:]
         for policy in policies.filter(isDefault) + policies.filter({ !isDefault($0) }) {
-            for (key, value) in policy where !key.hasPrefix("__") {
+            for (key, value) in policy where keyFamilies.contains(where: { key.hasPrefix($0) }) {
                 if value is String || value is NSNumber || value is [String] { flat[key] = value }
             }
         }

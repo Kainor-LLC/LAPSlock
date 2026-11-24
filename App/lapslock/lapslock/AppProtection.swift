@@ -126,6 +126,7 @@ final class AppProtection {
 
     private let bridge = Bridge()
     @ObservationIgnored private var observers: [any NSObjectProtocol] = []
+    @ObservationIgnored private var lastSeen = ""
 
     private init() {}
 
@@ -176,11 +177,20 @@ final class AppProtection {
         let defaults = UserDefaults.standard
         let key = ManagedConfiguration.appChannelDefaultsKey
         var fromAppChannel: [String: Any] = [:]
+        var arrived: Set<String> = []
         if let enrolled {
-            let policies = IntuneMAMAppConfigManager.instance().appConfig(forAccountId: enrolled).fullData
-            fromAppChannel = ManagedConfiguration.flatten(policies?.map { policy in
+            let policies = IntuneMAMAppConfigManager.instance().appConfig(forAccountId: enrolled).fullData?.map { policy in
                 Dictionary(uniqueKeysWithValues: policy.compactMap { key, value in (key as? String).map { ($0, value) } })
-            })
+            }
+            for policy in policies ?? [] { arrived.formUnion(policy.keys) }
+            fromAppChannel = ManagedConfiguration.flatten(policies)
+        }
+        let seen = "policy " + (managed ? "in force" : "none") + ", notifications " + detail.rawValue
+            + ", configuration keys kept " + fromAppChannel.keys.sorted().joined(separator: " ")
+            + ", arrived " + arrived.sorted().joined(separator: " ")
+        if seen != lastSeen {
+            lastSeen = seen
+            Bridge.trace(seen)
         }
         let held = defaults.dictionary(forKey: key) ?? [:]
         if !NSDictionary(dictionary: held).isEqual(to: fromAppChannel) {
