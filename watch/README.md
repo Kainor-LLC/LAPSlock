@@ -44,14 +44,14 @@ az login --tenant kainor.com
 az account set --subscription KainorLLC
 ```
 
-2. The resources. Note `functionPrincipalId` and `vaultName` from the output.
+2. The resources. Note `functionPrincipalId` and `vaultName` from the output. This first deployment is the only one that passes `none`: nothing it names exists yet.
 
 ```
 az group create --name kainor-watch-prod-rg --location centralus
-az deployment group create --resource-group kainor-watch-prod-rg --template-file watch/infra/main.bicep --parameters budgetEmail=connor@kainor.com
+az deployment group create --resource-group kainor-watch-prod-rg --template-file watch/infra/main.bicep --parameters budgetEmail=connor@kainor.com watchClientId=none alertsApiAudience=none relayServiceAudience=none noLocationRuleId=none
 ```
 
-3. The two Entra apps and the On-Call app's new permission. Read the plan it prints, then run it again with `-Apply`. It prints `watchClientId` and `alertsApiAudience`.
+3. The Entra app. Read the plan it prints, then run it again with `-Apply`. It prints `watchClientId` and `alertsApiAudience`, which is TenantKeep Alerts' client ID, bare. Phones present tokens for that registration, which `tools/setup/New-OnCallApps.ps1` makes.
 
 ```
 pwsh ./watch/infra/New-WatchApps.ps1 -FunctionPrincipalId <functionPrincipalId>
@@ -61,7 +61,7 @@ pwsh ./watch/infra/New-WatchApps.ps1 -FunctionPrincipalId <functionPrincipalId> 
 4. The resources again, with the two values.
 
 ```
-az deployment group create --resource-group kainor-watch-prod-rg --template-file watch/infra/main.bicep --parameters budgetEmail=connor@kainor.com watchClientId=<watchClientId> alertsApiAudience=<alertsApiAudience>
+az deployment group create --resource-group kainor-watch-prod-rg --template-file watch/infra/main.bicep --parameters budgetEmail=connor@kainor.com watchClientId=<watchClientId> alertsApiAudience=<alertsApiAudience> relayServiceAudience=none noLocationRuleId=none
 ```
 
 5. The sender key. Give yourself Key Vault Secrets Officer on the vault for this step only, then take it away.
@@ -79,7 +79,16 @@ pwsh ./watch/infra/New-RelayServiceTrust.ps1
 pwsh ./watch/infra/New-RelayServiceTrust.ps1 -Apply
 ```
 
-Any later deployment of `main.bicep` must pass `watchClientId`, `alertsApiAudience` and `relayServiceAudience=<relayAudience>` together: the template writes every setting, and one left out is written empty.
+7. The rule that keeps locations out of the log: `pwsh ./watch/infra/Set-LogLocationBlanking.ps1 -ResourceGroup kainor-watch-prod-rg -Workspace kainor-watch-prod-law`. It prints nothing to keep; the rule's ID is read below.
+
+Every later deployment of `main.bicep` passes all four of its app parameters, as they are now. The template writes every setting, and since 2026-11-24 it refuses to run without them: one left out was written empty, which stopped the service, or sent its alerts to a route that refuses them, or dropped the log rule. Read the values first:
+
+```
+az functionapp config appsettings list --name kainor-watch-prod-func --resource-group kainor-watch-prod-rg --query "[?name=='WATCH_CLIENT_ID' || name=='ALERTS_API_AUDIENCE' || name=='RELAY_SERVICE_AUDIENCE']" --output table
+az monitor log-analytics workspace show --resource-group kainor-watch-prod-rg --workspace-name kainor-watch-prod-law --query defaultDataCollectionRuleResourceId --output tsv
+```
+
+`ALERTS_API_AUDIENCE` holds bare client IDs, comma separated. A token's audience is the bare client ID of the registration it was issued for, so an `api://` form there refuses every phone.
 
 ## Publishing the Code
 
