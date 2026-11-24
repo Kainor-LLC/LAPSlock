@@ -20,7 +20,7 @@
 	<key>IntuneMAMSettings</key>
 	<dict>
 		<key>ADALClientId</key>
-		<string>e5b148e7-9689-40b2-9b09-9d0bef133049</string>
+		<string>eaea8770-7305-4806-ae1c-7a03d2ef28fe</string>
 		<key>ADALLogOverrideDisabled</key>
 		<true/>
 		<key>ADALRedirectUri</key>

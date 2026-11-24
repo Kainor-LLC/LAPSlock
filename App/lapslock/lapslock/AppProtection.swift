@@ -1,4 +1,5 @@
 import Foundation
+import AuthKit
 import IntuneMAMSwift
 
 // Intune App Protection.
@@ -89,30 +90,63 @@ final class AppProtection {
         IntuneMAMPolicyManager.instance().isAccountIdManaged(objectId)
     }
 
-    /// After sign-in, and after a restored session. Asks Intune whether a policy is targeted
-    /// at this person. Safe to call again: the SDK ignores an account it already knows.
+    /// Whether `resource`, as the SDK names it when it asks for a token, is the service the
+    /// App Protection registration holds its permission on. Anything else gets no token.
+    nonisolated static func isAppManagement(_ resource: String) -> Bool {
+        var asked = resource.trimmingCharacters(in: .whitespaces).lowercased()
+        while asked.hasSuffix("/") { asked.removeLast() }
+        return asked == AppRegistration.appManagementResource.lowercased()
+    }
+
+    /// Once the person has a sign-in on the App Protection registration. Asks Intune
+    /// whether a policy is targeted at them.
     func signedIn(objectId: String) {
-        if isManaged(objectId: objectId) {
-            state = .managed
-        } else {
-            state = .checking
+        let manager = IntuneMAMEnrollmentManager.instance()
+        if Self.holds(manager.enrolledAccountIds(), objectId) {
+            // Intune already answered for this person; the SDK refreshes that by itself.
+            state = isManaged(objectId: objectId) ? .managed : .notTargeted
+            return
         }
-        IntuneMAMEnrollmentManager.instance().registerAndEnrollAccountId(objectId)
+        state = .checking
+        if Self.holds(manager.registeredAccountIds(), objectId) {
+            // Known but never enrolled: the SDK would try again once a day. Start over, so
+            // the token it could not get last time is asked for now.
+            manager.deRegisterAndUnenrollAccountId(objectId, withWipe: false)
+        }
+        manager.registerAndEnrollAccountId(objectId)
+    }
+
+    /// Signed in, with no sign-in on the App Protection registration. Intune is not asked.
+    func notSignedIn() {
+        state = .needsSignIn
     }
 
     /// Before the account's tokens are deleted: the SDK needs one to tell Intune.
     /// The app removes its own data at sign-out, so the SDK is not asked to.
+    ///
+    /// Microsoft documents the call as blocking until its token arrives. Sign-out must not
+    /// wait on Microsoft, so it is given ten seconds and then sign-out carries on.
     func signingOut(objectId: String) async {
-        let manager = IntuneMAMEnrollmentManager.instance()
-        guard (manager.registeredAccountIds() as? [String] ?? []).contains(where: { $0.caseInsensitiveCompare(objectId) == .orderedSame }) else {
-            state = .idle
-            return
+        defer { state = .idle }
+        guard Self.holds(IntuneMAMEnrollmentManager.instance().registeredAccountIds(), objectId) else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let finished = Locked(false)
+            let finish: @Sendable () -> Void = {
+                if !finished.swap(true) { continuation.resume() }
+            }
+            Task.detached(priority: .userInitiated) {
+                IntuneMAMEnrollmentManager.instance().deRegisterAndUnenrollAccountId(objectId, withWipe: false)
+                finish()
+            }
+            Task.detached {
+                try? await Task.sleep(for: .seconds(10))
+                finish()
+            }
         }
-        // Microsoft documents this call as blocking until its token arrives.
-        await Task.detached(priority: .userInitiated) {
-            manager.deRegisterAndUnenrollAccountId(objectId, withWipe: false)
-        }.value
-        state = .idle
+    }
+
+    private static func holds(_ accounts: [Any], _ objectId: String) -> Bool {
+        accounts.contains { ($0 as? String)?.caseInsensitiveCompare(objectId) == .orderedSame }
     }
 }
 
@@ -124,6 +158,13 @@ private nonisolated final class Locked<Value>: @unchecked Sendable {
     var value: Value {
         get { lock.lock(); defer { lock.unlock() }; return stored }
         set { lock.lock(); defer { lock.unlock() }; stored = newValue }
+    }
+    /// Stores `new` and returns what was there, as one step.
+    func swap(_ new: Value) -> Value {
+        lock.lock(); defer { lock.unlock() }
+        let old = stored
+        stored = new
+        return old
     }
 }
 
@@ -141,7 +182,9 @@ private nonisolated final class Bridge: NSObject, IntuneMAMEnrollmentDelegate, I
         nonisolated(unsafe) let completion = completion
         Task.detached {
             let answer = IntuneMAMEnrollmentToken()
-            if let token = await source?(oid, resource) {
+            let token = await source?(oid, resource)
+            Self.trace("token asked for " + resource + ": " + (token == nil ? "none to give" : "given"))
+            if let token {
                 answer.accessToken = token.accessToken
                 answer.upn = token.username
                 answer.oid = token.objectId
@@ -158,17 +201,32 @@ private nonisolated final class Bridge: NSObject, IntuneMAMEnrollmentDelegate, I
     // MARK: Outcomes
 
     func enrollmentRequest(with status: IntuneMAMEnrollmentStatus) {
+        Self.trace("enrolment", status)
         report?(Self.state(for: status))
     }
 
     func policyRequest(with status: IntuneMAMEnrollmentStatus) {
+        Self.trace("policy", status)
         // A refresh that changed nothing says nothing new about whether a policy is in force.
         guard status.statusCode != .policiesHaveNotChanged else { return }
         report?(Self.state(for: status))
     }
 
     func unenrollRequest(with status: IntuneMAMEnrollmentStatus) {
+        Self.trace("unenrolment", status)
         report?(.idle)
+    }
+
+    /// Debug builds only, like the MSAL log: Microsoft's status number and its own words,
+    /// which name the account, so never in a build anyone else runs.
+    static func trace(_ what: String, _ status: IntuneMAMEnrollmentStatus? = nil) {
+        #if DEBUG
+        if let status {
+            print("[AppProtection] " + what + ": status \(status.statusCode.rawValue), succeeded \(status.didSucceed), " + (status.errorString ?? "no detail"))
+        } else {
+            print("[AppProtection] " + what)
+        }
+        #endif
     }
 
     static func state(for status: IntuneMAMEnrollmentStatus) -> AppProtectionState {

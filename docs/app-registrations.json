@@ -1,5 +1,5 @@
 {
-  "about": "The Microsoft Entra app registrations TenantKeep On-Call signs in through, and the delegated Microsoft Graph permissions it asks each one for. Published for the consent page and for TenantKeep Posture, which shares the read registration. A test in LAPSlockKit holds this file and the app's code together. For the read registration, the list is On-Call's share: TenantKeep Posture may hold further read permissions on it. For writes an organization approves either the separate registrations it wants or the one named TenantKeep Actions, which holds all of them; where both are approved the separate one is used.",
+  "about": "The Microsoft Entra app registrations TenantKeep On-Call signs in through, and the delegated permissions it asks each one for: Microsoft Graph permissions in scopes, a scope the registration defines itself in ownScopes, and a permission on another Microsoft service, written with the service in front, in serviceScopes. Published for the consent page and for TenantKeep Posture, which shares the read registration. A test in LAPSlockKit holds this file and the app's code together. For the read registration, the list is On-Call's share: TenantKeep Posture may hold further read permissions on it. For writes an organization approves either the separate registrations it wants or the one named TenantKeep Actions, which holds all of them; where both are approved the separate one is used. TenantKeep App Protection is only for an organization that applies an Intune app protection policy to the app.",
   "resource": "https://graph.microsoft.com",
   "consentPage": "https://tenantkeep.app/consent/",
   "registrations": [
@@ -36,7 +36,8 @@
         "PrivilegedEligibilitySchedule.Read.AzureADGroup",
         "RoleManagementPolicy.Read.AzureADGroup"
       ],
-      "ownScopes": []
+      "ownScopes": [],
+      "serviceScopes": []
     },
     {
       "key": "actions",
@@ -57,7 +58,8 @@
         "UserAuthMethod-TAP.ReadWrite.All",
         "GroupMember.ReadWrite.All"
       ],
-      "ownScopes": []
+      "ownScopes": [],
+      "serviceScopes": []
     },
     {
       "key": "roleActivation",
@@ -69,7 +71,8 @@
         "RoleAssignmentSchedule.ReadWrite.Directory",
         "PrivilegedAssignmentSchedule.ReadWrite.AzureADGroup"
       ],
-      "ownScopes": []
+      "ownScopes": [],
+      "serviceScopes": []
     },
     {
       "key": "deviceActions",
@@ -81,7 +84,8 @@
         "DeviceManagementManagedDevices.PrivilegedOperations.All",
         "DeviceManagementManagedDevices.ReadWrite.All"
       ],
-      "ownScopes": []
+      "ownScopes": [],
+      "serviceScopes": []
     },
     {
       "key": "userActions",
@@ -95,7 +99,8 @@
         "User.Read.All",
         "IdentityRiskyUser.ReadWrite.All"
       ],
-      "ownScopes": []
+      "ownScopes": [],
+      "serviceScopes": []
     },
     {
       "key": "accountRecovery",
@@ -107,7 +112,8 @@
         "UserAuthenticationMethod.ReadWrite.All",
         "UserAuthMethod-TAP.ReadWrite.All"
       ],
-      "ownScopes": []
+      "ownScopes": [],
+      "serviceScopes": []
     },
     {
       "key": "groupMembership",
@@ -118,7 +124,8 @@
       "scopes": [
         "GroupMember.ReadWrite.All"
       ],
-      "ownScopes": []
+      "ownScopes": [],
+      "serviceScopes": []
     },
     {
       "key": "alerts",
@@ -129,6 +136,19 @@
       "scopes": [],
       "ownScopes": [
         "api://d7c387b7-8e67-4957-bc67-4b71824a60ea/Alerts.Register"
+      ],
+      "serviceScopes": []
+    },
+    {
+      "key": "appProtection",
+      "name": "TenantKeep App Protection",
+      "clientId": "eaea8770-7305-4806-ae1c-7a03d2ef28fe",
+      "readOnly": false,
+      "summary": "Lets your organization's Intune app protection policy apply to TenantKeep on a phone that is not enrolled. It has no access to Microsoft Graph.",
+      "scopes": [],
+      "ownScopes": [],
+      "serviceScopes": [
+        "https://msmamservice.api.application/DeviceManagementManagedApps.ReadWrite"
       ]
     }
   ]

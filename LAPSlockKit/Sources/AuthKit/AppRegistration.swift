@@ -44,6 +44,12 @@ public enum AppRegistration: String, CaseIterable, Sendable {
     case groupMembership
     /// No Microsoft Graph permission. Its one scope registers a phone for Instant alerts.
     case alerts
+    /// No Microsoft Graph permission. Its one permission, on Microsoft's Mobile Application
+    /// Management service, lets Microsoft's Intune App SDK enrol the app for a person whose
+    /// organization targets it with an app protection policy. On a registration of its own
+    /// because the permission's name is not a read, and the read registration holds reads
+    /// only. An organization that does not use app protection never approves it.
+    case appProtection
 
     /// The registrations that each hold one kind of write.
     public static let separateWrites: [AppRegistration] =
@@ -60,6 +66,7 @@ public enum AppRegistration: String, CaseIterable, Sendable {
         case .accountRecovery: return "0bd2d07f-98fd-45c3-8b88-62752bc1dd6b"
         case .groupMembership: return "8642d2ad-9722-42c5-959c-3058a3cc1f60"
         case .alerts:          return "d7c387b7-8e67-4957-bc67-4b71824a60ea"
+        case .appProtection:   return "eaea8770-7305-4806-ae1c-7a03d2ef28fe"
         }
     }
 
@@ -74,6 +81,7 @@ public enum AppRegistration: String, CaseIterable, Sendable {
         case .accountRecovery: return "TenantKeep Account Recovery"
         case .groupMembership: return "TenantKeep Group Membership"
         case .alerts:          return "TenantKeep Alerts"
+        case .appProtection:   return "TenantKeep App Protection"
         }
     }
 
@@ -96,6 +104,8 @@ public enum AppRegistration: String, CaseIterable, Sendable {
             return "Adds and removes group members."
         case .alerts:
             return "Registers a phone to receive Instant alerts. It has no access to Microsoft Graph."
+        case .appProtection:
+            return "Lets your organization's Intune app protection policy apply to TenantKeep on a phone that is not enrolled. It has no access to Microsoft Graph."
         }
     }
 
@@ -174,7 +184,7 @@ public enum AppRegistration: String, CaseIterable, Sendable {
             ]
         case .groupMembership:
             return ["GroupMember.ReadWrite.All"]
-        case .alerts:
+        case .alerts, .appProtection:
             return []
         }
     }
@@ -184,11 +194,22 @@ public enum AppRegistration: String, CaseIterable, Sendable {
         self == .alerts ? ["api://" + clientId + "/Alerts.Register"] : []
     }
 
+    /// Microsoft's Mobile Application Management service, which Intune app protection
+    /// answers from. Not Microsoft Graph, and nothing in a tenant's directory is behind it.
+    public static let appManagementResource = "https://msmamservice.api.application"
+
+    /// Permissions this registration holds on a Microsoft service other than Graph, with
+    /// the service in front. One exists: the permission Microsoft's Intune App SDK needs,
+    /// which reads and writes the signed-in person's own app management record.
+    public var serviceScopes: [String] {
+        self == .appProtection ? [Self.appManagementResource + "/DeviceManagementManagedApps.ReadWrite"] : []
+    }
+
     /// What a token for this registration is asked for by name: its Graph permissions
-    /// with the resource in front, then its own scopes. For consent links, which must name
-    /// their scopes and never use `.default`.
+    /// with the resource in front, then its own scopes and those on another service. For
+    /// consent links, which must name their scopes and never use `.default`.
     public var qualifiedScopes: [String] {
-        scopes.map { "https://graph.microsoft.com/" + $0 } + ownScopes
+        scopes.map { "https://graph.microsoft.com/" + $0 } + ownScopes + serviceScopes
     }
 }
 
@@ -230,7 +251,7 @@ public enum ScopeRouter {
     }
 
     /// The registration that holds every scope in `scopes`: `.read`, one of the separate
-    /// write registrations, or `.alerts`. Never `.actions`; whether that one stands in for
+    /// write registrations, `.alerts` or `.appProtection`. Never `.actions`; whether that one stands in for
     /// a separate registration is the organization's choice, applied by `RegistrationRoute`.
     ///
     /// A request the read registration can satisfy always belongs to it, so a read never
@@ -242,12 +263,14 @@ public enum ScopeRouter {
             .filter { !protocolScopes.contains($0) }
         guard !wanted.isEmpty else { throw RoutingError.noScopes }
 
-        // A registration's own scope, api://{client id}/{name}, belongs to that registration.
-        let own = wanted.filter { $0.hasPrefix(ownPrefix) }
+        // A registration's own scope, api://{client id}/{name}, belongs to that registration,
+        // and so does a permission on a service other than Graph. Each is matched whole:
+        // a name the registration does not hold is unknown, never close enough.
+        let own = wanted.filter { $0.hasPrefix(ownPrefix) || $0.hasPrefix(servicePrefix) }
         if !own.isEmpty {
             guard own.count == wanted.count else { throw RoutingError.mixedRegistrations(scopes) }
             let owners = AppRegistration.allCases.filter { registration in
-                let defined = Set(registration.ownScopes.map { $0.lowercased() })
+                let defined = Set((registration.ownScopes + registration.serviceScopes).map { $0.lowercased() })
                 return own.allSatisfy(defined.contains)
             }
             guard let owner = owners.first else { throw RoutingError.unknownScope(original(of: own[0], in: scopes) ?? own[0]) }
@@ -299,6 +322,7 @@ public enum ScopeRouter {
 
     private static let graphPrefix = "https://graph.microsoft.com/"
     private static let ownPrefix = "api://"
+    private static let servicePrefix = AppRegistration.appManagementResource.lowercased() + "/"
     /// Sign-in protocol scopes, which every registration answers and MSAL adds itself.
     private static let protocolScopes: Set<String> = ["openid", "profile", "offline_access", "email"]
 

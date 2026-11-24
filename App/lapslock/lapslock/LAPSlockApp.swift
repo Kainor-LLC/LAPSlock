@@ -585,8 +585,10 @@ final class AppRootModel {
 
         guard auth == nil else { return }
         do {
-            auth = try MSALAuthManager(config: .vendorDefault)
-            SessionAuth.shared.auth = auth
+            let made = try MSALAuthManager(config: .vendorDefault)
+            auth = made
+            SessionAuth.shared.auth = made
+            connectAppProtection(to: made)
         } catch {
             signInError = "TenantKeep couldn't start its sign-in system. Reinstalling the app usually fixes this."
         }
@@ -617,6 +619,7 @@ final class AppRootModel {
         AlertsRunner.unpauseAll()
         recomputeEntitlement()
         Task { await settleAllWriteRoutes() }
+        Task { await settleAppProtection(for: account) }
         await refreshTenants()
     }
 
@@ -651,6 +654,7 @@ final class AppRootModel {
             AlertsRunner.unpauseAll()
             recomputeEntitlement()
             Task { await settleAllWriteRoutes() }
+            Task { await settleAppProtection(for: account) }
         } catch let error as AuthError {
             // Consent problems get a recovery path, not just an error (§8).
             if let state = ConsentDiagnostics.state(from: error) {
@@ -734,6 +738,10 @@ final class AppRootModel {
         // Before the sign-in goes: unregistering from Instant alerts needs it.
         await RelayCoordinator.shared.turnOffForSignOut()
         if case .live(let account) = mode, let auth {
+            // Before the tokens go: Microsoft's SDK needs one to tell Intune the account left.
+            if let objectId = account.objectId {
+                await AppProtection.shared.signingOut(objectId: objectId)
+            }
             try? await auth.signOut(account: account)
         }
         // Tenant-scoped data must not survive an account change (§7). Dropping the session
@@ -748,6 +756,81 @@ final class AppRootModel {
         mode = .signedOut
         consentState = nil
         recomputeEntitlement()
+    }
+
+    // MARK: - Intune App Protection
+
+    /// Gives Microsoft's SDK the one thing it asks the app for: a token for the Mobile
+    /// Application Management service. Silently, for the person signed in, in their own
+    /// organization, through the App Protection registration. Anything else is "none",
+    /// and the SDK then enrols nobody.
+    private func connectAppProtection(to auth: MSALAuthManager) {
+        AppProtection.shared.tokenSource = { objectId, resource in
+            guard AppProtection.isAppManagement(resource),
+                  let account = await auth.currentAccount,
+                  account.objectId?.caseInsensitiveCompare(objectId) == .orderedSame,
+                  let token = try? await auth.silentToken(
+                    scopes: AppRegistration.appProtection.serviceScopes, tenantId: account.tenantId)
+            else { return nil }
+            return AppProtectionToken(
+                accessToken: token, username: account.username, objectId: objectId, tenantId: account.tenantId)
+        }
+    }
+
+    private func isSignedIn(as account: AdminAccount) -> Bool {
+        if case .live(let now) = mode { return now.id == account.id }
+        return false
+    }
+
+    /// Intune app protection for the person who has just signed in or been restored.
+    ///
+    /// With a sign-in on the App Protection registration already on this device, Intune is
+    /// asked at once whether a policy is targeted at them. Without one, nobody is sent to a
+    /// sign-in their organization may never have approved: the app reads what the
+    /// organization approved for everyone, and signs in only when that registration is
+    /// there. When it is not, or cannot be read, the row in Settings is the way in.
+    private func settleAppProtection(for account: AdminAccount) async {
+        guard let auth, let objectId = account.objectId else { return }
+        let enrol = AppRegistration.appProtection.serviceScopes
+        if (try? await auth.silentToken(scopes: enrol, tenantId: account.tenantId)) != nil {
+            if isSignedIn(as: account) { AppProtection.shared.signedIn(objectId: objectId) }
+            return
+        }
+        guard let session = liveSession,
+              session.tenantId.caseInsensitiveCompare(account.tenantId) == .orderedSame,
+              ApprovalProbe.approvedInFull(
+                .appProtection,
+                approved: await ApprovalProbe(graph: session.graph).approvedScopes(for: [.appProtection]))
+        else {
+            if isSignedIn(as: account) { AppProtection.shared.notSignedIn() }
+            return
+        }
+        guard isSignedIn(as: account) else { return }
+        _ = await turnOnAppProtection()
+    }
+
+    /// Signs the person already signed in into the App Protection registration, then asks
+    /// Intune whether a policy is targeted at them. Nil, or a sentence the screen can show.
+    func turnOnAppProtection() async -> String? {
+        guard let auth, case .live(let account) = mode, let objectId = account.objectId else { return "Sign in first." }
+        guard (operatingTenantId ?? account.tenantId).caseInsensitiveCompare(account.tenantId) == .orderedSame else {
+            return "Switch back to your own organization first. App protection comes from the organization you signed in to."
+        }
+        do {
+            _ = try await auth.token(scopes: AppRegistration.appProtection.serviceScopes, allowInteractive: true)
+        } catch let error as AuthError {
+            if case .differentAccount = error { return Self.differentAccountMessage }
+            if ConsentDiagnostics.state(from: error) != nil { return Self.approvalNeeded(.appProtection) }
+            if case .userCancelled = error {
+                return "Sign-in wasn't completed. If Microsoft said approval is needed: " + Self.approvalNeeded(.appProtection)
+            }
+            return "Couldn't sign in to TenantKeep App Protection. Check your connection and try again."
+        } catch {
+            return "Couldn't sign in to TenantKeep App Protection. Check your connection and try again."
+        }
+        guard isSignedIn(as: account) else { return nil }
+        AppProtection.shared.signedIn(objectId: objectId)
+        return nil
     }
 
     /// The scope a phone presents to Kainor's alert service, defined by the TenantKeep
@@ -1614,6 +1697,7 @@ struct AppRootView: View {
                             endSession: { await root.signOut() },
                             requestPrivilegedConsent: { await root.requestPrivilegedActivationConsent() },
                             requestUserNamesConsent: { await root.requestUserNamesConsent() },
+                            turnOnAppProtection: { await root.turnOnAppProtection() },
                             requestMacOSRevealConsent: { await root.requestMacOSRevealConsent() },
                             registrations: SettingsRegistrations(
                                 waiting: root.updateWaiting,

@@ -72,12 +72,28 @@ final class AppRegistrationTests: XCTestCase {
         }
     }
 
+    /// Intune app protection needs one permission, and it is not on Microsoft Graph. It
+    /// lives on a registration that holds nothing else, so approving it gives TenantKeep
+    /// nothing in the directory, and the read registration stays reads only.
+    func testTheAppProtectionRegistrationHoldsOnePermissionAndNothingOnGraph() {
+        XCTAssertTrue(AppRegistration.appProtection.scopes.isEmpty)
+        XCTAssertTrue(AppRegistration.appProtection.ownScopes.isEmpty)
+        XCTAssertEqual(AppRegistration.appProtection.serviceScopes,
+                       ["https://msmamservice.api.application/DeviceManagementManagedApps.ReadWrite"])
+        XCTAssertFalse(AppRegistration.appProtection.isReadOnly)
+        XCTAssertFalse(AppRegistration.separateWrites.contains(.appProtection))
+        for registration in AppRegistration.allCases where registration != .appProtection {
+            XCTAssertTrue(registration.serviceScopes.isEmpty, registration.rawValue)
+        }
+    }
+
     func testConsentScopesAreNamedInFullAndNeverDefault() {
         for registration in AppRegistration.allCases {
             XCTAssertFalse(registration.qualifiedScopes.isEmpty, registration.rawValue)
             for scope in registration.qualifiedScopes {
                 XCTAssertFalse(scope.hasSuffix(".default"), scope)
-                XCTAssertTrue(scope.hasPrefix("https://graph.microsoft.com/") || scope.hasPrefix("api://"), scope)
+                XCTAssertTrue(scope.hasPrefix("https://graph.microsoft.com/") || scope.hasPrefix("api://")
+                              || scope.hasPrefix(AppRegistration.appManagementResource + "/"), scope)
             }
         }
     }
@@ -165,6 +181,28 @@ final class AppRegistrationTests: XCTestCase {
 
     /// Scopes name the registration they belong to; the combined registration is never
     /// that. It only ever stands in, when an organization's route says so.
+    func testTheAppManagementPermissionBelongsToAppProtection() throws {
+        let enrol = try XCTUnwrap(AppRegistration.appProtection.serviceScopes.first)
+        XCTAssertEqual(try ScopeRouter.registration(for: [enrol]), .appProtection)
+        XCTAssertEqual(try ScopeRouter.registration(for: [enrol.uppercased(), "openid"]), .appProtection)
+        // Matched whole: everything the service would give, or a name nobody holds, is unknown.
+        for other in [AppRegistration.appManagementResource + "/.default",
+                      AppRegistration.appManagementResource + "/DeviceManagementManagedApps.Read"] {
+            XCTAssertThrowsError(try ScopeRouter.registration(for: [other])) { error in
+                XCTAssertEqual(error as? ScopeRouter.RoutingError, .unknownScope(other))
+            }
+        }
+        // And it never shares a token with a read or a write.
+        for companion in ["Device.Read.All", "GroupMember.ReadWrite.All"] {
+            XCTAssertThrowsError(try ScopeRouter.registration(for: [enrol, companion])) { error in
+                XCTAssertEqual(error as? ScopeRouter.RoutingError, .mixedRegistrations([enrol, companion]))
+            }
+        }
+        // Whatever an organization chose for its writes, this goes through its own registration.
+        let route = RegistrationRoute(combined: Set(AppRegistration.separateWrites), readsThroughOriginal: true)
+        XCTAssertEqual(route.client(for: .appProtection), .appProtection)
+    }
+
     func testScopesNeverBelongToTheCombinedRegistration() throws {
         for registration in AppRegistration.separateWrites {
             XCTAssertEqual(try ScopeRouter.registration(for: registration.scopes), registration)
@@ -268,6 +306,7 @@ final class AppRegistrationTests: XCTestCase {
             XCTAssertEqual(entry["readOnly"] as? Bool, registration.isReadOnly, key)
             XCTAssertEqual(entry["scopes"] as? [String], registration.scopes, key)
             XCTAssertEqual(entry["ownScopes"] as? [String], registration.ownScopes, key)
+            XCTAssertEqual(entry["serviceScopes"] as? [String], registration.serviceScopes, key)
         }
     }
 
