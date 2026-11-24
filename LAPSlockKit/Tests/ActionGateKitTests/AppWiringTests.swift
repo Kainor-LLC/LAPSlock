@@ -522,4 +522,11 @@ final class AppWiringTests: XCTestCase {
         let view = try String(contentsOf: root.appendingPathComponent("App/lapslock/TenantKeepMac/MacMenuView.swift"), encoding: .utf8)
         XCTAssertTrue(view.contains("let shown = Tab.allCases.filter { $0 != .roles || !model.privilegedAccessOff }"))
     }
+
+    /// The scripted reveal for screenshots opens a credential, so it runs on demo data only.
+    func testTheScriptedRevealRunsOnDemoDataOnly() throws {
+        let detail = try appSource("DeviceDetailView.swift")
+        XCTAssertTrue(detail.contains("if ScreenshotRoute.requestedInDemo == \"reveal\" { await model.reveal() }"))
+        XCTAssertFalse(detail.contains("ScreenshotRoute.requested == \"reveal\""))
+    }
 }
