@@ -54,7 +54,14 @@ final class WatchModel: NSObject {
                 once.resume(WatchBridge.decode(WatchReply.self, from: answer)
                             ?? WatchReply(outcome: .failed, message: "Update TenantKeep on your iPhone."))
             }, errorHandler: { _ in
-                once.resume(WatchReply(outcome: .failed, message: "Your iPhone didn't answer. Try again."))
+                // A decision or an activation may have been made by the phone before the
+                // answer was lost (second review, R2-23).
+                switch request {
+                case .refresh:
+                    once.resume(WatchReply(outcome: .failed, message: "Your iPhone didn't answer. Try again."))
+                case .decide, .activate:
+                    once.resume(WatchReply(outcome: .failed, message: "Your iPhone didn't answer in time. It may have done it: check on your iPhone before trying again."))
+                }
             })
         }
         if let fresh = reply.glance {

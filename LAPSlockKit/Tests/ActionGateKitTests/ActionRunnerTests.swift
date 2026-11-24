@@ -355,4 +355,41 @@ final class ActionRunnerTests: XCTestCase {
         XCTAssertEqual(ActionRunner.word(for: .failed(.transport(status: 403))), "failed: transport", "Microsoft answered: a refusal")
         XCTAssertEqual(ActionRunner.word(for: .failed(.badRequest(code: "x"))), "failed: bad request x")
     }
+
+    // Second review, R2-21, from the reader's probe: a write handed to the network when the
+    // session ends may have reached Microsoft, and is not shown or logged as cancelled.
+    func test_aWriteOnTheWireWhenTheSessionEndsIsNotKnownNotCancelled() async throws {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [HoldOpen.self]
+        let session = URLSession(configuration: cfg)
+        let graph = GraphClient(auth: RecordingAuth(), session: session, retryPolicy: .none, tracer: GraphResponseTracer(), sleep: { _ in })
+        let log = InMemoryShiftLog()
+        let runner = ActionRunner(graph: graph, gate: StubGate(active: nil), log: log, tenantId: { "t" })
+        let wipe = WriteAction(id: "device.wipe", title: "Wipe", tier: .destructive,
+                               target: ActionTarget(label: "LT-1", id: "d-1"),
+                               request: GraphRequest(method: .post, path: "/deviceManagement/managedDevices/d-1/wipe", scopes: ["x"]),
+                               successCopy: "Wipe requested.")
+        HoldOpen.reset()
+        async let outcome = runner.run(wipe, checkingRoles: false)
+        while HoldOpen.started == 0 { try await Task.sleep(for: .milliseconds(20)) }
+        session.invalidateAndCancel()
+        let result = await outcome
+        XCTAssertEqual(result, .failed(.transport(status: 0)))
+        if case .failed(let failure) = result {
+            XCTAssertTrue(failure.mayHaveHappened)
+            XCTAssertTrue(failure.description.contains("may still have arrived"), failure.description)
+        }
+        let words = await log.entries(tenantId: "t").map(\.outcome)
+        XCTAssertEqual(words, ["not known: no answer"])
+    }
+}
+
+/// Holds every request open, as one handed to the network and waiting for an answer.
+private final class HoldOpen: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var started = 0
+    static func reset() { started = 0 }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() { Self.started += 1 }
+    override func stopLoading() {}
 }
