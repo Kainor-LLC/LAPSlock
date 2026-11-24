@@ -634,6 +634,7 @@ struct SettingsView: View {
     /// It exists because testing anything about metering otherwise means waiting out a
     /// 30 day window or reinstalling, and reinstalling does not help, the ledger lives
     /// in the Keychain and survives deletion, which is verified behaviour.
+    @ViewBuilder
     private var debugSection: some View {
         Section {
             LabeledContent("Ledger", value: "\(meterTotal - remainingReveals) of \(meterTotal) used")
@@ -646,6 +647,14 @@ struct SettingsView: View {
             Text("Debug")
         } footer: {
             Text("Compiled out of Release builds entirely.")
+        }
+        // CAE-PLAN.md, step 0, on the branch cae-measure only.
+        Section {
+            TokenMeasurementRows()
+        } header: {
+            Text("Token Measurement")
+        } footer: {
+            Text("Every line is also in the console, starting [CAE]. Launch with -LAPSlockCAE to declare the capability and -LAPSlockNoSessionCheck to keep the app's own check off.")
         }
     }
     #endif

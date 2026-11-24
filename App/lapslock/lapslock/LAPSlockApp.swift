@@ -589,6 +589,11 @@ final class AppRootModel {
             auth = made
             SessionAuth.shared.auth = made
             connectAppProtection(to: made)
+            #if DEBUG
+            // CAE-PLAN.md, step 0, on the branch cae-measure only.
+            TokenMeasurement.shared.checkSession = { [weak self] in await self?.checkSessionForMeasurement() }
+            TokenMeasurement.shared.started()
+            #endif
         } catch {
             signInError = "TenantKeep couldn't start its sign-in system. Reinstalling the app usually fixes this."
         }
@@ -802,6 +807,19 @@ final class AppRootModel {
             }
         }
     }
+
+    #if DEBUG
+    /// CAE-PLAN.md, step 0, on the branch cae-measure only: "Session check now" asks even
+    /// with the periodic check switched off, and acts on the answer as the check would.
+    func checkSessionForMeasurement() async -> SessionStanding? {
+        guard case .live(let account) = mode, let auth else { return nil }
+        lastSessionCheck = Date()
+        let standing = await auth.checkSession()
+        guard isSignedIn(as: account) else { return standing }
+        await act(on: standing, for: account)
+        return standing
+    }
+    #endif
 
     /// The app went to the background: no checks until it is back.
     func wentToBackground() {

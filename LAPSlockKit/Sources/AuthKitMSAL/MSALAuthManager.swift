@@ -146,6 +146,15 @@ public actor MSALAuthManager: AuthManaging {
         )
         // Keep tokens on this device only; never sync to iCloud Keychain (§4).
         pcaConfig.cacheConfig.keychainSharingGroup = Bundle.main.bundleIdentifier ?? "com.kainor.lapslock"
+        #if DEBUG
+        // CAE-PLAN.md, step 0, on the branch cae-measure only, which is never merged:
+        // declares continuous access evaluation for the registrations that call Microsoft
+        // Graph, to measure what it changes. Not TenantKeep Alerts or App Protection.
+        if ProcessInfo.processInfo.arguments.contains("-LAPSlockCAE"),
+           registration != .alerts, registration != .appProtection {
+            pcaConfig.clientApplicationCapabilities = ["CP1"]
+        }
+        #endif
         return try MSALPublicClientApplication(configuration: pcaConfig)
     }
 
@@ -591,13 +600,37 @@ public actor MSALAuthManager: AuthManaging {
             try home.validate(returnedTenantId: Self.tenantId(of: result))
             standing = .current
         } catch let failure as MSALFailure {
-            standing = SessionStanding.from(aadCode: Self.detail(from: failure.error, step: .tokenSilent).aadErrorCode)
+            let detail = Self.detail(from: failure.error, step: .tokenSilent)
+            #if DEBUG
+            // CAE-PLAN.md, step 0: which code each event gets is what is being measured.
+            print("[CAE] session check refused: " + (detail.aadErrorCode ?? "no code")
+                  + ", msal " + String(detail.msalErrorCode ?? 0) + ", " + (detail.oauthError ?? "no oauth error"))
+            #endif
+            standing = SessionStanding.from(aadCode: detail.aadErrorCode)
         } catch {
             standing = .unknown
         }
         lastSessionStanding = standing
         return standing
     }
+
+    #if DEBUG
+    /// CAE-PLAN.md, step 0, on the branch cae-measure only. A token for `scopes` in the
+    /// organization being worked in, silently: the one MSAL has cached, or with `fresh` a
+    /// new one with the cache skipped. The measurement reads its claims and prints only
+    /// those; the token is never printed.
+    public func measurementToken(scopes: [String], fresh: Bool) async throws -> String {
+        guard let account = pinnedAccount, let pin = operatingPin else { throw AuthError.noAccount }
+        let app = try client(for: scopes, tenant: pin.expected)
+        guard let msalAccount = try? app.account(forIdentifier: account.id) else { throw AuthError.interactionRequired }
+        let silent = MSALSilentTokenParameters(scopes: scopes, account: msalAccount)
+        silent.authority = try MSALAADAuthority(url: pin.authorityURL)
+        silent.forceRefresh = fresh
+        let result = try await recording(.tokenSilent) { try await acquireSilent(app, silent) }
+        try pin.validate(returnedTenantId: Self.tenantId(of: result))
+        return result.accessToken
+    }
+    #endif
 
     /// Stops acting as the person and removes nothing, which is what a sign-in that has
     /// expired leaves behind: the next sign-in by the same person picks up where they
