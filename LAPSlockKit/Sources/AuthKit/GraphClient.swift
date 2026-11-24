@@ -434,9 +434,9 @@ public final class GraphClient: Sendable {
                 do {
                     (data, response) = try await session.data(for: urlRequest)
                 } catch is CancellationError {
-                    throw GraphError.cancelled
+                    throw Self.cutOff(request)
                 } catch let error as URLError where error.code == .cancelled {
-                    throw GraphError.cancelled
+                    throw Self.cutOff(request)
                 } catch {
                     throw GraphError.transport(status: -1)
                 }
@@ -450,22 +450,29 @@ public final class GraphClient: Sendable {
                 }
 
                 if http.statusCode == 429 {
-                    // Every read this client sends waits this out, not only this one.
-                    let wait = min(Self.retryAfter(http) ?? retryPolicy.defaultWait, retryPolicy.maxWait)
-                    await throttle.hold(for: wait)
-                    if request.isRetryable, throttledRetries < retryPolicy.maxRetries {
+                    // Every read this client sends waits this out, not only this one, for as
+                    // long as Graph asked, up to a minute.
+                    let asked = Self.retryAfter(http) ?? retryPolicy.defaultWait
+                    await throttle.hold(for: min(asked, Self.longestHold))
+                    // Asked again only when Graph's wait is one this client keeps: never
+                    // sooner than Graph said. A longer one goes back to the caller with
+                    // Graph's number, and a fill decides from it (FillRetry). Before the
+                    // second review (R2-27, 2026-11-24) a Retry-After of 30 was asked again
+                    // at 10 and 20 seconds.
+                    if request.isRetryable, throttledRetries < retryPolicy.maxRetries, asked <= retryPolicy.maxWait {
                         throttledRetries += 1
                         retries += 1
-                        try await sleep(wait + jitter(wait))
+                        try await sleep(asked + jitter(asked))
                         continue
                     }
                 }
 
                 if http.statusCode == 503 || http.statusCode == 504,
-                   request.isRetryable, serviceRetries < retryPolicy.serviceRetries {
+                   request.isRetryable, serviceRetries < retryPolicy.serviceRetries,
+                   (Self.retryAfter(http) ?? retryPolicy.defaultWait) <= retryPolicy.maxWait {
                     serviceRetries += 1
                     retries += 1
-                    let wait = min(Self.retryAfter(http) ?? retryPolicy.defaultWait, retryPolicy.maxWait)
+                    let wait = Self.retryAfter(http) ?? retryPolicy.defaultWait
                     try await sleep(wait + jitter(wait))
                     continue
                 }
@@ -547,6 +554,17 @@ public final class GraphClient: Sendable {
 
     /// Seconds from `Retry-After`. Graph sends an integer; the HTTP-date form is ignored
     /// and falls back to the policy default.
+    /// A request stopped while it was out: a cancelled read is a cancellation, but a write
+    /// may already have reached Microsoft, so it is "no answer", which says the request may
+    /// have arrived. Before the second review (R2-21, 2026-11-24) a write cut off by a
+    /// sign-out or a switch of organization was shown and logged as cancelled.
+    /// The longest every read is held back after a 429: a minute, as a fill's own wait.
+    static let longestHold: TimeInterval = 60
+
+    static func cutOff(_ request: GraphRequest) -> GraphError {
+        request.isRetryable ? .cancelled : .transport(status: 0)
+    }
+
     static func retryAfter(_ http: HTTPURLResponse) -> TimeInterval? {
         guard let raw = http.value(forHTTPHeaderField: "Retry-After")?
                 .trimmingCharacters(in: .whitespacesAndNewlines),

@@ -205,6 +205,9 @@ final class DeviceListModel {
     private func refilter() {
         searchTask?.cancel()
         searchTask = nil
+        // A lookup cut off by an arriving page before it answered is asked again, not
+        // taken as asked (second review, R2-28).
+        if isLookingUp { lookedUpQuery = nil }
         lookupTask?.cancel()
         isLookingUp = false
         let query = appliedQuery

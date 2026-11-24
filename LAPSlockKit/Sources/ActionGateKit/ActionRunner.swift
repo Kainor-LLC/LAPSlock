@@ -192,8 +192,10 @@ public actor ActionRunner {
             case .notFound:           return "failed: not found"
             case .badRequest(let c):  return "failed: bad request" + (c.map { " " + $0 } ?? "")
             case .throttled:          return "failed: throttled"
-            case .serviceUnavailable: return "failed: service unavailable"
-            case .transport:          return "failed: transport"
+            // Not "failed": a 5xx can come back after Microsoft acted, and a request cut
+            // off may have arrived (second review, R2-21, UI-5).
+            case .serviceUnavailable: return "not known: service unavailable"
+            case .transport:          return f.mayHaveHappened ? "not known: no answer" : "failed: transport"
             case .cancelled:          return "cancelled"
             case .refused:            return "refused"
             case .incomplete:         return "incomplete"

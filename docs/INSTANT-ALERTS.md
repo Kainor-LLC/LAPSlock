@@ -32,7 +32,6 @@ TenantKeep Watch is a multi-tenant Entra application, separate from the On-Call 
 |---|---|
 | `AuditLog.Read.All` | Sign-ins of the named break-glass accounts; Conditional Access entries in the directory audit log |
 | `Directory.Read.All` | Reading sign-ins as an application needs it; resolving the named accounts' object IDs; the organization's name; the registering administrator's active roles |
-| `Policy.Read.All` | Conditional Access policy changes |
 | `SecurityIncident.Read.All` | Security incidents |
 
 Each sign-in query is limited to the accounts the organization named. The service cannot change anything: it has no write permission. It cannot read local administrator passwords, BitLocker recovery keys, mail, files or messages, because those permissions are never requested. Adding a permission is a published change to this page.
@@ -59,9 +58,11 @@ TenantKeep Watch signs in to Microsoft with a federated credential bound to the 
 | `publicKey` | The phone's public key, made in its Secure Enclave, X9.63, base64url |
 | `breakGlass` | The break-glass accounts set for the organization in the app. Applied only from an active Global Administrator or Security Administrator |
 
-The request carries a Microsoft token issued for the `Alerts.Register` scope of the TenantKeep Alerts app registration, which holds no Microsoft Graph permission. The service checks its signature, lifetime, issuer and scope, takes the organization from it, and allows registration only for an account with an active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role. That token cannot read anything from Microsoft. No Microsoft Graph token ever reaches the service.
+The request carries a Microsoft token issued for the `Alerts.Register` scope of the TenantKeep Alerts app registration, which holds no Microsoft Graph permission. The service checks its signature, lifetime, issuer and scope, and that it was issued to TenantKeep's own app and not another one an administrator approved the scope for; takes the organization from it; and allows registration only for an account with an active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role. That token cannot read anything from Microsoft. No Microsoft Graph token ever reaches the service.
 
 The answer carries the service's public sender key, which the phone keeps for that organization so it can open, and authenticate, what the service sends. `DELETE` on the same address, with the push token, removes the phone.
+
+An organization can have 20 phones registered. A new phone beyond that is answered `429` with `{"error":"limit","limit":20}`, and the app says to turn Instant alerts off on a phone no longer in use. A phone already registered can always check in. The service reads no more than 20 phones for an organization in each run.
 
 ## 5. What the Service Keeps
 
@@ -74,13 +75,15 @@ It does not keep the sign-ins, audit entries or incidents it reads. Each is exam
 | Data | Deleted |
 |---|---|
 | A phone | When Instant alerts are turned off on it or its administrator signs out; when Apple answers that its push token is no longer valid; or 30 days after it last checked in |
-| Everything for an organization | Within two days of the organization removing TenantKeep Watch from Entra ID: once Entra ID has reported the removal for a full day, at the next daily cleanup |
+| Everything for an organization | Within two days of the organization removing TenantKeep Watch from Entra ID: once Entra ID has reported the removal for a full day, at the next daily cleanup. And at the first daily cleanup after its last phone is removed, since an organization with no phones is no longer watched |
 
 The service runs in Microsoft Azure, Central US. Its sub-processors are Microsoft (Azure) and Apple (Apple Push Notification service, which sees the push token and an encrypted alert it cannot read).
 
 ## 6. The Alert
 
-Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in authenticated mode, from the service's sender key to the phone's Secure Enclave key, bound to the phone's push token, sent through Kainor's relay to Apple. The service identifies itself to the relay with its own Azure managed identity ([RELAY-API.md](RELAY-API.md) section 15), and what it sends the relay names no organization: a push token, an urgency and the encrypted alert. Kainor's service necessarily knows that an alert of a given kind happened in an organization at a given time, because it creates the alert; it does not keep that fact once the alert is sent.
+Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in authenticated mode, from the service's sender key to the phone's Secure Enclave key, bound to the phone's push token, sent through Kainor's relay to Apple. The service identifies itself to the relay with its own Azure managed identity ([RELAY-API.md](RELAY-API.md) section 15), and what it sends the relay names no organization: a push token, an urgency and the encrypted alert. Kainor's service necessarily knows that an alert of a given kind happened in an organization at a given time, because it creates the alert. Of that it keeps only what section 5 lists: the time and identifiers of the last event of each kind, which for break-glass sign-ins is the time of the last one. Each minute's log line has its time, so with very few organizations a line that counts an alert shows when one was sent.
+
+An alert the relay does not take for a passing reason (no answer, a rate limit, a 5xx other than Apple's refusal) is sent once more a second later, the same sealed alert. If both copies arrive, the phone shows the second as a quiet notification saying the alert arrived twice.
 
 ## 7. Stopping It
 
@@ -98,4 +101,5 @@ Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in
 
 - 2026-11-15: version 1. Break-glass sign-ins, Conditional Access changes and security incidents.
 - 2026-11-23: the service sends through the relay as itself, by managed identity, on the relay's own route for it. Until then an organization whose administrators subscribed in the app, with no organization license, was refused by the relay and received nothing. No change to what the service reads or keeps.
+- 2026-11-24: section 6 no longer says the service keeps nothing of an alert once it is sent; it keeps the last event's time, as section 5 says. TenantKeep Watch no longer asks for `Policy.Read.All` (section 3). Nothing used it: Conditional Access changes are read from the directory audit log. An organization that approved it before keeps the grant until it removes it. An alert the relay does not take for a passing reason is sent once more (section 6). A phone's token must have been issued to TenantKeep's own app (section 4). An organization can register 20 phones (section 4); there was no limit. An organization with no phones left is deleted at the next daily cleanup, and an organization that names no break-glass accounts is now deleted within two days of removing TenantKeep Watch: before, both could stay for good, though this page said otherwise. No change to what the service reads.
 - 2026-11-23: section 5 corrected to what the service stores. It never stored the registering administrator's object ID, though this page said so; it stores which of Apple's push services a token belongs to, and an incident's severity beside its identifier, which this page did not say. An organization that removes TenantKeep Watch is deleted within two days, not one: the service waits a full day so that a passing error deletes nothing. A phone whose push token Apple rejects is deleted at the next alert. No change to what the service reads.

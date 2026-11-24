@@ -356,7 +356,8 @@ final class AppRootModel {
                     },
                     breakGlass: {
                         (try? AlertsRunner.preferencesStore.load())?.tenant(tenantId)?.breakGlassUPNs ?? []
-                    })
+                    },
+                    person: { await session.auth.currentAccount?.id })
             }
         }
     }
@@ -445,8 +446,9 @@ final class AppRootModel {
         // A pinned tenant means one organization, whatever the subscription allows.
         canSwitchTenants = merged.allowsTenantSwitching && ManagedConfigStore.read().tenantPin == nil
         // Notifications are Pro. A lapsed subscription turns the switches off rather than
-        // leaving a background check running that the admin is no longer paying for.
-        if case .live = mode, !merged.isPro { AlertsRunner.disableAll() }
+        // leaving a background check running that the admin is no longer paying for. Only
+        // once the App Store has answered: before that "none" means not yet asked (R2-8).
+        if case .live = mode, !merged.isPro, subscriptions.hasAnswered { AlertsRunner.disableAll() }
         // Instant alerts are Pro too. The phone is what checks, so it is told every time.
         RelayCoordinator.shared.planChanged(allows: merged.isPro)
     }
@@ -635,6 +637,7 @@ final class AppRootModel {
         Task { await settleAllWriteRoutes() }
         Task { await settleAppProtection(for: account) }
         cameToFront()
+        await RelayCoordinator.shared.sessionStarted(for: account.id)
         await refreshTenants()
     }
 
@@ -673,6 +676,7 @@ final class AppRootModel {
             // Signed in just now, so the first check is ten minutes away.
             lastSessionCheck = Date()
             cameToFront()
+            await RelayCoordinator.shared.sessionStarted(for: account.id)
         } catch let error as AuthError {
             // Consent problems get a recovery path, not just an error (§8).
             if let state = ConsentDiagnostics.state(from: error) {
@@ -753,9 +757,11 @@ final class AppRootModel {
     }
 
     func signOut() async {
-        // Before the sign-in goes: unregistering from Instant alerts needs it.
-        await RelayCoordinator.shared.turnOffForSignOut()
         if case .live(let account) = mode, let auth {
+            // Before the sign-in goes: unregistering from Instant alerts needs it. Only from
+            // a live session: leaving the demo after a sign-in that could not be restored
+            // deleted the real alert key and told no one (second review, R2-17).
+            await RelayCoordinator.shared.turnOffForSignOut()
             // Before the tokens go: Microsoft's SDK needs one to tell Intune the account left.
             if let objectId = account.objectId {
                 await AppProtection.shared.signingOut(objectId: objectId)
@@ -2166,6 +2172,10 @@ private struct SceneChanges: ViewModifier {
                 if phase == .background {
                     AlertsRunner.scheduleIfNeeded()
                     root.wentToBackground()
+                    // Every countdown, from the root: an action is sent only while its Undo
+                    // is on screen. The screens' own handlers sit on list rows that come
+                    // and go with scrolling (second review, R2-24).
+                    Task { await PendingActions.shared.cancelAll() }
                 }
                 // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
                 // grace period, waiting on an Authenticator push, must not return to a lock

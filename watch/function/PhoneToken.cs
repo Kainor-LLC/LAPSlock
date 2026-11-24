@@ -40,6 +40,22 @@ public sealed class PhoneToken(WatchOptions options)
 {
     const string Scope = "Alerts.Register";
 
+    /// <summary>
+    /// The apps that may ask for an Alerts.Register token: TenantKeep Alerts, and the original
+    /// On-Call registration, which builds from before the sign-in was split asked through.
+    /// Alerts.Register is a scope a user can consent to, so before the second review (R2-11,
+    /// 2026-11-24) any app an administrator approved it for could register a phone for that
+    /// organization, or change its break-glass accounts. Public client IDs, not secrets.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> TenantKeepClients = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "d7c387b7-8e67-4957-bc67-4b71824a60ea",   // TenantKeep Alerts
+        "50c9aa83-4f5c-4203-a3c0-adab54a2ba3a",   // TenantKeep On-Call, the original registration
+    };
+
+    /// <summary>The app a token was issued to: azp in a v2.0 token, appid in a v1.0 one.</summary>
+    internal static bool FromTenantKeep(string? client) => client is not null && TenantKeepClients.Contains(client);
+
     readonly ConfigurationManager<OpenIdConnectConfiguration> keys = new(
         "https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration",
         new OpenIdConnectConfigurationRetriever(),
@@ -80,6 +96,9 @@ public sealed class PhoneToken(WatchOptions options)
 
         var scopes = token.TryGetPayloadValue<string>("scp", out var scp) ? scp.Split(' ') : [];
         if (!scopes.Contains(Scope)) return (null, "noScope");
+        var client = token.TryGetPayloadValue<string>("azp", out var azp) ? azp
+            : token.TryGetPayloadValue<string>("appid", out var appid) ? appid : null;
+        if (!FromTenantKeep(client)) return (null, "notTenantKeep");
         // wids appears only when the app registration asks for directory roles in tokens;
         // the On-Call app does not, so an empty list means "not stated", and the endpoint
         // reads the caller's active roles from Graph instead (DeviceFunctions).

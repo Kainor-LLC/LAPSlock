@@ -426,4 +426,100 @@ final class AppWiringTests: XCTestCase {
         // A session that ends for any reason stops the loop.
         XCTAssertTrue(body(of: "private func endSession(forgetting: Bool = true) {", in: app).contains("sessionCheck?.cancel()"))
     }
+
+    // MARK: - Instant alerts at sign-out (second review, R2-9, R2-17, R2-18)
+
+    func testInstantAlertsEndWithTheSessionThatTurnedThemOn() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let signOut = body(of: "func signOut() async {", in: app)
+        let live = try XCTUnwrap(signOut.range(of: "if case .live(let account) = mode, let auth {"))
+        let off = try XCTUnwrap(signOut.range(of: "await RelayCoordinator.shared.turnOffForSignOut()"))
+        XCTAssertLessThan(live.lowerBound, off.lowerBound, "leaving the demo touches no real alert key (R2-17)")
+        // Each session says whose it is, after a restore and after a sign-in.
+        XCTAssertEqual(app.components(separatedBy: "await RelayCoordinator.shared.sessionStarted(for: account.id)").count - 1, 2)
+        XCTAssertTrue(app.contains("person: { await session.auth.currentAccount?.id })"))
+
+        let relay = try appSource("RelaySettingsView.swift")
+        let signOutOff = body(of: "func turnOffForSignOut() async {", in: relay)
+        XCTAssertTrue(signOutOff.contains("guard phone.isOn || status != .off else { return }"), "the key decides, not the status (R2-9)")
+        let started = body(of: "func sessionStarted(for person: String) async {", in: relay)
+        XCTAssertTrue(started.contains("if began != who { await turnOff() }"))
+        let turnOff = body(of: "func turnOff() async {", in: relay)
+        XCTAssertTrue(turnOff.contains("await Self.within(seconds: 8,"), "the token wait has a limit of its own (R2-18)")
+        XCTAssertTrue(turnOff.contains("UserDefaults.standard.removeObject(forKey: Self.personKey)"))
+    }
+
+    /// Second review, R2-22: a pass lost on the network may exist, and the log says so.
+    func testAPassLostOnTheNetworkIsLogged() throws {
+        let view = try appSource("UserActionsView.swift")
+        let issue = body(of: "private func issuePass(confirmedByFaceID: Bool = false) async {", in: view)
+        let lastCatch = try XCTUnwrap(issue.range(of: "} catch {", options: .backwards))
+        let tail = issue[lastCatch.upperBound...]
+        XCTAssertTrue(tail.contains("await provider.logOffGate(.issueTemporaryAccessPass, on: target, outcome: .failed(.transport(status: 0)))"))
+        XCTAssertTrue(tail.contains("errorMessage = Self.passNotKnown"))
+        XCTAssertTrue(issue.contains("outcome: Self.passOutcome(for: error)") || issue.contains("let outcome = Self.passOutcome(for: error)"))
+    }
+
+    // MARK: - countdowns and lookups (second review, R2-24, R2-28)
+
+    func testEveryCountdownIsCancelledFromTheRootOnTheWayToTheBackground() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let scene = try XCTUnwrap(app.range(of: "private struct SceneChanges: ViewModifier {"))
+        let changes = String(app[scene.lowerBound...])
+        let background = try XCTUnwrap(changes.range(of: "if phase == .background {"))
+        let cancel = try XCTUnwrap(changes.range(of: "Task { await PendingActions.shared.cancelAll() }"))
+        XCTAssertLessThan(background.lowerBound, cancel.lowerBound)
+    }
+
+    func testALookupThatFailedOrWasCutOffIsNotTakenAsAnAnswer() throws {
+        let people = try appSource("PeopleView.swift")
+        XCTAssertTrue(people.contains("do { found = try await provider.searchUsers(prefix: query) } catch { found = nil }"))
+        XCTAssertFalse(people.contains("(try? await provider.searchUsers(prefix: query)) ?? []"), "a failure is not nobody")
+        XCTAssertTrue(people.contains("} else if let problem = directory.lookupProblem {"))
+        for (name, source) in [("PeopleView.swift", people), ("DeviceListView.swift", try appSource("DeviceListView.swift"))] {
+            let refilter = body(of: "private func refilter() {", in: source)
+            let reset = try XCTUnwrap(refilter.range(of: "if isLookingUp { lookedUpQuery = nil }"), name)
+            let cancel = try XCTUnwrap(refilter.range(of: "lookupTask?.cancel()"), name)
+            XCTAssertLessThan(reset.lowerBound, cancel.lowerBound, name)
+        }
+    }
+
+    // MARK: - the plan and the check-in (second review, R2-8, R2-7)
+
+    func testNothingIsSwitchedOffBeforeTheAppStoreHasAnswered() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        XCTAssertTrue(app.contains("if case .live = mode, !merged.isPro, subscriptions.hasAnswered { AlertsRunner.disableAll() }"))
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let store = try String(contentsOf: root.appendingPathComponent("Sources/SubscriptionKit/SubscriptionStore.swift"), encoding: .utf8)
+        let refresh = body(of: "public func refreshEntitlement() async {", in: store)
+        let answered = try XCTUnwrap(refresh.range(of: "hasAnswered = true"))
+        let told = try XCTUnwrap(refresh.range(of: "if first, fresh == entitlement { onEntitlementChange?(fresh) }"))
+        XCTAssertLessThan(answered.lowerBound, told.lowerBound, "the app is told after the store says it has answered")
+    }
+
+    func testEveryCheckInMovesTheReminderOn() throws {
+        let relay = try appSource("RelaySettingsView.swift")
+        XCTAssertTrue(relay.contains("static let reminderAfter: TimeInterval = 25 * 86_400"))
+        XCTAssertTrue(body(of: "func turnOff() async {", in: relay).contains("removePendingNotificationRequests(withIdentifiers: [Self.reminderId])"))
+        let registered = try XCTUnwrap(relay.range(of: "UserDefaults.standard.set(Date(), forKey: Self.checkInKey)"))
+        let reminded = try XCTUnwrap(relay.range(of: "remindBeforeTheServiceForgets()", range: registered.upperBound..<relay.endIndex))
+        XCTAssertLessThan(registered.lowerBound, reminded.lowerBound)
+    }
+
+    /// The Mac reads the iPhone app's `modules.disabled` too: with Privileged Access off it
+    /// shows no Roles view and activates nothing (R2-3's class, found on the way).
+    func testTheMacMenuBarAppObeysPrivilegedAccessOff() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let mac = try String(contentsOf: root.appendingPathComponent("App/lapslock/TenantKeepMac/MacModel.swift"), encoding: .utf8)
+        XCTAssertTrue(mac.contains("static let modulesDisabledKey = \"modules.disabled\""))
+        let activate = body(of: "func activate(_ access: EligibleAccess, justification: String, duration: String) async -> String {", in: mac)
+        let refused = try XCTUnwrap(activate.range(of: "guard !Policy.current().privilegedAccessOff else { return Policy.privilegedAccessOffMessage }"))
+        let token = try XCTUnwrap(activate.range(of: "auth?.token(scopes: [access.activateScope]"))
+        XCTAssertLessThan(refused.lowerBound, token.lowerBound, "refused before any sign-in or request")
+        XCTAssertTrue(body(of: "func loadRoles() async {", in: mac).contains("guard !Policy.current().privilegedAccessOff else {"))
+        let view = try String(contentsOf: root.appendingPathComponent("App/lapslock/TenantKeepMac/MacMenuView.swift"), encoding: .utf8)
+        XCTAssertTrue(view.contains("let shown = Tab.allCases.filter { $0 != .roles || !model.privilegedAccessOff }"))
+    }
 }

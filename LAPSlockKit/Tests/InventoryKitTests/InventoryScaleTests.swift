@@ -172,3 +172,24 @@ final class UserNameResolverLookupTests: XCTestCase {
         XCTAssertEqual(UsersStub.requests, 2, "the second call asked only for the five it did not know")
     }
 }
+
+/// Second review, R2-26: merging a page by halving gives what a full search would.
+final class DeviceSearchMergeTests: XCTestCase {
+    /// Second review, R2-26: a page merged into search results lands each match where a
+    /// search over everything would have put it, for queries that rank in different ways.
+    func test_aPageMergedIntoResultsIsTheSameAsSearchingEverything() {
+        let all = DemoInventoryProvider.largeFleet(count: 3_000)
+        for query in ["sales", "LT", "a", "win", "0", "zz-nothing", "mac"] {
+            var results = DeviceSearch.filter(Array(all[..<500]), query: query)
+            var loaded = Array(all[..<500])
+            var at = 500
+            while at < all.count {
+                let page = Array(all[at..<min(at + 700, all.count)])
+                loaded += page
+                results = DeviceSearch.merged(results: results, query: query, adding: page)
+                at += 700
+            }
+            XCTAssertEqual(results.map(\.id), DeviceSearch.filter(loaded, query: query).map(\.id), query)
+        }
+    }
+}

@@ -8,6 +8,25 @@ import PrivilegedAccessKit
 // one role check for the whole change, every DELETE sent once and logged, and the first
 // refusal stopping the rest.
 
+/// Counts the sign-ins a claims challenge asks for, and cancels the ones it is told to.
+private final class ClaimsCountingAuth: AuthManaging, @unchecked Sendable {
+    let account = AdminAccount(id: "a.t", tenantId: "4470dc21-a4b7-4729-a232-56d4c0eedf73", username: "admin@example.com", objectId: "a")
+    private let lock = NSLock()
+    private var calls = 0
+    var cancelCall: Int?
+    var claimsCalls: Int { lock.withLock { calls } }
+    var currentAccount: AdminAccount? { get async { account } }
+    func token(scopes: [String], allowInteractive: Bool) async throws -> String { "token" }
+    func token(scopes: [String], claims: String?, allowInteractive: Bool) async throws -> String {
+        guard let claims, !claims.isEmpty else { return "token" }
+        let n: Int = lock.withLock { calls += 1; return calls }
+        if n == cancelCall { throw AuthError.userCancelled }
+        return "token"
+    }
+    func signIn() async throws -> AdminAccount { account }
+    func signOut(account: AdminAccount) async throws {}
+}
+
 private final class RecordingAuth: AuthManaging, @unchecked Sendable {
     let account = AdminAccount(
         id: "aaaaaaaa-1111-2222-3333-444455556666.4470dc21-a4b7-4729-a232-56d4c0eedf73",
@@ -161,5 +180,44 @@ final class UserActionsServiceTests: XCTestCase {
         }
         XCTAssertTrue(detail.hasPrefix("Removed: nothing."), detail)
         XCTAssertTrue(detail.contains("Not known"), detail)
+    }
+
+    // MARK: - a resumed wipe (second review, R2-20)
+
+    private func service(auth: any AuthManaging, log: InMemoryShiftLog) -> UserActionsService {
+        let graph = GraphClient(auth: auth, session: StubProtocol.session(), retryPolicy: .none, tracer: GraphResponseTracer(), sleep: { _ in })
+        let runner = ActionRunner(graph: graph, gate: holdsTheRole, log: log, tenantId: { [tenant] in tenant })
+        return UserActionsService(graph: graph, runner: runner, log: log, tenantId: { [tenant] in tenant })
+    }
+
+    func test_aResumedWipeAsksForOneSignInForEveryMethod() async throws {
+        StubProtocol.replies = [
+            "GET|/authentication/methods": [.init(status: 200, body: methods)],
+            "DELETE|microsoftAuthenticatorMethods/m1": [.init(status: 204, body: "")],
+            "DELETE|phoneMethods/p1": [.init(status: 204, body: "")],
+            "DELETE|fido2Methods/f1": [.init(status: 204, body: "")],
+        ]
+        let auth = ClaimsCountingAuth()
+        let challenge = try XCTUnwrap(ClaimsChallenge(json: UserActionClaims.freshMFA))
+        let result = await service(auth: auth, log: InMemoryShiftLog()).authenticationWipe(jane, satisfying: challenge)
+        XCTAssertEqual(auth.claimsCalls, 1, "one sign-in answers the challenge for the change")
+        XCTAssertEqual(StubProtocol.count("DELETE|"), 3)
+        XCTAssertEqual(result.outcome, .requested(requestId: nil))
+    }
+
+    func test_cancellingTheSignInStopsTheWipe() async throws {
+        StubProtocol.replies = [
+            "GET|/authentication/methods": [.init(status: 200, body: methods)],
+            "DELETE|microsoftAuthenticatorMethods/m1": [.init(status: 204, body: "")],
+            "DELETE|phoneMethods/p1": [.init(status: 204, body: "")],
+            "DELETE|fido2Methods/f1": [.init(status: 204, body: "")],
+        ]
+        let auth = ClaimsCountingAuth()
+        auth.cancelCall = 1
+        let challenge = try XCTUnwrap(ClaimsChallenge(json: UserActionClaims.freshMFA))
+        let result = await service(auth: auth, log: InMemoryShiftLog()).authenticationWipe(jane, satisfying: challenge)
+        XCTAssertEqual(auth.claimsCalls, 1, "not asked again for the next method")
+        XCTAssertEqual(StubProtocol.count("DELETE|"), 0)
+        XCTAssertEqual(result.outcome, .failed(.cancelled))
     }
 }

@@ -7,8 +7,8 @@ using Azure.Identity;
 
 namespace Kainor.TenantKeep.Watch;
 
-/// <summary>A Graph call refused or failed; carries only the status.</summary>
-public sealed class GraphException(HttpStatusCode status) : Exception($"Microsoft Graph answered {(int)status}.")
+/// <summary>A Graph call refused or failed; carries only the status, and whether Entra said the app is not in the tenant.</summary>
+public sealed class GraphException(HttpStatusCode status, bool notInTenant = false) : Exception($"Microsoft Graph answered {(int)status}.")
 {
     public HttpStatusCode Status { get; } = status;
     /// <summary>
@@ -17,11 +17,13 @@ public sealed class GraphException(HttpStatusCode status) : Exception($"Microsof
     /// </summary>
     public bool IsConsent => Status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
     /// <summary>
-    /// Entra itself said the app is not in that tenant. The only signal the nightly cleanup
-    /// acts on: a 403 from one read (no Entra ID P1 for the sign-in log, no Defender) and a
-    /// token endpoint that is briefly down are neither.
+    /// Entra itself said the app is not in that tenant, when the token was asked for. The
+    /// only signal the nightly cleanup acts on: a 403 from one read (no Entra ID P1 for the
+    /// sign-in log, no Defender), a token endpoint that is briefly down, and a 401 from
+    /// Microsoft Graph itself are none of them. Before the second review (R2-16,
+    /// 2026-11-24) a Graph 401 counted, though only Entra's answer was meant to.
     /// </summary>
-    public bool IsNotInTenant => Status is HttpStatusCode.Unauthorized;
+    public bool IsNotInTenant { get; } = notInTenant;
 }
 
 /// <summary>
@@ -52,7 +54,9 @@ public sealed class GraphReader(WatchOptions options, TokenCredential managedIde
             // failure to get a token (the managed identity or the token endpoint briefly
             // unavailable, throttling) is a passing one: reporting those as 401 too had the
             // nightly cleanup delete every organization the failure touched.
-            throw new GraphException(IsNotInTenant(e) ? HttpStatusCode.Unauthorized : HttpStatusCode.ServiceUnavailable);
+            throw IsNotInTenant(e)
+                ? new GraphException(HttpStatusCode.Unauthorized, notInTenant: true)
+                : new GraphException(HttpStatusCode.ServiceUnavailable);
         }
         using var request = new HttpRequestMessage(HttpMethod.Get, "https://graph.microsoft.com/v1.0" + pathAndQuery);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);

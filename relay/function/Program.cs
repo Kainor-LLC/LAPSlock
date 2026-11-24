@@ -38,7 +38,7 @@ builder.Services.AddSingleton<IApnsSender, ApnsSender>();
 // The alert service's route, RELAY-API.md section 15: accepted only once both settings name
 // Kainor's tenant and the relay's own registration. Until then it refuses everyone.
 ServiceCaller? service = options is { ServiceTenantId: { } tenant, ServiceClientId: { } client }
-    ? new ServiceCaller(tenant, client, new EntraServiceKeys(tenant))
+    ? new ServiceCaller(tenant, client, new EntraServiceKeys(tenant), options.ServiceCallerId)
     : null;
 builder.Services.AddSingleton(provider => new RelayHandler(
     provider.GetRequiredService<EntitlementCheck>(),

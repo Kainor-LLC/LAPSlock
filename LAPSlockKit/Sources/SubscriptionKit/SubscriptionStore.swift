@@ -24,6 +24,13 @@ public final class SubscriptionStore {
         didSet { if entitlement != oldValue { onEntitlementChange?(entitlement) } }
     }
 
+    /// False until the App Store has answered once in this launch. Until then `entitlement`
+    /// is "none" because nothing has been asked yet, not because nothing was bought, and
+    /// nothing may be switched off on it. Before the second review (R2-8, 2026-11-24) a
+    /// session restored before the App Store answered read the plan as none and turned off
+    /// every Notifications switch and the digest, and nothing turned them back on.
+    public private(set) var hasAnswered = false
+
     /// What can be bought, in the order the UI should show it.
     public private(set) var offers: [SubscriptionOffer] = []
 
@@ -124,7 +131,13 @@ public final class SubscriptionStore {
             }
             active.insert(product)
         }
-        entitlement = SubscriptionEntitlement(activeProducts: active)
+        let fresh = SubscriptionEntitlement(activeProducts: active)
+        let first = !hasAnswered
+        hasAnswered = true
+        // The first answer is news even when it is "none": the app waits for it before it
+        // switches anything off.
+        if first, fresh == entitlement { onEntitlementChange?(fresh) }
+        entitlement = fresh
     }
 
     // MARK: - what is for sale

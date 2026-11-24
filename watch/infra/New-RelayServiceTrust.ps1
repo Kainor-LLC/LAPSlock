@@ -17,7 +17,9 @@
        for the relay only to an identity that has been given the role.
     3. The alert service's function app identity is given Alerts.Send. Nothing else is.
     4. The relay's settings name Kainor's tenant and the registration (SERVICE_TENANT_ID,
-       SERVICE_CLIENT_ID), which turns its /relay/service route on.
+       SERVICE_CLIENT_ID), which turns its /relay/service route on, and the alert service's
+       identity (SERVICE_CALLER_ID, its object ID), so that no other identity given the
+       role is accepted. A relay published before SERVICE_CALLER_ID existed ignores it.
     5. Once the relay answers on that route, the alert service's setting names the audience
        (RELAY_SERVICE_AUDIENCE), which moves its alerts onto it. Before that this step is
        skipped, so the order of publishing cannot lose an alert: publish the relay, run this
@@ -145,12 +147,12 @@ if ($sp) {
 
 # 4. The relay's settings
 $relayNow = @{}
-foreach ($setting in (Read-Az functionapp config appsettings list --name $RelayFunction --resource-group $RelayResourceGroup --query "[?name=='SERVICE_TENANT_ID' || name=='SERVICE_CLIENT_ID']")) { $relayNow[$setting.name] = $setting.value }
+foreach ($setting in (Read-Az functionapp config appsettings list --name $RelayFunction --resource-group $RelayResourceGroup --query "[?name=='SERVICE_TENANT_ID' || name=='SERVICE_CLIENT_ID' || name=='SERVICE_CALLER_ID']")) { $relayNow[$setting.name] = $setting.value }
 $clientId = if ($app) { $app.appId } else { '<the new client ID>' }
-if ($relayNow['SERVICE_TENANT_ID'] -ne $tenantId -or $relayNow['SERVICE_CLIENT_ID'] -ne $clientId) {
-    Write-Step "Set SERVICE_TENANT_ID=$tenantId and SERVICE_CLIENT_ID=$clientId on $RelayFunction"
+if ($relayNow['SERVICE_TENANT_ID'] -ne $tenantId -or $relayNow['SERVICE_CLIENT_ID'] -ne $clientId -or $relayNow['SERVICE_CALLER_ID'] -ne $principal) {
+    Write-Step "Set SERVICE_TENANT_ID=$tenantId, SERVICE_CLIENT_ID=$clientId and SERVICE_CALLER_ID=$principal on $RelayFunction"
     if ($Apply) {
-        Invoke-Az functionapp config appsettings set --name $RelayFunction --resource-group $RelayResourceGroup --settings "SERVICE_TENANT_ID=$tenantId" "SERVICE_CLIENT_ID=$clientId" --output none
+        Invoke-Az functionapp config appsettings set --name $RelayFunction --resource-group $RelayResourceGroup --settings "SERVICE_TENANT_ID=$tenantId" "SERVICE_CLIENT_ID=$clientId" "SERVICE_CALLER_ID=$principal" --output none
     }
 }
 

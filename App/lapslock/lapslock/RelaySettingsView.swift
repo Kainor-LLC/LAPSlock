@@ -1,4 +1,5 @@
 import SwiftUI
+import CryptoKit
 import UserNotifications
 import RelayKit
 
@@ -21,6 +22,9 @@ struct InstantAlertsSetup {
     let token: @MainActor (_ interactive: Bool) async throws -> String
     /// The break-glass accounts set for this organization under Notifications.
     let breakGlass: @MainActor () -> [String]
+    /// Who is signed in, by the sign-in library's account identifier: recorded with the
+    /// registration, so another person's session on this phone is not taken for theirs.
+    let person: @MainActor () async -> String?
 }
 
 @MainActor
@@ -62,6 +66,16 @@ final class RelayCoordinator {
     static let endpoint = URL(string: "https://kainor-watch-prod-func.azurewebsites.net/api/v1/devices")!
     private static let stateKey = "instantAlerts.state"
     private static let checkInKey = "instantAlerts.lastCheckIn"
+    /// Who turned Instant alerts on, as a digest of their account identifier.
+    private static let personKey = "instantAlerts.person"
+    /// The reminder to open the app before the alert service forgets the phone.
+    static let reminderId = "instantAlerts.checkInReminder"
+    /// Kainor's service removes a phone 30 days after its last check-in; the reminder comes five days before.
+    static let reminderAfter: TimeInterval = 25 * 86_400
+
+    static func digest(_ person: String) -> String {
+        SHA256.hash(data: Data(person.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
+    }
 
     static var environment: String {
         #if DEBUG
@@ -176,15 +190,63 @@ final class RelayCoordinator {
     /// signing out ends them: the phone is unregistered and its key deleted while the
     /// sign-in can still say so to the service. A phone that never turned them on does
     /// nothing here and contacts nothing.
+    ///
+    /// Decided by the key, not by what the screen says. Before the second review (R2-9,
+    /// 2026-11-24) only On and a problem turned them off, so from "needs approval",
+    /// "working", or Off with a key left by a reinstall, the key and the organization's pin
+    /// stayed, and that organization's alerts kept arriving after the sign-out.
     func turnOffForSignOut() async {
-        switch status {
-        case .on, .problem: await turnOff()
-        case .off, .working, .needsApproval: return
+        guard phone.isOn || status != .off else { return }
+        await turnOff()
+    }
+
+    /// A session has begun for `person`. Instant alerts that someone else turned on, on this
+    /// phone, are theirs: they are turned off, so that person's organization's alerts stop
+    /// arriving here and this person is not shown "On" for an organization that is not
+    /// theirs (R2-9). A key from before the person was recorded with it is taken as this
+    /// person's, the one session that could have kept it.
+    func sessionStarted(for person: String) async {
+        let who = Self.digest(person)
+        guard let began = UserDefaults.standard.string(forKey: Self.personKey) else {
+            if phone.isOn { UserDefaults.standard.set(who, forKey: Self.personKey) }
+            return
+        }
+        if began != who { await turnOff() }
+    }
+
+    /// A phone checks in only when the app is opened with a session, and the service drops
+    /// one it has not heard from for 30 days while the switch still says On. So every
+    /// check-in moves a reminder to 25 days on (second review, R2-7). Not under an Intune
+    /// policy that stops notifications, which keeps Instant alerts off anyway.
+    private func remindBeforeTheServiceForgets() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.reminderId])
+        guard NotificationDetail.current() != .none else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Instant Alerts"
+        content.body = "Open TenantKeep and sign in to keep Instant alerts on. Kainor's alert service removes a phone it has not heard from in 30 days."
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: Self.reminderAfter, repeats: false)
+        center.add(UNNotificationRequest(identifier: Self.reminderId, content: content, trigger: trigger))
+    }
+
+    /// The value, or nil when it takes longer than `seconds`: sign-out must not wait on the
+    /// sign-in library for as long as it likes (second review, R2-18).
+    static func within<T: Sendable>(seconds: Double, _ work: @escaping @MainActor @Sendable () async -> T?) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { await work() }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(seconds))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
         }
     }
 
     func turnOff() async {
-        if let setup, let code = try? phone.pairingCode(), let token = try? await setup.token(false) {
+        if let setup, let code = try? phone.pairingCode(),
+           let token = await Self.within(seconds: 8, { try? await setup.token(false) }) {
             var request = URLRequest(url: Self.endpoint)
             request.httpMethod = "DELETE"
             // Short: this now also runs at sign-out, and a phone with no connection must
@@ -201,6 +263,8 @@ final class RelayCoordinator {
         UIApplication.shared.unregisterForRemoteNotifications()
         UserDefaults.standard.removeObject(forKey: Self.stateKey)
         UserDefaults.standard.removeObject(forKey: Self.checkInKey)
+        UserDefaults.standard.removeObject(forKey: Self.personKey)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.reminderId])
         status = .off
     }
 
@@ -292,6 +356,8 @@ final class RelayCoordinator {
             let saved = Saved(label: label, accounts: count, canConfigure: canConfigure)
             UserDefaults.standard.set(try? JSONEncoder().encode(saved), forKey: Self.stateKey)
             UserDefaults.standard.set(Date(), forKey: Self.checkInKey)
+            if let who = await setup.person() { UserDefaults.standard.set(Self.digest(who), forKey: Self.personKey) }
+            remindBeforeTheServiceForgets()
             status = .on(label: label, accounts: count, canConfigure: canConfigure)
         case .needsApproval(let url):
             status = .needsApproval(url)
@@ -299,6 +365,8 @@ final class RelayCoordinator {
             status = .problem("Your account needs an active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role. If yours is eligible in PIM, activate it first.")
         case .accountNotFound:
             status = .problem("A break-glass account set under Notifications isn't in this organization. Check the addresses and try again.")
+        case .tooManyPhones(let limit):
+            status = .problem("Your organization already has \(limit) phones with Instant alerts on. Turn them off on a phone that is no longer used, then try again.")
         case .failed(let code):
             if !quiet { status = .problem("Kainor's alert service answered \(code). Try again shortly.") }
         }

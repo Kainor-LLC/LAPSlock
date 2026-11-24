@@ -370,8 +370,34 @@ public enum DeviceSearch {
         let q = fold(raw)
         let hits = ranked(newcomers, foldedQuery: q)
         guard !hits.isEmpty else { return results }
-        let existing = results.map { (device: $0, rank: score($0.searchKey, foldedQuery: q) ?? Int.max) }
-        return merge(existing, hits, by: inRankOrder).map(\.device)
+        // Each match's place among the results, found by halving: about log n scores for
+        // each, where scoring every result again cost 243 ms a page at 50,000 devices, on
+        // the main actor (second review, R2-26, 2026-11-24). The results are already in
+        // rank order for this query, and a match goes after any result it ties with, as
+        // the two-list merge put it.
+        var ranks: [Int: Int] = [:]
+        func rank(at index: Int) -> Int {
+            if let known = ranks[index] { return known }
+            let found = score(results[index].searchKey, foldedQuery: q) ?? Int.max
+            ranks[index] = found
+            return found
+        }
+        var out: [ManagedDeviceSummary] = []
+        out.reserveCapacity(results.count + hits.count)
+        var start = 0
+        for hit in hits {
+            var low = start
+            var high = results.count
+            while low < high {
+                let middle = (low + high) / 2
+                if inRankOrder(hit, (device: results[middle], rank: rank(at: middle))) { high = middle } else { low = middle + 1 }
+            }
+            out.append(contentsOf: results[start..<low])
+            out.append(hit.device)
+            start = low
+        }
+        out.append(contentsOf: results[start...])
+        return out
     }
 
     /// Name order: the folded name, then the id, so equal names keep one order everywhere.

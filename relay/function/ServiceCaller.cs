@@ -39,16 +39,21 @@ public sealed class ServiceCaller
     readonly string[] _audiences;
     readonly string[] _issuers;
     readonly IServiceKeys _keys;
+    readonly string? _callerId;
     readonly JsonWebTokenHandler _handler = new();
 
     /// <param name="tenantId">Kainor's own tenant: the only one whose tokens are accepted.</param>
     /// <param name="clientId">The relay's app registration, which the token must be issued for.</param>
-    public ServiceCaller(string tenantId, string clientId, IServiceKeys keys)
+    /// <param name="callerId">The alert service's managed identity, by object ID. When given, the
+    /// token must be that identity's: before the second review (R2-11, 2026-11-24) any identity in
+    /// Kainor's tenant that was given the role was accepted.</param>
+    public ServiceCaller(string tenantId, string clientId, IServiceKeys keys, string? callerId = null)
     {
         _tenantId = tenantId.ToLowerInvariant();
         _audiences = [clientId, "api://" + clientId];
         _issuers = [$"https://login.microsoftonline.com/{_tenantId}/v2.0", $"https://sts.windows.net/{_tenantId}/"];
         _keys = keys;
+        _callerId = callerId;
     }
 
     public async Task<Result> VerifyAsync(string? authorization, CancellationToken cancel)
@@ -78,6 +83,11 @@ public sealed class ServiceCaller
         if (!token.TryGetPayloadValue<string>("tid", out var tid) || !string.Equals(tid, _tenantId, StringComparison.OrdinalIgnoreCase)) return Result.Invalid;
         // An application's own token, never a person's: a delegated token carries scp.
         if (token.TryGetPayloadValue<string>("scp", out _)) return Result.Invalid;
-        return token.TryGetPayloadValue<string[]>("roles", out var roles) && roles.Contains(Role) ? Result.Valid : Result.Invalid;
+        if (!(token.TryGetPayloadValue<string[]>("roles", out var roles) && roles.Contains(Role))) return Result.Invalid;
+        // The alert service itself, when the relay has been told which identity that is.
+        if (_callerId is { } expected
+            && !(token.TryGetPayloadValue<string>("oid", out var oid) && string.Equals(oid, expected, StringComparison.OrdinalIgnoreCase)))
+            return Result.Invalid;
+        return Result.Valid;
     }
 }

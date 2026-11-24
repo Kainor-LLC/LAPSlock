@@ -2,27 +2,28 @@
 #Requires -Modules Microsoft.Graph.Applications
 <#
 .SYNOPSIS
-    Creates the two Entra apps for TenantKeep Watch, hosted by Kainor (HOSTED-WATCH-PLAN.md, H1).
+    Creates the Entra app for TenantKeep Watch, hosted by Kainor (HOSTED-WATCH-PLAN.md, H1).
 
 .DESCRIPTION
     Run in Kainor's tenant, after main.bicep, by an account that can create app registrations
-    and edit the On-Call app (Application Administrator or Global Administrator). Without
-    -Apply it only prints what it would do. Safe to run again: it finds what exists by name.
+    (Application Administrator or Global Administrator). Without -Apply it only prints what
+    it would do. Safe to run again: it finds what exists by name.
 
-    1. "TenantKeep Watch": multi-tenant, application permissions only, read-only, the fixed
-       list in the plan's section 3 (v1: break-glass, Conditional Access, incidents). No
-       secret and no certificate: a federated identity credential trusts the function app's
-       managed identity instead.
-    2. "TenantKeep Alerts API": multi-tenant, exposes one delegated scope, Alerts.Register,
-       pre-authorized for the On-Call app so registering a phone asks for no extra consent.
-    3. On the existing On-Call app: the delegated permission Alerts.Register, so the phone can
-       get a token for the Alerts API.
+    "TenantKeep Watch": multi-tenant, application permissions only, read-only, the fixed
+    list in the plan's section 3 (v1: break-glass, Conditional Access, incidents). No secret
+    and no certificate: a federated identity credential trusts the function app's managed
+    identity instead. Its permissions are set to exactly the list, so running this again
+    after the list shrinks takes the dropped permission off the registration. Organizations
+    that already approved it keep that grant until they remove it.
+
+    Phones register with the scope Alerts.Register of "TenantKeep Alerts", which
+    tools/setup/New-OnCallApps.ps1 makes. This script made an earlier "TenantKeep Alerts API"
+    and added its scope to the original On-Call registration; since the second review (R2-15,
+    2026-11-24) it does neither, because following its output on a redeploy set the service
+    to accept that API's tokens only, and every phone's check-in failed.
 
 .PARAMETER FunctionPrincipalId
     The function app's managed identity object ID: main.bicep's functionPrincipalId output.
-
-.PARAMETER OnCallAppId
-    The On-Call app's client ID. The default is the shipping one.
 
 .PARAMETER Apply
     Make the changes. Without it, nothing is changed.
@@ -30,7 +31,6 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)] [guid] $FunctionPrincipalId,
-    [guid] $OnCallAppId = '50c9aa83-4f5c-4203-a3c0-adab54a2ba3a',
     [switch] $Apply
 )
 
@@ -39,8 +39,12 @@ $ErrorActionPreference = 'Stop'
 
 $graphAppId = '00000003-0000-0000-c000-000000000000'
 # The fixed list. Adding to it is a decision recorded in HOSTED-WATCH-PLAN.md, not an edit here.
-$watchPermissions = @('AuditLog.Read.All', 'Directory.Read.All', 'Policy.Read.All', 'SecurityIncident.Read.All')
-$scopeName = 'Alerts.Register'
+# Policy.Read.All was on it and nothing used it: Conditional Access changes come from the
+# directory audit log, which AuditLog.Read.All covers (second review, R2-14, 2026-11-24).
+$watchPermissions = @('AuditLog.Read.All', 'Directory.Read.All', 'SecurityIncident.Read.All')
+# TenantKeep Alerts, made by tools/setup/New-OnCallApps.ps1: the registration whose token a
+# phone presents. ALERTS_API_AUDIENCE takes bare client IDs.
+$alertsClientId = 'd7c387b7-8e67-4957-bc67-4b71824a60ea'
 
 function Write-Step([string] $Text) {
     $prefix = if ($Apply) { 'DO  ' } else { 'PLAN' }
@@ -89,59 +93,11 @@ if ($watch) {
     Write-Step "Trust the function app's identity $FunctionPrincipalId as the Watch app's credential"
 }
 
-# 2. TenantKeep Alerts API
-$api = Get-MgApplication -Filter "displayName eq 'TenantKeep Alerts API'" | Select-Object -First 1
-if (-not $api) {
-    Write-Step "Create app 'TenantKeep Alerts API' (multi-tenant) exposing the delegated scope $scopeName"
-    if ($Apply) {
-        $api = New-MgApplication -DisplayName 'TenantKeep Alerts API' -SignInAudience 'AzureADMultipleOrgs' `
-            -Notes 'Registers phones for TenantKeep Instant alerts. HOSTED-WATCH-PLAN.md.'
-        $scopeId = [guid]::NewGuid()
-        Update-MgApplication -ApplicationId $api.Id -IdentifierUris @("api://$($api.AppId)") -Api @{
-            RequestedAccessTokenVersion = 2
-            Oauth2PermissionScopes      = @(@{
-                Id                      = $scopeId
-                Value                   = $scopeName
-                Type                    = 'User'
-                IsEnabled               = $true
-                AdminConsentDisplayName = 'Register phones for TenantKeep Instant alerts'
-                AdminConsentDescription = 'Lets an administrator register their phone to receive TenantKeep Instant alerts for this organization.'
-                UserConsentDisplayName  = 'Register your phone for TenantKeep Instant alerts'
-                UserConsentDescription  = 'Lets TenantKeep register this phone to receive Instant alerts for your organization.'
-            })
-        }
-        Update-MgApplication -ApplicationId $api.Id -Api @{
-            RequestedAccessTokenVersion = 2
-            PreAuthorizedApplications   = @(@{ AppId = "$OnCallAppId"; DelegatedPermissionIds = @("$scopeId") })
-        }
-        $api = Get-MgApplication -ApplicationId $api.Id
-    }
-}
-
-# 3. The On-Call app asks for Alerts.Register
-if ($api) {
-    $scope = $api.Api.Oauth2PermissionScopes | Where-Object Value -eq $scopeName
-    $onCall = Get-MgApplication -Filter "appId eq '$OnCallAppId'"
-    if (-not $onCall) { throw "No app with client ID $OnCallAppId in this tenant." }
-    $existing = @($onCall.RequiredResourceAccess)
-    if (-not ($existing | Where-Object ResourceAppId -eq $api.AppId)) {
-        Write-Step "Add the delegated permission $scopeName to the On-Call app ($OnCallAppId), keeping its $($existing.Count) existing resource entries"
-        if ($Apply) {
-            $updated = @($existing | ForEach-Object {
-                    @{ ResourceAppId = $_.ResourceAppId; ResourceAccess = @($_.ResourceAccess | ForEach-Object { @{ Id = $_.Id; Type = $_.Type } }) }
-                }) + @(@{ ResourceAppId = $api.AppId; ResourceAccess = @(@{ Id = $scope.Id; Type = 'Scope' }) })
-            Update-MgApplication -ApplicationId $onCall.Id -RequiredResourceAccess $updated
-        }
-    }
-} else {
-    Write-Step "Add the delegated permission $scopeName to the On-Call app ($OnCallAppId)"
-}
-
 if ($Apply) {
     Write-Information '' -InformationAction Continue
     Write-Information "watchClientId     = $($watch.AppId)" -InformationAction Continue
-    Write-Information "alertsApiAudience = api://$($api.AppId)" -InformationAction Continue
-    Write-Information 'Run main.bicep again with those two parameters.' -InformationAction Continue
+    Write-Information "alertsApiAudience = $alertsClientId" -InformationAction Continue
+    Write-Information 'Run main.bicep again with those, as watch/README.md says.' -InformationAction Continue
 } else {
     Write-Information 'Nothing changed. Run again with -Apply.' -InformationAction Continue
 }

@@ -545,13 +545,31 @@ public actor UserActionsService: UserActionsProviding {
             result.outcome = .failed(.transport(status: 0))
             return result
         }
+        // After a fresh-MFA challenge, one sign-in answers it for the whole change: the first
+        // removal is sent with the challenge, and the rest silently with the token that came
+        // back. A cancelled sign-in stops the change. Before the second review (R2-20,
+        // 2026-11-24) every method asked for a sign-in of its own, and a cancel went on to
+        // ask again for the next.
+        var answered = false
         for method in all {
             guard let action = method.deleteAction(for: target) else {
                 result.kept.append(method.label)
                 continue
             }
             let outcome: ActionOutcome
-            if let challenge { outcome = await runner.resume(action, satisfying: challenge) } else { outcome = await runner.run(action, checkingRoles: false) }
+            if let challenge, !answered {
+                outcome = await runner.resume(action, satisfying: challenge)
+                switch outcome {
+                case .failed(.cancelled), .challenged: break
+                default: answered = true
+                }
+            } else {
+                outcome = await runner.run(action, checkingRoles: false)
+            }
+            if case .failed(.cancelled) = outcome {
+                result.outcome = result.removed.isEmpty && result.failed.isEmpty ? outcome : .failed(.incomplete(result.incompleteDetail))
+                return result
+            }
             switch outcome {
             case .requested:
                 result.removed.append(method.label)

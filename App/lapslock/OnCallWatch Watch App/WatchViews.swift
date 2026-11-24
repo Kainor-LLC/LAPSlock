@@ -123,6 +123,10 @@ struct WatchApprovalView: View {
     let approval: WatchGlance.Approval
     @State private var reason = ""
     @State private var result: WatchReply?
+    /// The decision waiting for its second tap: true to approve, false to deny.
+    @State private var confirming: Bool?
+    /// Set on the tap that sends, before anything waits, so a second tap cannot send twice.
+    @State private var deciding = false
 
     var body: some View {
         List {
@@ -137,20 +141,38 @@ struct WatchApprovalView: View {
             if result?.outcome != .done {
                 Section("Your Reason") {
                     TextField("Say or type a reason", text: $reason)
-                    Button("Approve") { decide(true) }
+                    // A second tap confirms, as the phone's sheet does: the two sit side by
+                    // side on a small screen (second review, R2-23).
+                    Button("Approve") { confirming = true }
                         .tint(.green)
-                        .disabled(model.sending || reason.trimmingCharacters(in: .whitespaces).count < WatchRequest.minimumReason)
-                    Button("Deny", role: .destructive) { decide(false) }
-                        .disabled(model.sending || reason.trimmingCharacters(in: .whitespaces).count < WatchRequest.minimumReason)
+                        .disabled(deciding || model.sending || reason.trimmingCharacters(in: .whitespaces).count < WatchRequest.minimumReason)
+                    Button("Deny", role: .destructive) { confirming = false }
+                        .disabled(deciding || model.sending || reason.trimmingCharacters(in: .whitespaces).count < WatchRequest.minimumReason)
                 }
             }
             WatchResultSection(sending: model.sending, result: result)
         }
         .navigationTitle("Approval")
+        .confirmationDialog(confirming == false ? "Deny " + approval.requester + "?" : "Approve " + approval.requester + "?",
+                            isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+                            titleVisibility: .visible) {
+            if let approve = confirming {
+                Button(approve ? "Approve" : "Deny", role: approve ? nil : .destructive) { decide(approve) }
+                Button("Cancel", role: .cancel) { confirming = nil }
+            }
+        }
     }
 
     private func decide(_ approve: Bool) {
-        Task { result = await model.send(.decide(approvalId: approval.id, approve: approve, reason: reason)) }
+        confirming = nil
+        guard !deciding else { return }
+        deciding = true
+        Task {
+            result = await model.send(.decide(approvalId: approval.id, approve: approve, reason: reason))
+            // One that went through is not offered again. One that did not may be, after the
+            // person has checked: the reply says when the phone may have sent it.
+            if result?.outcome != .done { deciding = false }
+        }
     }
 }
 

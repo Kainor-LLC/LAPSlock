@@ -8,7 +8,10 @@
 // template cannot create app registrations.
 //
 //   az group create --name kainor-watch-prod-rg --location centralus
-//   az deployment group create --resource-group kainor-watch-prod-rg --template-file watch/infra/main.bicep --parameters budgetEmail=<address>
+//   watch/README.md has the deployment command. Its four app parameters are required, and
+//   only the very first deployment passes "none" for them: a setting left out used to be
+//   written empty, which stopped the service or sent its alerts the wrong way (second
+//   review, R2-15, 2026-11-24).
 
 targetScope = 'resourceGroup'
 
@@ -27,14 +30,22 @@ param budgetAmount int = 10
 @description('First day of the month the budget starts, yyyy-MM-01.')
 param budgetStart string = '2026-11-01'
 
-@description('The TenantKeep Watch app registration client ID, from New-WatchApps.ps1. Empty on the first run.')
-param watchClientId string = ''
+@description('The TenantKeep Watch app registration client ID, from New-WatchApps.ps1. "none" on the very first deployment only.')
+param watchClientId string
 
-@description('The TenantKeep Alerts API app ID URI, from New-WatchApps.ps1. Empty on the first run.')
-param alertsApiAudience string = ''
+@description('The client IDs whose Alerts.Register tokens a phone may present, bare and comma separated: TenantKeep Alerts, d7c387b7-8e67-4957-bc67-4b71824a60ea. Not an api:// form, which no v2 token carries as its audience. "none" on the very first deployment only.')
+param alertsApiAudience string
 
-@description('The relay\'s app registration as api://client-id, from New-RelayServiceTrust.ps1. Empty sends the earlier way, which delivers to organization licences only.')
-param relayServiceAudience string = ''
+@description('The relay\'s app registration as api://client-id, from New-RelayServiceTrust.ps1. "none" sends the earlier way, which delivers to organization licences only.')
+param relayServiceAudience string
+
+@description('The workspace\'s rule that empties the city, state and country on each log row, from Set-LogLocationBlanking.ps1: its resource ID. Passed so a redeploy keeps the workspace linked to it. "none" until the script has run once.')
+param noLocationRuleId string
+
+// "none" is how the first deployment says a value does not exist yet.
+var watchClientIdValue = watchClientId == 'none' ? '' : watchClientId
+var alertsApiAudienceValue = alertsApiAudience == 'none' ? '' : alertsApiAudience
+var relayServiceAudienceValue = relayServiceAudience == 'none' ? '' : relayServiceAudience
 
 var storageName = replace('${prefix}st', '-', '')
 var deploymentContainer = 'deploymentpackage'
@@ -74,11 +85,11 @@ resource container 'Microsoft.Storage/storageAccounts/blobServices/containers@20
 resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${prefix}-law'
   location: location
-  properties: {
+  properties: union({
     sku: { name: 'PerGB2018' }
     retentionInDays: 30
     workspaceCapping: { dailyQuotaGb: json('0.1') }
-  }
+  }, noLocationRuleId == 'none' ? {} : { defaultDataCollectionRuleResourceId: noLocationRuleId })
 }
 
 resource insights 'Microsoft.Insights/components@2020-02-02' = {
@@ -128,12 +139,12 @@ resource site 'Microsoft.Web/sites@2024-04-01' = {
         { name: 'AzureWebJobsStorage__accountName', value: storage.name }
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
         { name: 'WATCH_STORAGE_ACCOUNT', value: storage.name }
-        { name: 'WATCH_CLIENT_ID', value: watchClientId }
+        { name: 'WATCH_CLIENT_ID', value: watchClientIdValue }
         { name: 'WATCH_HOME_TENANT_ID', value: subscription().tenantId }
-        { name: 'ALERTS_API_AUDIENCE', value: alertsApiAudience }
+        { name: 'ALERTS_API_AUDIENCE', value: alertsApiAudienceValue }
         { name: 'SENDER_KEY_SECRET_URI', value: '${vault.properties.vaultUri}secrets/watch-sender-key' }
         { name: 'RELAY_URL', value: 'https://kainor-relay-prod-func.azurewebsites.net/relay' }
-        { name: 'RELAY_SERVICE_AUDIENCE', value: relayServiceAudience }
+        { name: 'RELAY_SERVICE_AUDIENCE', value: relayServiceAudienceValue }
         { name: 'ENTITLEMENT_URL', value: 'https://kainor-lapslock-prod-func.azurewebsites.net/entitlement' }
       ]
     }

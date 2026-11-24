@@ -68,8 +68,8 @@ effect the next time the app is opened, not in the session that fetched it.
 
 ## The Mac Menu Bar App
 
-TenantKeep's menu bar app for the Mac is a separate app, and it reads two settings of its
-own, from a managed preference for `com.kainor.tenantkeep.menubar`. In Intune: Devices,
+TenantKeep's menu bar app for the Mac is a separate app, and it reads three settings, from a
+managed preference for `com.kainor.tenantkeep.menubar`. In Intune: Devices,
 macOS, Configuration, a Preference file profile with that preference domain and a property
 list holding the keys. Only a value the organization manages counts; one written by hand
 with `defaults` is ignored.
@@ -78,6 +78,7 @@ with `defaults` is ignored.
 |---|---|---|
 | `menuBar.disabled` | boolean | The app is turned off on the organization's Macs. It says so, signs out whoever was signed in, and reads nothing |
 | `tenant.pin` | string, your tenant ID | The app may be signed in to this organization only. An account from any other is signed straight back out |
+| `modules.disabled` | array of strings, or one string with commas | The iPhone app's key. With `privilegedAccess` in it, the Roles view is gone and no role is activated from the Mac. The menu bar app has no other module it names |
 
 ```xml
 <dict>
@@ -87,8 +88,8 @@ with `defaults` is ignored.
 ```
 
 The other keys on this page apply to the iPhone and iPad app. The menu bar app has no
-writes to switch off beyond role activation, which your organization controls by which app
-it approves.
+writes to switch off beyond role activation, which `modules.disabled` turns off and which your
+organization also controls by which app it approves.
 
 ## What the app does with it
 
