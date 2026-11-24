@@ -31,6 +31,8 @@ public enum InstantAlertsAnswer: Sendable, Equatable {
     case notPermitted
     /// A break-glass account was not found in the organization.
     case accountNotFound
+    /// The organization has as many phones registered as it may, `limit` of them.
+    case tooManyPhones(limit: Int)
     /// Anything else, with the HTTP status (0 for no answer).
     case failed(Int)
 
@@ -55,6 +57,8 @@ public enum InstantAlertsAnswer: Sendable, Equatable {
             return .notPermitted
         case 400 where json["error"] as? String == "account":
             return .accountNotFound
+        case 429 where json["error"] as? String == "limit":
+            return .tooManyPhones(limit: json["limit"] as? Int ?? 20)
         default:
             return .failed(status)
         }

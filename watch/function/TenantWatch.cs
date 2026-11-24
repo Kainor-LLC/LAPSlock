@@ -94,15 +94,18 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
 
     async Task<(bool Watched, int Alerts, int Failures)> WatchOneAsync(TenantRecord tenant, bool slow, Dictionary<int, int> notSent, Outcomes outcomes, CancellationToken ct)
     {
-        var devices = await store.DevicesAsync(tenant.TenantId, ct);
+        // No more phones than an organization may register, so no organization's alerts can
+        // hold the run, or the relay's one ceiling, for long (second review, R2-5).
+        var devices = await store.DevicesAsync(tenant.TenantId, DeviceFunctions.MaxPhonesPerOrganization, ct);
         if (devices.Count == 0) return (false, 0, 0);
         var pending = new List<(string Kind, string Title, string Body, string Link, bool Urgent)>();
-        bool failed = false, notInTenant = false;
+        bool failed = false, notInTenant = false, ran = false;
 
         // Each check on its own: a tenant without Entra ID P1 is refused the sign-in log,
         // and that must not stop its Conditional Access and incident checks from running.
         async Task Check(Func<Task> check)
         {
+            ran = true;
             try
             {
                 await check();
@@ -144,7 +147,7 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
                         IncidentBody(tenant.Label, incidents), "tenantkeep://security", incidents.Contains("high")));
             });
         }
-        Settle(tenant, notInTenant, failed, DateTimeOffset.UtcNow);
+        Settle(tenant, ran, notInTenant, failed, DateTimeOffset.UtcNow);
         await store.SaveAsync(tenant, ct);
 
         int alerts = 0, failures = failed ? 1 : 0;
@@ -181,9 +184,16 @@ public sealed class TenantWatch(WatchStore store, GraphReader graph, AlertSender
     /// The state a run leaves. "noConsent" only on Entra's definite answer, with the time it
     /// was first given kept until a run succeeds or fails some other way: the nightly
     /// cleanup deletes after a day of it, never on one run.
+    ///
+    /// A minute in which no check ran says nothing about the organization and leaves the
+    /// state as the last check left it. Before the second review (R2-6, 2026-11-24) it set
+    /// "ok" and cleared the clock, so an organization with no break-glass accounts named,
+    /// checked every fifth minute, was found gone and cleared again the next minute, and
+    /// was never deleted.
     /// </summary>
-    internal static void Settle(TenantRecord tenant, bool notInTenant, bool failed, DateTimeOffset now)
+    internal static void Settle(TenantRecord tenant, bool ran, bool notInTenant, bool failed, DateTimeOffset now)
     {
+        if (!ran) return;
         if (notInTenant)
         {
             tenant.State = "noConsent";

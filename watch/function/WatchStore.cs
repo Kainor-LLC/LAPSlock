@@ -116,6 +116,41 @@ public sealed class WatchStore
         return all;
     }
 
+    /// <summary>
+    /// No more than <paramref name="limit"/> of the organization's phones: the minute run's
+    /// read, so an organization with more phones than it may have cannot make every run
+    /// longer for the organizations after it (second review, R2-5).
+    /// </summary>
+    public async Task<List<DeviceRecord>> DevicesAsync(string tenantId, int limit, CancellationToken ct)
+    {
+        await EnsureAsync(ct);
+        var some = new List<DeviceRecord>();
+        await foreach (var d in devices.QueryAsync<DeviceRecord>(d => d.PartitionKey == tenantId, maxPerPage: limit, cancellationToken: ct))
+        {
+            some.Add(d);
+            if (some.Count >= limit) break;
+        }
+        return some;
+    }
+
+    /// <summary>Whether this phone is registered for the organization already. A point read of its key.</summary>
+    public async Task<bool> HasDeviceAsync(string tenantId, string deviceKey, CancellationToken ct)
+    {
+        await EnsureAsync(ct);
+        var found = await devices.GetEntityIfExistsAsync<TableEntity>(tenantId, deviceKey, select: ["RowKey"], cancellationToken: ct);
+        return found.HasValue;
+    }
+
+    /// <summary>The organization's phones, counted up to <paramref name="upTo"/> and no further. Only their keys are read.</summary>
+    public async Task<int> CountDevicesAsync(string tenantId, int upTo, CancellationToken ct)
+    {
+        await EnsureAsync(ct);
+        var count = 0;
+        await foreach (var _ in devices.QueryAsync<TableEntity>(TableClient.CreateQueryFilter($"PartitionKey eq {tenantId}"), maxPerPage: upTo, select: ["RowKey"], cancellationToken: ct))
+            if (++count >= upTo) break;
+        return count;
+    }
+
     public async Task SaveAsync(DeviceRecord device, CancellationToken ct)
     {
         await EnsureAsync(ct);

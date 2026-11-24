@@ -63,6 +63,8 @@ The request carries a Microsoft token issued for the `Alerts.Register` scope of 
 
 The answer carries the service's public sender key, which the phone keeps for that organization so it can open, and authenticate, what the service sends. `DELETE` on the same address, with the push token, removes the phone.
 
+An organization can have 20 phones registered. A new phone beyond that is answered `429` with `{"error":"limit","limit":20}`, and the app says to turn Instant alerts off on a phone no longer in use. A phone already registered can always check in. The service reads no more than 20 phones for an organization in each run.
+
 ## 5. What the Service Keeps
 
 For each organization: its tenant ID; its name, which alerts carry; the object IDs of the named break-glass accounts; whether the approval is in place; and, for each kind of alert, the time and identifiers of the last events seen, so nothing is announced twice. For a security incident its severity is kept beside its identifier, so a raised severity can be announced.
@@ -74,7 +76,7 @@ It does not keep the sign-ins, audit entries or incidents it reads. Each is exam
 | Data | Deleted |
 |---|---|
 | A phone | When Instant alerts are turned off on it or its administrator signs out; when Apple answers that its push token is no longer valid; or 30 days after it last checked in |
-| Everything for an organization | Within two days of the organization removing TenantKeep Watch from Entra ID: once Entra ID has reported the removal for a full day, at the next daily cleanup |
+| Everything for an organization | Within two days of the organization removing TenantKeep Watch from Entra ID: once Entra ID has reported the removal for a full day, at the next daily cleanup. And at the first daily cleanup after its last phone is removed, since an organization with no phones is no longer watched |
 
 The service runs in Microsoft Azure, Central US. Its sub-processors are Microsoft (Azure) and Apple (Apple Push Notification service, which sees the push token and an encrypted alert it cannot read).
 
@@ -98,4 +100,5 @@ Each alert is a relay envelope ([RELAY-API.md](RELAY-API.md) section 5): HPKE in
 
 - 2026-11-15: version 1. Break-glass sign-ins, Conditional Access changes and security incidents.
 - 2026-11-23: the service sends through the relay as itself, by managed identity, on the relay's own route for it. Until then an organization whose administrators subscribed in the app, with no organization license, was refused by the relay and received nothing. No change to what the service reads or keeps.
+- 2026-11-24: an organization can register 20 phones (section 4); there was no limit. An organization with no phones left is deleted at the next daily cleanup, and an organization that names no break-glass accounts is now deleted within two days of removing TenantKeep Watch: before, both could stay for good, though this page said otherwise. No change to what the service reads.
 - 2026-11-23: section 5 corrected to what the service stores. It never stored the registering administrator's object ID, though this page said so; it stores which of Apple's push services a token belongs to, and an incident's severity beside its identifier, which this page did not say. An organization that removes TenantKeep Watch is deleted within two days, not one: the service waits a full day so that a passing error deletes nothing. A phone whose push token Apple rejects is deleted at the next alert. No change to what the service reads.

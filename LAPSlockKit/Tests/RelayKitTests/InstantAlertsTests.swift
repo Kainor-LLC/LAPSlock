@@ -43,4 +43,10 @@ final class InstantAlertsTests: XCTestCase {
         XCTAssertEqual(InstantAlertsAnswer.parse(status: 400, body: body(["error": "malformed"])), .failed(400))
         XCTAssertEqual(InstantAlertsAnswer.parse(status: 401, body: Data()), .failed(401))
     }
+
+    /// Second review, R2-5: the service now refuses an organization's phone past its limit.
+    func test_aPhonePastTheOrganizationsLimit() {
+        XCTAssertEqual(InstantAlertsAnswer.parse(status: 429, body: body(["error": "limit", "limit": 20])), .tooManyPhones(limit: 20))
+        XCTAssertEqual(InstantAlertsAnswer.parse(status: 429, body: Data()), .failed(429), "any other 429 is not the limit")
+    }
 }

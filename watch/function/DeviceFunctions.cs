@@ -20,6 +20,17 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
     [GeneratedRegex("^[0-9a-f]{64,200}$")]
     private static partial Regex TokenPattern();
 
+    /// <summary>
+    /// Phones one organization may have registered. Before the second review (R2-5,
+    /// 2026-11-24) there was no limit, so one organization, a free trial tenant included,
+    /// could register phones without end and hold every run, and the relay's one ceiling,
+    /// for its own alerts. A phone already registered is checking in and always may.
+    /// </summary>
+    internal const int MaxPhonesPerOrganization = 20;
+
+    internal static bool OverPhoneLimit(int registered, bool alreadyRegistered) =>
+        !alreadyRegistered && registered >= MaxPhonesPerOrganization;
+
     public sealed record RegisterBody(string DeviceToken, string Environment, string PublicKey, string[]? BreakGlass);
     public sealed record UnregisterBody(string DeviceToken);
 
@@ -52,6 +63,14 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
         if (!caller.CanRegister)
             return new ObjectResult(new { error = "role", message = "An active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role is needed." }) { StatusCode = 403 };
 
+        var deviceKey = DeviceRecord.KeyFor(body.DeviceToken!);
+        if (OverPhoneLimit(await store.CountDevicesAsync(caller.TenantId, MaxPhonesPerOrganization, ct),
+                           await store.HasDeviceAsync(caller.TenantId, deviceKey, ct)))
+        {
+            log.LogInformation("RegisterDevice refused reason=limit");
+            return new ObjectResult(new { error = "limit", limit = MaxPhonesPerOrganization }) { StatusCode = 429 };
+        }
+
         var tenant = await store.TenantAsync(caller.TenantId, ct) ?? new TenantRecord { RowKey = caller.TenantId };
         tenant.Label = label;
         var breakGlassUpdated = false;
@@ -77,7 +96,7 @@ public sealed partial class DeviceFunctions(WatchOptions options, PhoneToken tok
         await store.SaveAsync(new DeviceRecord
         {
             PartitionKey = caller.TenantId,
-            RowKey = DeviceRecord.KeyFor(body.DeviceToken!),
+            RowKey = deviceKey,
             DeviceToken = body.DeviceToken!,
             Environment = body.Environment,
             PublicKey = body.PublicKey,

@@ -120,25 +120,68 @@ public class WatchTests
         var tenant = new TenantRecord { RowKey = "t", State = "ok" };
 
         // 03:14, a run fails for a passing reason; 03:15, the cleanup runs. Nothing is deleted.
-        TenantWatch.Settle(tenant, notInTenant: false, failed: true, start);
+        TenantWatch.Settle(tenant, ran: true, notInTenant: false, failed: true, start);
         Assert.Equal("error", tenant.State);
         Assert.False(Housekeeping.IsGone(tenant, start.AddMinutes(1)));
 
         // Entra says the app is not there. Still nothing for a day.
-        TenantWatch.Settle(tenant, notInTenant: true, failed: true, start);
+        TenantWatch.Settle(tenant, ran: true, notInTenant: true, failed: true, start);
         Assert.Equal("noConsent", tenant.State);
         Assert.False(Housekeeping.IsGone(tenant, start.AddMinutes(1)));
         Assert.False(Housekeeping.IsGone(tenant, start.AddHours(23)));
 
         // The time it was first said is kept across runs, so the day is counted from then.
-        TenantWatch.Settle(tenant, notInTenant: true, failed: true, start.AddHours(12));
+        TenantWatch.Settle(tenant, ran: true, notInTenant: true, failed: true, start.AddHours(12));
         Assert.Equal(start, tenant.NoConsentSince);
         Assert.True(Housekeeping.IsGone(tenant, start.AddHours(24)));
 
         // One good run in between starts the day again.
-        TenantWatch.Settle(tenant, notInTenant: false, failed: false, start.AddHours(25));
+        TenantWatch.Settle(tenant, ran: true, notInTenant: false, failed: false, start.AddHours(25));
         Assert.Null(tenant.NoConsentSince);
         Assert.False(Housekeeping.IsGone(tenant, start.AddHours(26)));
+    }
+
+    // Second review, R2-6: an organization with no break-glass accounts named is checked
+    // every fifth minute, and the minutes between must not clear what the check found.
+    [Fact]
+    public void AMinuteThatRanNoCheckLeavesTheStateAlone()
+    {
+        var start = new DateTimeOffset(2026, 11, 24, 3, 0, 0, TimeSpan.Zero);
+        var tenant = new TenantRecord { RowKey = "t", State = "ok" };
+        TenantWatch.Settle(tenant, ran: true, notInTenant: true, failed: true, start);
+        for (var minute = 1; minute < 5; minute++)
+            TenantWatch.Settle(tenant, ran: false, notInTenant: false, failed: false, start.AddMinutes(minute));
+        Assert.Equal("noConsent", tenant.State);
+        Assert.Equal(start, tenant.NoConsentSince);
+        Assert.Equal(start, tenant.LastRun);
+        Assert.True(Housekeeping.IsGone(tenant, start.AddHours(24)));
+    }
+
+    // Second review, R2-6: an organization whose phones have all gone is never asked
+    // anything again, so its row went only when deleted here.
+    [Fact]
+    public void AnOrganizationWithNoPhonesLeftIsDeletedAtNight()
+    {
+        var now = new DateTimeOffset(2026, 11, 24, 3, 15, 0, TimeSpan.Zero);
+        var quiet = new TenantRecord { RowKey = "t", State = "ok", Timestamp = now.AddDays(-3) };
+        Assert.True(Housekeeping.ShouldDelete(quiet, phonesLeft: 0, now));
+        Assert.False(Housekeeping.ShouldDelete(quiet, phonesLeft: 1, now), "an organization with a phone stays");
+        // A registration saves the row a moment before its phone.
+        var justSaved = new TenantRecord { RowKey = "t", State = "new", Timestamp = now.AddMinutes(-1) };
+        Assert.False(Housekeeping.ShouldDelete(justSaved, phonesLeft: 0, now));
+        // Gone for a day goes whatever its phones.
+        var gone = new TenantRecord { RowKey = "t", State = "noConsent", NoConsentSince = now.AddDays(-2), Timestamp = now };
+        Assert.True(Housekeeping.ShouldDelete(gone, phonesLeft: 3, now));
+    }
+
+    // Second review, R2-5: no organization may register phones without end.
+    [Fact]
+    public void AnOrganizationMayRegisterTwentyPhonesAndACheckInIsNeverRefused()
+    {
+        Assert.Equal(20, DeviceFunctions.MaxPhonesPerOrganization);
+        Assert.False(DeviceFunctions.OverPhoneLimit(19, alreadyRegistered: false));
+        Assert.True(DeviceFunctions.OverPhoneLimit(20, alreadyRegistered: false));
+        Assert.False(DeviceFunctions.OverPhoneLimit(20, alreadyRegistered: true), "the daily check-in of a phone already there");
     }
 
     [Fact]

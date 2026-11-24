@@ -299,6 +299,8 @@ final class RelayCoordinator {
             status = .problem("Your account needs an active Global Administrator, Security Administrator, Security Operator, Security Reader or Global Reader role. If yours is eligible in PIM, activate it first.")
         case .accountNotFound:
             status = .problem("A break-glass account set under Notifications isn't in this organization. Check the addresses and try again.")
+        case .tooManyPhones(let limit):
+            status = .problem("Your organization already has \(limit) phones with Instant alerts on. Turn them off on a phone that is no longer used, then try again.")
         case .failed(let code):
             if !quiet { status = .problem("Kainor's alert service answered \(code). Try again shortly.") }
         }
