@@ -288,6 +288,9 @@ public actor MSALAuthManager: AuthManaging {
     /// a cached account alone would show the device list and then fail on the first Graph
     /// call, which is worse than showing the sign-in screen.
     public func restoreSession() async -> AdminAccount? {
+        // What this restore finds out, and nothing from an earlier check: a restore that
+        // asks nobody (no session cached) must not be read as Microsoft's answer.
+        lastSessionStanding = nil
         // `SessionRestore` holds the decision and its reasons. In short: an install from
         // before the split has its session on the original registration and none on the
         // read one, and carries on reading through the original until the person signs
