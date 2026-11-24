@@ -240,10 +240,14 @@ public actor MSALAuthManager: AuthManaging {
         let result = try await recording(.signIn) { try await acquireInteractive(app, params) }
         let account = try Self.account(from: result)
         self.pinnedAccount = account
-        // Nor a list of customers to read through it: that belonged to a session from
-        // before the split, and this is not one.
         self.sessionOnOriginal = false
-        forgetReadRoutes()
+        // The customers still waiting to move stay with the person who began the list, so
+        // a sign-in the session needed (a sign-in frequency policy, a changed password, a
+        // revoke) does not undo the move. Anyone else starts with none. Until the second
+        // review (R2-1, 2026-11-24) every sign-in cleared it here.
+        readRoutes.keep(onlyFor: account.tenantId, person: account.id)
+        askedRead = []
+        probedRead = []
         // A new account starts in its own tenant. Carrying a previous session's customer
         // tenant across a sign-in would be both confusing and wrong.
         self.activeTenant = nil
@@ -317,7 +321,7 @@ public actor MSALAuthManager: AuthManaging {
 
         pinnedAccount = account
         sessionOnOriginal = (registration == .actions)
-        readRoutes.keep(onlyFor: account.tenantId)
+        readRoutes.keep(onlyFor: account.tenantId, person: account.id)
         // A restored session starts in the account's own tenant. An MSP's customer selection
         // is deliberately not carried across a launch, operating in someone else's tenant
         // should be a decision made now, not one inherited from last week.
@@ -373,7 +377,7 @@ public actor MSALAuthManager: AuthManaging {
             // saved or not, and what is on screen must not stop.
             if let active = activeTenant { waiting.insert(active.expected) }
             sessionOnOriginal = false
-            readRoutes.begin(home: home.expected, waiting: waiting)
+            readRoutes.begin(home: home.expected, person: account.id, waiting: waiting)
             // It may have approved the read registration already.
             if let active = activeTenant, waits(active.expected),
                await probe(.read, pin: active, account: account).probe == .token {

@@ -12,6 +12,9 @@ final class ReadRoutesTests: XCTestCase {
     private let home = "11111111-1111-4111-8111-111111111111"
     private let contoso = "22222222-2222-4222-8222-222222222222"
     private let fabrikam = "33333333-3333-4333-8333-333333333333"
+    /// Two people in the same organization, as the sign-in library names accounts.
+    private let jane = "aaaaaaaa-0000-4000-8000-000000000001.11111111-1111-4111-8111-111111111111"
+    private let sam = "aaaaaaaa-0000-4000-8000-000000000002.11111111-1111-4111-8111-111111111111"
 
     private func store() -> ReadRouteStore {
         let name = "ReadRoutesTests." + UUID().uuidString
@@ -89,7 +92,7 @@ final class ReadRoutesTests: XCTestCase {
         let routes = store()
         XCTAssertFalse(routes.waits(contoso, home: home), "nothing waits before the person's own organization has moved")
 
-        routes.begin(home: home, waiting: [contoso, fabrikam.uppercased(), home])
+        routes.begin(home: home, person: jane, waiting: [contoso, fabrikam.uppercased(), home])
         XCTAssertTrue(routes.waits(contoso, home: home))
         XCTAssertTrue(routes.waits(fabrikam, home: home.uppercased()))
         XCTAssertFalse(routes.waits(home, home: home), "the person's own organization has just moved")
@@ -98,7 +101,7 @@ final class ReadRoutesTests: XCTestCase {
 
     func testACustomerThatMovesNeverGoesBack() {
         let routes = store()
-        routes.begin(home: home, waiting: [contoso, fabrikam])
+        routes.begin(home: home, person: jane, waiting: [contoso, fabrikam])
         routes.remove(contoso, home: home)
         XCTAssertFalse(routes.waits(contoso, home: home))
         XCTAssertTrue(routes.waits(fabrikam, home: home))
@@ -113,22 +116,64 @@ final class ReadRoutesTests: XCTestCase {
 
     func testTheListIsForOnePersonsOrganizationAndGoesWithTheirSession() {
         let routes = store()
-        routes.begin(home: home, waiting: [contoso])
+        routes.begin(home: home, person: jane, waiting: [contoso])
         XCTAssertEqual(routes.waiting(home: fabrikam), [], "someone from another organization does not inherit it")
 
-        routes.keep(onlyFor: home)
+        routes.keep(onlyFor: home, person: jane)
         XCTAssertTrue(routes.waits(contoso, home: home))
-        routes.keep(onlyFor: fabrikam)
+        routes.keep(onlyFor: fabrikam, person: jane)
         XCTAssertFalse(routes.waits(contoso, home: home), "restoring someone else drops it")
 
-        routes.begin(home: home, waiting: [contoso])
+        routes.begin(home: home, person: jane, waiting: [contoso])
         routes.clear()
         XCTAssertEqual(routes.waiting(home: home), [])
     }
 
+    /// Second review, R2-1: a sign-in the session needed (a sign-in frequency policy, a
+    /// changed password, a revoke) went through the sign-in screen, which cleared the list,
+    /// and the waiting customers then failed through the read registration.
+    func testASignInByThePersonWhoBeganTheListKeepsIt() {
+        let routes = store()
+        routes.begin(home: home, person: jane, waiting: [contoso, fabrikam])
+        routes.keep(onlyFor: home, person: jane.uppercased())
+        XCTAssertEqual(routes.waiting(home: home), [contoso, fabrikam])
+    }
+
+    func testAnyoneElseInTheSameOrganizationStartsWithNone() {
+        let routes = store()
+        routes.begin(home: home, person: jane, waiting: [contoso])
+        routes.keep(onlyFor: home, person: sam)
+        XCTAssertEqual(routes.waiting(home: home), [])
+        routes.keep(onlyFor: home, person: jane)
+        XCTAssertEqual(routes.waiting(home: home), [], "once dropped it does not come back")
+    }
+
+    /// Build 14 kept no person with the list, and cleared it at every sign-in, so the one
+    /// session holding it is the one that began it.
+    func testAListFromBeforeThePersonWasKeptIsAdoptedOnce() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "ReadRoutesTests.adopt." + UUID().uuidString))
+        defaults.set(home, forKey: "readRoute.home")
+        defaults.set([contoso], forKey: "readRoute.waiting")
+        let routes = ReadRouteStore(defaults: defaults)
+        routes.keep(onlyFor: home, person: jane)
+        XCTAssertEqual(routes.waiting(home: home), [contoso])
+        routes.keep(onlyFor: home, person: sam)
+        XCTAssertEqual(routes.waiting(home: home), [], "adopted by the first person, so not anyone's after")
+    }
+
+    func testTheListDoesNotKeepThePersonsIdentifier() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "ReadRoutesTests.digest." + UUID().uuidString))
+        ReadRouteStore(defaults: defaults).begin(home: home, person: jane, waiting: [contoso])
+        let kept = defaults.dictionaryRepresentation().filter { $0.key.hasPrefix("readRoute.") }
+        XCTAssertEqual(Set(kept.keys), ["readRoute.home", "readRoute.waiting", "readRoute.person"])
+        XCTAssertFalse(String(describing: kept).contains("aaaaaaaa-0000"), "a digest, not the identifier")
+        ReadRouteStore(defaults: defaults).clear()
+        XCTAssertTrue(defaults.dictionaryRepresentation().keys.filter { $0.hasPrefix("readRoute.") }.isEmpty)
+    }
+
     func testAProviderWithNoCustomersKeepsNoList() {
         let routes = store()
-        routes.begin(home: home, waiting: [])
+        routes.begin(home: home, person: jane, waiting: [])
         XCTAssertEqual(routes.waiting(home: home), [])
         XCTAssertFalse(ReadRouteStore.none.waits(contoso, home: home))
     }
@@ -186,12 +231,16 @@ final class ReadRoutesTests: XCTestCase {
         XCTAssertFalse(probe.contains("acquireInteractive"), "a probe never shows a prompt")
     }
 
-    /// A new sign-in and a sign-out both drop the list: neither is a session from before the split.
-    func testANewSignInAndASignOutDropTheList() throws {
+    /// A sign-out drops the list. A sign-in and a restore keep it only for the person who
+    /// began it (R2-1).
+    func testASignOutDropsTheListAndASignInKeepsItForItsPerson() throws {
         let source = try managerSource()
-        XCTAssertTrue(try function("public func signIn() async throws -> AdminAccount {", in: source).contains("forgetReadRoutes()"))
+        let signIn = try function("public func signIn() async throws -> AdminAccount {", in: source)
+        XCTAssertTrue(signIn.contains("readRoutes.keep(onlyFor: account.tenantId, person: account.id)"))
+        XCTAssertFalse(signIn.contains("forgetReadRoutes()"))
         XCTAssertTrue(try function("private func clearSession() {", in: source).contains("forgetReadRoutes()"))
         XCTAssertTrue(try function("private func restore(through registration: AppRegistration) async -> AdminAccount? {", in: source)
-            .contains("readRoutes.keep(onlyFor: account.tenantId)"))
+            .contains("readRoutes.keep(onlyFor: account.tenantId, person: account.id)"))
+        XCTAssertTrue(source.contains("readRoutes.begin(home: home.expected, person: account.id, waiting: waiting)"))
     }
 }

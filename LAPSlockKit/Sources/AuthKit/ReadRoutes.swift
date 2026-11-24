@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 // Which registration an organization's reads go through, for a person who signed in before
 // TenantKeep's sign-in was split into a read-only registration and separate ones for actions.
@@ -16,15 +17,18 @@ import Foundation
 //   entered.** The moment that answers, the customer has moved, and it is taken off the
 //   list for good.
 // - **Nothing is ever added to the list afterwards.** A customer that has moved, a customer
-//   added later, and anyone who signs in afresh read through the read registration or not
-//   at all. So the original registration, which can write, is only ever where a customer
+//   added later, and anyone but the person who began the list read through the read
+//   registration or not at all. So the original registration, which can write, is only ever where a customer
 //   already was. It is never somewhere a failure sends reads back to: an organization that
 //   disables the read app stops the app, as it means to.
 //
 // The list is a preference, not a credential: it can only name customers this person was
 // already reading through the original registration, and it needs that registration's
-// session, which is in the Keychain, to mean anything. It is kept like the write routes
-// are, cleared at sign-out and at a new sign-in, and a forgotten customer leaves it.
+// session, which is in the Keychain, to mean anything. It belongs to the person who began
+// it: a sign-in by that person keeps it, anyone else's drops it, sign-out clears it, and a
+// forgotten customer leaves it. (Until the second review, R2-1 on 2026-11-24, every sign-in
+// cleared it, so a sign-in the session needed, under a sign-in frequency policy or after a
+// revoke, sent the waiting customers through a registration they had not approved.)
 
 /// What the screens say is waiting.
 public enum ReadUpdate: Sendable, Equatable {
@@ -108,6 +112,9 @@ public struct ReadRouteStore: @unchecked Sendable {
     private let defaults: UserDefaults?
     private static let homeKey = "readRoute.home"
     private static let waitingKey = "readRoute.waiting"
+    /// Who began the list, as a digest of the sign-in library's account identifier: enough
+    /// to tell the same person, without keeping their identifier beside the list.
+    private static let personKey = "readRoute.person"
 
     public init(defaults: UserDefaults?) {
         self.defaults = defaults
@@ -129,12 +136,13 @@ public struct ReadRouteStore: @unchecked Sendable {
     }
 
     /// The person's own organization has just moved: these customers have not. The one
-    /// time anything is put on the list.
-    public func begin(home: String, waiting: Set<String>) {
+    /// time anything is put on the list. `person` is the account that moved them.
+    public func begin(home: String, person: String, waiting: Set<String>) {
         let home = home.lowercased()
         let customers = Set(waiting.map { $0.lowercased() }).subtracting([home])
         guard !customers.isEmpty else { return clear() }
         defaults?.set(home, forKey: Self.homeKey)
+        defaults?.set(Self.digest(person), forKey: Self.personKey)
         defaults?.set(customers.sorted(), forKey: Self.waitingKey)
     }
 
@@ -147,14 +155,27 @@ public struct ReadRouteStore: @unchecked Sendable {
         defaults?.set(left.sorted(), forKey: Self.waitingKey)
     }
 
-    /// Drops a list recorded for some other organization's person.
-    public func keep(onlyFor home: String) {
-        guard let defaults, let stored = defaults.string(forKey: Self.homeKey), stored != home.lowercased() else { return }
-        clear()
+    /// Keeps the list for the person who began it, at a restore and at a sign-in, and drops
+    /// it for anyone else. A list from before the person was recorded with it (build 14) is
+    /// taken as theirs: until then any sign-in cleared it, so only the session it was begun
+    /// in can be holding it.
+    public func keep(onlyFor home: String, person: String) {
+        guard let defaults, let stored = defaults.string(forKey: Self.homeKey) else { return }
+        guard stored == home.lowercased() else { return clear() }
+        let who = Self.digest(person)
+        guard let began = defaults.string(forKey: Self.personKey) else {
+            return defaults.set(who, forKey: Self.personKey)
+        }
+        if began != who { clear() }
     }
 
     public func clear() {
         defaults?.removeObject(forKey: Self.homeKey)
         defaults?.removeObject(forKey: Self.waitingKey)
+        defaults?.removeObject(forKey: Self.personKey)
+    }
+
+    static func digest(_ person: String) -> String {
+        SHA256.hash(data: Data(person.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
     }
 }
