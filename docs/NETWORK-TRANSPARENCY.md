@@ -7,7 +7,10 @@ minutes, and section 4 tells you how.
 
 ## 1. The hosts
 
-TenantKeep On-Call talks to exactly these hosts. There is no ninth.
+TenantKeep On-Call's own code talks to exactly the hosts in this table. Microsoft's Intune
+App SDK, which the app includes so an organization can protect it with an Intune policy, makes
+requests of its own to Microsoft; those are the last two rows, and
+[APP-PROTECTION.md](APP-PROTECTION.md) has the detail.
 
 | Host | Operator | When | What crosses the wire |
 |---|---|---|---|
@@ -19,6 +22,8 @@ TenantKeep On-Call talks to exactly these hosts. There is no ninth.
 | `www.bleepingcomputer.com` | BleepingComputer | Only when the Digest is read, on the same schedule | A GET for the public news feed: headlines and short summaries. Same rule. The app never fetches an article page; *Open on the site* hands the link to Safari. Shown with BleepingComputer's written agreement. |
 | `kainor-lapslock-prod-func.azurewebsites.net` | Kainor LLC | **Only after you activate an organization license**, then about monthly | A version number and your Microsoft tenant ID. Nothing else. A signed license statement comes back. |
 | `kainor-watch-prod-func.azurewebsites.net` | Kainor LLC | **Only after an administrator turns on Instant alerts** (Pro), then about daily and when the phone's push address changes | The phone's push token, its public key, the break-glass accounts set for the organization, and a Microsoft token for the On-Call app's `Alerts.Register` scope, which cannot read anything from Microsoft. The service's public sender key comes back. Everything the service reads and keeps is in [INSTANT-ALERTS.md](INSTANT-ALERTS.md). |
+| `config.edge.skype.com` | Microsoft | **Every install, at launch**, and again from time to time. Made by Microsoft's Intune App SDK, not by Kainor's code | A GET for the SDK's own settings, carrying an identifier the SDK makes up for the install, the SDK's version and the iOS version. No sign-in token, no account, no tenant, nothing from the app. Microsoft documents no way to turn it off. |
+| Intune's app management service, under `manage.microsoft.com` | Microsoft | **Only when your organization applies an Intune app protection policy** and the person has signed in to TenantKeep App Protection: at enrolment, about every eight hours after, and at sign-out | The SDK's own requests, as the signed-in person, with a token good for that service alone: enrolling the app, fetching the policy and its configuration, checking in. Named in the SDK's binary and not captured with a proxy when this was written. |
 
 **Instant alerts arrive through the relay, which the phone never calls.** Kainor's alert
 service sends each alert, encrypted for one phone, to `kainor-relay-prod-func.azurewebsites.net`,

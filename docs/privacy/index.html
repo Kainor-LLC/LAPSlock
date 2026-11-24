@@ -265,7 +265,7 @@
     report before sending it.</p>
 
     <h2 class="sec">Network connections</h2>
-    <p>Your organization's data travels between your device and exactly two hosts:</p>
+    <p>What the app reads from your organization travels between your device and exactly two hosts:</p>
     <ul>
       <li><code>login.microsoftonline.com</code>: Microsoft sign-in</li>
       <li><code>graph.microsoft.com</code>: Microsoft Graph, where your data lives</li>
@@ -304,6 +304,24 @@
     <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/INSTANT-ALERTS.md">Instant alerts contract</a>
     and the <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/RELAY-API.md">relay contract</a>,
     and the source of both services is in the same repository.</p>
+    <p><strong>Microsoft's Intune App SDK.</strong> TenantKeep On-Call includes Microsoft's Intune App SDK,
+    so that an organization can protect the app with an Intune app protection policy. It is Microsoft's
+    software, not ours, and it contacts Microsoft on its own account:</p>
+    <ul>
+      <li><code>config.edge.skype.com</code>: on every install, when the app opens and again from time to
+      time, the SDK fetches its own settings. That request carries an identifier the SDK makes up for the
+      install, the SDK's version and the iOS version. It carries no sign-in, no account, no tenant and
+      nothing from the app. Microsoft provides no way to turn it off.</li>
+      <li>Intune's app management service, under <code>manage.microsoft.com</code>: <strong>only if your
+      organization applies an app protection policy</strong>. The SDK then enrolls the app, fetches the
+      policy and checks in, as the person signed in.</li>
+    </ul>
+    <p>We have turned off the SDK's usage reporting to Microsoft. We receive none of what it sends.
+    Microsoft's handling of it is described in the
+    <a href="https://learn.microsoft.com/legal/intune/microsoft-intune-privacy-statement">Microsoft Intune
+    Privacy Statement</a>, and what the SDK does in the app is set out in the
+    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/APP-PROTECTION.md">app protection
+    notes</a>.</p>
     <p>You can verify this yourself with a network proxy in about ten minutes. We think observed
     behavior is better evidence than a privacy policy, which is why we're telling you how to check.</p>
 

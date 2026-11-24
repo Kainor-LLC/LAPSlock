@@ -180,7 +180,7 @@
     signed in. Permissions are requested in stages, so a first consent screen reads "reads device
     inventory" rather than "reads every password in your tenant".</p>
 
-    <h3 id="apps">Eight Microsoft apps, one of them read-only</h3>
+    <h3 id="apps">Nine Microsoft apps, one of them read-only</h3>
     <p>Microsoft puts every permission an organization has granted an app into the tokens it issues
     that app, whichever permission the request named. Asking for less does not get less. So a sign-in
     that cannot change your tenant has to be a separate app, not a narrower request. TenantKeep On-Call
@@ -200,6 +200,7 @@
         <tr><td><strong>TenantKeep Group Membership</strong><br><code>8642d2ad-9722-42c5-959c-3058a3cc1f60</code></td><td>Adds and removes group members.</td></tr>
         <tr><td><strong>TenantKeep Actions</strong><br><code>50c9aa83-4f5c-4203-a3c0-adab54a2ba3a</code></td><td>Every action in one app: role activation, device actions, user actions, account recovery and group membership. Approve this one, or the separate apps for the actions you want.</td></tr>
         <tr><td><strong>TenantKeep Alerts</strong><br><code>d7c387b7-8e67-4957-bc67-4b71824a60ea</code></td><td>Registers a phone to receive Instant alerts. It has no access to Microsoft Graph.</td></tr>
+        <tr><td><strong>TenantKeep App Protection</strong><br><code>eaea8770-7305-4806-ae1c-7a03d2ef28fe</code></td><td>Lets your organization's Intune app protection policy apply to TenantKeep on a phone that is not enrolled. It has no access to Microsoft Graph.</td></tr>
       </tbody>
     </table>
     </div>
@@ -442,6 +443,21 @@
     write nobody turned on in the app. The keys, their defaults and a policy to paste are in the
     <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/MANAGED-CONFIG.md">managed
     configuration reference</a>.</p>
+
+    <h2 class="sec">Intune app protection, on a phone you do not manage</h2>
+    <p>An Intune app protection policy can require a PIN to open TenantKeep On-Call, stop what is
+    copied in it from being pasted into other apps, and remove everything the app holds, on a phone
+    your organization does not manage. Add the app to the policy as a custom app by its bundle ID,
+    <code>com.kainor.lapslock</code>, and approve TenantKeep App Protection, the app the policy is
+    delivered through.</p>
+    <p>This is enforced by Microsoft's Intune App SDK, which is Microsoft's and is the one part of the
+    app whose source is not published. With no policy it changes nothing in the app, though it does
+    fetch its own settings from Microsoft when the app opens. With a policy it sits between the app
+    and the clipboard, files, network and Keychain, which is how the policy is enforced. A policy
+    cannot reach the Apple Watch, so the phone sends the watch nothing while one is in force unless
+    you allow it. Conditional Access cannot yet require a policy for this app. All of it is set out in the
+    <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/APP-PROTECTION.md">app protection
+    notes</a>.</p>
 
     <h2 class="sec">What stays on your device</h2>
     <p>Passwords and recovery keys are held in memory only, for the length of the reveal window, and
