@@ -43,10 +43,23 @@ database of your devices, and no Kainor server between the administrator and the
 | Clipboard copy (Pro) | Local pasteboard only, no Universal Clipboard | Expires after 90 seconds |
 | Free-tier reveal tally | iOS Keychain (count only, no identifiers) | Rolling 30 days |
 | Organization license token | iOS Keychain, device-only | Until removed; refreshed about monthly |
+| Microsoft's Intune App SDK's own state | iOS Keychain, in Microsoft's own group, and a folder of its own | Kept by the SDK on every install; the app neither reads nor writes it |
 
 **Nothing is written to disk, to a log, to a backup, or to any Kainor system.** The module
 that handles credentials links no logging, analytics or crash-reporting framework, and the
 build fails if one is added (`scripts/isolation-check.sh`).
+
+## Intune app protection, and the one closed-source component
+
+An organization can apply an Intune app protection policy to the app on a phone it does not
+manage: a PIN, limits on copying out, and removal of everything the app holds. That is
+enforced by Microsoft's Intune App SDK, a signed binary with no published source, linked by
+the app and by none of its modules. With no policy it installs nothing in the app's way, but
+it does fetch its own settings from Microsoft at launch, with an identifier it makes up for
+the install. With a policy it sits between the app and the pasteboard, files, network and
+Keychain. It enrols through an app registration of its own, TenantKeep App Protection, so the
+sign-in registration still holds read permissions only. The detail, and what has been seen
+working, is in `docs/APP-PROTECTION.md`.
 
 ## What Kainor receives
 

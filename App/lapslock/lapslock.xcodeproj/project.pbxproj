@@ -44,6 +44,7 @@
 		87CA0001305200010000002B /* RelayKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000002A /* RelayKit */; };
 		87CA0001305200010000002D /* RelayKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000002C /* RelayKit */; };
 		87CA0001305200010000002F /* SavedSearchKit in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA0001305200010000002E /* SavedSearchKit */; };
+		87CA00013052000100000032 /* IntuneMAMSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 87CA00013052000100000031 /* IntuneMAMSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -183,6 +184,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				87CA00013052000100000032 /* IntuneMAMSwift in Frameworks */,
 				87CA0001305200010000002D /* RelayKit in Frameworks */,
 				87CA0001305200010000002F /* SavedSearchKit in Frameworks */,
 				8769AA963048CB430093ADD6 /* PrivilegedAccessKit in Frameworks */,
@@ -310,6 +312,7 @@
 			);
 			name = lapslock;
 			packageProductDependencies = (
+				87CA00013052000100000031 /* IntuneMAMSwift */,
 				87CA0001305200010000002C /* RelayKit */,
 				87CA0001305200010000002E /* SavedSearchKit */,
 				8734CC63302FBA9E0056D699 /* AuthKitMSAL */,
@@ -476,6 +479,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */,
+				87CA00013052000100000030 /* XCRemoteSwiftPackageReference "ms-intune-app-sdk-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8734CC51302FB6650056D699 /* Products */;
@@ -724,7 +728,6 @@
 				INFOPLIST_KEY_CFBundleDisplayName = TenantKeep;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "TenantKeep uses Face ID to confirm your identity before showing a local administrator password or BitLocker recovery key.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -737,6 +740,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslock;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRIP_SWIFT_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
@@ -766,7 +770,6 @@
 				INFOPLIST_KEY_CFBundleDisplayName = TenantKeep;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "TenantKeep uses Face ID to confirm your identity before showing a local administrator password or BitLocker recovery key.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -779,6 +782,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslock;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				STRIP_SWIFT_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
@@ -1124,6 +1128,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		87CA00013052000100000030 /* XCRemoteSwiftPackageReference "ms-intune-app-sdk-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoftconnect/ms-intune-app-sdk-ios";
+			requirement = {
+				kind = exactVersion;
+				version = 22.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		870E605A30337FDC009F4244 /* DiagnosticsKit */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1284,6 +1299,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8734CC5E302FB69A0056D699 /* XCLocalSwiftPackageReference "../../LAPSlockKit" */;
 			productName = SavedSearchKit;
+		};
+		87CA00013052000100000031 /* IntuneMAMSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 87CA00013052000100000030 /* XCRemoteSwiftPackageReference "ms-intune-app-sdk-ios" */;
+			productName = IntuneMAMSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

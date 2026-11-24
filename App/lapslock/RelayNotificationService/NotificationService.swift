@@ -29,9 +29,17 @@ final class NotificationService: UNNotificationServiceExtension {
         let seenURL = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.kainor.lapslock")?.appendingPathComponent("relay-seen.json")
         do {
             let alert = try phone.open(enc: enc, ct: ct, seen: RelaySeenStore(url: seenURL))
-            content.title = alert.title
-            content.body = alert.body
-            if let late = alert.lateness() { content.subtitle = late }
+            // What the organization's Intune policy lets a notification show. The app
+            // writes it for this extension, which does not link Microsoft's SDK. An
+            // extension cannot stop a notification that has already been sent, so where
+            // the policy allows none, the app unregisters this phone instead and one that
+            // was already on its way shows no details.
+            let detail = NotificationDetail.current()
+            let shown = detail.shown(title: alert.title, body: alert.body)
+                ?? (NotificationDetail.withheldTitle, NotificationDetail.withheldBody)
+            content.title = shown.0
+            content.body = shown.1
+            if detail == .full, let late = alert.lateness() { content.subtitle = late }
             content.threadIdentifier = "relay-" + alert.tenant
             var info: [String: Any] = ["tenantId": alert.tenant, "relayKind": alert.kind]
             if let link = alert.link { info["link"] = link }

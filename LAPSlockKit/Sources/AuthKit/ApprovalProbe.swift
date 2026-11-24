@@ -79,6 +79,23 @@ public struct ApprovalProbe: Sendable {
         return nil
     }
 
+    /// Whether the organization approved, for everyone, every permission `registration`
+    /// holds, on Microsoft Graph or on another Microsoft service. False when it holds
+    /// none, when it was not approved, and when the approvals could not be read.
+    public static func approvedInFull(
+        _ registration: AppRegistration,
+        approved: [AppRegistration: Set<String>]?
+    ) -> Bool {
+        guard let own = approved?[registration] else { return false }
+        // A grant records a permission by its name alone, without the service in front.
+        let needed = Set((registration.scopes + registration.serviceScopes.map(Self.name)).map { $0.lowercased() })
+        return !needed.isEmpty && needed.isSubset(of: own)
+    }
+
+    static func name(_ qualified: String) -> String {
+        qualified.split(separator: "/").last.map(String.init) ?? qualified
+    }
+
     struct Principal: Decodable, Sendable {
         let id: String
         let appId: String?

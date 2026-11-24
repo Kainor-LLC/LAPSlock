@@ -3,7 +3,7 @@
 <#
 .SYNOPSIS
     Creates TenantKeep On-Call's app registrations in Kainor's tenant: one for each kind of
-    write, and one for Instant alerts.
+    write, one for Instant alerts, and one for Intune app protection.
 
 .DESCRIPTION
     TenantKeep On-Call signs in through one read-only app registration, shared with
@@ -30,6 +30,15 @@
     It also creates TenantKeep Alerts, which holds no Microsoft Graph permission at all. It
     defines one scope of its own, Alerts.Register, which a phone presents to Kainor's
     Instant alerts service, and it is its own client for that scope.
+
+    And it creates TenantKeep App Protection, which holds no Microsoft Graph permission
+    either. It holds the one permission Microsoft's Intune App SDK needs to enrol the app
+    for a person whose organization targets it with an app protection policy:
+    DeviceManagementManagedApps.ReadWrite on Microsoft Mobile Application Management, which
+    reads and writes that person's own app management record and nothing in the tenant.
+    The permission is on a registration of its own because its name is not a read, and the
+    sign-in registration holds reads only. An organization that does not use app protection
+    never approves it.
 
     Each app is multi-tenant, a public client with no secret and no certificate. The write
     apps hold delegated Microsoft Graph permissions only. Each carries the redirect URI of
@@ -66,7 +75,7 @@
 .EXAMPLE
     pwsh ./tools/setup/New-OnCallApps.ps1 -Apply
 
-    Creates or updates the six apps and prints their client IDs.
+    Creates or updates the seven apps and prints their client IDs.
 #>
 [CmdletBinding()]
 param(
@@ -140,6 +149,13 @@ $definitions = @(
 
 $alertsName = 'TenantKeep Alerts'
 $alertsScope = 'Alerts.Register'
+
+# Intune app protection. The permission is on Microsoft's Mobile Application Management
+# service, not on Microsoft Graph, so it is looked up there. The service is found by the
+# name Microsoft documents and exists only in a tenant that has Intune.
+$protectionName = 'TenantKeep App Protection'
+$protectionService = 'Microsoft Mobile Application Management'
+$protectionScope = 'DeviceManagementManagedApps.ReadWrite'
 
 function Write-Step([string] $Text) {
     $prefix = if ($Apply) { 'DO  ' } else { 'PLAN' }
@@ -282,6 +298,40 @@ if ($defined) {
 }
 Set-Publisher $alerts $alertsName
 if ($alerts) { $results += [pscustomobject]@{ App = $alertsName; ClientId = $alerts.AppId } }
+
+# 3. TenantKeep App Protection: no Microsoft Graph permission, one on Microsoft's Mobile
+#    Application Management service
+$mam = @(Get-MgServicePrincipal -Filter "displayName eq '$protectionService'")
+if ($mam.Count -ne 1) {
+    throw "Expected one service named '$protectionService' in this tenant and found $($mam.Count). It exists only where Intune is licensed."
+}
+$mamScope = @($mam[0].Oauth2PermissionScopes) | Where-Object { $_.Value -eq $protectionScope } | Select-Object -First 1
+if (-not $mamScope) { throw "'$protectionService' ($($mam[0].AppId)) has no delegated permission named $protectionScope." }
+Write-Information "     '$protectionService' is $($mam[0].AppId); $protectionScope is $($mamScope.Id)." -InformationAction Continue
+
+$protectionSettings = @{
+    SignInAudience         = 'AzureADMultipleOrgs'
+    IsFallbackPublicClient = $true
+    PublicClient           = @{ RedirectUris = @($iosRedirect) }
+    Web                    = @{ RedirectUris = @($ConsentPage) }
+    RequiredResourceAccess = @(@{
+            ResourceAppId  = "$($mam[0].AppId)"
+            ResourceAccess = @(@{ Id = "$($mamScope.Id)"; Type = 'Scope' })
+        })
+    Notes                  = 'TenantKeep On-Call: Intune app protection enrolment. One delegated permission on Mobile Application Management, none on Microsoft Graph, no secret.'
+}
+$protection = Get-MgApplication -Filter "displayName eq '$protectionName'" | Select-Object -First 1
+if (-not $protection) {
+    Write-Step "Create '$protectionName' (multi-tenant, public client, no secret) with $protectionScope on $protectionService"
+    Write-Step "  redirects: $iosRedirect and $ConsentPage"
+    if ($Apply) { $protection = New-MgApplication -DisplayName $protectionName @protectionSettings }
+} else {
+    Write-Step "Set '$protectionName' ($($protection.AppId)) to exactly $protectionScope on $protectionService"
+    Write-Step "  redirects: $iosRedirect and $ConsentPage"
+    if ($Apply) { Update-MgApplication -ApplicationId $protection.Id @protectionSettings }
+}
+Set-Publisher $protection $protectionName
+if ($protection) { $results += [pscustomobject]@{ App = $protectionName; ClientId = $protection.AppId } }
 
 # An app an earlier version of the alerts plan created. Reported, never changed here.
 $earlier = Get-MgApplication -Filter "displayName eq 'TenantKeep Alerts API'" | Select-Object -First 1

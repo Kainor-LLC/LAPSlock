@@ -21,12 +21,20 @@ The licence is PolyForm Strict 1.0.0 with an additional permission that expressl
 commercial organisations to copy and read the code for security review. Redistribution,
 modification and publishing builds are not permitted. See [LICENSE](LICENSE).
 
+**One component is not ours and has no source: Microsoft's Intune App SDK.** It is what lets
+an organization apply an Intune app protection policy to the app on a phone it does not
+manage. Microsoft ships it as a signed binary, the app links it and no module does, and with
+no policy in force it does two things: it fetches its own settings from Microsoft at launch,
+and it keeps a few items of its own on the device. [APP-PROTECTION.md](docs/APP-PROTECTION.md)
+says exactly what, and what changes once a policy applies.
+
 ## Five claims you can check
 
 1. **No vendor server in the credential path.** Passwords travel from Microsoft Graph to the
-   device over TLS. Kainor has no server that could see one. The app talks to exactly three
-   hosts, and the third only after an organisation activates a licence. The ten-minute proxy
-   recipe is in [NETWORK-TRANSPARENCY.md](docs/NETWORK-TRANSPARENCY.md).
+   device over TLS. Kainor has no server that could see one. Every host the app contacts,
+   when, and with what, is listed in [NETWORK-TRANSPARENCY.md](docs/NETWORK-TRANSPARENCY.md),
+   with a ten-minute proxy recipe to check it. Microsoft's Intune App SDK, inside the app,
+   contacts Microsoft on its own account; that is listed there too.
 2. **Delegated permissions only, and a sign-in that cannot write.** The app can read what the
    signed-in account can read in the admin center, and nothing else. It signs in through an
    app registration that holds read permissions only; each kind of change goes through a
@@ -34,15 +42,19 @@ modification and publishing builds are not permitted. See [LICENSE](LICENSE).
    [docs/app-registrations.json](docs/app-registrations.json), and tests hold the read
    registration to it. Every reveal appears in the tenant's own Entra audit log exactly as a
    read from the portal would.
-3. **Nothing collected unless you turn on Instant alerts.** No analytics, no telemetry, no
-   crash reporting, no account. Instant alerts is a paid, opt-in service that keeps an
+3. **Kainor collects nothing unless you turn on Instant alerts.** No analytics, no telemetry, no
+   crash reporting, no account. (Microsoft's Intune App SDK sends Microsoft an identifier it
+   makes up for the install when it fetches its settings; its usage reporting is turned off.) Instant alerts is a paid, opt-in service that keeps an
    administrator ID and a push token, and says so in
    [docs/INSTANT-ALERTS.md](docs/INSTANT-ALERTS.md). The reveal meter for the free tier is
    counted in the device Keychain and never leaves it.
 4. **Credential handling is isolated by construction.** The module that touches passwords,
    `CredentialKit`, imports Foundation and the auth protocol and nothing else. Adding a
    logging framework, an analytics SDK or the licensing layer to it is a compile error, and
-   `scripts/isolation-check.sh` fails the build if anyone tries.
+   `scripts/isolation-check.sh` fails the build if anyone tries. The same script holds
+   Microsoft's Intune App SDK to the app itself and to one file. That SDK does run in the
+   app's process, and under an organization's policy it sits between the app and the
+   pasteboard, files, network and Keychain: see [APP-PROTECTION.md](docs/APP-PROTECTION.md).
 5. **The licensing backend receives one value.** A tenant ID, roughly monthly, and it returns
    a signed tier. The full request and response contract, including what is and is not
    logged, is [ENTITLEMENT-API.md](docs/ENTITLEMENT-API.md).
@@ -122,6 +134,8 @@ Microsoft Graph PowerShell SDK. They read only and never print a password.
 - [SECURITY.md](SECURITY.md): disclosure policy and the testable design claims.
 - [docs/NETWORK-TRANSPARENCY.md](docs/NETWORK-TRANSPARENCY.md): the three hosts, the one
   Kainor request byte for byte, and the proxy recipe.
+- [docs/APP-PROTECTION.md](docs/APP-PROTECTION.md): Intune app protection, and Microsoft's
+  SDK, the one closed-source component.
 - [docs/ENTITLEMENT-API.md](docs/ENTITLEMENT-API.md): the licensing contract.
 - [docs/SECURITY-ONE-PAGER.md](docs/SECURITY-ONE-PAGER.md): a one-page summary for a
   security team.

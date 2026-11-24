@@ -1,4 +1,5 @@
 import SwiftUI
+import RelayKit
 import UserNotifications
 import ThreatDigestKit
 import os
@@ -40,6 +41,9 @@ enum DigestAlerts {
         let result = DigestAlertPlanner.plan(items: snapshot.items, seen: seen, categories: categories)
         UserDefaults.standard.set(result.remember, forKey: seenKey)
         guard let copy = DigestAlertPlanner.copy(for: result.announce) else { return 0 }
+        // Public security news, not the organization's data, so it is shown in full unless
+        // the organization's Intune policy stops notifications altogether.
+        guard NotificationDetail.current() != .none else { return 0 }
         let content = UNMutableNotificationContent()
         content.title = copy.title
         content.body = copy.body

@@ -574,6 +574,42 @@ public actor MSALAuthManager: AuthManaging {
         try await performSignout(app, msalAccount, params)
     }
 
+    /// Removes every cached sign-in on every registration and stops acting as anyone,
+    /// without Microsoft's sign-out page. For an organization's order to remove its data
+    /// from the app, which must not wait on a person or on a network.
+    public func forgetEveryone() {
+        removeAccounts(except: nil, keepingPrimary: false)
+        emptyCacheGroup()
+        clearSession()
+    }
+
+    /// Deletes everything left in the Keychain group the sign-in cache has to itself.
+    ///
+    /// MSAL's own removal takes the tokens and leaves its record of who was signed in: a
+    /// name and a sign-in address, no credential. Seen on a phone after an organization's
+    /// wipe, 2026-11-24. Nothing of the person is to stay, so the group is emptied. Nothing
+    /// else lives there: the app's other items and Microsoft's Intune App SDK's are in
+    /// other groups.
+    private func emptyCacheGroup() {
+        let own = "." + (Bundle.main.bundleIdentifier ?? "com.kainor.lapslock")
+        let everything: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true
+        ]
+        var found: CFTypeRef?
+        guard SecItemCopyMatching(everything as CFDictionary, &found) == errSecSuccess,
+              let items = found as? [[String: Any]] else { return }
+        // The group's full name carries the team's prefix, which is read off an item in it.
+        let groups = Set(items.compactMap { $0[kSecAttrAccessGroup as String] as? String }.filter { $0.hasSuffix(own) })
+        for group in groups {
+            SecItemDelete([
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrAccessGroup as String: group
+            ] as CFDictionary)
+        }
+    }
+
     private func clearSession() {
         pinnedAccount = nil
         activeTenant = nil

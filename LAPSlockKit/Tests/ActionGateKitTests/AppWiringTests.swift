@@ -246,6 +246,86 @@ final class AppWiringTests: XCTestCase {
 
     // MARK: - a provider's customers move one at a time
 
+    /// Under an Intune app protection policy, every notification the app or its extension
+    /// shows goes through the one rule for how much may be shown, and the watch, which the
+    /// policy cannot reach, is sent nothing and answered nothing.
+    func testAPolicysLimitsReachNotificationsAndTheWatch() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let ext = try String(contentsOf: root.appendingPathComponent("App/lapslock/RelayNotificationService/NotificationService.swift"), encoding: .utf8)
+        XCTAssertTrue(ext.contains("let detail = NotificationDetail.current()"))
+        XCTAssertFalse(ext.contains("content.title = alert.title"), "the extension shows an alert's words only through the rule")
+        XCTAssertFalse(ext.contains("import IntuneMAMSwift"), "the extension does not link Microsoft's SDK")
+
+        XCTAssertTrue(body(of: "static func post(_ alert: PlannedAlert) async {", in: try appSource("AlertsRunner.swift"))
+            .contains("guard let shown = NotificationDetail.current().shown(title: alert.title, body: alert.body) else { return }"))
+        XCTAssertTrue(try appSource("DigestAlerts.swift").contains("guard NotificationDetail.current() != .none else { return 0 }"))
+        let relay = try appSource("RelaySettingsView.swift")
+        XCTAssertTrue(body(of: "func turnOn() async {", in: relay).contains("guard NotificationDetail.current() != .none else {"),
+                      "a phone that may show nothing is not registered for alerts")
+        XCTAssertFalse(relay.contains("content.title = alert.title"))
+
+        let watch = try appSource("WatchConnector.swift")
+        XCTAssertTrue(body(of: "private func pushOnce() async {", in: watch).contains("if let withheld = AppProtection.shared.watchWithheld {"))
+        XCTAssertTrue(body(of: "fileprivate func handle(_ request: WatchRequest) async -> WatchReply {", in: watch)
+            .contains("if let withheld = AppProtection.shared.watchWithheld {"))
+        XCTAssertFalse(watch.contains("content.body = body"))
+
+        let wrapper = try appSource("AppProtection.swift")
+        XCTAssertTrue(wrapper.contains("guard policyInForce, !ManagedConfigStore.shared.config.watchAllowed else { return nil }"))
+        for line in ["case .allow:        detail = .full", "case .blockOrgData: detail = .withoutDetails",
+                     "case .block:        detail = .none", "@unknown default:   detail = .withoutDetails"] {
+            XCTAssertTrue(wrapper.contains(line), line)
+        }
+        XCTAssertTrue(try appSource("ManagedConfigStore.swift").contains("appChannel: UserDefaults.standard.dictionary(forKey: ManagedConfiguration.appChannelDefaultsKey)"))
+    }
+
+    /// Intune can order an organization's data off the device. Everything goes, in an order
+    /// that works: the alert service is told while a token can still say so, then every
+    /// sign-in, then the rest of the Keychain, then files and settings. No Microsoft
+    /// sign-out page is shown, because nothing in a wipe may wait on a person.
+    func testAnOrganizationsWipeRemovesEverythingAndWaitsOnNobody() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let erase = body(of: "func eraseForOrganization() async -> Bool {", in: app)
+        let alerts = try XCTUnwrap(erase.range(of: "await RelayCoordinator.shared.turnOff()"))
+        let signIns = try XCTUnwrap(erase.range(of: "await auth?.forgetEveryone()"))
+        XCTAssertLessThan(alerts.lowerBound, signIns.lowerBound, "unregistering needs the sign-in that goes next")
+        for store in ["RevealMeters.live.resetLedger()", "Entitlements.live.remove()", "try TenantStores.live.clear()",
+                      "try AlertsRunner.preferencesStore.clear()", "await FileShiftLog.shared.clearAll()",
+                      "savedSearches.clear()", "AppProtection.eraseFilesAndSettings()", "endSession()"] {
+            XCTAssertTrue(erase.contains(store), store)
+        }
+        XCTAssertFalse(erase.contains("auth.signOut("), "Microsoft's sign-out page waits on a person")
+        XCTAssertFalse(erase.contains("signingOut("), "the SDK ends the enrolment itself during a wipe")
+        XCTAssertTrue(body(of: "func signOut() async {", in: app).contains("endSession()"), "sign-out and a wipe end the session the same way")
+        XCTAssertTrue(app.contains("AppProtection.shared.wipe = { [weak self] _ in"))
+
+        // Microsoft's SDK is answered only once the data is gone, and never by blocking the
+        // main thread on work the main thread must do.
+        let wrapper = try appSource("AppProtection.swift")
+        let ordered = body(of: "func wipeData(forAccountId accountId: String) -> Bool {", in: wrapper)
+        XCTAssertTrue(ordered.contains("guard !Thread.isMainThread else {"))
+        XCTAssertTrue(ordered.contains("finished.wait(timeout: .now() + 60) == .success && complete.value"))
+        // Its own settings are not the app's to delete, nor its folders, nor the record iOS
+        // keeps in every container. Counting those as failures made a complete wipe report
+        // itself incomplete on a phone.
+        XCTAssertTrue(wrapper.contains("where !Self.isMicrosofts(key)"))
+        XCTAssertTrue(wrapper.contains("for url in doomed where Self.isOurs(url.lastPathComponent) {"))
+        XCTAssertTrue(wrapper.contains("!name.hasPrefix(\".IntuneMAM\") && !name.hasPrefix(\".com.apple.\")"))
+
+        // MSAL's removal leaves its record of who was signed in. The group the cache has to
+        // itself is emptied after it, and that group is the one MSAL is told to use.
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let msal = try String(contentsOf: root.appendingPathComponent("LAPSlockKit/Sources/AuthKitMSAL/MSALAuthManager.swift"), encoding: .utf8)
+        let forget = body(of: "public func forgetEveryone() {", in: msal)
+        let removed = try XCTUnwrap(forget.range(of: "removeAccounts(except: nil, keepingPrimary: false)"))
+        let emptied = try XCTUnwrap(forget.range(of: "emptyCacheGroup()"))
+        XCTAssertLessThan(removed.lowerBound, emptied.lowerBound)
+        XCTAssertTrue(msal.contains("pcaConfig.cacheConfig.keychainSharingGroup = Bundle.main.bundleIdentifier ?? \"com.kainor.lapslock\""))
+        XCTAssertTrue(msal.contains("let own = \".\" + (Bundle.main.bundleIdentifier ?? \"com.kainor.lapslock\")"))
+    }
+
     /// Approval is per organization, so the move to the read-only app is too. Finishing
     /// the update hands the sign-in manager the customers saved on the device, which it
     /// records as still on the earlier sign-in, and the screen says none of them stops.

@@ -48,6 +48,20 @@ final class ApprovalProbeTests: XCTestCase {
     }
 
     /// A grant one person made for themselves says nothing about a colleague's sign-in.
+    /// App protection is signed into unasked only where the organization approved it for
+    /// everyone. Its one permission is on a service other than Graph, and a grant records
+    /// it by name alone.
+    func testAppProtectionCountsAsApprovedOnlyWhenItsPermissionIsGrantedForEveryone() {
+        XCTAssertTrue(ApprovalProbe.approvedInFull(.appProtection, approved: [.appProtection: ["devicemanagementmanagedapps.readwrite"]]))
+        XCTAssertFalse(ApprovalProbe.approvedInFull(.appProtection, approved: [.appProtection: []]))
+        XCTAssertFalse(ApprovalProbe.approvedInFull(.appProtection, approved: [.appProtection: ["user.read"]]))
+        XCTAssertFalse(ApprovalProbe.approvedInFull(.appProtection, approved: [.read: ["devicemanagementmanagedapps.readwrite"]]))
+        XCTAssertFalse(ApprovalProbe.approvedInFull(.appProtection, approved: nil))
+        // A registration that holds nothing to approve is never "approved in full".
+        XCTAssertFalse(ApprovalProbe.approvedInFull(.alerts, approved: [.alerts: []]))
+        XCTAssertTrue(ApprovalProbe.approvedInFull(.groupMembership, approved: [.groupMembership: ["groupmember.readwrite.all"]]))
+    }
+
     func testOnlyOrganizationWideGrantsCount() {
         let grants = [
             ApprovalProbe.Grant(consentType: "Principal", scope: "GroupMember.ReadWrite.All"),

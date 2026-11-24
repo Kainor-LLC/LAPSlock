@@ -19,6 +19,28 @@ final class ShiftLogAndUndoTests: XCTestCase {
         ShiftLogEntry(at: Date(timeIntervalSince1970: 1_800_000_000 + TimeInterval(n)), tenantId: tenant, actionId: "device.sync", actionTitle: "Sync", targetLabel: "DEV-\(n)", targetId: "id-\(n)", outcome: "requested", requestId: "r\(n)")
     }
 
+    /// An organization's order to remove its data takes every organization's lines and the
+    /// file. The copy kept in memory goes with them: with only the file deleted, the next
+    /// line written would bring every old one back.
+    func test_clearingEverythingLeavesNothingToComeBack() async {
+        let log = FileShiftLog(directory: directory)
+        await log.append(entry(1, tenant: "t1"))
+        await log.append(entry(2, tenant: "t2"))
+        await log.clearAll()
+        let file = directory.appendingPathComponent(FileShiftLog.fileName)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+        let none1 = await log.entries(tenantId: "t1")
+        let none2 = await log.entries(tenantId: "t2")
+        XCTAssertTrue(none1.isEmpty)
+        XCTAssertTrue(none2.isEmpty)
+
+        await log.append(entry(3, tenant: "t1"))
+        let after = await log.entries(tenantId: "t1")
+        XCTAssertEqual(after.map(\.targetLabel), ["DEV-3"])
+        let reopened = await FileShiftLog(directory: directory).entries(tenantId: "t2")
+        XCTAssertTrue(reopened.isEmpty)
+    }
+
     func test_fileLogPersistsAcrossInstancesNewestFirst() async {
         let log = FileShiftLog(directory: directory)
         await log.append(entry(1))

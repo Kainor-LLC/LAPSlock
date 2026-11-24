@@ -23,6 +23,7 @@ app under Settings, Managed by Your Organization, so a typo is visible instead o
 | `groupWrite.scope` | string | `tagged`, `all`, `none` | `tagged` | Which groups the helpdesk may change membership of. `tagged`: the administrative unit, the prefix and groups the admin owns, and a group a Conditional Access policy names is left alone. `all`: any group the admin's role covers, and a Conditional Access group needs its name typed back. `none`: group changes off. Role-assignable, dynamic, PIM, synced and mail groups are never changed in any mode. Set here, it replaces the in-app choice |
 | `groupWrite.administrativeUnit` | string | an administrative unit's name | `Helpdesk Managed Groups` | The unit whose groups count as helpdesk-managed under `tagged` |
 | `groupWrite.prefix` | string | a short prefix such as `HD-` | none | Groups whose name starts with it count as helpdesk-managed under `tagged` |
+| `watch.allowed` | boolean, or the strings `true` and `false` | `true`, `false` | `false` | Only matters under an Intune app protection policy. Such a policy cannot reach the Apple Watch, so while one is in force the phone sends the watch nothing and does nothing it asks. `true` lets the watch work as it does with no policy |
 
 ## Example policy
 
@@ -51,6 +52,19 @@ the TenantKeep On-Call app, then Configuration settings format "Enter XML data":
 
 Replace the tenant ID with your own. The configuration designer works too: use the key
 names above, type String for every key, and comma-separated values for the lists.
+
+## A Phone That Is Not Enrolled
+
+The keys above reach an enrolled device through iOS. They also reach a phone your
+organization does not manage, through Intune's app channel, once an app protection policy
+applies to the person (see [APP-PROTECTION.md](APP-PROTECTION.md)). In Intune that is an app
+configuration policy for **managed apps**, targeted at the custom app `com.kainor.lapslock`,
+with the same key names and values under General configuration settings.
+
+Both channels feed one configuration. Where both set a key, the app channel's value is used.
+Settings that arrive this way arrive after sign-in, when Intune answers. Most apply at once.
+`tenant.pin` is checked when the app opens and at sign-in, so from the app channel it takes
+effect the next time the app is opened, not in the session that fetched it.
 
 ## The Mac Menu Bar App
 

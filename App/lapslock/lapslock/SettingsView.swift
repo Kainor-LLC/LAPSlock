@@ -236,6 +236,8 @@ struct SettingsView: View {
     var requestPrivilegedConsent: (() async -> String?)? = nil
     /// Requests consent to read users' display names. Nil in demo.
     var requestUserNamesConsent: (() async -> String?)? = nil
+    /// Signs in to the App Protection registration and asks Intune for a policy. Nil in demo.
+    var turnOnAppProtection: (() async -> String?)? = nil
     /// Requests consent for the Mac admin password permission. Nil in demo.
     var requestMacOSRevealConsent: (() async -> String?)? = nil
     /// The app registrations: the update waiting on approval, and which apps actions use.
@@ -368,7 +370,8 @@ struct SettingsView: View {
         switch page {
         case .general:
             SettingsGeneralPage(settings: settings, isDemo: isDemo, hasSession: hasSession,
-                                requestUserNamesConsent: requestUserNamesConsent)
+                                requestUserNamesConsent: requestUserNamesConsent,
+                                turnOnAppProtection: turnOnAppProtection)
         case .notifications:
             SettingsNotificationsPage(notificationTenants: notificationTenants, notificationsStore: notificationsStore,
                                       isPro: isPro, isDemo: isDemo)
