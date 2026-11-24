@@ -852,8 +852,9 @@ struct DeviceDetailView: View {
             _ = await (metadata, keys)
             #if DEBUG
             // For the scripted screenshot of a reveal: what a tap on Reveal does, so Face
-            // ID is still asked for. The route only exists in demo mode.
-            if ScreenshotRoute.requested == "reveal" { await model.reveal() }
+            // ID is still asked for. Demo data only: read through `requested`, a live
+            // session started a reveal by itself too (second review, can wait for 2.1).
+            if ScreenshotRoute.requestedInDemo == "reveal" { await model.reveal() }
             #endif
         }
         .onChange(of: privacy.isCaptured) { _, captured in
