@@ -141,6 +141,17 @@ public class WatchTests
         Assert.False(Housekeeping.IsGone(tenant, start.AddHours(26)));
     }
 
+    // Second review, R2-11: only TenantKeep's own apps may ask for a registering token.
+    [Fact]
+    public void OnlyTenantKeepsOwnAppsMayRegisterAPhone()
+    {
+        Assert.True(PhoneToken.FromTenantKeep("d7c387b7-8e67-4957-bc67-4b71824a60ea"));
+        Assert.True(PhoneToken.FromTenantKeep("50C9AA83-4F5C-4203-A3C0-ADAB54A2BA3A"));
+        Assert.False(PhoneToken.FromTenantKeep("e5b148e7-9689-40b2-9b09-9d0bef133049"), "the read registration does not hold the scope");
+        Assert.False(PhoneToken.FromTenantKeep(Guid.NewGuid().ToString()));
+        Assert.False(PhoneToken.FromTenantKeep(null));
+    }
+
     // Second review, R2-6: an organization with no break-glass accounts named is checked
     // every fifth minute, and the minutes between must not clear what the check found.
     [Fact]

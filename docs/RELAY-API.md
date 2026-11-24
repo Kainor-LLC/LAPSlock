@@ -472,6 +472,9 @@ In this order, in memory, before the body is parsed:
 5. It is an application's own token, not a person's, and carries the role `Alerts.Send`.
    The registration requires assignment, and the role is assigned to one identity: the
    alert service's function app.
+6. It is that identity's: its `oid` is the alert service's managed identity, which the
+   relay's settings name. So an identity in Kainor's tenant that is given the role by
+   mistake is still refused.
 
 A token that fails any step is refused with `401` and the step is not named. If Microsoft's
 keys cannot be fetched the answer is `503 keys_unavailable`, so the alert service tries
@@ -524,3 +527,6 @@ the app from the App Store receives what it sends.
   by its own identity (section 15). A new path, as section 13 requires. `POST /relay`, the
   envelope and what the relay keeps are unchanged; on the new route the relay no longer sees
   a tenant ID.
+- 2026-11-24, section 15.2, step 6: the relay can be told the alert service's identity, and
+  then accepts no other identity in Kainor's tenant that holds the role. A setting, so the
+  route is unchanged until it is set.

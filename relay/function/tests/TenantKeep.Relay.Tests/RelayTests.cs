@@ -78,16 +78,19 @@ static class Fixtures
     public const string RelayClient = "99999999-8888-7777-6666-555555555555";
     public static readonly RsaSecurityKey ServiceKey = new(RSA.Create(2048)) { KeyId = "service-test" };
 
-    public static ServiceCaller Service(SecurityKey? key = null, bool reachable = true) =>
-        new(Kainor, RelayClient, new FakeKeys(reachable ? key ?? ServiceKey : null));
+    public static ServiceCaller Service(SecurityKey? key = null, bool reachable = true, string? callerId = null) =>
+        new(Kainor, RelayClient, new FakeKeys(reachable ? key ?? ServiceKey : null), callerId);
+
+    /// The alert service's managed identity, by object ID.
+    public const string AlertService = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 
     /// A token as Microsoft Entra ID issues one to an application: by default the alert
     /// service's, from Kainor's tenant, for the relay, with the role.
     public static string ServiceToken(string tenant = Kainor, string audience = RelayClient, string[]? roles = null, string? scp = null,
-        bool expired = false, RsaSecurityKey? key = null, bool olderFormat = false)
+        bool expired = false, RsaSecurityKey? key = null, bool olderFormat = false, string? oid = null)
     {
         var now = DateTime.UtcNow;
-        var claims = new Dictionary<string, object> { ["tid"] = tenant, ["oid"] = Guid.NewGuid().ToString() };
+        var claims = new Dictionary<string, object> { ["tid"] = tenant, ["oid"] = oid ?? Guid.NewGuid().ToString() };
         if ((roles ?? [ServiceCaller.Role]) is { Length: > 0 } held) claims["roles"] = held;
         if (scp is not null) claims["scp"] = scp;
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
@@ -479,6 +482,21 @@ public class ServiceCallerTests
     [Fact]
     public async Task KeysThatCannotBeFetchedAreNotTheCallersFault() =>
         Assert.Equal(ServiceCaller.Result.Unavailable, await Verify(Fixtures.ServiceToken(), Fixtures.Service(reachable: false)));
+
+    // Second review, R2-11: once the relay knows the alert service's identity, another
+    // identity in Kainor's tenant that was given the role is refused.
+    [Fact]
+    public async Task OnceTheAlertServiceIsNamedNoOtherIdentityWithTheRolePasses()
+    {
+        var pinned = Fixtures.Service(callerId: Fixtures.AlertService);
+        Assert.Equal(ServiceCaller.Result.Valid, await Verify(Fixtures.ServiceToken(oid: Fixtures.AlertService), pinned));
+        Assert.Equal(ServiceCaller.Result.Valid, await Verify(Fixtures.ServiceToken(oid: Fixtures.AlertService.ToUpperInvariant()), pinned));
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(), pinned));
+        // The role is still needed.
+        Assert.Equal(ServiceCaller.Result.Invalid, await Verify(Fixtures.ServiceToken(oid: Fixtures.AlertService, roles: []), pinned));
+        // Not named: as before, the role decides.
+        Assert.Equal(ServiceCaller.Result.Valid, await Verify(Fixtures.ServiceToken()));
+    }
 }
 
 public class ServiceRouteTests
