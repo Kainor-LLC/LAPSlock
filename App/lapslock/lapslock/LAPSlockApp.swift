@@ -446,8 +446,9 @@ final class AppRootModel {
         // A pinned tenant means one organization, whatever the subscription allows.
         canSwitchTenants = merged.allowsTenantSwitching && ManagedConfigStore.read().tenantPin == nil
         // Notifications are Pro. A lapsed subscription turns the switches off rather than
-        // leaving a background check running that the admin is no longer paying for.
-        if case .live = mode, !merged.isPro { AlertsRunner.disableAll() }
+        // leaving a background check running that the admin is no longer paying for. Only
+        // once the App Store has answered: before that "none" means not yet asked (R2-8).
+        if case .live = mode, !merged.isPro, subscriptions.hasAnswered { AlertsRunner.disableAll() }
         // Instant alerts are Pro too. The phone is what checks, so it is told every time.
         RelayCoordinator.shared.planChanged(allows: merged.isPro)
     }

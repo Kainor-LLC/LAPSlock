@@ -483,4 +483,27 @@ final class AppWiringTests: XCTestCase {
             XCTAssertLessThan(reset.lowerBound, cancel.lowerBound, name)
         }
     }
+
+    // MARK: - the plan and the check-in (second review, R2-8, R2-7)
+
+    func testNothingIsSwitchedOffBeforeTheAppStoreHasAnswered() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        XCTAssertTrue(app.contains("if case .live = mode, !merged.isPro, subscriptions.hasAnswered { AlertsRunner.disableAll() }"))
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let store = try String(contentsOf: root.appendingPathComponent("Sources/SubscriptionKit/SubscriptionStore.swift"), encoding: .utf8)
+        let refresh = body(of: "public func refreshEntitlement() async {", in: store)
+        let answered = try XCTUnwrap(refresh.range(of: "hasAnswered = true"))
+        let told = try XCTUnwrap(refresh.range(of: "if first, fresh == entitlement { onEntitlementChange?(fresh) }"))
+        XCTAssertLessThan(answered.lowerBound, told.lowerBound, "the app is told after the store says it has answered")
+    }
+
+    func testEveryCheckInMovesTheReminderOn() throws {
+        let relay = try appSource("RelaySettingsView.swift")
+        XCTAssertTrue(relay.contains("static let reminderAfter: TimeInterval = 25 * 86_400"))
+        XCTAssertTrue(body(of: "func turnOff() async {", in: relay).contains("removePendingNotificationRequests(withIdentifiers: [Self.reminderId])"))
+        let registered = try XCTUnwrap(relay.range(of: "UserDefaults.standard.set(Date(), forKey: Self.checkInKey)"))
+        let reminded = try XCTUnwrap(relay.range(of: "remindBeforeTheServiceForgets()", range: registered.upperBound..<relay.endIndex))
+        XCTAssertLessThan(registered.lowerBound, reminded.lowerBound)
+    }
 }

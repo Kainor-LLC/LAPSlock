@@ -68,6 +68,10 @@ final class RelayCoordinator {
     private static let checkInKey = "instantAlerts.lastCheckIn"
     /// Who turned Instant alerts on, as a digest of their account identifier.
     private static let personKey = "instantAlerts.person"
+    /// The reminder to open the app before the alert service forgets the phone.
+    static let reminderId = "instantAlerts.checkInReminder"
+    /// Kainor's service removes a phone 30 days after its last check-in; the reminder comes five days before.
+    static let reminderAfter: TimeInterval = 25 * 86_400
 
     static func digest(_ person: String) -> String {
         SHA256.hash(data: Data(person.lowercased().utf8)).map { String(format: "%02x", $0) }.joined()
@@ -210,6 +214,21 @@ final class RelayCoordinator {
         if began != who { await turnOff() }
     }
 
+    /// A phone checks in only when the app is opened with a session, and the service drops
+    /// one it has not heard from for 30 days while the switch still says On. So every
+    /// check-in moves a reminder to 25 days on (second review, R2-7). Not under an Intune
+    /// policy that stops notifications, which keeps Instant alerts off anyway.
+    private func remindBeforeTheServiceForgets() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [Self.reminderId])
+        guard NotificationDetail.current() != .none else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Instant Alerts"
+        content.body = "Open TenantKeep and sign in to keep Instant alerts on. Kainor's alert service removes a phone it has not heard from in 30 days."
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: Self.reminderAfter, repeats: false)
+        center.add(UNNotificationRequest(identifier: Self.reminderId, content: content, trigger: trigger))
+    }
+
     /// The value, or nil when it takes longer than `seconds`: sign-out must not wait on the
     /// sign-in library for as long as it likes (second review, R2-18).
     static func within<T: Sendable>(seconds: Double, _ work: @escaping @MainActor @Sendable () async -> T?) async -> T? {
@@ -245,6 +264,7 @@ final class RelayCoordinator {
         UserDefaults.standard.removeObject(forKey: Self.stateKey)
         UserDefaults.standard.removeObject(forKey: Self.checkInKey)
         UserDefaults.standard.removeObject(forKey: Self.personKey)
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [Self.reminderId])
         status = .off
     }
 
@@ -337,6 +357,7 @@ final class RelayCoordinator {
             UserDefaults.standard.set(try? JSONEncoder().encode(saved), forKey: Self.stateKey)
             UserDefaults.standard.set(Date(), forKey: Self.checkInKey)
             if let who = await setup.person() { UserDefaults.standard.set(Self.digest(who), forKey: Self.personKey) }
+            remindBeforeTheServiceForgets()
             status = .on(label: label, accounts: count, canConfigure: canConfigure)
         case .needsApproval(let url):
             status = .needsApproval(url)
