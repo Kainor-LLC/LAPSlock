@@ -604,7 +604,16 @@ final class AppRootModel {
         guard case .signedOut = mode, let auth else { return }
         isRestoringSession = true
 
-        guard let account = await auth.restoreSession() else { return }
+        guard let account = await auth.restoreSession() else {
+            // Microsoft said at the restore that the session has ended, or that the account
+            // is disabled or gone: the same as the check in use would have (CAE-PLAN.md).
+            if let standing = await auth.lastSessionStanding, standing.endsTheSession {
+                await act(on: standing, for: nil)
+            }
+            return
+        }
+        // The restore asked Microsoft just now.
+        lastSessionCheck = Date()
         if let refusal = await refuseIfOutsidePin(account, auth: auth) {
             signInError = refusal
             return
@@ -620,6 +629,7 @@ final class AppRootModel {
         recomputeEntitlement()
         Task { await settleAllWriteRoutes() }
         Task { await settleAppProtection(for: account) }
+        cameToFront()
         await refreshTenants()
     }
 
@@ -655,6 +665,9 @@ final class AppRootModel {
             recomputeEntitlement()
             Task { await settleAllWriteRoutes() }
             Task { await settleAppProtection(for: account) }
+            // Signed in just now, so the first check is ten minutes away.
+            lastSessionCheck = Date()
+            cameToFront()
         } catch let error as AuthError {
             // Consent problems get a recovery path, not just an error (§8).
             if let state = ConsentDiagnostics.state(from: error) {
@@ -747,10 +760,13 @@ final class AppRootModel {
         endSession()
     }
 
-    /// The app's side of nobody being signed in. Shared by sign-out and by an
-    /// organization's order to remove its data, so the two cannot leave different things
-    /// behind on screen.
-    private func endSession() {
+    /// The app's side of nobody being signed in. Shared by sign-out, by an organization's
+    /// order to remove its data, and by Microsoft ending the session, so they cannot leave
+    /// different things behind on screen. `forgetting` false keeps what is on disk, the
+    /// saved searches, as a sign-in that has expired does.
+    private func endSession(forgetting: Bool = true) {
+        sessionCheck?.cancel()
+        sessionCheck = nil
         // Tenant-scoped data must not survive an account change (§7). Dropping the session
         // drops every service's cache with it.
         liveSession = nil
@@ -758,11 +774,72 @@ final class AppRootModel {
         updateWaiting = nil
         customersWaitingToMove = []
         demoCustomer = .contoso
-        savedSearches.clear()
+        if forgetting { savedSearches.clear() }
         pendingSearch = nil
         mode = .signedOut
         consentState = nil
         recomputeEntitlement()
+    }
+
+    // MARK: - the session check (CAE-PLAN.md, decisions 2 and 3)
+
+    /// The loop that asks Microsoft every ten minutes while the app is in front.
+    @ObservationIgnored private var sessionCheck: Task<Void, Never>?
+    @ObservationIgnored private var lastSessionCheck: Date?
+
+    /// The app came to the front, or a session began. Microsoft is asked whether the
+    /// session still stands, unless it was asked in the last two minutes, and again every
+    /// ten minutes until the app goes to the background. The rules and Microsoft's codes
+    /// are in AuthKit's `SessionStanding`.
+    func cameToFront() {
+        sessionCheck?.cancel()
+        sessionCheck = Task { [weak self] in
+            await self?.checkSession(unlessWithin: SessionCheck.foregroundGap)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(SessionCheck.interval))
+                guard !Task.isCancelled else { return }
+                await self?.checkSession(unlessWithin: 0)
+            }
+        }
+    }
+
+    /// The app went to the background: no checks until it is back.
+    func wentToBackground() {
+        sessionCheck?.cancel()
+        sessionCheck = nil
+    }
+
+    private func checkSession(unlessWithin gap: TimeInterval) async {
+        #if DEBUG
+        // For the measurement in CAE-PLAN.md, step 0: Microsoft Graph's own answer is timed.
+        if ProcessInfo.processInfo.arguments.contains("-LAPSlockNoSessionCheck") { return }
+        #endif
+        guard case .live(let account) = mode, let auth else { return }
+        if let last = lastSessionCheck, Date().timeIntervalSince(last) < gap { return }
+        lastSessionCheck = Date()
+        let standing = await auth.checkSession()
+        // The person may have signed out, or someone else signed in, while it was out.
+        guard isSignedIn(as: account) else { return }
+        await act(on: standing, for: account)
+    }
+
+    /// What the app does with Microsoft's answer (CAE-PLAN.md, decision 2). A revoke or a
+    /// changed password ends the session the way an expired sign-in does: the screens go
+    /// back to the sign-in screen and nothing on disk is removed, so the same person
+    /// signing in again finds Instant alerts, their customers and their searches as they
+    /// were. A disabled or deleted account is erased, as for an Intune wipe.
+    private func act(on standing: SessionStanding, for account: AdminAccount?) async {
+        guard standing.endsTheSession else { return }
+        if standing.erases {
+            // Before the tokens go, as at sign-out. It needs a token the account may no
+            // longer get, and gives up on its own after ten seconds.
+            if let objectId = account?.objectId { await AppProtection.shared.signingOut(objectId: objectId) }
+            _ = await eraseForOrganization()
+        } else {
+            await auth?.dropSession()
+            endSession(forgetting: false)
+        }
+        signInError = standing.sentence
     }
 
     // MARK: - Intune App Protection
@@ -2065,8 +2142,13 @@ private struct SceneChanges: ViewModifier {
                 if phase == .active, wasInBackground {
                     wasInBackground = false
                     WatchConnector.shared.requestPush()
+                    // Microsoft is asked whether the session still stands (CAE-PLAN.md).
+                    root.cameToFront()
                 }
-                if phase == .background { AlertsRunner.scheduleIfNeeded() }
+                if phase == .background {
+                    AlertsRunner.scheduleIfNeeded()
+                    root.wentToBackground()
+                }
                 // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
                 // grace period, waiting on an Authenticator push, must not return to a lock
                 // screen sitting on top of MSAL's flow.

@@ -327,6 +327,15 @@ public actor MSALAuthManager: AuthManaging {
         // should be a decision made now, not one inherited from last week.
         activeTenant = nil
 
+        // Microsoft is asked first whether the session still stands, with the cached token
+        // skipped. A session it has ended must not come back on a token cached before the
+        // end, which lasts up to an hour and a half. With no answer (no network) the cached
+        // token decides, as before. CAE-PLAN.md, decisions 2 and 3.
+        if await checkSession().endsTheSession {
+            dropSession()
+            return nil
+        }
+
         do {
             _ = try await token(scopes: Self.baseScopes, allowInteractive: false)
             return account
@@ -554,6 +563,53 @@ public actor MSALAuthManager: AuthManaging {
         let result = try await recording(.tokenSilent) { try await acquireSilent(app, silent) }
         try pin.validate(returnedTenantId: Self.tenantId(of: result))
         return result.accessToken
+    }
+
+    // MARK: - the session check (CAE-PLAN.md, decisions 2 and 3)
+
+    /// What the last session check said, at a restore or in the app's own check. The app
+    /// reads it after a restore comes back empty, to say why.
+    public private(set) var lastSessionStanding: SessionStanding?
+
+    /// Asks Microsoft whether the session still stands: one silent request for the sign-in
+    /// permissions in the person's own organization, through the registration the session
+    /// lives on, with the cached token skipped, so Entra has to accept the refresh token
+    /// now. Never a prompt, and the token that comes back is not used. What the answer
+    /// means is `SessionStanding.from`, in AuthKit, where it is tested.
+    public func checkSession() async -> SessionStanding {
+        guard let account = pinnedAccount,
+              let home = TenantPin(expected: account.tenantId),
+              let app = try? application(for: primaryRegistration),
+              let msalAccount = try? app.account(forIdentifier: account.id)
+        else { return .unknown }
+        let silent = MSALSilentTokenParameters(scopes: Self.baseScopes, account: msalAccount)
+        silent.forceRefresh = true
+        let standing: SessionStanding
+        do {
+            silent.authority = try MSALAADAuthority(url: home.authorityURL)
+            let result = try await acquireSilent(app, silent)
+            try home.validate(returnedTenantId: Self.tenantId(of: result))
+            standing = .current
+        } catch let failure as MSALFailure {
+            standing = SessionStanding.from(aadCode: Self.detail(from: failure.error, step: .tokenSilent).aadErrorCode)
+        } catch {
+            standing = .unknown
+        }
+        lastSessionStanding = standing
+        return standing
+    }
+
+    /// Stops acting as the person and removes nothing, which is what a sign-in that has
+    /// expired leaves behind: the next sign-in by the same person picks up where they
+    /// were. For Microsoft's own end of a session. Sign-out is `signOut`, and an erase is
+    /// `forgetEveryone`.
+    public func dropSession() {
+        pinnedAccount = nil
+        activeTenant = nil
+        sessionOnOriginal = false
+        combinedWrites = [:]
+        askedRead = []
+        probedRead = []
     }
 
     public func signOut(account: AdminAccount) async throws {

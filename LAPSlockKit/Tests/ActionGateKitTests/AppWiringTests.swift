@@ -389,4 +389,41 @@ final class AppWiringTests: XCTestCase {
         XCTAssertFalse(app.contains("privilegedSheet: {"), "no sheet offered unconditionally")
         XCTAssertTrue(app.contains("requestPrivilegedConsent: AppModule.privilegedAccess.isEnabled"))
     }
+
+    // MARK: - the session check (CAE-PLAN.md, decisions 2 and 3)
+
+    /// The app asks Microsoft whether the session still stands on coming back to the front
+    /// and every ten minutes while there, and acts on the answer.
+    func testTheSessionCheckRunsInFrontAndActsOnTheAnswer() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let scene = try XCTUnwrap(app.range(of: "private struct SceneChanges: ViewModifier {"))
+        let changes = String(app[scene.lowerBound...])
+        XCTAssertTrue(changes.contains("root.cameToFront()"))
+        XCTAssertTrue(changes.contains("root.wentToBackground()"))
+
+        let loop = body(of: "func cameToFront() {", in: app)
+        XCTAssertTrue(loop.contains("checkSession(unlessWithin: SessionCheck.foregroundGap)"))
+        XCTAssertTrue(loop.contains("Task.sleep(for: .seconds(SessionCheck.interval))"))
+
+        let check = body(of: "private func checkSession(unlessWithin gap: TimeInterval) async {", in: app)
+        XCTAssertTrue(check.contains("guard case .live(let account) = mode"), "never in the demo or signed out")
+        XCTAssertTrue(check.contains("guard isSignedIn(as: account) else { return }"), "the answer is for the person it was asked about")
+        // The switch for the measurement is in debug builds only.
+        let skip = try XCTUnwrap(check.range(of: "-LAPSlockNoSessionCheck"))
+        let debug = try XCTUnwrap(check.range(of: "#if DEBUG"))
+        XCTAssertLessThan(debug.lowerBound, skip.lowerBound)
+
+        let act = body(of: "private func act(on standing: SessionStanding, for account: AdminAccount?) async {", in: app)
+        XCTAssertTrue(act.contains("_ = await eraseForOrganization()"), "a disabled or deleted account is erased")
+        XCTAssertTrue(act.contains("await auth?.dropSession()"))
+        XCTAssertTrue(act.contains("endSession(forgetting: false)"), "a revoke leaves what is on disk")
+        XCTAssertTrue(act.contains("signInError = standing.sentence"))
+
+        // At a launch, the restore asks, and its answer is acted on the same way.
+        let restore = body(of: "func restoreSession() async {", in: app)
+        XCTAssertTrue(restore.contains("if let standing = await auth.lastSessionStanding, standing.endsTheSession {"))
+        XCTAssertTrue(restore.contains("await act(on: standing, for: nil)"))
+        // A session that ends for any reason stops the loop.
+        XCTAssertTrue(body(of: "private func endSession(forgetting: Bool = true) {", in: app).contains("sessionCheck?.cancel()"))
+    }
 }
