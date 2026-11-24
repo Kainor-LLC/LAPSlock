@@ -34,13 +34,15 @@ struct MacMenuView: View {
                 header
             }
             if model.mode != .signedOut, !model.turnedOffByOrganization {
+                // No Roles view when the organization turned Privileged Access off.
+                let shown = Tab.allCases.filter { $0 != .roles || !model.privilegedAccessOff }
                 Picker("View", selection: $tab) {
-                    ForEach(Tab.allCases) { Text($0.label).tag($0) }
+                    ForEach(shown) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 Group {
-                    switch tab {
+                    switch shown.contains(tab) ? tab : .devices {
                     case .devices: MacDevicesView(model: model)
                     case .roles:   MacRolesView(model: model)
                     case .pulse:   MacPulseView(model: model)

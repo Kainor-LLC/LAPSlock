@@ -30,9 +30,17 @@ final class MacModel {
         var disabled = false
         /// `tenant.pin`: the one organization this app may be signed in to.
         var tenantPin: String?
+        /// `modules.disabled`: the modules the organization turned off, the iPhone app's own
+        /// key. The menu bar app has one of them, `privilegedAccess`, its Roles view. Before
+        /// the second review's follow-up (2026-11-24) the Mac activated roles that the
+        /// organization had turned off on the phone, as the watch did (R2-3).
+        var modulesDisabled: Set<String> = []
 
         static let disabledKey = "menuBar.disabled"
         static let tenantPinKey = "tenant.pin"
+        static let modulesDisabledKey = "modules.disabled"
+
+        var privilegedAccessOff: Bool { modulesDisabled.contains("privilegedaccess") }
 
         /// `value` returns a key's value only when the organization forced it.
         init(forced value: (String) -> Any?) {
@@ -46,7 +54,17 @@ final class MacModel {
                UUID(uuidString: pin) != nil {
                 tenantPin = pin
             }
+            // An array of names, or one string with commas, as the iPhone app takes it.
+            let names: [String]
+            switch value(Self.modulesDisabledKey) {
+            case let list as [String]: names = list
+            case let text as String:   names = text.split(separator: ",").map(String.init)
+            default:                   names = []
+            }
+            modulesDisabled = Set(names.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }.filter { !$0.isEmpty })
         }
+
+        static let privilegedAccessOffMessage = "Your organization has turned off Privileged Access in TenantKeep."
 
         static func current() -> Policy {
             let app = (Bundle.main.bundleIdentifier ?? "com.kainor.tenantkeep.menubar") as CFString
@@ -319,7 +337,11 @@ final class MacModel {
         deviceLoad = nil
     }
 
+    /// Whether the organization turned Privileged Access off, read when asked.
+    var privilegedAccessOff: Bool { Policy.current().privilegedAccessOff }
+
     func loadRoles() async {
+        guard !Policy.current().privilegedAccessOff else { eligible = []; rolesError = Policy.privilegedAccessOffMessage; return }
         guard let privileged else { eligible = []; rolesError = mode == .demo ? "Demo data has no roles to activate." : nil; return }
         rolesLoading = true
         defer { rolesLoading = false }
@@ -353,6 +375,8 @@ final class MacModel {
     }
 
     func activate(_ access: EligibleAccess, justification: String, duration: String) async -> String {
+        // The organization's switch, at the moment of acting, as on the watch.
+        guard !Policy.current().privilegedAccessOff else { return Policy.privilegedAccessOffMessage }
         guard let privileged else { return "Sign in to activate." }
         busy = true
         defer { busy = false }

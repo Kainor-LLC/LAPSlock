@@ -506,4 +506,20 @@ final class AppWiringTests: XCTestCase {
         let reminded = try XCTUnwrap(relay.range(of: "remindBeforeTheServiceForgets()", range: registered.upperBound..<relay.endIndex))
         XCTAssertLessThan(registered.lowerBound, reminded.lowerBound)
     }
+
+    /// The Mac reads the iPhone app's `modules.disabled` too: with Privileged Access off it
+    /// shows no Roles view and activates nothing (R2-3's class, found on the way).
+    func testTheMacMenuBarAppObeysPrivilegedAccessOff() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let mac = try String(contentsOf: root.appendingPathComponent("App/lapslock/TenantKeepMac/MacModel.swift"), encoding: .utf8)
+        XCTAssertTrue(mac.contains("static let modulesDisabledKey = \"modules.disabled\""))
+        let activate = body(of: "func activate(_ access: EligibleAccess, justification: String, duration: String) async -> String {", in: mac)
+        let refused = try XCTUnwrap(activate.range(of: "guard !Policy.current().privilegedAccessOff else { return Policy.privilegedAccessOffMessage }"))
+        let token = try XCTUnwrap(activate.range(of: "auth?.token(scopes: [access.activateScope]"))
+        XCTAssertLessThan(refused.lowerBound, token.lowerBound, "refused before any sign-in or request")
+        XCTAssertTrue(body(of: "func loadRoles() async {", in: mac).contains("guard !Policy.current().privilegedAccessOff else {"))
+        let view = try String(contentsOf: root.appendingPathComponent("App/lapslock/TenantKeepMac/MacMenuView.swift"), encoding: .utf8)
+        XCTAssertTrue(view.contains("let shown = Tab.allCases.filter { $0 != .roles || !model.privilegedAccessOff }"))
+    }
 }
