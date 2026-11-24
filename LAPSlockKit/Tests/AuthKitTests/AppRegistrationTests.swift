@@ -80,11 +80,32 @@ final class AppRegistrationTests: XCTestCase {
         XCTAssertTrue(AppRegistration.appProtection.ownScopes.isEmpty)
         XCTAssertEqual(AppRegistration.appProtection.serviceScopes,
                        ["https://msmamservice.api.application/DeviceManagementManagedApps.ReadWrite"])
+        XCTAssertEqual(AppRegistration.appProtection.serviceScopesByAppId,
+                       ["0a5f63c0-b750-4f38-a71c-4fc0d58b89e2/DeviceManagementManagedApps.ReadWrite"])
         XCTAssertFalse(AppRegistration.appProtection.isReadOnly)
         XCTAssertFalse(AppRegistration.separateWrites.contains(.appProtection))
         for registration in AppRegistration.allCases where registration != .appProtection {
             XCTAssertTrue(registration.serviceScopes.isEmpty, registration.rawValue)
+            XCTAssertTrue(registration.serviceScopesByAppId.isEmpty, registration.rawValue)
         }
+    }
+
+    /// Microsoft's SDK names the service by its application ID when it asks for a token.
+    /// Answering only to the service's address left it with none, and nobody enrolled: seen
+    /// on a phone, 2026-11-23. Either name gets the one permission, under the name asked;
+    /// any other resource gets nothing, so the SDK is never handed a Graph token.
+    func testTheSDKIsAnsweredUnderTheNameItAskedWithAndForNothingElse() throws {
+        let byId = try XCTUnwrap(AppRegistration.appManagementScopes(forResource: "0a5f63c0-b750-4f38-a71c-4fc0d58b89e2"))
+        XCTAssertEqual(byId, ["0a5f63c0-b750-4f38-a71c-4fc0d58b89e2/DeviceManagementManagedApps.ReadWrite"])
+        XCTAssertEqual(AppRegistration.appManagementScopes(forResource: " 0A5F63C0-B750-4F38-A71C-4FC0D58B89E2/ "), byId)
+        XCTAssertEqual(AppRegistration.appManagementScopes(forResource: "https://msmamservice.api.application/"),
+                       AppRegistration.appProtection.serviceScopes)
+        for other in ["https://graph.microsoft.com", "00000003-0000-0000-c000-000000000000", "", "https://msmamservice.api.application.example"] {
+            XCTAssertNil(AppRegistration.appManagementScopes(forResource: other), other)
+        }
+        // And what it is answered with goes through the App Protection registration.
+        XCTAssertEqual(try ScopeRouter.registration(for: byId), .appProtection)
+        XCTAssertThrowsError(try ScopeRouter.registration(for: ["0a5f63c0-b750-4f38-a71c-4fc0d58b89e2/.default"]))
     }
 
     func testConsentScopesAreNamedInFullAndNeverDefault() {

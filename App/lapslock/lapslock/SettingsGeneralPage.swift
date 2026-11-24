@@ -105,20 +105,19 @@ struct SettingsGeneralPage: View {
                     ProgressView()
                     Text("Asking Intune…").font(.footnote).foregroundStyle(.secondary)
                 }
-            case .idle, .needsSignIn, .failed:
-                Button("Turn on") { Task { await turnOnProtection() } }
-                    .disabled(isTurningOnProtection || turnOnAppProtection == nil)
-                if isTurningOnProtection {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text("Signing in…").font(.footnote).foregroundStyle(.secondary)
-                    }
-                }
-                if case .failed(let code) = protection.state {
-                    Text("Intune did not apply a policy (status \(code)). Try again later.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+            case .notLicensed:
+                LabeledContent("Policy", value: "No Intune licence")
+                Text("Intune answered that your account has no Intune licence, so no policy can apply to it. Your administrator assigns one in the Microsoft 365 admin center.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                askButton("Check again")
+            case .idle, .needsSignIn:
+                askButton("Turn on")
+            case .failed(let code):
+                Text("Intune did not apply a policy (status \(code)).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                askButton("Try again")
             }
 
             if let protectionError {
@@ -139,6 +138,20 @@ struct SettingsGeneralPage: View {
                 separately, and asks Intune whether a policy applies to you. With no policy, \
                 nothing changes.
                 """)
+        }
+    }
+
+    /// Signs in to the App Protection registration when that is still needed, and asks
+    /// Intune again either way.
+    @ViewBuilder
+    private func askButton(_ title: LocalizedStringKey) -> some View {
+        Button(title) { Task { await turnOnProtection() } }
+            .disabled(isTurningOnProtection || turnOnAppProtection == nil)
+        if isTurningOnProtection {
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Asking Intune…").font(.footnote).foregroundStyle(.secondary)
+            }
         }
     }
 

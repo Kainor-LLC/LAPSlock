@@ -198,11 +198,38 @@ public enum AppRegistration: String, CaseIterable, Sendable {
     /// answers from. Not Microsoft Graph, and nothing in a tenant's directory is behind it.
     public static let appManagementResource = "https://msmamservice.api.application"
 
+    /// The same service by its application ID, which is the name Microsoft's Intune App SDK
+    /// uses when it asks the app for a token. Seen on a phone, 2026-11-23: answering only to
+    /// the address above left the SDK without a token and nobody enrolled.
+    public static let appManagementAppId = "0a5f63c0-b750-4f38-a71c-4fc0d58b89e2"
+
     /// Permissions this registration holds on a Microsoft service other than Graph, with
     /// the service in front. One exists: the permission Microsoft's Intune App SDK needs,
     /// which reads and writes the signed-in person's own app management record.
     public var serviceScopes: [String] {
-        self == .appProtection ? [Self.appManagementResource + "/DeviceManagementManagedApps.ReadWrite"] : []
+        self == .appProtection ? [Self.appManagementResource + Self.appManagementPermission] : []
+    }
+
+    /// The same permissions with the service named by its application ID. Microsoft
+    /// addresses a token to the name it was asked under, so the SDK's token is asked for
+    /// under the name the SDK used.
+    public var serviceScopesByAppId: [String] {
+        self == .appProtection ? [Self.appManagementAppId + Self.appManagementPermission] : []
+    }
+
+    /// Written with its slash. On its own the name would read as a Microsoft Graph
+    /// permission, which no registration holds, and a test refuses a name without a home.
+    private static let appManagementPermission = "/DeviceManagementManagedApps.ReadWrite"
+
+    /// What to ask for when Microsoft's Intune App SDK wants a token for `resource`. Nil for
+    /// any resource but the one service the App Protection registration holds a permission
+    /// on: the SDK is never handed a token for anything else.
+    public static func appManagementScopes(forResource resource: String) -> [String]? {
+        var asked = resource.trimmingCharacters(in: .whitespaces).lowercased()
+        while asked.hasSuffix("/") { asked.removeLast() }
+        if asked == appManagementAppId { return AppRegistration.appProtection.serviceScopesByAppId }
+        if asked == appManagementResource { return AppRegistration.appProtection.serviceScopes }
+        return nil
     }
 
     /// What a token for this registration is asked for by name: its Graph permissions
@@ -266,11 +293,12 @@ public enum ScopeRouter {
         // A registration's own scope, api://{client id}/{name}, belongs to that registration,
         // and so does a permission on a service other than Graph. Each is matched whole:
         // a name the registration does not hold is unknown, never close enough.
-        let own = wanted.filter { $0.hasPrefix(ownPrefix) || $0.hasPrefix(servicePrefix) }
+        let own = wanted.filter { scope in servicePrefixes.contains { scope.hasPrefix($0) } || scope.hasPrefix(ownPrefix) }
         if !own.isEmpty {
             guard own.count == wanted.count else { throw RoutingError.mixedRegistrations(scopes) }
             let owners = AppRegistration.allCases.filter { registration in
-                let defined = Set((registration.ownScopes + registration.serviceScopes).map { $0.lowercased() })
+                let defined = Set((registration.ownScopes + registration.serviceScopes + registration.serviceScopesByAppId)
+                    .map { $0.lowercased() })
                 return own.allSatisfy(defined.contains)
             }
             guard let owner = owners.first else { throw RoutingError.unknownScope(original(of: own[0], in: scopes) ?? own[0]) }
@@ -322,7 +350,10 @@ public enum ScopeRouter {
 
     private static let graphPrefix = "https://graph.microsoft.com/"
     private static let ownPrefix = "api://"
-    private static let servicePrefix = AppRegistration.appManagementResource.lowercased() + "/"
+    private static let servicePrefixes = [
+        AppRegistration.appManagementResource.lowercased() + "/",
+        AppRegistration.appManagementAppId.lowercased() + "/"
+    ]
     /// Sign-in protocol scopes, which every registration answers and MSAL adds itself.
     private static let protocolScopes: Set<String> = ["openid", "profile", "offline_access", "email"]
 

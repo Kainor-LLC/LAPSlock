@@ -766,11 +766,10 @@ final class AppRootModel {
     /// and the SDK then enrols nobody.
     private func connectAppProtection(to auth: MSALAuthManager) {
         AppProtection.shared.tokenSource = { objectId, resource in
-            guard AppProtection.isAppManagement(resource),
+            guard let scopes = AppRegistration.appManagementScopes(forResource: resource),
                   let account = await auth.currentAccount,
                   account.objectId?.caseInsensitiveCompare(objectId) == .orderedSame,
-                  let token = try? await auth.silentToken(
-                    scopes: AppRegistration.appProtection.serviceScopes, tenantId: account.tenantId)
+                  let token = try? await auth.silentToken(scopes: scopes, tenantId: account.tenantId)
             else { return nil }
             return AppProtectionToken(
                 accessToken: token, username: account.username, objectId: objectId, tenantId: account.tenantId)

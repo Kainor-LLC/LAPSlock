@@ -30,8 +30,10 @@ enum AppProtectionState: Equatable, Sendable {
     case checking
     /// A policy from the organization is in force.
     case managed
-    /// Intune answered and no policy is targeted at this person, or they have no licence.
+    /// Intune answered and no policy is targeted at this person.
     case notTargeted
+    /// Intune answered that this person has no Intune licence, so no policy can apply.
+    case notLicensed
     /// The TenantKeep App Protection registration has no sign-in to use.
     case needsSignIn
     /// Anything else, with Microsoft's status number for a support report.
@@ -88,14 +90,6 @@ final class AppProtection {
     /// Whether a policy is in force for this account right now.
     func isManaged(objectId: String) -> Bool {
         IntuneMAMPolicyManager.instance().isAccountIdManaged(objectId)
-    }
-
-    /// Whether `resource`, as the SDK names it when it asks for a token, is the service the
-    /// App Protection registration holds its permission on. Anything else gets no token.
-    nonisolated static func isAppManagement(_ resource: String) -> Bool {
-        var asked = resource.trimmingCharacters(in: .whitespaces).lowercased()
-        while asked.hasSuffix("/") { asked.removeLast() }
-        return asked == AppRegistration.appManagementResource.lowercased()
     }
 
     /// Once the person has a sign-in on the App Protection registration. Asks Intune
@@ -214,7 +208,9 @@ private nonisolated final class Bridge: NSObject, IntuneMAMEnrollmentDelegate, I
 
     func unenrollRequest(with status: IntuneMAMEnrollmentStatus) {
         Self.trace("unenrolment", status)
-        report?(.idle)
+        // Only a real unenrolment changes anything. "Was not enrolled" is also reported
+        // here, when an account that never enrolled is started over.
+        if status.didSucceed { report?(.idle) }
     }
 
     /// Debug builds only, like the MSAL log: Microsoft's status number and its own words,
@@ -233,8 +229,11 @@ private nonisolated final class Bridge: NSObject, IntuneMAMEnrollmentDelegate, I
         switch status.statusCode {
         case .newPoliciesReceived, .policiesHaveNotChanged, .alreadyEnrolled:
             return IntuneMAMPolicyManager.instance().isAccountIdManaged(status.accountId) ? .managed : .notTargeted
-        case .noPolicyReceived, .licensedNotTargeted, .accountNotLicensed, .tenantMigration:
+        case .noPolicyReceived, .licensedNotTargeted:
             return .notTargeted
+        case .accountNotLicensed, .tenantMigration:
+            // Microsoft uses the second for a tenant that is moving and for a missing licence.
+            return .notLicensed
         case .authRequired:
             return .needsSignIn
         case .unenrollmentSuccess, .wipeReceived:
