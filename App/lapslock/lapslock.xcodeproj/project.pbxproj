@@ -69,6 +69,13 @@
 			remoteGlobalIDString = 87518AA530905A1B006C9B7C;
 			remoteInfo = RelayNotificationService;
 		};
+		876E003230B5EB9700543575 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8734CC48302FB6650056D699 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8734CC4F302FB6650056D699;
+			remoteInfo = lapslock;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -116,6 +123,7 @@
 		87518996309052DA006C9B7C /* TenantKeepMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = TenantKeepMac.app; path = "TenantKeep Menu Bar.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		87518AA630905A1B006C9B7C /* RelayNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = RelayNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8769AA9B304A08C70093ADD6 /* LAPSlock.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = LAPSlock.storekit; sourceTree = "<group>"; };
+		876E002B30B5EB9700543575 /* lapslockTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = lapslockTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -175,6 +183,11 @@
 				87518AB230905A1B006C9B7C /* Exceptions for "RelayNotificationService" folder in "RelayNotificationService" target */,
 			);
 			path = RelayNotificationService;
+			sourceTree = "<group>";
+		};
+		876E002C30B5EB9700543575 /* lapslockTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = lapslockTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -250,6 +263,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		876E002830B5EB9700543575 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -262,6 +282,7 @@
 				8751893330904643006C9B7C /* OnCallComplications */,
 				87518997309052DA006C9B7C /* TenantKeepMac */,
 				87518AA730905A1B006C9B7C /* RelayNotificationService */,
+				876E002C30B5EB9700543575 /* lapslockTests */,
 				8734CC62302FBA9E0056D699 /* Frameworks */,
 				8734CC51302FB6650056D699 /* Products */,
 			);
@@ -275,6 +296,7 @@
 				8751892E30904643006C9B7C /* OnCallComplicationsExtension.appex */,
 				87518996309052DA006C9B7C /* TenantKeepMac.app */,
 				87518AA630905A1B006C9B7C /* RelayNotificationService.appex */,
+				876E002B30B5EB9700543575 /* lapslockTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -440,6 +462,29 @@
 			productReference = 87518AA630905A1B006C9B7C /* RelayNotificationService.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		876E002A30B5EB9700543575 /* lapslockTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 876E002F30B5EB9700543575 /* Build configuration list for PBXNativeTarget "lapslockTests" */;
+			buildPhases = (
+				876E002730B5EB9700543575 /* Sources */,
+				876E002830B5EB9700543575 /* Frameworks */,
+				876E002930B5EB9700543575 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				876E003330B5EB9700543575 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				876E002C30B5EB9700543575 /* lapslockTests */,
+			);
+			name = lapslockTests;
+			packageProductDependencies = (
+			);
+			productName = lapslockTests;
+			productReference = 876E002B30B5EB9700543575 /* lapslockTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -447,7 +492,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2710;
+				LastSwiftUpdateCheck = 2720;
 				LastUpgradeCheck = 2710;
 				TargetAttributes = {
 					8734CC4F302FB6650056D699 = {
@@ -465,6 +510,10 @@
 					};
 					87518AA530905A1B006C9B7C = {
 						CreatedOnToolsVersion = 27.1;
+					};
+					876E002A30B5EB9700543575 = {
+						CreatedOnToolsVersion = 27.2;
+						TestTargetID = 8734CC4F302FB6650056D699;
 					};
 				};
 			};
@@ -491,6 +540,7 @@
 				8751892D30904643006C9B7C /* OnCallComplicationsExtension */,
 				87518995309052DA006C9B7C /* TenantKeepMac */,
 				87518AA530905A1B006C9B7C /* RelayNotificationService */,
+				876E002A30B5EB9700543575 /* lapslockTests */,
 			);
 		};
 /* End PBXProject section */
@@ -525,6 +575,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		87518AA430905A1B006C9B7C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		876E002930B5EB9700543575 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -569,6 +626,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		876E002730B5EB9700543575 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -586,6 +650,11 @@
 			isa = PBXTargetDependency;
 			target = 87518AA530905A1B006C9B7C /* RelayNotificationService */;
 			targetProxy = 87518AAB30905A1B006C9B7C /* PBXContainerItemProxy */;
+		};
+		876E003330B5EB9700543575 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8734CC4F302FB6650056D699 /* lapslock */;
+			targetProxy = 876E003230B5EB9700543575 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1062,6 +1131,54 @@
 			};
 			name = Release;
 		};
+		876E003030B5EB9700543575 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72C7PQBP52;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslockTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/lapslock.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/lapslock";
+			};
+			name = Debug;
+		};
+		876E003130B5EB9700543575 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 72C7PQBP52;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kainor.lapslockTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/lapslock.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/lapslock";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1115,6 +1232,15 @@
 			buildConfigurations = (
 				87518AAF30905A1B006C9B7C /* Debug */,
 				87518AB030905A1B006C9B7C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		876E002F30B5EB9700543575 /* Build configuration list for PBXNativeTarget "lapslockTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				876E003030B5EB9700543575 /* Debug */,
+				876E003130B5EB9700543575 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
