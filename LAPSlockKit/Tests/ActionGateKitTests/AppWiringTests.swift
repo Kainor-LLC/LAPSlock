@@ -306,8 +306,24 @@ final class AppWiringTests: XCTestCase {
         let ordered = body(of: "func wipeData(forAccountId accountId: String) -> Bool {", in: wrapper)
         XCTAssertTrue(ordered.contains("guard !Thread.isMainThread else {"))
         XCTAssertTrue(ordered.contains("finished.wait(timeout: .now() + 60) == .success && complete.value"))
-        // Its own settings are not the app's to delete.
+        // Its own settings are not the app's to delete, nor its folders, nor the record iOS
+        // keeps in every container. Counting those as failures made a complete wipe report
+        // itself incomplete on a phone.
         XCTAssertTrue(wrapper.contains("where !Self.isMicrosofts(key)"))
+        XCTAssertTrue(wrapper.contains("for url in doomed where Self.isOurs(url.lastPathComponent) {"))
+        XCTAssertTrue(wrapper.contains("!name.hasPrefix(\".IntuneMAM\") && !name.hasPrefix(\".com.apple.\")"))
+
+        // MSAL's removal leaves its record of who was signed in. The group the cache has to
+        // itself is emptied after it, and that group is the one MSAL is told to use.
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let msal = try String(contentsOf: root.appendingPathComponent("LAPSlockKit/Sources/AuthKitMSAL/MSALAuthManager.swift"), encoding: .utf8)
+        let forget = body(of: "public func forgetEveryone() {", in: msal)
+        let removed = try XCTUnwrap(forget.range(of: "removeAccounts(except: nil, keepingPrimary: false)"))
+        let emptied = try XCTUnwrap(forget.range(of: "emptyCacheGroup()"))
+        XCTAssertLessThan(removed.lowerBound, emptied.lowerBound)
+        XCTAssertTrue(msal.contains("pcaConfig.cacheConfig.keychainSharingGroup = Bundle.main.bundleIdentifier ?? \"com.kainor.lapslock\""))
+        XCTAssertTrue(msal.contains("let own = \".\" + (Bundle.main.bundleIdentifier ?? \"com.kainor.lapslock\")"))
     }
 
     /// Approval is per organization, so the move to the read-only app is too. Finishing

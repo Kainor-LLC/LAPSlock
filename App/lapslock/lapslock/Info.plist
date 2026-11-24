@@ -19,6 +19,8 @@
 	</array>
 	<key>IntuneMAMSettings</key>
 	<dict>
+		<key>ADALCacheKeychainGroupOverride</key>
+		<string>com.kainor.lapslock</string>
 		<key>ADALClientId</key>
 		<string>eaea8770-7305-4806-ae1c-7a03d2ef28fe</string>
 		<key>ADALLogOverrideDisabled</key>

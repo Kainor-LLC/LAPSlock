@@ -105,8 +105,13 @@ final class AppProtection {
             doomed += ((try? files.contentsOfDirectory(at: shared, includingPropertiesForKeys: nil)) ?? [])
                 .filter { $0.lastPathComponent != "Library" }
         }
-        for url in doomed {
-            do { try files.removeItem(at: url) } catch { complete = false }
+        for url in doomed where Self.isOurs(url.lastPathComponent) {
+            do {
+                try files.removeItem(at: url)
+            } catch {
+                // Gone already is as good as removed.
+                if files.fileExists(atPath: url.path) { complete = false }
+            }
         }
         URLCache.shared.removeAllCachedResponses()
         for defaults in [UserDefaults.standard, UserDefaults(suiteName: group)].compactMap({ $0 }) {
@@ -116,6 +121,14 @@ final class AppProtection {
             }
         }
         return complete
+    }
+
+    /// Whether a file or folder is the app's to delete. Not Microsoft's SDK's own folders,
+    /// which it removes itself, and not the record iOS keeps in every container, which
+    /// nobody can delete. Counting either as a failure made a wipe that removed everything
+    /// report itself incomplete: seen on a phone, 2026-11-24.
+    nonisolated static func isOurs(_ name: String) -> Bool {
+        !name.hasPrefix(".IntuneMAM") && !name.hasPrefix(".com.apple.")
     }
 
     /// A settings key Microsoft's SDK may have written. The app writes none like it.
@@ -140,12 +153,59 @@ final class AppProtection {
         }
         IntuneMAMEnrollmentManager.instance().delegate = bridge
         IntuneMAMPolicyManager.instance().delegate = bridge
+        #if DEBUG
+        // Microsoft's SDK says what it is doing to whoever asks. Debug builds ask.
+        IntuneMAMPolicyManager.instance().logger = bridge
+        #endif
         for name in [NSNotification.Name.IntuneMAMPolicyDidChange, .IntuneMAMAppConfigDidChange] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor [weak self] in self?.refresh() }
             })
         }
         refresh()
+        Self.traceHoldings("at launch")
+    }
+
+    /// Debug builds only: the names of what the app holds, never the contents. For checking
+    /// what an organization's wipe left behind.
+    nonisolated static func traceHoldings(_ when: String) {
+        #if DEBUG
+        var lines: [String] = []
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true
+        ]
+        var found: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &found)
+        var items: [String: Int] = [:]
+        for item in (found as? [[String: Any]]) ?? [] {
+            let group = (item[kSecAttrAccessGroup as String] as? String ?? "?").split(separator: ".").dropFirst().joined(separator: ".")
+            let service = String((item[kSecAttrService as String] as? String ?? "?").prefix(28))
+            items[group + " | " + service, default: 0] += 1
+        }
+        lines.append("keychain status \(status), \(items.values.reduce(0, +)) items")
+        for (name, count) in items.sorted(by: { $0.key < $1.key }) { lines.append("  keychain " + name + " x\(count)") }
+        let files = FileManager.default
+        for folder in [FileManager.SearchPathDirectory.applicationSupportDirectory, .documentDirectory] {
+            guard let url = files.urls(for: folder, in: .userDomainMask).first,
+                  let walker = files.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else { continue }
+            for case let file as URL in walker {
+                let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? nil
+                if let size { lines.append("  file " + file.path.replacingOccurrences(of: url.path, with: url.lastPathComponent) + " \(size) bytes") }
+            }
+        }
+        let group = "group.com.kainor.lapslock"
+        if let shared = files.containerURL(forSecurityApplicationGroupIdentifier: group) {
+            for item in (try? files.contentsOfDirectory(atPath: shared.path)) ?? [] where item != "Library" { lines.append("  shared " + item) }
+        }
+        let own = UserDefaults.standard.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "") ?? [:]
+        lines.append("  settings: " + own.keys.sorted().joined(separator: " "))
+        lines.append("  shared settings: " + (UserDefaults(suiteName: group)?.persistentDomain(forName: group) ?? [:]).keys.sorted().joined(separator: " "))
+        lines.append("  enrolled: " + (IntuneMAMEnrollmentManager.instance().enrolledAccountIds().isEmpty ? "nobody" : "someone")
+                     + ", registered: " + (IntuneMAMEnrollmentManager.instance().registeredAccountIds().isEmpty ? "nobody" : "someone"))
+        print("[AppProtection] holdings " + when + ":\n" + lines.joined(separator: "\n"))
+        #endif
     }
 
     /// Reads what the organization's policy and configuration say now and puts each where
@@ -401,3 +461,14 @@ private nonisolated final class Bridge: NSObject, IntuneMAMEnrollmentDelegate, I
         false
     }
 }
+
+#if DEBUG
+/// The SDK's own account of what it does, on the console of a debug build. Its verbose
+/// level may name the person, so that level is left out.
+extension Bridge: IntuneMAMLogger {
+    func log(_ message: String, level: IntuneMAMLogLevel) {
+        guard level.rawValue != IntuneMAMLogLevelVerbose.rawValue else { return }
+        print("[IntuneSDK] " + message)
+    }
+}
+#endif
