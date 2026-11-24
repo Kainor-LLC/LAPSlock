@@ -19,6 +19,9 @@ public sealed class RelayRateLimiter
     public const int PerTenant = 120, PerDevice = 30, PerAddress = 240, SandboxPerTenant = 10;
     public const int PerService = 3000, SandboxPerService = 120;
 
+    /// <summary>Counters kept before the ones from earlier minutes are dropped.</summary>
+    const int MaxKeys = 50_000;
+
     public RelayRateLimiter(TimeProvider time) { _time = time; }
 
     /// <summary>True when the request may go on. Every counter counts, whatever the verdict.</summary>
@@ -49,12 +52,26 @@ public sealed class RelayRateLimiter
         var window = _time.GetUtcNow().ToUnixTimeSeconds() / 60;
         lock (_lock)
         {
-            if (_counts.Count > 50_000) _counts.Clear();
+            if (_counts.Count > MaxKeys) Prune(window);
             var entry = _counts.TryGetValue(key, out var e) && e.Window == window ? e : (Window: window, Count: 0);
             entry.Count++;
             _counts[key] = entry;
             return entry.Count <= limit;
         }
+    }
+
+    /// <summary>
+    /// Drops the counters of earlier minutes, which count nothing any more. Clearing them all,
+    /// as before the second review (can wait for 2.1, 2026-11-24), let a flood of new keys in
+    /// one minute reset the counters still in use, the service's ceiling among them. Should
+    /// one minute alone pass four times the limit, the phones' and addresses' counters go and
+    /// the service's ceilings stay.
+    /// </summary>
+    void Prune(long window)
+    {
+        foreach (var stale in _counts.Where(c => c.Value.Window != window).Select(c => c.Key).ToList()) _counts.Remove(stale);
+        if (_counts.Count <= 4 * MaxKeys) return;
+        foreach (var key in _counts.Keys.Where(k => !k.StartsWith("s:", StringComparison.Ordinal)).ToList()) _counts.Remove(key);
     }
 
     string Hash(string value) => Convert.ToHexString(HMACSHA256.HashData(_key, Encoding.UTF8.GetBytes(value)));
