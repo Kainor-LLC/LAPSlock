@@ -49,6 +49,8 @@ final class PeopleDirectoryModel {
     private(set) var lastFailureWasConsent = false
     /// True while Graph is being asked for what was typed.
     private(set) var isLookingUp = false
+    /// Why the last lookup in Graph did not answer, for the screen. Nil when it answered.
+    private(set) var lookupProblem: String?
 
     private let provider: any SignInTriageProviding
     @ObservationIgnored private var byId: [String: DirectoryEntry] = [:]
@@ -207,8 +209,11 @@ final class PeopleDirectoryModel {
     private func refilter() {
         searchTask?.cancel()
         searchTask = nil
+        // A lookup cut off before it answered is asked again, not taken as asked.
+        if isLookingUp { lookedUpQuery = nil }
         lookupTask?.cancel()
         isLookingUp = false
+        lookupProblem = nil
         let query = appliedQuery
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             visible = entries
@@ -238,9 +243,18 @@ final class PeopleDirectoryModel {
         isLookingUp = true
         let provider = provider
         lookupTask = Task { [weak self] in
-            let found = (try? await provider.searchUsers(prefix: query)) ?? []
+            let found: [DirectoryUser]?
+            do { found = try await provider.searchUsers(prefix: query) } catch { found = nil }
             guard !Task.isCancelled, let self, self.appliedQuery == query else { return }
             self.isLookingUp = false
+            guard let found else {
+                // Not "nobody": Graph did not answer, most often because it is throttling
+                // this tenant. Before the second review (R2-28, 2026-11-24) the screen said
+                // Microsoft Graph had no one. The same search may ask again.
+                self.lookedUpQuery = nil
+                self.lookupProblem = "Microsoft Graph didn't answer the search just now, so people not loaded yet may be missing. Search again in a moment."
+                return
+            }
             self.add(found.map(DirectoryEntry.init))
         }
     }
@@ -514,6 +528,8 @@ private struct PeopleNoMatch: View {
         Group {
             if directory.isLookingUp {
                 HStack(spacing: 8) { ProgressView(); Text("Asking Microsoft Graph").font(.footnote).foregroundStyle(.secondary) }
+            } else if let problem = directory.lookupProblem {
+                Text(problem).font(.footnote).foregroundStyle(.secondary)
             } else if directory.isPartial {
                 Text("Nobody loaded matches \"\(typed)\", and Microsoft Graph has no one whose name or sign-in address starts with it.")
                     .font(.footnote).foregroundStyle(.secondary)

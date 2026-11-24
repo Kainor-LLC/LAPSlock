@@ -2153,6 +2153,10 @@ private struct SceneChanges: ViewModifier {
                 if phase == .background {
                     AlertsRunner.scheduleIfNeeded()
                     root.wentToBackground()
+                    // Every countdown, from the root: an action is sent only while its Undo
+                    // is on screen. The screens' own handlers sit on list rows that come
+                    // and go with scrolling (second review, R2-24).
+                    Task { await PendingActions.shared.cancelAll() }
                 }
                 // `isSigningIn` suppresses locking outright: a sign-in that outlasts the
                 // grace period, waiting on an Authenticator push, must not return to a lock

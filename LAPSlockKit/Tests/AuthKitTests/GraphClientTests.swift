@@ -268,13 +268,25 @@ final class GraphClientTests: XCTestCase {
         XCTAssertEqual(sleeps.recorded, [2])
     }
 
-    func test_retryAfterIsCappedAtTheMaximumWait() async throws {
+    /// Second review, R2-27: never sooner than Graph said. A wait longer than the client
+    /// keeps goes back to the caller with Graph's number.
+    func test_aRetryAfterLongerThanTheClientWaitsIsHandedBackNotShortened() async {
         StubProtocol.replies = ["policies": [
-            .init(status: 429, body: "", headers: ["Retry-After": "60"]),
+            .init(status: 429, body: "", headers: ["Retry-After": "30"]),
             .init(status: 200, body: policyBody),
         ]]
-        _ = try await client.send(policies())
-        XCTAssertEqual(sleeps.recorded, [10])
+        await assertThrows(.throttled(retryAfter: 30)) { try await client.send(policies()) }
+        XCTAssertEqual(sleeps.recorded, [], "not asked again at 10 seconds")
+        XCTAssertEqual(StubProtocol.requests.count, 1)
+    }
+
+    func test_a503WithALongRetryAfterIsNotAskedAgainEarly() async {
+        StubProtocol.replies = ["policies": [
+            .init(status: 503, body: "", headers: ["Retry-After": "45"]),
+            .init(status: 200, body: policyBody),
+        ]]
+        await assertThrows(.serviceUnavailable(status: 503)) { try await client.send(policies()) }
+        XCTAssertEqual(sleeps.recorded, [])
     }
 
     func test_429BeyondTheRetryBudgetIsThrottled() async {

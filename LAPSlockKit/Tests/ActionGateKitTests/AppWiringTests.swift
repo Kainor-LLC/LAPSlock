@@ -459,4 +459,28 @@ final class AppWiringTests: XCTestCase {
         XCTAssertTrue(tail.contains("errorMessage = Self.passNotKnown"))
         XCTAssertTrue(issue.contains("outcome: Self.passOutcome(for: error)") || issue.contains("let outcome = Self.passOutcome(for: error)"))
     }
+
+    // MARK: - countdowns and lookups (second review, R2-24, R2-28)
+
+    func testEveryCountdownIsCancelledFromTheRootOnTheWayToTheBackground() throws {
+        let app = try appSource("LAPSlockApp.swift")
+        let scene = try XCTUnwrap(app.range(of: "private struct SceneChanges: ViewModifier {"))
+        let changes = String(app[scene.lowerBound...])
+        let background = try XCTUnwrap(changes.range(of: "if phase == .background {"))
+        let cancel = try XCTUnwrap(changes.range(of: "Task { await PendingActions.shared.cancelAll() }"))
+        XCTAssertLessThan(background.lowerBound, cancel.lowerBound)
+    }
+
+    func testALookupThatFailedOrWasCutOffIsNotTakenAsAnAnswer() throws {
+        let people = try appSource("PeopleView.swift")
+        XCTAssertTrue(people.contains("do { found = try await provider.searchUsers(prefix: query) } catch { found = nil }"))
+        XCTAssertFalse(people.contains("(try? await provider.searchUsers(prefix: query)) ?? []"), "a failure is not nobody")
+        XCTAssertTrue(people.contains("} else if let problem = directory.lookupProblem {"))
+        for (name, source) in [("PeopleView.swift", people), ("DeviceListView.swift", try appSource("DeviceListView.swift"))] {
+            let refilter = body(of: "private func refilter() {", in: source)
+            let reset = try XCTUnwrap(refilter.range(of: "if isLookingUp { lookedUpQuery = nil }"), name)
+            let cancel = try XCTUnwrap(refilter.range(of: "lookupTask?.cancel()"), name)
+            XCTAssertLessThan(reset.lowerBound, cancel.lowerBound, name)
+        }
+    }
 }
