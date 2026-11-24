@@ -207,6 +207,21 @@ public class LimiterTests
         Assert.True(limiter.TryAcquire(Fixtures.Tenant, Fixtures.Token, "1.2.3.4", false));
     }
 
+    // A flood of new keys must not reset the counters still in use (second review, can wait).
+    [Fact]
+    public void AFloodOfNewPhonesDoesNotResetTheServiceCeiling()
+    {
+        var time = new FixedTime(Fixtures.Now);
+        var limiter = new RelayRateLimiter(time);
+        for (int i = 0; i < RelayRateLimiter.SandboxPerService; i++) Assert.True(limiter.TryAcquireService(i.ToString("x64"), true));
+        Assert.False(limiter.TryAcquireService("ab".PadLeft(64, '0'), true));
+        // Past the point where every counter used to be cleared, all in the same minute.
+        for (int i = 0; i < 50_100; i++) limiter.TryAcquireService((i + 1_000_000).ToString("x64"), true);
+        Assert.False(limiter.TryAcquireService("cd".PadLeft(64, '0'), true));
+        time.Now = time.Now.AddMinutes(1);
+        Assert.True(limiter.TryAcquireService("ef".PadLeft(64, '0'), true));
+    }
+
     [Fact]
     public void SandboxIsTighter()
     {
