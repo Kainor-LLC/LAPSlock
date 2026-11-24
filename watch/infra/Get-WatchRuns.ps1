@@ -31,6 +31,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# The sign-in first: under Kainor's sign-in frequency policy the Azure CLI's expires, and every
+# call after it fails, which used to read as no Application Insights resource at all.
+az account get-access-token --resource https://management.azure.com/ --query expiresOn --output tsv 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'The Azure CLI is not signed in, or its sign-in has expired. Run: az login --tenant kainor.com' }
+
 $insights = az resource list --resource-group $ResourceGroup --resource-type microsoft.insights/components --query '[0].id' --output tsv
 if ($LASTEXITCODE -ne 0 -or -not $insights) { throw "No Application Insights resource was found in $ResourceGroup." }
 $url = "https://management.azure.com$insights/query?api-version=2018-04-20"
