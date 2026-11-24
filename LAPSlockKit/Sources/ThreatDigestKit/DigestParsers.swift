@@ -165,6 +165,33 @@ public enum DigestText {
     }
 }
 
+// MARK: - one bad record
+
+/// An array whose elements are decoded one by one, keeping those that decode. A feed of a
+/// thousand records with one malformed among them used to fail whole, and the digest lost
+/// the source until the record was fixed upstream (NEW-3, measured by the second review).
+struct LossyArray<Element: Decodable>: Decodable {
+    let elements: [Element]
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var kept: [Element] = []
+        while !container.isAtEnd {
+            if let element = try? container.decode(Element.self) {
+                kept.append(element)
+            } else {
+                // A failed decode does not move past the element: this does, whatever it is.
+                _ = try container.decode(Skipped.self)
+            }
+        }
+        elements = kept
+    }
+
+    private struct Skipped: Decodable {
+        init(from decoder: Decoder) throws {}
+    }
+}
+
 // MARK: - KEV
 
 public struct KEVCatalog: Decodable, Sendable {
@@ -184,6 +211,18 @@ public struct KEVCatalog: Decodable, Sendable {
     public let dateReleased: String?
     public let count: Int?
     public let vulnerabilities: [Entry]
+
+    private enum CodingKeys: String, CodingKey {
+        case catalogVersion, dateReleased, count, vulnerabilities
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        catalogVersion = try container.decodeIfPresent(String.self, forKey: .catalogVersion)
+        dateReleased = try container.decodeIfPresent(String.self, forKey: .dateReleased)
+        count = try container.decodeIfPresent(Int.self, forKey: .count)
+        vulnerabilities = try container.decode(LossyArray<Entry>.self, forKey: .vulnerabilities).elements
+    }
 
     public static let url = URL(string: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json")!
     public static let catalogPage = URL(string: "https://www.cisa.gov/known-exploited-vulnerabilities-catalog")!
@@ -233,6 +272,14 @@ public struct MSRCPage: Decodable, Sendable {
         public let baseScore: String?
     }
     public let value: [Record]
+
+    private enum CodingKeys: String, CodingKey {
+        case value
+    }
+
+    public init(from decoder: Decoder) throws {
+        value = try decoder.container(keyedBy: CodingKeys.self).decode(LossyArray<Record>.self, forKey: .value).elements
+    }
 
     public static let host = "api.msrc.microsoft.com"
 
