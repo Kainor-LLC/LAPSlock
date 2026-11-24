@@ -476,15 +476,18 @@
     <p>Three claims above are the ones that matter, and all three are checkable without taking our
     word for anything:</p>
     <ul>
-      <li><strong>TenantKeep On-Call talks to three hosts.</strong> Microsoft for sign-in, Microsoft Graph for
-      your data, and, only after you activate an organization license, a Kainor endpoint that
-      returns a licence token and receives no device data. Point a proxy at your phone and watch;
-      the <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/NETWORK-TRANSPARENCY.md">network
+      <li><strong>Every host the app contacts is listed, with when and why.</strong> Microsoft for sign-in and
+      Microsoft Graph for your data, always. Four public security feeds when you open the Threat Digest. A
+      Kainor endpoint only after you activate an organization license, and Kainor's alert service only
+      after an administrator turns on Instant alerts. Microsoft's Intune App SDK, inside the app, makes
+      requests of its own to Microsoft. Point a proxy at your phone and watch; the
+      <a href="https://github.com/Kainor-LLC/LAPSlock/blob/main/docs/NETWORK-TRANSPARENCY.md">network
       transparency document</a> walks through it in about ten minutes.</li>
       <li><strong>The source is available to read.</strong> The
       <a href="https://github.com/Kainor-LLC/LAPSlock">repository is public</a>, including the code
       that handles credentials. You are welcome to review it, and security teams are explicitly
-      permitted to copy it for that purpose.</li>
+      permitted to copy it for that purpose. One component is Microsoft's and has no published source:
+      the Intune App SDK, which enforces app protection.</li>
       <li><strong>The credential path is structurally isolated.</strong> The module that handles
       passwords cannot import the licensing code, the analytics code, there is none, or anything
       else. A build script enforces it, so it is a property of the code rather than a promise in a

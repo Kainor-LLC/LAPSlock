@@ -19,7 +19,9 @@ glossary = json.loads((root / "LAPSlockKit/Sources/SignInTriageKit/Resources/Err
 template = (root / "docs/how-it-works/index.html").read_text()
 
 head = template[: template.index("</head>")]
-head = head.replace("<title>How LAPSlock works · Kainor LLC</title>", "<title>Sign-in error glossary · Kainor LLC</title>")
+# Whatever the template's title is: matching its exact words once left the glossary carrying
+# the how-it-works page's title after that page was renamed.
+head = re.sub(r"<title>.*?</title>", "<title>Sign-in error glossary · Kainor LLC</title>", head, count=1, flags=re.S)
 head = re.sub(
     r'<meta name="description" content="[^"]*">',
     '<meta name="description" content="Plain-English explanations of the Microsoft Entra sign-in error codes an on-call administrator meets most, with what to do about each. The same glossary ships inside TenantKeep On-Call.">',
