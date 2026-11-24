@@ -168,4 +168,19 @@ final class DigestParserTests: XCTestCase {
         let merged = DigestMerge.merge(kev: [], msrc: [], alerts: [alert], advisories: [])
         XCTAssertEqual(merged.map(\.id), ["cisaAlert:x"])
     }
+
+    // NEW-3, measured by the second review: one bad record cost the whole feed.
+    func test_oneBadRecordCostsItselfNotTheFeed() throws {
+        let kev = #"{"catalogVersion":"1","vulnerabilities":[{"cveID":"CVE-2026-0001","vendorProject":"Microsoft","product":"Windows","vulnerabilityName":"One","dateAdded":"2026-11-20","shortDescription":"x"},{"vendorProject":"Broken","product":"No id"},null,{"cveID":"CVE-2026-0002","vendorProject":"Microsoft","product":"Exchange","vulnerabilityName":"Two","dateAdded":"2026-11-21","shortDescription":"y"}]}"#
+        let catalog = try JSONDecoder().decode(KEVCatalog.self, from: Data(kev.utf8))
+        XCTAssertEqual(catalog.vulnerabilities.map(\.cveID), ["CVE-2026-0001", "CVE-2026-0002"])
+        let msrc = #"{"value":[{"cveNumber":"CVE-2026-0003","cveTitle":"Three"},{"cveTitle":"No number"},{"cveNumber":"CVE-2026-0004"}]}"#
+        let page = try JSONDecoder().decode(MSRCPage.self, from: Data(msrc.utf8))
+        XCTAssertEqual(page.value.map(\.cveNumber), ["CVE-2026-0003", "CVE-2026-0004"])
+    }
+
+    func test_aFeedThatIsNotTheShapeAtAllStillFails() {
+        XCTAssertThrowsError(try JSONDecoder().decode(KEVCatalog.self, from: Data(#"{"vulnerabilities":{}}"#.utf8)))
+        XCTAssertThrowsError(try JSONDecoder().decode(MSRCPage.self, from: Data(#"{"items":[]}"#.utf8)))
+    }
 }
